@@ -1,3 +1,5 @@
+// File Path: music-party-web\src\stores\player.js
+
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import { Client } from '@stomp/stompjs';
@@ -6,35 +8,26 @@ import axios from 'axios';
 
 export const usePlayerStore = defineStore('player', () => {
     const userStore = useUserStore();
-    
-    // 播放器状态
+
+    // ... (其他状态变量保持不变)
     const nowPlaying = ref(null);
     const queue = ref([]);
     const isPaused = ref(false);
-	const pauseTimeMillis = ref(0);
+    const pauseTimeMillis = ref(0);
     const isShuffle = ref(false);
-    const serverTimeOffset = ref(0); // 本地与服务器时间差
+    const serverTimeOffset = ref(0);
     const lyricText = ref('');
 
-    // WebSocket 客户端
     const stompClient = ref(null);
     const connected = ref(false);
 
-    // 计算当前理论播放进度 (毫秒)
+    // ... (getCurrentProgress 保持不变)
     const getCurrentProgress = () => {
         if (!nowPlaying.value) return 0;
-
-        // 后端发来的 startTimeMillis 已经是 (OriginalStart + TotalPaused)
-        // 所以我们不需要再手动减去已过去的暂停时间
         const effectiveStartTime = nowPlaying.value.startTimeMillis;
-
         if (isPaused.value) {
-            // 暂停状态：
-            // 进度 = 暂停发生的时刻 - 有效开始时间
-            // 解释：比如 10:00 开始，10:05 暂停。pauseTime=10:05。
-            // 进度 = 10:05 - 10:00 = 5分钟。这是固定的。
             if (pauseTimeMillis.value > 0) {
-                 return Math.max(0, pauseTimeMillis.value - effectiveStartTime);
+                return Math.max(0, pauseTimeMillis.value - effectiveStartTime);
             }
             return 0;
         } else {
@@ -53,26 +46,29 @@ export const usePlayerStore = defineStore('player', () => {
             },
             onConnect: (frame) => {
                 connected.value = true;
-                // 获取 SessionID (SockJS 实际上会在 URL 里，但 STOMP 握手后 frame.headers['user-name'] 通常是 Principal)
-                // 这里我们假设后端通过 UserDestination 能够处理
 
-                // 🟢 修改 3: 订阅 /app/user/me 以获取自己的 SessionID 并初始化 UserStore
+                // 🟢 修改核心逻辑：处理 /app/user/me 的回调
                 client.subscribe('/app/user/me', (message) => {
                     const me = JSON.parse(message.body);
                     console.log("Identified as:", me);
-                    // 这一步至关重要，让 UserStore 知道哪个 SessionID 是自己
-                    userStore.initUser(me.sessionId, me.name);
+
+                    // 1. 初始化用户，并获取是否需要同步的标志
+                    const needsSync = userStore.initUser(me.sessionId, me.name);
+
+                    // 2. 如果前端发现名字不一致，立即发起重命名
+                    if (needsSync) {
+                        console.log(`Name mismatch detected (Local: ${userStore.currentUser.name} vs Server: ${me.name}). Auto-correcting...`);
+                        renameUser(userStore.currentUser.name);
+                    }
                 });
 
-                // 1. 订阅公共频道
+                // ... (其余订阅逻辑保持不变)
                 client.subscribe('/topic/player/state', (message) => {
                     handleStateUpdate(JSON.parse(message.body));
                 });
-                
-                client.subscribe('/topic/player/now-playing', (message) => {
-                    // 仅切歌信号，通常 state 也会随之更新
-                });
-                
+
+                client.subscribe('/topic/player/now-playing', (message) => { });
+
                 client.subscribe('/topic/player/queue', (message) => {
                     queue.value = JSON.parse(message.body);
                 });
@@ -81,21 +77,19 @@ export const usePlayerStore = defineStore('player', () => {
                     userStore.setOnlineUsers(JSON.parse(message.body));
                 });
 
-                // 2. 订阅个人频道 (用于 Resync 和 获取 SessionId)
-                // Spring Security 的 STOMP 支持会将 /user/queue/... 路由给特定用户
                 client.subscribe('/user/queue/player/state', (message) => {
-                     handleStateUpdate(JSON.parse(message.body));
+                    handleStateUpdate(JSON.parse(message.body));
                 });
-				
-				const savedName = localStorage.getItem('mp_username');
+
+                // 这里原本的盲发重命名逻辑可以保留作为兜底，也可以移除，
+                // 因为上面的 needsSync 逻辑更加精准。建议保留以防万一。
+                const savedName = localStorage.getItem('mp_username');
                 if (savedName) {
                     renameUser(savedName);
                 }
 
-                // 3. 立即请求同步状态
                 client.publish({ destination: '/app/player/resync' });
-                
-                // 4. 发送绑定信息 (如果有)
+
                 Object.entries(userStore.bindings).forEach(([platform, id]) => {
                     if(id) bindAccount(platform, id);
                 });
@@ -109,20 +103,18 @@ export const usePlayerStore = defineStore('player', () => {
         stompClient.value = client;
     };
 
+    // ... (handleStateUpdate 和 Actions 保持不变)
     const handleStateUpdate = (state) => {
         nowPlaying.value = state.nowPlaying;
         queue.value = state.queue;
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
-		pauseTimeMillis.value = state.pauseTimeMillis || 0; 
-		if (state.serverTimestamp) {
+        pauseTimeMillis.value = state.pauseTimeMillis || 0;
+        if (state.serverTimestamp) {
             serverTimeOffset.value = state.serverTimestamp - Date.now();
-            console.log("Time synced. Offset:", serverTimeOffset.value, "ms");
         }
         if(state.onlineUsers) userStore.setOnlineUsers(state.onlineUsers);
     };
-
-    // --- Actions ---
 
     const sendCommand = (dest, body = {}) => {
         if (!stompClient.value || !connected.value) return;
@@ -141,24 +133,17 @@ export const usePlayerStore = defineStore('player', () => {
         sendCommand('/app/user/bind', { platform, accountId });
         userStore.updateBinding(platform, accountId);
     }
-    
+
     const renameUser = (newName) => {
         sendCommand('/app/user/rename', { newName });
-        //修改点：调用 userStore 的 saveName 来持久化
-        userStore.saveName(newName); 
+        userStore.saveName(newName);
     }
 
     watch(() => nowPlaying.value?.music?.id, async (newId) => {
-        // 重置歌词
         lyricText.value = '';
-
         if (!newId) return;
-
         const platform = nowPlaying.value.music.platform;
         try {
-            // 调用后端接口获取歌词
-            // 注意：确保后端 Controller 路径是 /api/music/lyric/{platform}/{id}
-            // 如果你之前的后端写的是其他路径，请在这里调整
             const res = await axios.get(`/api/music/lyric/${platform}/${newId}`);
             lyricText.value = res.data || '';
         } catch (e) {
