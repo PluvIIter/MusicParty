@@ -128,7 +128,7 @@
                   class="flex items-center gap-3 p-2 hover:bg-medical-50 cursor-pointer group transition-colors border-l-2 border-transparent hover:border-accent"
               >
                 <div class="w-10 h-10 bg-medical-200 flex-shrink-0 overflow-hidden">
-                  <img :src="pl.coverImgUrl" class="w-full h-full object-cover"/>
+                  <CoverImage :src="pl.coverImgUrl" class="w-full h-full" />
                 </div>
                 <div class="overflow-hidden">
                   <div class="text-sm font-bold truncate group-hover:text-accent">{{ pl.name }}</div>
@@ -192,16 +192,16 @@
                   :key="song.id"
                   class="flex items-center justify-between p-3 bg-white border border-transparent hover:border-medical-300 hover:shadow-sm transition-all group"
               >
-                <div class="flex items-center gap-3 overflow-hidden">
+                <div class="flex items-center gap-3 overflow-hidden flex-1 min-w-0">
                   <div class="w-8 h-8 bg-medical-200 flex-shrink-0">
-                    <img :src="song.coverUrl" class="w-full h-full object-cover"/>
+                    <CoverImage :src="song.coverUrl" class="w-full h-full" />
                   </div>
                   <div class="min-w-0">
                     <div class="text-sm font-bold truncate">{{ song.name }}</div>
                     <div class="text-xs text-medical-500 truncate">{{ song.artists.join(' / ') }}</div>
                   </div>
                 </div>
-                <button @click="enqueue(song.id)" class="p-2 text-medical-300 hover:text-accent">
+                <button @click="enqueue(song.id)" class="p-2 text-medical-300 hover:text-accent flex-shrink-0 ml-2">
                   <PlusCircle class="w-5 h-5"/>
                 </button>
               </div>
@@ -231,6 +231,7 @@ import { usePlayerStore } from '../stores/player';
 import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
 import { useToast } from '../composables/useToast';
+import CoverImage from './CoverImage.vue';
 
 const props = defineProps(['isOpen']);
 const emit = defineEmits(['close']);

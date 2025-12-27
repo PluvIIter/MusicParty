@@ -1,17 +1,27 @@
 <template>
   <div class="relative overflow-hidden bg-medical-200 flex items-center justify-center">
-    <img 
-      v-if="!hasError && src" 
-      :src="src" 
-      class="w-full h-full object-cover transition-opacity duration-500"
-      @error="hasError = true"
+    <img
+        v-if="!hasError && src"
+        :src="src"
+        class="w-full h-full object-cover transition-opacity duration-500"
+        @error="hasError = true"
     />
-    <div v-else class="text-medical-400 flex flex-col items-center">
-      <div class="border-2 border-medical-400 rounded-sm p-1 mb-1">
-        <div class="w-4 h-4 bg-medical-400"></div>
-      </div>
-      <span class="text-[10px] font-mono tracking-widest">NO SIGNAL</span>
+
+    <!-- 🟢 修改部分开始：使用 SVG 图标代替固定像素的 DIV -->
+    <div v-else class="flex flex-col items-center justify-center w-full h-full text-medical-400/80 p-1">
+      <!--
+         1. w-1/2 h-1/2: 让图标大小始终占据容器的一半，完美适配 32px 或 300px
+         2. stroke-width: 线条稍微细一点，看起来更精致
+      -->
+      <ImageOff class="w-1/2 h-1/2" :stroke-width="1.5" />
+
+      <!-- 只有在容器足够大时（比如主播放器），才通过 CSS 容器查询或简单的 Hidden 逻辑显示文字？
+           为了简单且不破坏布局，我们可以移除文字，或者把文字做得非常小且允许隐藏。
+           鉴于列表很小，直接只显示图标是最清晰的。
+      -->
     </div>
+    <!-- 🟢 修改部分结束 -->
+
     <!-- 扫描线装饰 -->
     <div class="absolute inset-0 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAADCAYAAABS3WWCAAAAE0lEQVQYV2NkYGD4zwABjFAQAwBATgMJy2B8NAAAAABJRU5ErkJggg==')] opacity-10 pointer-events-none"></div>
   </div>
@@ -19,6 +29,9 @@
 
 <script setup>
 import { ref, watch } from 'vue';
+// 🟢 新增：引入图标
+import { ImageOff } from 'lucide-vue-next';
+
 const props = defineProps(['src']);
 const hasError = ref(false);
 // 当 src 变化时重置错误状态
