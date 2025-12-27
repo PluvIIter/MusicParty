@@ -1,0 +1,45 @@
+services:
+  # 1. 网易云音乐 API 服务
+  netease-api:
+    image: moefurina/ncm-api:latest
+    container_name: music-party-netease
+    restart: always
+    environment:
+      - PORT=3000
+      - HTTPS=true
+    networks:
+      - music-net
+    volumes:
+      - ./logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+  # 2. Music Party 主应用
+  music-party:
+    build: .
+    container_name: music-party-app
+    restart: always
+    ports:
+      - "8848:8080"  # 将容器的 8080 映射到宿主机的 8080
+    environment:
+      - ADMIN_PASSWORD=
+      - NETEASE_API_URL=http://netease-api:3000
+      
+      # 填入你的 B站 SESSDATA 
+      - BILIBILI_SESSDATA=""
+      
+      # 填入你的网易云 Cookie 
+      - NETEASE_COOKIE=""
+    depends_on:
+      - netease-api
+    networks:
+      - music-net
+    volumes:
+      # 挂载日志目录，方便查看
+      - ./logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+networks:
+  music-net:
+    driver: bridge
