@@ -26,8 +26,9 @@ public class WebSocketEventListener {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
         String sessionId = headerAccessor.getSessionId();
 
-        // 读取前端传来的 user-name 头
         String initialName = headerAccessor.getFirstNativeHeader("user-name");
+
+        log.info("WebSocket Connect Request: Session={}, InitialName={}", sessionId, initialName);
 
         if (sessionId != null) {
             userService.registerUser(sessionId, initialName);

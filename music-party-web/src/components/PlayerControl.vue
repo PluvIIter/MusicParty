@@ -190,7 +190,6 @@ const formatTime = (ms) => {
 };
 
 const handleEnded = () => {
-  toast.info('Playing Next Song...');
 };
 
 const handleError = (e) => {

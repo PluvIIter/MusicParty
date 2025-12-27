@@ -17,62 +17,63 @@ public class MusicSocketController {
 
     private final MusicPlayerService musicPlayerService;
     private final UserService userService;
-    private final SimpMessagingTemplate messagingTemplate; // NEW: Inject messaging template
+    private final SimpMessagingTemplate messagingTemplate;
 
     public MusicSocketController(MusicPlayerService musicPlayerService, UserService userService, SimpMessagingTemplate messagingTemplate) {
         this.musicPlayerService = musicPlayerService;
         this.userService = userService;
-        this.messagingTemplate = messagingTemplate; // NEW
+        this.messagingTemplate = messagingTemplate;
     }
 
-    // --- NEW: Method for active resynchronization ---
-    /**
-     * Client can send a message to this endpoint to request the latest full player state.
-     * The state will be sent back directly to the user who requested it.
-     */
     @MessageMapping("/player/resync")
     public void requestResync(@Header("simpSessionId") String sessionId) {
         musicPlayerService.broadcastPlayerState();
     }
 
-    // UPDATED: Pass session ID to service
     @MessageMapping("/enqueue")
     public void enqueue(EnqueueRequest request, @Header("simpSessionId") String sessionId) {
         musicPlayerService.enqueue(request, sessionId);
     }
 
-    // UPDATED: Pass session ID to service
     @MessageMapping("/enqueue/playlist")
     public void enqueuePlaylist(EnqueuePlaylistRequest request, @Header("simpSessionId") String sessionId) {
         musicPlayerService.enqueuePlaylist(request, sessionId);
     }
 
+    // 🟢 修改：增加 sessionId 参数
     @MessageMapping("/control/next")
-    public void nextSong() {
-        musicPlayerService.skipToNext();
+    public void nextSong(@Header("simpSessionId") String sessionId) {
+        musicPlayerService.skipToNext(sessionId);
     }
 
+    // 🟢 修改：增加 sessionId 参数
     @MessageMapping("/control/toggle-shuffle")
-    public void toggleShuffle() {
-        musicPlayerService.toggleShuffle();
+    public void toggleShuffle(@Header("simpSessionId") String sessionId) {
+        musicPlayerService.toggleShuffle(sessionId);
     }
 
-    // NEW: Endpoint to top a song in the queue
+    // 🟢 修改：增加 sessionId 参数
+    @MessageMapping("/control/toggle-pause")
+    public void togglePause(@Header("simpSessionId") String sessionId) {
+        musicPlayerService.togglePause(sessionId);
+    }
+
+    // 🟢 修改：增加 sessionId 参数
     @MessageMapping("/queue/top")
-    public void topSong(@Payload QueueActionRequest request) {
-        musicPlayerService.topSong(request.queueId());
+    public void topSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
+        musicPlayerService.topSong(request.queueId(), sessionId);
     }
 
+    // 🟢 修改：增加 sessionId 参数
     @MessageMapping("/queue/remove")
-    public void removeSong(@Payload QueueActionRequest request) {
-        musicPlayerService.removeSongFromQueue(request.queueId());
+    public void removeSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
+        musicPlayerService.removeSongFromQueue(request.queueId(), sessionId);
     }
 
-    // NEW: User-related endpoints
     @MessageMapping("/user/rename")
     public void rename(RenameRequest request, @Header("simpSessionId") String sessionId) {
         if (userService.renameUser(sessionId, request.newName())) {
-            musicPlayerService.broadcastOnlineUsers(); // Notify everyone of the name change
+            musicPlayerService.broadcastOnlineUsers();
         }
     }
 
@@ -86,28 +87,15 @@ public class MusicSocketController {
         return musicPlayerService.getCurrentPlayerState();
     }
 
-    // NEW: Endpoint for clients to get the initial list of online users upon subscription
     @SubscribeMapping("/topic/users/online")
     public List<UserSummary> getInitialOnlineUsers() {
         return userService.getOnlineUserSummaries();
     }
 
-    @MessageMapping("/control/toggle-pause")
-    public void togglePause() {
-        musicPlayerService.togglePause();
-    }
-
-    // 🟢 新增：前端订阅这个地址，直接返回当前用户的详细信息（包含SessionID）
-    // 前端订阅地址: /app/user/me
     @SubscribeMapping("/user/me")
     public UserSummary getMyUserInfo(@Header("simpSessionId") String sessionId) {
         return userService.getUser(sessionId)
                 .map(u -> new UserSummary(u.getSessionId(), u.getName()))
                 .orElse(new UserSummary(sessionId, "Unknown"));
-    }
-
-    @MessageMapping("/req/state")
-    public void requestState() {
-        musicPlayerService.broadcastPlayerState();
     }
 }

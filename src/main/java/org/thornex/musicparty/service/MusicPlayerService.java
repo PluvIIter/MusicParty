@@ -287,35 +287,39 @@ public class MusicPlayerService {
         );
     }
 
+    private String getUserName(String sessionId) {
+        return userService.getUser(sessionId).map(User::getName).orElse("Unknown User");
+    }
+
     public void enqueue(EnqueueRequest request, String sessionId) {
         User enqueuer = userService.getUser(sessionId)
-                .orElseThrow(() -> new IllegalStateException("Cannot enqueue, user not found for session: " + sessionId));
+                .orElseThrow(() -> new IllegalStateException("User not found"));
 
-        // NEW: Prevent duplicates
         boolean alreadyExists = musicQueue.stream()
                 .anyMatch(item -> item.music().id().equals(request.musicId()) && item.music().platform().equals(request.platform()));
         if (alreadyExists) {
-            log.warn("Attempted to add duplicate song: {} from {}", request.musicId(), request.platform());
             return;
         }
 
         IMusicApiService service = getApiService(request.platform());
-        service.getPlayableMusic(request.musicId()) // Fetch full details
+        service.getPlayableMusic(request.musicId())
                 .subscribe(playableMusic -> {
                     Music music = new Music(playableMusic.id(), playableMusic.name(), playableMusic.artists(), playableMusic.duration(), playableMusic.platform(), playableMusic.coverUrl());
                     MusicQueueItem newItem = new MusicQueueItem(UUID.randomUUID().toString(), music, new UserSummary(enqueuer.getSessionId(), enqueuer.getName()));
                     musicQueue.add(newItem);
                     log.info("{} enqueued: {}", enqueuer.getName(), music.name());
+
                     broadcastQueueUpdate();
+                    // 🟢 广播添加成功事件
+                    broadcastEvent("SUCCESS", enqueuer.getName() + " 添加了: " + music.name(), enqueuer.getName());
                 });
     }
 
     public void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {
-        User enqueuer = userService.getUser(sessionId)
-                .orElseThrow(() -> new IllegalStateException("Cannot enqueue, user not found for session: " + sessionId));
+        User enqueuer = userService.getUser(sessionId).orElseThrow();
+        String operatorName = enqueuer.getName();
 
         IMusicApiService service = getApiService(request.platform());
-        // Fetch the first 100 songs from the playlist (offset=0, limit=100)
         service.getPlaylistMusics(request.playlistId(), 0, PLAYLIST_ADD_LIMIT)
                 .subscribe(musics -> {
                     List<MusicQueueItem> itemsToAdd = musics.stream()
@@ -324,12 +328,17 @@ public class MusicPlayerService {
                             .toList();
 
                     musicQueue.addAll(itemsToAdd);
-                    log.info("{} enqueued {} songs from playlist ID {} (limit {})", enqueuer.getName(), itemsToAdd.size(), request.playlistId(), PLAYLIST_ADD_LIMIT);
+                    log.info("{} enqueued {} songs from playlist", operatorName, itemsToAdd.size());
+
                     broadcastQueueUpdate();
+                    // 🟢 广播批量添加事件
+                    broadcastEvent("SUCCESS", operatorName + " 导入了歌单 (" + itemsToAdd.size() + " 首)", operatorName);
                 });
     }
 
-    public synchronized void topSong(String queueId) {
+    public synchronized void topSong(String queueId, String sessionId) {
+        String operatorName = getUserName(sessionId);
+
         Optional<MusicQueueItem> itemToTop = musicQueue.stream()
                 .filter(item -> item.queueId().equals(queueId))
                 .findFirst();
@@ -337,9 +346,7 @@ public class MusicPlayerService {
         if (itemToTop.isPresent()) {
             MusicQueueItem item = itemToTop.get();
             musicQueue.remove(item);
-            // Prepend "TOP-" to identify it as a topped item, giving it priority
             MusicQueueItem toppedItem = new MusicQueueItem("TOP-" + item.queueId(), item.music(), item.enqueuedBy());
-            // Add to a temporary list and then back to the queue to ensure it's at the front
             List<MusicQueueItem> tempQueue = new ArrayList<>(musicQueue);
             musicQueue.clear();
             musicQueue.add(toppedItem);
@@ -347,48 +354,47 @@ public class MusicPlayerService {
 
             log.info("Song topped: {}", item.music().name());
             broadcastQueueUpdate();
+            // 🟢 广播置顶事件
+            broadcastEvent("INFO", operatorName + " 置顶了: " + item.music().name(), operatorName);
         }
     }
 
-    public void skipToNext() {
-        // Get the current song and set nowPlaying to null in one atomic operation
+    public void skipToNext(String sessionId) {
+        String operatorName = getUserName(sessionId);
+
         NowPlayingInfo current = nowPlaying.getAndSet(null);
         if (current != null) {
-            log.info("Skipped song: {}", current.music().name());
-
-            // LOGIC FOR PROXY CANCELLATION ON SKIP
-            // If the song being skipped was using the proxy, we must cancel it.
             if (current.music().needsProxy()) {
-                log.debug("Cancelling proxy for skipped Bilibili song: {}", current.music().name());
                 musicProxyService.cancelCurrentProxy();
             }
         }
 
-        broadcastPlayerState();
+        // 🟢 广播切歌事件
+        broadcastEvent("INFO", operatorName + " 切到了下一首", operatorName);
 
-        // Immediately trigger the loop to find and play the next song
+        broadcastPlayerState();
         playerLoop();
     }
 
-    public void togglePause() {
-        // Only allow pause/resume if a song is currently playing
-        if (nowPlaying.get() == null) {
-            return;
-        }
+    public void togglePause(String sessionId) {
+        String operatorName = getUserName(sessionId);
+        if (nowPlaying.get() == null) return;
 
         long now = Instant.now().toEpochMilli();
         if (isPaused.compareAndSet(false, true)) {
-            // --- Logic for PAUSING ---
             pauseStateChangeTime.set(now);
-            log.info("Player paused.");
+            log.info("Player paused by {}", operatorName);
             broadcastPlayerState();
+            // 🟢 广播暂停
+            broadcastEvent("INFO", operatorName + " 暂停了播放", operatorName);
         } else if (isPaused.compareAndSet(true, false)) {
-            // --- Logic for RESUMING ---
             long pausedDuration = now - pauseStateChangeTime.get();
             totalPausedTimeMillis.addAndGet(pausedDuration);
-            pauseStateChangeTime.set(now); // Set to resume time
-            log.info("Player resumed. Total paused time for this song: {}ms", totalPausedTimeMillis.get());
+            pauseStateChangeTime.set(now);
+            log.info("Player resumed by {}", operatorName);
             broadcastPlayerState();
+            // 🟢 广播继续
+            broadcastEvent("INFO", operatorName + " 继续了播放", operatorName);
         }
     }
 
@@ -398,14 +404,18 @@ public class MusicPlayerService {
         totalPausedTimeMillis.set(0);
     }
 
-    public void toggleShuffle() {
+
+    public void toggleShuffle(String sessionId) {
+        String operatorName = getUserName(sessionId);
         boolean current;
         do {
             current = isShuffle.get();
         } while (!isShuffle.compareAndSet(current, !current));
         boolean newState = !current;
-        log.info("Shuffle mode set to: {}", newState);
+        log.info("Shuffle mode set to {} by {}", newState, operatorName);
         broadcastPlayerState();
+        // 🟢 广播随机模式
+        broadcastEvent("INFO", operatorName + (newState ? " 开启了随机播放" : " 关闭了随机播放"), operatorName);
     }
 
     // --- Helper and Broadcasting methods ---
@@ -418,19 +428,25 @@ public class MusicPlayerService {
         return service;
     }
 
-    public void removeSongFromQueue(String queueId) {
-        // The queueId might have the "TOP-" prefix if it was topped. We need to handle that.
+
+    public void removeSongFromQueue(String queueId, String sessionId) {
+        String operatorName = getUserName(sessionId);
         final String finalQueueId = queueId.startsWith("TOP-") ? queueId.substring(4) : queueId;
+
+        // 查找歌曲名用于提示
+        Optional<MusicQueueItem> target = musicQueue.stream()
+                .filter(item -> item.queueId().equals(finalQueueId) || item.queueId().equals("TOP-" + finalQueueId))
+                .findFirst();
 
         boolean removed = musicQueue.removeIf(item ->
                 item.queueId().equals(finalQueueId) || item.queueId().equals("TOP-" + finalQueueId)
         );
 
-        if (removed) {
-            log.info("Removed song with queueId {} from the queue.", finalQueueId);
-            broadcastQueueUpdate(); // Notify clients about the change
-        } else {
-            log.warn("Attempted to remove song with queueId {}, but it was not found in the queue.", finalQueueId);
+        if (removed && target.isPresent()) {
+            log.info("Removed song from queue by {}", operatorName);
+            broadcastQueueUpdate();
+            // 🟢 广播删除事件
+            broadcastEvent("INFO", operatorName + " 移除了: " + target.get().music().name(), operatorName);
         }
     }
 
@@ -463,6 +479,11 @@ public class MusicPlayerService {
         messagingTemplate.convertAndSend("/topic/users/online", userService.getOnlineUserSummaries());
     }
 
+    // 🟢 新增：广播通用事件
+    private void broadcastEvent(String type, String message, String user) {
+        messagingTemplate.convertAndSend("/topic/player/events", new PlayerEvent(type, message, user));
+    }
+
     public void resetSystem() {
         log.warn("!!!SYSTEM RESET INITIATED!!!");
 
@@ -490,5 +511,6 @@ public class MusicPlayerService {
         broadcastNowPlaying(null);
 
         log.warn("System reset complete.");
+        broadcastEvent("ERROR", "⚠️ 系统已被管理员重置", "ADMIN");
     }
 }

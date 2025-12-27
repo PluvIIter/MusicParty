@@ -2,6 +2,7 @@ package org.thornex.musicparty.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.dto.UserSummary;
 
@@ -16,22 +17,22 @@ public class UserService {
 
     private final Map<String, User> onlineUsers = new ConcurrentHashMap<>();
 
-    public User registerUser(String sessionId) {
-        User newUser = new User(sessionId);
-        onlineUsers.put(sessionId, newUser);
-        log.info("User connected: {}, total online: {}", newUser.getName(), onlineUsers.size());
-        return newUser;
-    }
-
     public User registerUser(String sessionId, String initialName) {
         User newUser = new User(sessionId);
-        if (initialName != null && !initialName.isBlank()) {
-            // 简单过滤一下名字长度，防止过长
-            if (initialName.length() > 20) initialName = initialName.substring(0, 20);
-            newUser.setName(initialName);
+
+        // 1. 处理名字逻辑
+        if (StringUtils.hasText(initialName)) {
+            // 简单防注入和过长截断
+            String cleanName = initialName.trim();
+            if (cleanName.length() > 20) {
+                cleanName = cleanName.substring(0, 20);
+            }
+            newUser.setName(cleanName);
         }
+        // 否则 User 构造函数里默认会生成 "User-XXXXXX"
+
         onlineUsers.put(sessionId, newUser);
-        log.info("User connected: {} (Session: {}), total online: {}", newUser.getName(), sessionId, onlineUsers.size());
+        log.info("User Registered: name='{}', session='{}', total online: {}", newUser.getName(), sessionId, onlineUsers.size());
         return newUser;
     }
 

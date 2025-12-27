@@ -1,40 +1,47 @@
-// File Path: music-party-web\src\stores\user.js
-
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
 export const useUserStore = defineStore('user', () => {
     const onlineUsers = ref([]);
 
-    const savedName = localStorage.getItem('mp_username');
+    // 🟢 1. 启动时：严格从 LocalStorage 读取，默认值只在这里设定一次
+    const storageName = localStorage.getItem('mp_username');
     const currentUser = ref({
-        name: savedName || 'Guest',
+        name: storageName || 'Guest',
         sessionId: ''
     });
 
     const bindings = ref(JSON.parse(localStorage.getItem('mp_bindings') || '{}'));
 
-    // 🟢 修改：initUser 现在返回一个 boolean，表示是否需要向后端发送更名请求
+    /**
+     * 🟢 2. 初始化用户身份 (来自 /app/user/me)
+     * 逻辑：对比服务器认为的名字 (serverName) 和我本地存储的名字
+     * 返回：true 表示需要强制同步（改名），false 表示一致
+     */
     const initUser = (sessionId, serverName) => {
         currentUser.value.sessionId = sessionId;
 
         const localName = localStorage.getItem('mp_username');
-        let needsSync = false;
 
+        // A. 本地有名字
         if (localName) {
-            // 本地有名字
+            // 界面上强制显示本地名字，防止闪烁
             currentUser.value.name = localName;
 
-            // 核心逻辑：如果本地名字和服务器返回的名字不一致（且服务器名字不是空的），标记需要同步
-            if (serverName && localName !== serverName) {
-                needsSync = true;
+            // 如果服务端名字和本地不一致，告诉调用者需要同步
+            // 注意：这里我们不保存 serverName 到本地，因为本地才是真理
+            if (serverName && serverName !== localName) {
+                return true; // 需要同步
             }
-        } else if (serverName) {
-            // 本地没名字，接受服务器的名字
+        }
+        // B. 本地没名字（第一次来），接受服务端分配的默认名
+        else if (serverName) {
             currentUser.value.name = serverName;
+            // 这种情况下不写入 LocalStorage，让用户保持 "未设置" 状态，直到他主动改名
+            // 或者你可以选择写入：localStorage.setItem('mp_username', serverName);
         }
 
-        return needsSync;
+        return false;
     };
 
     const setOnlineUsers = (users) => {
@@ -46,7 +53,9 @@ export const useUserStore = defineStore('user', () => {
         localStorage.setItem('mp_bindings', JSON.stringify(bindings.value));
     };
 
+    // 🟢 3. 只有这个方法有权修改 LocalStorage
     const saveName = (newName) => {
+        if(!newName) return;
         currentUser.value.name = newName;
         localStorage.setItem('mp_username', newName);
     }

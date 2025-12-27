@@ -412,14 +412,10 @@ const selectAndBindUser = (user) => {
 
 const enqueue = (id) => {
   playerStore.enqueue(platform.value, id);
-  const song = songs.value.find(s => s.id === id);
-  const songName = song ? song.name : 'Unknown Song';
-  success(`Enqueued: ${songName}`);
 };
 
 const enqueuePlaylist = (pid) => {
   playerStore.enqueuePlaylist(platform.value, pid);
-  success(`Importing Playlist ID: ${pid}`);
   emit('close');
 };
 

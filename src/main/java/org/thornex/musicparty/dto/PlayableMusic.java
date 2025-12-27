@@ -12,3 +12,4 @@ public record PlayableMusic(
         String coverUrl,
         boolean needsProxy
 ) {}
+
