@@ -190,18 +190,26 @@
               <div
                   v-for="song in songs"
                   :key="song.id"
-                  class="flex items-center justify-between p-3 bg-white border border-transparent hover:border-medical-300 hover:shadow-sm transition-all group"
+                  class="flex items-center p-3 bg-white border border-transparent hover:border-medical-300 hover:shadow-sm transition-all group"
               >
-                <div class="flex items-center gap-3 overflow-hidden flex-1 min-w-0">
+                <!--
+                   🔴 终极修复：
+                   1. 移除了外层的 'justify-between' (因为我们用 flex-1 撑开)。
+                   2. 将左侧大容器设为 'flex-1 w-0'。
+                      'w-0' 强制将内容基准宽度设为0，这是解决 Flex 溢出最强硬的手段。
+                -->
+                <div class="flex-1 w-0 flex items-center gap-3">
                   <div class="w-8 h-8 bg-medical-200 flex-shrink-0">
                     <CoverImage :src="song.coverUrl" class="w-full h-full" />
                   </div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-1">
                     <div class="text-sm font-bold truncate">{{ song.name }}</div>
                     <div class="text-xs text-medical-500 truncate">{{ song.artists.join(' / ') }}</div>
                   </div>
                 </div>
-                <button @click="enqueue(song.id)" class="p-2 text-medical-300 hover:text-accent flex-shrink-0 ml-2">
+
+                <!-- 按钮：保持 flex-shrink-0 防止被压缩 -->
+                <button @click="enqueue(song.id)" class="ml-2 p-2 text-medical-300 hover:text-accent flex-shrink-0">
                   <PlusCircle class="w-5 h-5"/>
                 </button>
               </div>
