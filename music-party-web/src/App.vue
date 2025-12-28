@@ -96,7 +96,7 @@
         <QueueList />
       </div>
 
-      <!-- 🟢 新增：移动端用户列表抽屉 (User) -->
+      <!-- 移动端用户列表抽屉 (User) -->
       <div v-if="mobileUserOpen" class="md:hidden absolute inset-0 bg-medical-50 z-30 pt-4 overflow-y-auto">
         <div class="px-4 pb-2 border-b border-medical-200 mb-2 flex justify-between items-center text-xs font-mono text-medical-400">
           <span>BVOPERATIVES PANEL</span>
@@ -113,15 +113,17 @@
     <!-- 弹窗 -->
     <SearchModal :isOpen="showSearch" @close="showSearch = false" />
 
-    <!-- 🟢 新增：Toast 挂载点 -->
+    <!-- Toast 挂载点 -->
     <ToastNotification ref="toastInstance" />
 
     <!-- 强制改名弹窗 -->
     <NamePromptModal />
 
+    <!-- 挂载聊天组件 -->
+    <ChatOverlay v-if="hasStarted" />
+
     <!-- Toast 挂载点 -->
     <ToastNotification ref="toastInstance" />
-
   </div>
 </template>
 
@@ -138,8 +140,9 @@ import CenterConsole from './components/CenterConsole.vue';
 import ToastNotification from './components/ToastNotification.vue'; // 导入组件
 import { useToast } from './composables/useToast'; // 导入钩子
 import AuthOverlay from './components/AuthOverlay.vue';
-import NamePromptModal from './components/NamePromptModal.vue'; // 🟢 [新增]
-import { useUserStore } from './stores/user'; // 🟢 [新增] 确保导入了 userStore
+import NamePromptModal from './components/NamePromptModal.vue';
+import { useUserStore } from './stores/user';
+import ChatOverlay from './components/ChatOverlay.vue';
 
 const player = usePlayerStore();
 const hasStarted = ref(false);

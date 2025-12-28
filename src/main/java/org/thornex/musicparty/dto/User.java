@@ -20,3 +20,4 @@ public class User {
         this.lastActiveTime = System.currentTimeMillis();
     }
 }
+

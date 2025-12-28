@@ -6,6 +6,7 @@ import { Client } from '@stomp/stompjs';
 import { useUserStore } from './user';
 import { useToast } from '../composables/useToast';
 import axios from 'axios';
+import { useChatStore } from './chat';
 
 export const usePlayerStore = defineStore('player', () => {
     // ... (状态变量不变)
@@ -23,6 +24,7 @@ export const usePlayerStore = defineStore('player', () => {
     const lastControlTime = ref(0);
     const LOCAL_COOLDOWN = 800; // 本地防抖 800ms (略小于后端，提升手感)
     const isLoading = ref(false);
+    const chatStore = useChatStore();
 
     // 🟢 辅助：权限检查
     const requireAuth = () => {
@@ -147,6 +149,18 @@ export const usePlayerStore = defineStore('player', () => {
                 Object.entries(userStore.bindings).forEach(([platform, id]) => {
                     if(id) bindAccount(platform, id);
                 });
+
+                client.subscribe('/topic/chat', (message) => {
+                    const msg = JSON.parse(message.body);
+                    chatStore.addMessage(msg);
+                });
+
+                // 订阅并获取历史记录 (这是 SubscribeMapping，订阅即返回一次)
+                // 注意：这里返回的是数组，我们需要批量替换或添加
+                client.subscribe('/topic/chat/history', (message) => {
+                    const history = JSON.parse(message.body);
+                    chatStore.setHistory(history);
+                });
             },
             onDisconnect: () => {
                 connected.value = false;
@@ -167,6 +181,10 @@ export const usePlayerStore = defineStore('player', () => {
             serverTimeOffset.value = state.serverTimestamp - Date.now();
         }
         if(state.onlineUsers) userStore.setOnlineUsers(state.onlineUsers);
+    };
+
+    const sendChatMessage = (content) => {
+        if(requireAuth()) sendCommand('/app/chat', { content });
     };
 
     const sendCommand = (dest, body = {}) => {
@@ -246,6 +264,7 @@ export const usePlayerStore = defineStore('player', () => {
         renameUser,
         lyricText,
         requireAuth,
-        isLoading
+        isLoading,
+        sendChatMessage
     };
 });

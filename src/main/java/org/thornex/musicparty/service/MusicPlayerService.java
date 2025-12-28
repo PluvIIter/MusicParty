@@ -47,13 +47,16 @@ public class MusicPlayerService {
     private final AtomicLong lastControlTimestamp = new AtomicLong(0);
     private static final long GLOBAL_COOLDOWN_MS = 1000; // 全局冷却时间 1秒
 
-    public MusicPlayerService(SimpMessagingTemplate messagingTemplate, List<IMusicApiService> apiServices, UserService userService, MusicProxyService musicProxyService) {
+    private final ChatService chatService;
+
+    public MusicPlayerService(SimpMessagingTemplate messagingTemplate, List<IMusicApiService> apiServices, UserService userService, MusicProxyService musicProxyService, ChatService chatService) {
         this.messagingTemplate = messagingTemplate;
         // Create a map of services, keyed by platform name for easy lookup
         this.apiServiceMap = apiServices.stream()
                 .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
         this.musicProxyService = musicProxyService;
+        this.chatService = chatService;
     }
 
     @PostConstruct
@@ -549,6 +552,9 @@ public class MusicPlayerService {
         broadcastPlayerState();
         broadcastQueueUpdate();
         broadcastNowPlaying(null);
+
+        //清空聊天历史
+        chatService.clearHistory();
 
         isLoading.set(false);
 

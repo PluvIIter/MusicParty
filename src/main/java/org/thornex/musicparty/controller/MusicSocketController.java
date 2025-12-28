@@ -7,6 +7,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
 import org.springframework.stereotype.Controller;
 import org.thornex.musicparty.dto.*;
+import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.UserService;
 
@@ -18,11 +19,13 @@ public class MusicSocketController {
     private final MusicPlayerService musicPlayerService;
     private final UserService userService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final ChatService chatService;
 
-    public MusicSocketController(MusicPlayerService musicPlayerService, UserService userService, SimpMessagingTemplate messagingTemplate) {
+    public MusicSocketController(MusicPlayerService musicPlayerService, UserService userService, SimpMessagingTemplate messagingTemplate, ChatService chatService) {
         this.musicPlayerService = musicPlayerService;
         this.userService = userService;
         this.messagingTemplate = messagingTemplate;
+        this.chatService = chatService;
     }
 
     @MessageMapping("/player/resync")
@@ -97,5 +100,34 @@ public class MusicSocketController {
         return userService.getUser(sessionId)
                 .map(u -> new UserSummary(u.getToken(), u.getSessionId(), u.getName()))
                 .orElse(new UserSummary(sessionId, sessionId, "Unknown"));
+    }
+
+    // 聊天消息处理
+    @MessageMapping("/chat")
+    public void handleChat(ChatRequest request, @Header("simpSessionId") String sessionId) {
+        userService.getUser(sessionId).ifPresent(user -> {
+            if (request.content() == null || request.content().trim().isEmpty()) return;
+            if (request.content().length() > 200) return;
+
+            ChatMessage message = new ChatMessage(
+                    java.util.UUID.randomUUID().toString(),
+                    user.getToken(),
+                    user.getName(), // 这个名字作为 Snapshot 存着也行，但前端我们会用 Token 动态查
+                    request.content().trim(),
+                    System.currentTimeMillis(),
+                    false
+            );
+
+            // 保存到历史
+            chatService.addMessage(message);
+
+            messagingTemplate.convertAndSend("/topic/chat", message);
+        });
+    }
+
+    // 订阅时获取历史记录
+    @SubscribeMapping("/topic/chat/history")
+    public List<ChatMessage> getChatHistory() {
+        return chatService.getHistory();
     }
 }
