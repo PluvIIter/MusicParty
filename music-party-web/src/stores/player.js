@@ -20,6 +20,8 @@ export const usePlayerStore = defineStore('player', () => {
     const lyricText = ref('');
     const stompClient = ref(null);
     const connected = ref(false);
+    const lastControlTime = ref(0);
+    const LOCAL_COOLDOWN = 800; // 本地防抖 800ms (略小于后端，提升手感)
 
     // ... (getCurrentProgress 不变)
     const getCurrentProgress = () => {
@@ -131,9 +133,29 @@ export const usePlayerStore = defineStore('player', () => {
         stompClient.value.publish({ destination: dest, body: JSON.stringify(body) });
     };
 
-    const playNext = () => sendCommand('/app/control/next');
-    const togglePause = () => sendCommand('/app/control/toggle-pause');
-    const toggleShuffle = () => sendCommand('/app/control/toggle-shuffle');
+    const checkCooldown = () => {
+        const now = Date.now();
+        if (now - lastControlTime.value < LOCAL_COOLDOWN) {
+            show({
+                title: "RATE LIMITED",
+                message: "操作频繁，请等待...",
+                type: "error",
+                duration: 2000
+            });
+            return false;
+        }
+        lastControlTime.value = now;
+        return true;
+    };
+    const playNext = () => {
+        if(checkCooldown()) sendCommand('/app/control/next');
+    }
+    const togglePause = () => {
+        if(checkCooldown()) sendCommand('/app/control/toggle-pause');
+    }
+    const toggleShuffle = () => {
+        if(checkCooldown()) sendCommand('/app/control/toggle-shuffle');
+    }
     const enqueue = (platform, musicId) => sendCommand('/app/enqueue', { platform, musicId });
     const enqueuePlaylist = (platform, playlistId) => sendCommand('/app/enqueue/playlist', { platform, playlistId });
     const topSong = (queueId) => sendCommand('/app/queue/top', { queueId });

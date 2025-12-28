@@ -42,6 +42,9 @@ public class MusicPlayerService {
 
     private static final int PLAYLIST_ADD_LIMIT = 100;
 
+    private final AtomicLong lastControlTimestamp = new AtomicLong(0);
+    private static final long GLOBAL_COOLDOWN_MS = 1000; // 全局冷却时间 1秒
+
     public MusicPlayerService(SimpMessagingTemplate messagingTemplate, List<IMusicApiService> apiServices, UserService userService, MusicProxyService musicProxyService) {
         this.messagingTemplate = messagingTemplate;
         // Create a map of services, keyed by platform name for easy lookup
@@ -359,8 +362,24 @@ public class MusicPlayerService {
         }
     }
 
+    // 🟢 辅助方法：检查冷却时间
+    private boolean isRateLimited(String operatorName) {
+        long now = System.currentTimeMillis();
+        long last = lastControlTimestamp.get();
+        if (now - last < GLOBAL_COOLDOWN_MS) {
+            log.warn("Action rate limited for user: {}", operatorName);
+            // 广播警告
+            broadcastEvent("ERROR", "系统冷却中，请勿频繁操作", operatorName);
+            return true;
+        }
+        lastControlTimestamp.set(now);
+        return false;
+    }
+
     public void skipToNext(String sessionId) {
         String operatorName = getUserName(sessionId);
+
+        if (isRateLimited(operatorName)) return;
 
         NowPlayingInfo current = nowPlaying.getAndSet(null);
         if (current != null) {
@@ -379,6 +398,8 @@ public class MusicPlayerService {
     public void togglePause(String sessionId) {
         String operatorName = getUserName(sessionId);
         if (nowPlaying.get() == null) return;
+
+        if (isRateLimited(operatorName)) return;
 
         long now = Instant.now().toEpochMilli();
         if (isPaused.compareAndSet(false, true)) {
@@ -407,6 +428,7 @@ public class MusicPlayerService {
 
     public void toggleShuffle(String sessionId) {
         String operatorName = getUserName(sessionId);
+        if (isRateLimited(operatorName)) return;
         boolean current;
         do {
             current = isShuffle.get();
