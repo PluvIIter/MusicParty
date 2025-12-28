@@ -31,7 +31,7 @@
 
 ##  技术栈 (Tech Stack)
 
-** Gemini 3.0
+** Gemini 3.0 **
 
 ---
 
