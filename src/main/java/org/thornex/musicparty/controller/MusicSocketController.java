@@ -95,7 +95,7 @@ public class MusicSocketController {
     @SubscribeMapping("/user/me")
     public UserSummary getMyUserInfo(@Header("simpSessionId") String sessionId) {
         return userService.getUser(sessionId)
-                .map(u -> new UserSummary(u.getSessionId(), u.getName()))
-                .orElse(new UserSummary(sessionId, "Unknown"));
+                .map(u -> new UserSummary(u.getToken(), u.getSessionId(), u.getName()))
+                .orElse(new UserSummary(sessionId, sessionId, "Unknown"));
     }
 }

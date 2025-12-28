@@ -11,13 +11,13 @@
       <!-- 自己 -->
       <div
           class="flex items-center gap-3 pb-3 border-b border-medical-200 border-dashed transition-all duration-300 p-2 -mx-2 rounded"
-          :class="isEnqueuerById(me.sessionId) ? 'bg-accent/10 border-accent/30 shadow-sm' : ''"
+          :class="isEnqueuerById(userStore.userToken) ? 'bg-accent/10 border-accent/30 shadow-sm' : ''"
       >
         <div
             class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors"
-            :class="isEnqueuerById(me.sessionId) ? 'bg-accent text-white' : 'bg-medical-900 text-white'"
+            :class="isEnqueuerById(userStore.userToken) ? 'bg-accent text-white' : 'bg-medical-900 text-white'"
         >
-          <span v-if="isEnqueuerById(me.sessionId)">DJ</span>
+          <span v-if="isEnqueuerById(userStore.userToken)">DJ</span>
           <span v-else>ME</span>
         </div>
         <div class="flex-1 min-w-0">
@@ -29,8 +29,8 @@
           />
         </div>
 
-        <!-- 🟢 修改：使用 CSS 类控制动画 -->
-        <div v-if="isEnqueuerById(me.sessionId)" class="flex gap-0.5 items-end h-4">
+        <!-- 使用 CSS 类控制动画 -->
+        <div v-if="isEnqueuerById(userStore.userToken)" class="flex gap-0.5 items-end h-4">
           <div class="bar bar-1"></div>
           <div class="bar bar-2"></div>
           <div class="bar bar-3"></div>
@@ -43,24 +43,24 @@
           v-for="u in others"
           :key="u.sessionId"
           class="flex items-center gap-3 transition-all duration-300 p-2 -mx-2 rounded"
-          :class="isEnqueuerById(u.sessionId) ? 'opacity-100 bg-accent/5' : 'opacity-60'"
+          :class="isEnqueuerById(u.token) ? 'opacity-100 bg-accent/5' : 'opacity-60'"
       >
         <div
             class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors"
-            :class="isEnqueuerById(u.sessionId) ? 'bg-accent text-white' : 'bg-medical-200 text-medical-500'"
+            :class="isEnqueuerById(u.token) ? 'bg-accent text-white' : 'bg-medical-200 text-medical-500'"
         >
-          <span v-if="isEnqueuerById(u.sessionId)">DJ</span>
+          <span v-if="isEnqueuerById(u.token)">DJ</span>
           <span v-else>OP</span>
         </div>
         <div
             class="text-sm font-bold truncate flex-1"
-            :class="isEnqueuerById(u.sessionId) ? 'text-accent' : ''"
+            :class="isEnqueuerById(u.token) ? 'text-accent' : ''"
         >
           {{ u.name }}
         </div>
 
-        <!-- 🟢 修改：使用 CSS 类控制动画 -->
-        <div v-if="isEnqueuerById(u.sessionId)" class="flex gap-0.5 items-end h-4">
+        <!-- 使用 CSS 类控制动画 -->
+        <div v-if="isEnqueuerById(u.token)" class="flex gap-0.5 items-end h-4">
           <div class="bar bar-1"></div>
           <div class="bar bar-2"></div>
           <div class="bar bar-3"></div>
@@ -84,7 +84,7 @@ const newName = ref(me.value.name);
 
 watch(() => me.value.name, (n) => newName.value = n);
 
-const others = computed(() => users.value.filter(u => u.sessionId !== me.value.sessionId));
+const others = computed(() => users.value.filter(u => u.token !== userStore.userToken));
 
 const doRename = () => {
   if(newName.value && newName.value !== me.value.name) {
@@ -92,15 +92,16 @@ const doRename = () => {
   }
 };
 
-const isEnqueuerById = (sessionId) => {
+const isEnqueuerById = (token) => {
   if (!playerStore.nowPlaying) return false;
-  // 后端 NowPlayingInfo 现在存的是 enqueuedById (SessionID)
-  return playerStore.nowPlaying.enqueuedById === sessionId;
+  // 后端 NowPlayingInfo 现在存的是 enqueuedById (Token)
+  // 我们比较：这首歌的Token === 列表里该用户的Token
+  return playerStore.nowPlaying.enqueuedById === token;
 };
 </script>
 
 <style scoped>
-/* 🟢 使用标准 CSS 实现跳动效果 */
+/* 使用标准 CSS 实现跳动效果 */
 .bar {
   width: 3px;
   background-color: #F97316; /* accent orange */

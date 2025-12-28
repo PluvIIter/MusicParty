@@ -25,3 +25,13 @@ body {
 .chamfer-tl {
   clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
 }
+
+@keyframes scan {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100%; }
+}
+
+.animate-scan {
+  /* 背景图片很小，repeat 之后移动背景位置就能产生流动感 */
+  animation: scan 1s linear infinite;
+}

@@ -22,7 +22,7 @@
                 <div class="flex justify-between items-center">
                    <div class="text-xs text-medical-500 truncate">{{ item.music.artists[0] }}</div>
                   <div class="text-[10px] text-medical-300 bg-medical-50 px-1 border border-medical-100">
-                    {{ userStore.resolveName(item.enqueuedBy.sessionId, item.enqueuedBy.name) }}
+                    {{ userStore.resolveName(item.enqueuedBy.token, item.enqueuedBy.name) }}
                   </div>
                 </div>
             </div>

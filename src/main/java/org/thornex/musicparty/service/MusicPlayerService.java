@@ -111,6 +111,13 @@ public class MusicPlayerService {
         }
     }
 
+    // 辅助方法：通过 SessionId 获取 Token
+    private String getUserToken(String sessionId) {
+        return userService.getUser(sessionId)
+                .map(User::getToken)
+                .orElse("UNKNOWN_TOKEN");
+    }
+
     private void triggerAutoPlayFromHistory() {
         // 简单的防抖/限流：避免瞬间疯狂重试
         // 由于 playerLoop 是 1秒一次，所以这里其实还好。
@@ -126,7 +133,7 @@ public class MusicPlayerService {
         log.info("Auto-playing from history: {}", randomSong.name());
 
         // 构造一个“系统”用户
-        UserSummary systemUser = new UserSummary("ADMIN", "AutoDJ");
+        UserSummary systemUser = new UserSummary("ADMIN", "ADMIN", "AutoDJ");
 
         // 构造队列项
         MusicQueueItem item = new MusicQueueItem(
@@ -157,7 +164,7 @@ public class MusicPlayerService {
         if (nextItem == null) {
             broadcastNowPlaying(null);
             broadcastPlayerState();
-            isLoading.set(false); // 🟢 队列为空，解锁
+            isLoading.set(false); // 队列为空，解锁
             return;
         }
 
@@ -192,7 +199,8 @@ public class MusicPlayerService {
                         NowPlayingInfo newNowPlaying = new NowPlayingInfo(
                                 finalPlayableMusic,
                                 Instant.now().toEpochMilli(),
-                                nextItem.enqueuedBy().sessionId());
+                                nextItem.enqueuedBy().token(),
+                                nextItem.enqueuedBy().name());
 
                         if (nowPlaying.compareAndSet(null, newNowPlaying)) {
                             log.info("Now playing: {}", finalPlayableMusic.name());
@@ -272,8 +280,6 @@ public class MusicPlayerService {
         }
     }
 
-    // --- Public methods for controllers ---
-
     public PlayerState getCurrentPlayerState() {
         NowPlayingInfo current = nowPlaying.get();
         NowPlayingInfo infoToSend = null;
@@ -288,7 +294,8 @@ public class MusicPlayerService {
             infoToSend = new NowPlayingInfo(
                     current.music(),
                     effectiveStartTime,
-                    current.enqueuedById()
+                    current.enqueuedById(),
+                    current.enqueuedByName()
             );
         }
 
@@ -324,13 +331,13 @@ public class MusicPlayerService {
         service.getPlayableMusic(request.musicId())
                 .subscribe(playableMusic -> {
                     Music music = new Music(playableMusic.id(), playableMusic.name(), playableMusic.artists(), playableMusic.duration(), playableMusic.platform(), playableMusic.coverUrl());
-                    MusicQueueItem newItem = new MusicQueueItem(UUID.randomUUID().toString(), music, new UserSummary(enqueuer.getSessionId(), enqueuer.getName()));
+                    MusicQueueItem newItem = new MusicQueueItem(UUID.randomUUID().toString(), music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName()));
                     musicQueue.add(newItem);
                     log.info("{} enqueued: {}", enqueuer.getName(), music.name());
 
                     broadcastQueueUpdate();
-                    // 🟢 广播添加成功事件
-                    broadcastEvent("SUCCESS", "ADD", sessionId, music.name());
+                    // 广播添加事件
+                    broadcastEvent("SUCCESS", "ADD", enqueuer.getToken(), music.name());
                 });
     }
 
@@ -343,15 +350,15 @@ public class MusicPlayerService {
                 .subscribe(musics -> {
                     List<MusicQueueItem> itemsToAdd = musics.stream()
                             .filter(music -> musicQueue.stream().noneMatch(item -> item.music().id().equals(music.id())))
-                            .map(music -> new MusicQueueItem(UUID.randomUUID().toString(), music, new UserSummary(enqueuer.getSessionId(), enqueuer.getName())))
+                            .map(music -> new MusicQueueItem(UUID.randomUUID().toString(), music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName())))
                             .toList();
 
                     musicQueue.addAll(itemsToAdd);
                     log.info("{} enqueued {} songs from playlist", operatorName, itemsToAdd.size());
 
                     broadcastQueueUpdate();
-                    // 🟢 广播批量添加事件
-                    broadcastEvent("SUCCESS", "IMPORT", sessionId, String.valueOf(itemsToAdd.size()));
+                    // 广播批量添加事件
+                    broadcastEvent("SUCCESS", "IMPORT", enqueuer.getToken(), String.valueOf(itemsToAdd.size()));
                 });
     }
 
@@ -400,8 +407,8 @@ public class MusicPlayerService {
             }
         }
 
-        // 🟢 广播切歌事件
-        broadcastEvent("INFO", "SKIP", sessionId, null);
+        //广播切歌事件
+        broadcastEvent("INFO", "SKIP", getUserToken(sessionId), null);
 
         broadcastPlayerState();
         playerLoop();
@@ -417,16 +424,16 @@ public class MusicPlayerService {
             pauseStateChangeTime.set(now);
             log.info("Player paused by {}", operatorName);
             broadcastPlayerState();
-            // 🟢 广播暂停
-            broadcastEvent("INFO", "PAUSE", sessionId, null);
+            // 广播暂停
+            broadcastEvent("INFO", "PAUSE", getUserToken(sessionId), null);
         } else if (isPaused.compareAndSet(true, false)) {
             long pausedDuration = now - pauseStateChangeTime.get();
             totalPausedTimeMillis.addAndGet(pausedDuration);
             pauseStateChangeTime.set(now);
             log.info("Player resumed by {}", operatorName);
             broadcastPlayerState();
-            // 🟢 广播继续
-            broadcastEvent("INFO", "RESUME", sessionId, null);
+            // 广播继续
+            broadcastEvent("INFO", "RESUME", getUserToken(sessionId), null);
         }
     }
 
@@ -447,8 +454,8 @@ public class MusicPlayerService {
         boolean newState = !current;
         log.info("Shuffle mode set to {} by {}", newState, operatorName);
         broadcastPlayerState();
-        // 🟢 广播随机模式
-        broadcastEvent("INFO", "SHUFFLE", sessionId, newState ? "ON" : "OFF");
+        // 广播随机模式
+        broadcastEvent("INFO", "SHUFFLE", getUserToken(sessionId), newState ? "ON" : "OFF");
     }
 
     // --- Helper and Broadcasting methods ---
@@ -478,8 +485,8 @@ public class MusicPlayerService {
         if (removed && target.isPresent()) {
             log.info("Removed song from queue by {}", operatorName);
             broadcastQueueUpdate();
-            // 🟢 广播删除事件
-            broadcastEvent("INFO", "REMOVE", sessionId, target.get().music().name());
+            // 广播删除事件
+            broadcastEvent("INFO", "REMOVE", getUserToken(sessionId), target.get().music().name());
         }
     }
 

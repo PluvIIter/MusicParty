@@ -1,5 +1,3 @@
-// File Path: music-party-web\src\components\CenterConsole.vue
-
 <template>
   <div class="relative w-full h-full flex items-center justify-center overflow-hidden">
 
@@ -110,7 +108,9 @@
         <!-- 点歌人信息 -->
         <div v-if="player.nowPlaying?.enqueuedById" class="absolute -top-4 right-0 text-[10px] font-mono text-medical-400 flex items-center gap-2 z-20 select-none">
           <span>REQ_BY</span>
-          <span class="font-bold text-medical-500 border-b border-medical-300 leading-tight">{{ userStore.resolveName(player.nowPlaying.enqueuedById) }}</span>
+          <span class="font-bold text-medical-500 border-b border-medical-300 leading-tight">
+            {{ userStore.resolveName(player.nowPlaying.enqueuedById, player.nowPlaying.enqueuedByName) }}
+          </span>
         </div>
 
         <!-- 封面本体 -->

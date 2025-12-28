@@ -33,19 +33,30 @@
           <Users class="w-5 h-5" />
         </button>
 
-        <!-- 原有的搜索按钮 -->
+        <!-- 搜索按钮 -->
         <button
             @click="handleSearchClick"
-            class="flex items-center justify-center transition-colors font-bold text-sm
-                       md:px-3 md:py-1 md:bg-medical-100 md:hover:bg-medical-200 md:w-auto md:h-auto md:border-0
-                       w-9 h-9 bg-medical-50 border border-medical-200 text-medical-500 hover:text-medical-900 md:text-medical-800"
-            :class="{'opacity-50 cursor-not-allowed': userStore.isGuest}"
+            class="relative overflow-hidden flex items-center justify-center transition-all duration-300 font-bold text-sm
+                   md:px-4 md:py-1.5
+                   w-9 h-9 md:w-auto md:h-auto border group"
+            :class="[
+                isGuestHighlight
+                    ? 'bg-accent border-accent text-white shadow-md shadow-accent/20'
+                    : 'bg-medical-50 border-medical-200 text-medical-500 hover:text-medical-900 md:bg-medical-100 md:text-medical-800 md:hover:bg-medical-200 md:border-transparent'
+            ]"
         >
-          <!-- 如果是游客，显示锁图标 -->
-          <Lock v-if="userStore.isGuest" class="w-4 h-4 mr-1" />
-          <Search v-else class="w-5 h-5 md:w-4 md:h-4" />
+          <!-- 动态扫描线背景 (仅在高亮模式下显示) -->
+          <div v-if="isGuestHighlight"
+               class="absolute inset-0 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAADCAYAAABS3WWCAAAAE0lEQVQYV2NkYGD4zwABjFAQAwBATgMJy2B8NAAAAABJRU5ErkJggg==')] opacity-20 pointer-events-none animate-scan">
+          </div>
 
-          <span class="hidden md:inline md:ml-2">SEARCH</span>
+          <!-- 图标 -->
+          <Search class="w-5 h-5 md:w-4 md:h-4 relative z-10" />
+
+          <!-- 文字 -->
+          <span class="hidden md:inline md:ml-2 relative z-10">
+              SEARCH
+          </span>
         </button>
         <div class="font-mono text-xs text-medical-500 hidden md:block">{{ currentTime }}</div>
       </div>
@@ -115,7 +126,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { usePlayerStore } from './stores/player';
 import { Search, ListMusic, Users, Lock } from 'lucide-vue-next';
 import dayjs from 'dayjs';
@@ -140,6 +151,7 @@ const isAuthPassed = ref(false);
 const { register } = useToast();
 const mobileUserOpen = ref(false);
 const userStore = useUserStore();
+const hasInteracted = ref(false);
 
 let timeInterval;
 
@@ -147,6 +159,12 @@ const startGame = () => {
     hasStarted.value = true;
     player.connect(); // 连接 WebSocket
 };
+
+// 是否处于“新手引导高亮”状态
+// 条件：是访客 AND 还没点过按钮
+const isGuestHighlight = computed(() => {
+  return userStore.isGuest && !hasInteracted.value;
+});
 
 const toggleMobileQueue = () => {
   mobileQueueOpen.value = !mobileQueueOpen.value;
@@ -170,6 +188,7 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timeInterval));
 
 const handleSearchClick = () => {
+  hasInteracted.value = true;
   if (userStore.isGuest) {
     userStore.showNameModal = true; // 游客点搜索 -> 弹改名窗
   } else {

@@ -147,12 +147,7 @@ public class UserService {
         return usersByToken.values().stream()
                 // 只返回在线用户 (sessionId != null)
                 .filter(u -> u.getSessionId() != null)
-                // 🟢 注意：UserSummary 现在传 Token 还是 SessionId？
-                // 为了保持前端兼容性，我们依然传 sessionId 给前端做高亮匹配
-                // 但这里有个问题：重连后 SessionId 变了，前端列表会闪烁。
-                // 更好的做法是：前端高亮改用 Token 匹配。
-                // 鉴于改动量，我们暂时还是传 sessionId，因为 UserList 是实时刷新的。
-                .map(user -> new UserSummary(user.getSessionId(), user.getName()))
+                .map(user -> new UserSummary(user.getToken(), user.getSessionId(), user.getName()))
                 .toList();
     }
 
