@@ -89,6 +89,8 @@ export const usePlayerStore = defineStore('player', () => {
             connectHeaders: {
                 'user-name': savedName
             },
+            heartbeatIncoming: 10000,
+            heartbeatOutgoing: 10000,
             onConnect: (frame) => {
                 connected.value = true;
 
