@@ -197,6 +197,8 @@ public class MusicPlayerService {
                         if (nowPlaying.compareAndSet(null, newNowPlaying)) {
                             log.info("Now playing: {}", finalPlayableMusic.name());
 
+                            isLoading.set(false);
+
                             // 1. 推送当前播放信息 (前端收到这个才会开始播放)
                             broadcastNowPlaying(newNowPlaying);
 
@@ -289,6 +291,9 @@ public class MusicPlayerService {
                     current.enqueuedById()
             );
         }
+
+        boolean effectiveIsLoading = (current == null) && isLoading.get();
+
         return new PlayerState(
                 infoToSend, // 使用修正后的 info
                 new ArrayList<>(musicQueue),
@@ -297,7 +302,7 @@ public class MusicPlayerService {
                 isPaused.get(),
                 isPaused.get() ? pauseStateChangeTime.get() : 0,
                 System.currentTimeMillis(),
-                isLoading.get()
+                effectiveIsLoading
         );
     }
 
