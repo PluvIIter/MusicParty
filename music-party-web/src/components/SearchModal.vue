@@ -84,7 +84,7 @@
                   <input
                       v-model="searchUserKeyword"
                       @keyup.enter="searchUser"
-                      placeholder="搜索用户名..."
+                      placeholder="搜索用户名查看平台账号歌单..."
                       class="flex-1 min-w-0 bg-white border border-medical-200 p-1 text-sm outline-none focus:border-accent"
                   />
                   <button @click="searchUser" class="bg-medical-200 hover:bg-medical-300 p-1">
