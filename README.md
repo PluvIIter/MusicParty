@@ -1,7 +1,7 @@
 #  Music Party 
 > 一个高颜值的实时在线协作听歌平台。
 >
-> *本项目灵感来源于 [EveElseIf/MusicParty](https://github.com/EveElseIf/MusicParty)，90%代码由AI编写。显然，这篇readme也是*
+> *本项目灵感来源于 [EveElseIf/MusicParty](https://github.com/EveElseIf/MusicParty)，开发过程大量借助AI*
 
 ---
 
@@ -31,7 +31,8 @@
 
 ##  技术栈 (Tech Stack)
 
-**Gemini 3.0**
+**Gemini 3.0（不是）**
+** JAVA **
 
 ---
 
