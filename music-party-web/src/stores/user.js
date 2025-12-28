@@ -1,8 +1,29 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 
+const generateToken = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+let storedToken = localStorage.getItem('mp_user_token');
+if (!storedToken) {
+    storedToken = generateToken();
+    localStorage.setItem('mp_user_token', storedToken);
+}
+const userToken = ref(storedToken);
+
+const storageName = localStorage.getItem('mp_username');
+const currentUser = ref({
+    name: storageName || 'Guest',
+    sessionId: ''
+});
+
 export const useUserStore = defineStore('user', () => {
     const onlineUsers = ref([]);
+
 
     // 🟢 1. 启动时：严格从 LocalStorage 读取，默认值只在这里设定一次
     const storageName = localStorage.getItem('mp_username');
@@ -39,29 +60,16 @@ export const useUserStore = defineStore('user', () => {
     const initUser = (sessionId, serverName) => {
         currentUser.value.sessionId = sessionId;
 
-        const localName = localStorage.getItem('mp_username');
-
-        // A. 本地有名字
-        if (localName) {
-            // 界面上强制显示本地名字，防止闪烁
-            currentUser.value.name = localName;
-            isGuest.value = false;
-
-            // 如果服务端名字和本地不一致，告诉调用者需要同步
-            // 注意：这里我们不保存 serverName 到本地，因为本地才是真理
-            if (serverName && serverName !== localName) {
-                return true; // 需要同步
-            }
-        }
-        // B. 本地没名字（第一次来），接受服务端分配的默认名
-        else if (serverName) {
+        // 如果后端返回的名字和本地不同，说明后端帮我们恢复了老名字，或者名字被占用了被后端改了
+        // 这里我们要以后端为准，因为后端做了去重
+        if (serverName && serverName !== currentUser.value.name) {
+            console.log(`Syncing name from server: ${serverName}`);
             currentUser.value.name = serverName;
-            isGuest.value = true;
-            // 这种情况下不写入 LocalStorage，让用户保持 "未设置" 状态，直到他主动改名
-            // 或者你可以选择写入：localStorage.setItem('mp_username', serverName);
+            localStorage.setItem('mp_username', serverName);
+            // 解锁 Guest
+            if(isGuest.value) isGuest.value = false;
         }
-
-        return false;
+        return false; // 不需要再发 rename 了，后端已经处理好了
     };
 
     const setOnlineUsers = (users) => {
@@ -93,6 +101,7 @@ export const useUserStore = defineStore('user', () => {
         saveName,
         isGuest,
         showNameModal,
-        resolveName
+        resolveName,
+        userToken
     };
 });

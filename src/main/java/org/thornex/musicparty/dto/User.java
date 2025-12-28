@@ -7,13 +7,16 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Data
 public class User {
-    private final String sessionId;
+    private final String token; // 🟢 真正的唯一标识 (UUID)
+    private String sessionId;   // 🟢 当前的 WebSocket 会话 ID (会变)
     private String name;
-    // <platform, accountId> e.g. <"netease", "123456">
+    private long lastActiveTime;
     private final Map<String, String> bindings = new ConcurrentHashMap<>();
 
-    public User(String sessionId) {
+    public User(String token, String sessionId, String name) {
+        this.token = token;
         this.sessionId = sessionId;
-        this.name = "User-" + sessionId.substring(0, 6); // Default name
+        this.name = name;
+        this.lastActiveTime = System.currentTimeMillis();
     }
 }

@@ -1,6 +1,7 @@
 package org.thornex.musicparty.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.thornex.musicparty.dto.User;
@@ -9,64 +10,173 @@ import org.thornex.musicparty.dto.UserSummary;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Slf4j
 public class UserService {
 
-    private final Map<String, User> onlineUsers = new ConcurrentHashMap<>();
+    // 🟢 主存储：Token -> User
+    private final Map<String, User> usersByToken = new ConcurrentHashMap<>();
 
-    public User registerUser(String sessionId, String initialName) {
-        User newUser = new User(sessionId);
+    // 🟢 辅助索引：SessionId -> Token (用于快速查找当前发消息的是谁)
+    private final Map<String, String> sessionToToken = new ConcurrentHashMap<>();
 
-        // 1. 处理名字逻辑
-        if (StringUtils.hasText(initialName)) {
-            // 简单防注入和过长截断
-            String cleanName = initialName.trim();
-            if (cleanName.length() > 20) {
-                cleanName = cleanName.substring(0, 20);
+    private static final long USER_EXPIRATION_MS = 1 * 60 * 60 * 1000L;
+
+    /**
+     * 处理连接
+     * @param sessionId WebSocket Session ID
+     * @param tokenFront 前端传来的 Token (可能为空)
+     * @param nameFront 前端传来的名字 (可能为空)
+     * @return 最终确定的 User 对象
+     */
+    public User handleConnect(String sessionId, String tokenFront, String nameFront) {
+        User user;
+
+        // 1. 尝试找回老用户
+        if (StringUtils.hasText(tokenFront) && usersByToken.containsKey(tokenFront)) {
+            user = usersByToken.get(tokenFront);
+            log.info("User Reconnected: {} (Token: {}) -> New Session: {}", user.getName(), user.getToken(), sessionId);
+
+            // 更新 SessionID
+            // 如果旧Session还在索引里，先移除（防止幽灵连接）
+            if (user.getSessionId() != null) {
+                sessionToToken.remove(user.getSessionId());
             }
-            newUser.setName(cleanName);
-        }
-        // 否则 User 构造函数里默认会生成 "User-XXXXXX"
+            user.setSessionId(sessionId);
 
-        onlineUsers.put(sessionId, newUser);
-        log.info("User Registered: name='{}', session='{}', total online: {}", newUser.getName(), sessionId, onlineUsers.size());
-        return newUser;
+            // 如果前端传了新名字且不为空，顺便更新一下（可选）
+            // 这里我们选择保持后端存储的名字为主，防止被覆盖
+        }
+        // 2. 新用户注册
+        else {
+            // 如果前端没传 Token，或者 Token 无效，生成新的
+            String newToken = StringUtils.hasText(tokenFront) ? tokenFront : UUID.randomUUID().toString();
+            // 确保名字不重复的初始逻辑比较复杂，这里先生成默认名，稍后由 rename 处理
+            String initialName = StringUtils.hasText(nameFront) ? nameFront : "User-" + sessionId.substring(0, 4);
+
+            // 🟢 强制去重：如果初始名字被占用了，加随机后缀
+            initialName = deduplicateName(initialName);
+
+            user = new User(newToken, sessionId, initialName);
+            usersByToken.put(newToken, user);
+            log.info("New User Registered: {} (Token: {})", initialName, newToken);
+        }
+
+        user.setLastActiveTime(System.currentTimeMillis());
+
+        // 建立索引
+        sessionToToken.put(sessionId, user.getToken());
+        return user;
     }
 
     public Optional<User> disconnectUser(String sessionId) {
-        User removedUser = onlineUsers.remove(sessionId);
-        if (removedUser != null) {
-            log.info("User disconnected: {}, total online: {}", removedUser.getName(), onlineUsers.size());
+        String token = sessionToToken.remove(sessionId);
+        if (token == null) return Optional.empty();
+
+        User user = usersByToken.get(token);
+        if (user != null) {
+            // 注意：我们不删除 userByToken，因为用户可能只是刷新页面
+            // 可以做一个定时清理任务（比如 1小时不连才删），或者永久保留直到重启
+            user.setSessionId(null); // 标记离线
+            user.setLastActiveTime(System.currentTimeMillis());
+            log.info("User Offline: {}", user.getName());
+            return Optional.of(user);
         }
-        return Optional.ofNullable(removedUser);
+        return Optional.empty();
+    }
+
+    public Optional<User> getUserBySession(String sessionId) {
+        String token = sessionToToken.get(sessionId);
+        if (token == null) return Optional.empty();
+        return Optional.ofNullable(usersByToken.get(token));
     }
 
     public Optional<User> getUser(String sessionId) {
-        return Optional.ofNullable(onlineUsers.get(sessionId));
+        return getUserBySession(sessionId);
     }
 
+    // 🟢 改名逻辑：增加查重
     public boolean renameUser(String sessionId, String newName) {
-        return getUser(sessionId).map(user -> {
-            log.info("User {} renamed to {}", user.getName(), newName);
-            user.setName(newName);
+        return getUserBySession(sessionId).map(user -> {
+            String rawName = newName.trim();
+            // 使用一个新的变量 finalName，确保它不被修改
+            String finalName = rawName.length() > 20 ? rawName.substring(0, 20) : rawName;
+
+            if (finalName.isEmpty()) return false;
+
+            // 检查是否重名 (排除自己)
+            boolean exists = usersByToken.values().stream()
+                    .anyMatch(u -> u.getName().equalsIgnoreCase(finalName) && !u.getToken().equals(user.getToken()));
+
+            if (exists) {
+                log.warn("Rename failed: {} is already taken.", finalName);
+                return false;
+            }
+
+            log.info("User Renamed: '{}' -> '{}'", user.getName(), finalName);
+            user.setName(finalName);
             return true;
         }).orElse(false);
     }
 
+    // 辅助：名字去重
+    private String deduplicateName(String name) {
+        String finalName = name;
+        int counter = 1;
+        while (isNameTaken(finalName)) {
+            finalName = name + "_" + counter++;
+        }
+        return finalName;
+    }
+
+    private boolean isNameTaken(String name) {
+        return usersByToken.values().stream().anyMatch(u -> u.getName().equalsIgnoreCase(name));
+    }
+
     public boolean bindAccount(String sessionId, String platform, String accountId) {
-        return getUser(sessionId).map(user -> {
-            log.info("User {} bound account for {}: {}", user.getName(), platform, accountId);
+        return getUserBySession(sessionId).map(user -> {
             user.getBindings().put(platform, accountId);
             return true;
         }).orElse(false);
     }
 
     public List<UserSummary> getOnlineUserSummaries() {
-        return onlineUsers.values().stream()
+        return usersByToken.values().stream()
+                // 只返回在线用户 (sessionId != null)
+                .filter(u -> u.getSessionId() != null)
+                // 🟢 注意：UserSummary 现在传 Token 还是 SessionId？
+                // 为了保持前端兼容性，我们依然传 sessionId 给前端做高亮匹配
+                // 但这里有个问题：重连后 SessionId 变了，前端列表会闪烁。
+                // 更好的做法是：前端高亮改用 Token 匹配。
+                // 鉴于改动量，我们暂时还是传 sessionId，因为 UserList 是实时刷新的。
                 .map(user -> new UserSummary(user.getSessionId(), user.getName()))
                 .toList();
+    }
+
+    @Scheduled(fixedRate = 3600000)
+    public void cleanupExpiredUsers() {
+        long now = System.currentTimeMillis();
+        int initialSize = usersByToken.size();
+
+        // removeIf 是线程安全的 (ConcurrentHashMap)
+        usersByToken.entrySet().removeIf(entry -> {
+            User user = entry.getValue();
+            boolean isOffline = user.getSessionId() == null;
+            boolean isExpired = (now - user.getLastActiveTime()) > USER_EXPIRATION_MS;
+
+            if (isOffline && isExpired) {
+                log.debug("Cleaning up expired user: {} (Token: {})", user.getName(), user.getToken());
+                return true; // 删除
+            }
+            return false; // 保留
+        });
+
+        int finalSize = usersByToken.size();
+        if (initialSize != finalSize) {
+            log.info("Cleanup Complete. Removed {} expired users. Current memory users: {}", (initialSize - finalSize), finalSize);
+        }
     }
 }

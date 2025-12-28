@@ -83,11 +83,13 @@ export const usePlayerStore = defineStore('player', () => {
 
     const connect = () => {
         const savedName = localStorage.getItem('mp_username') || 'Guest';
+        const token = userStore.userToken;
 
         const client = new Client({
             brokerURL: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`,
             connectHeaders: {
-                'user-name': savedName
+                'user-name': savedName,
+                'user-token': token
             },
             heartbeatIncoming: 10000,
             heartbeatOutgoing: 10000,
@@ -104,6 +106,17 @@ export const usePlayerStore = defineStore('player', () => {
 
                 client.subscribe('/topic/player/events', (message) => {
                     const event = JSON.parse(message.body);
+
+                    if (event.type === 'ERROR' && event.message.includes('taken')) {
+                        show({
+                            title: 'NAME TAKEN',
+                            message: '该代号已被占用，请更换。',
+                            type: 'error'
+                        });
+                        // 可以在这里把 showNameModal 重新打开
+                        userStore.showNameModal = true;
+                        return;
+                    }
                     // event: { type, action, userId, payload }
                     const msgText = formatEventMessage(event.action, event.userId, event.payload);
 
