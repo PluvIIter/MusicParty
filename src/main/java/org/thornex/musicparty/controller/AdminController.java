@@ -31,8 +31,21 @@ public class AdminController {
 
         if (adminPassword != null && adminPassword.equals(inputPassword)) {
             musicPlayerService.resetSystem();
-            authController.resetRoomPassword();
             return ResponseEntity.ok(Map.of("message", "SYSTEM PURGED"));
+        } else {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
+        }
+    }
+
+    // 🟢 新增：管理员强制修改房间密码
+    @PostMapping("/password")
+    public ResponseEntity<?> setRoomPassword(@RequestBody Map<String, String> body) {
+        String inputAdminPassword = body.get("adminPassword");
+        String newRoomPassword = body.get("roomPassword"); // 空字符串表示无密码
+
+        if (adminPassword != null && adminPassword.equals(inputAdminPassword)) {
+            authController.forceSetPassword(newRoomPassword);
+            return ResponseEntity.ok(Map.of("message", "ROOM PASSWORD UPDATED"));
         } else {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }

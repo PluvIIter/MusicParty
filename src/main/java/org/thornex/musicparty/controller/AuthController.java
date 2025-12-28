@@ -29,6 +29,13 @@ public class AuthController {
         roomPassword.set(null); // 恢复到未初始化状态
     }
 
+    // 🟢 新增：管理员强制设置密码
+    public void forceSetPassword(String newPassword) {
+        // 无论当前状态如何，强制覆写
+        // 如果传入 null，视为 "" (无密码)
+        roomPassword.set(newPassword == null ? "" : newPassword);
+    }
+
     /**
      * 检查房间状态
      * isSetup: 是否已经完成了初始化设置

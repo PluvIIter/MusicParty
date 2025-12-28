@@ -266,6 +266,9 @@ const isLoadingMore = ref(false);
 const bindings = computed(() => userStore.bindings);
 const { success, error, info } = useToast();
 
+const currentCommand = ref('');
+const commandArg = ref('');
+
 // 🟢 移动端视图状态: 'playlists' | 'songs'
 const mobileView = ref('playlists');
 
@@ -276,35 +279,62 @@ const doSearch = async () => {
   const val = keyword.value.trim();
   if(!val) return;
 
-  // 1. 检查是否触发隐藏指令
+  // 1. 检查指令
+  // 🟢 重置指令
   if (!isAdminMode.value && val === '//RESET') {
     isAdminMode.value = true;
-    keyword.value = ''; // 清空输入框以便输入密码
+    currentCommand.value = 'RESET'; // 记录当前指令类型
+    keyword.value = '';
     return;
   }
 
-  // 2. 如果处于 Admin 模式，回车即发送密码
+  // 🟢 修改密码指令: //PASS <new_password>
+  if (!isAdminMode.value && val.startsWith('//PASS ')) {
+    isAdminMode.value = true;
+    currentCommand.value = 'PASS';
+    commandArg.value = val.substring(7); // 提取新密码
+    keyword.value = '';
+    return;
+  }
+
+  // 🟢 公开房间指令: //OPEN
+  if (!isAdminMode.value && val === '//OPEN') {
+    isAdminMode.value = true;
+    currentCommand.value = 'OPEN';
+    keyword.value = '';
+    return;
+  }
+
+  // 2. Admin 模式下回车 = 发送管理员密码
   if (isAdminMode.value) {
+    const adminPwd = val;
+
     try {
-      await axios.post('/api/admin/reset', { password: val });
-      success('SYSTEM PURGED SUCCESSFULLY');
+      if (currentCommand.value === 'RESET') {
+        await axios.post('/api/admin/reset', { password: adminPwd });
+        success('SYSTEM PURGED');
+      }
+      else if (currentCommand.value === 'PASS') {
+        await axios.post('/api/admin/password', {
+          adminPassword: adminPwd,
+          roomPassword: commandArg.value
+        });
+        success('ROOM PASSWORD UPDATED');
+      }
+      else if (currentCommand.value === 'OPEN') {
+        await axios.post('/api/admin/password', {
+          adminPassword: adminPwd,
+          roomPassword: ""
+        });
+        success('ROOM IS NOW PUBLIC');
+      }
       emit('close');
     } catch (e) {
-      // 🟢 修复点：区分错误类型
-      console.error("Reset Error:", e); // 在控制台打印详细错误，方便调试
-
-      if (e.response && e.response.status === 403) {
-        // 只有 403 才是真正的密码错误
-        error('ACCESS DENIED: WRONG PASSWORD');
-      } else {
-        // 其他错误（如 500）说明密码是对的，逻辑跑了，但是后端最后可能报错了
-        // 既然是重置系统，只要跑了大概率队列已经清空了，所以提示警告即可
-        info('SYSTEM RESET COMPLETED');
-        emit('close');
-      }
+      error('ACCESS DENIED');
     } finally {
       isAdminMode.value = false;
       keyword.value = '';
+      currentCommand.value = '';
     }
     return;
   }
