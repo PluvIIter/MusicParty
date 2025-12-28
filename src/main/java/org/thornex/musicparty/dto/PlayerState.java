@@ -9,5 +9,6 @@ public record PlayerState(
         List<UserSummary> onlineUsers,
         boolean isPaused, // NEW: True if the player is currently paused
         long pauseTimeMillis,
-        long serverTimestamp
+        long serverTimestamp,
+        boolean isLoading
 ) {}

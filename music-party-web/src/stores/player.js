@@ -22,6 +22,7 @@ export const usePlayerStore = defineStore('player', () => {
     const connected = ref(false);
     const lastControlTime = ref(0);
     const LOCAL_COOLDOWN = 800; // 本地防抖 800ms (略小于后端，提升手感)
+    const isLoading = ref(false);
 
     // 🟢 辅助：权限检查
     const requireAuth = () => {
@@ -161,6 +162,7 @@ export const usePlayerStore = defineStore('player', () => {
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
         pauseTimeMillis.value = state.pauseTimeMillis || 0;
+        isLoading.value = state.isLoading || false;
         if (state.serverTimestamp) {
             serverTimeOffset.value = state.serverTimestamp - Date.now();
         }
@@ -243,6 +245,7 @@ export const usePlayerStore = defineStore('player', () => {
         bindAccount,
         renameUser,
         lyricText,
-        requireAuth
+        requireAuth,
+        isLoading
     };
 });

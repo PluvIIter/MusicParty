@@ -50,6 +50,7 @@
 
         <!-- 时间显示 -->
         <div class="hidden md:block font-mono text-xs text-medical-800/60 flex-shrink-0 ml-2">
+           <span v-if="player.isLoading" class="text-accent animate-pulse">SYNCING SERVER...</span>
            <span v-if="isBuffering" class="animate-pulse text-accent">BUFFERING...</span>
            <span v-else>{{ formatTime(localProgress) }} / {{ formatTime(nowPlaying?.music.duration || 0) }}</span>
         </div>

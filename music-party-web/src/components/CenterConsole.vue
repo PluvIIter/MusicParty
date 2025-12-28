@@ -117,6 +117,16 @@
         <div class="relative w-64 h-64 md:w-72 md:h-72 bg-medical-50 chamfer-br border border-white shadow-2xl flex items-center justify-center overflow-hidden transition-transform duration-700"
              :class="player.isPaused ? 'scale-95 grayscale' : 'scale-100'"
         >
+
+          <div
+              v-if="player.isLoading"
+              class="absolute inset-0 z-50 bg-medical-900/50 backdrop-blur-sm flex flex-col items-center justify-center text-white"
+          >
+            <!-- 一个旋转的方块加载动画 -->
+            <div class="w-12 h-12 border-4 border-white/30 border-t-white animate-spin mb-4"></div>
+            <span class="font-mono text-xs animate-pulse tracking-widest">FETCHING_AUDIO...</span>
+          </div>
+
           <img
               v-if="currentCover"
               :src="currentCover"

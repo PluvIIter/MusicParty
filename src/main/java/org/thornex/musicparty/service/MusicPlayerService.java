@@ -37,6 +37,8 @@ public class MusicPlayerService {
     private final AtomicLong pauseStateChangeTime = new AtomicLong(0); // Time when the last pause/resume occurred
     private final AtomicLong totalPausedTimeMillis = new AtomicLong(0); // Cumulative paused time for the current song
 
+    private final AtomicBoolean isLoading = new AtomicBoolean(false);
+
     private final List<Music> playHistory = Collections.synchronizedList(new LinkedList<>());
     private static final int HISTORY_LIMIT = 50;
 
@@ -144,20 +146,23 @@ public class MusicPlayerService {
     }
 
     private synchronized void playNextInQueue() {
-        // Ensure only one thread modifies the queue and nowPlaying state at a time
-        if (nowPlaying.get() != null || musicQueue.isEmpty()) {
-            return; // Already playing or queue is empty
+        if (nowPlaying.get() != null || musicQueue.isEmpty() || isLoading.get()) {
+            return;
+        }
+
+        isLoading.set(true);
+        broadcastPlayerState();
+
+        MusicQueueItem nextItem = getNextMusicFromQueue();
+        if (nextItem == null) {
+            broadcastNowPlaying(null);
+            broadcastPlayerState();
+            isLoading.set(false); // 🟢 队列为空，解锁
+            return;
         }
 
         // NEW: Reset pause state for the new song
         resetPauseState();
-
-        MusicQueueItem nextItem = getNextMusicFromQueue();
-        if (nextItem == null) {
-            broadcastNowPlaying(null); // Ensure clients know nothing is playing
-            broadcastPlayerState();
-            return;
-        }
 
         log.info("Attempting to play next song: {}", nextItem.music().name());
 
@@ -166,38 +171,43 @@ public class MusicPlayerService {
                 .doOnSuccess(data -> log.info("成功获取播放链接: {}", data.url()))
                 .doOnError(e -> {
                     log.error("获取播放链接失败，原因: ", e); // 【关键】把异常堆栈打印出来
+                    isLoading.set(false);
                     broadcastQueueUpdate();
                     playNextInQueue();
                 })
                 .subscribe(playableMusic -> {
                     PlayableMusic finalPlayableMusic = playableMusic;
-                    if (playableMusic.needsProxy()) {
-                        musicProxyService.startProxy(playableMusic.url());
-                        // Rewrite the URL to point to our proxy
-                        finalPlayableMusic = new PlayableMusic(
-                                playableMusic.id(), playableMusic.name(), playableMusic.artists(),
-                                playableMusic.duration(), playableMusic.platform(),
-                                "/proxy/stream", // The static proxy URL
-                                playableMusic.coverUrl(), true
-                        );
-                    }
+                    try {
+                        if (playableMusic.needsProxy()) {
+                            musicProxyService.startProxy(playableMusic.url());
+                            // Rewrite the URL to point to our proxy
+                            finalPlayableMusic = new PlayableMusic(
+                                    playableMusic.id(), playableMusic.name(), playableMusic.artists(),
+                                    playableMusic.duration(), playableMusic.platform(),
+                                    "/proxy/stream", // The static proxy URL
+                                    playableMusic.coverUrl(), true
+                            );
+                        }
 
-                    NowPlayingInfo newNowPlaying = new NowPlayingInfo(
-                            finalPlayableMusic,
-                            Instant.now().toEpochMilli(),
-                            nextItem.enqueuedBy().sessionId());
+                        NowPlayingInfo newNowPlaying = new NowPlayingInfo(
+                                finalPlayableMusic,
+                                Instant.now().toEpochMilli(),
+                                nextItem.enqueuedBy().sessionId());
 
-                    if (nowPlaying.compareAndSet(null, newNowPlaying)) {
-                        log.info("Now playing: {}", finalPlayableMusic.name());
+                        if (nowPlaying.compareAndSet(null, newNowPlaying)) {
+                            log.info("Now playing: {}", finalPlayableMusic.name());
 
-                        // 1. 推送当前播放信息 (前端收到这个才会开始播放)
-                        broadcastNowPlaying(newNowPlaying);
+                            // 1. 推送当前播放信息 (前端收到这个才会开始播放)
+                            broadcastNowPlaying(newNowPlaying);
 
-                        // 2. 推送最新状态 (包含时间戳等)
-                        broadcastPlayerState();
+                            // 2. 推送最新状态 (包含时间戳等)
+                            broadcastPlayerState();
 
-                        // 3. 推送队列更新 (因为歌曲从队列移出了)
-                        broadcastQueueUpdate();
+                            // 3. 推送队列更新 (因为歌曲从队列移出了)
+                            broadcastQueueUpdate();
+                        }
+                    } finally {
+                        isLoading.set(false);
                     }
                 });
     }
@@ -286,7 +296,8 @@ public class MusicPlayerService {
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
                 isPaused.get() ? pauseStateChangeTime.get() : 0,
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                isLoading.get()
         );
     }
 
@@ -526,6 +537,8 @@ public class MusicPlayerService {
         broadcastPlayerState();
         broadcastQueueUpdate();
         broadcastNowPlaying(null);
+
+        isLoading.set(false);
 
         log.warn("System reset complete.");
         broadcastEvent("ERROR", "RESET", "ADMIN", null);
