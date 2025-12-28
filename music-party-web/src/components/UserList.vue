@@ -11,13 +11,13 @@
       <!-- 自己 -->
       <div
           class="flex items-center gap-3 pb-3 border-b border-medical-200 border-dashed transition-all duration-300 p-2 -mx-2 rounded"
-          :class="isEnqueuer(me.name) ? 'bg-accent/10 border-accent/30 shadow-sm' : ''"
+          :class="isEnqueuerById(me.sessionId) ? 'bg-accent/10 border-accent/30 shadow-sm' : ''"
       >
         <div
             class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors"
-            :class="isEnqueuer(me.name) ? 'bg-accent text-white' : 'bg-medical-900 text-white'"
+            :class="isEnqueuerById(me.sessionId) ? 'bg-accent text-white' : 'bg-medical-900 text-white'"
         >
-          <span v-if="isEnqueuer(me.name)">DJ</span>
+          <span v-if="isEnqueuerById(me.sessionId)">DJ</span>
           <span v-else>ME</span>
         </div>
         <div class="flex-1 min-w-0">
@@ -30,7 +30,7 @@
         </div>
 
         <!-- 🟢 修改：使用 CSS 类控制动画 -->
-        <div v-if="isEnqueuer(me.name)" class="flex gap-0.5 items-end h-4">
+        <div v-if="isEnqueuerById(me.sessionId)" class="flex gap-0.5 items-end h-4">
           <div class="bar bar-1"></div>
           <div class="bar bar-2"></div>
           <div class="bar bar-3"></div>
@@ -43,24 +43,24 @@
           v-for="u in others"
           :key="u.sessionId"
           class="flex items-center gap-3 transition-all duration-300 p-2 -mx-2 rounded"
-          :class="isEnqueuer(u.name) ? 'opacity-100 bg-accent/5' : 'opacity-60'"
+          :class="isEnqueuerById(u.sessionId) ? 'opacity-100 bg-accent/5' : 'opacity-60'"
       >
         <div
             class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors"
-            :class="isEnqueuer(u.name) ? 'bg-accent text-white' : 'bg-medical-200 text-medical-500'"
+            :class="isEnqueuerById(u.sessionId) ? 'bg-accent text-white' : 'bg-medical-200 text-medical-500'"
         >
-          <span v-if="isEnqueuer(u.name)">DJ</span>
+          <span v-if="isEnqueuerById(u.sessionId)">DJ</span>
           <span v-else>OP</span>
         </div>
         <div
             class="text-sm font-bold truncate flex-1"
-            :class="isEnqueuer(u.name) ? 'text-accent' : ''"
+            :class="isEnqueuerById(u.sessionId) ? 'text-accent' : ''"
         >
           {{ u.name }}
         </div>
 
         <!-- 🟢 修改：使用 CSS 类控制动画 -->
-        <div v-if="isEnqueuer(u.name)" class="flex gap-0.5 items-end h-4">
+        <div v-if="isEnqueuerById(u.sessionId)" class="flex gap-0.5 items-end h-4">
           <div class="bar bar-1"></div>
           <div class="bar bar-2"></div>
           <div class="bar bar-3"></div>
@@ -92,9 +92,10 @@ const doRename = () => {
   }
 };
 
-const isEnqueuer = (name) => {
+const isEnqueuerById = (sessionId) => {
   if (!playerStore.nowPlaying) return false;
-  return playerStore.nowPlaying.enqueuedBy === name;
+  // 后端 NowPlayingInfo 现在存的是 enqueuedById (SessionID)
+  return playerStore.nowPlaying.enqueuedById === sessionId;
 };
 </script>
 

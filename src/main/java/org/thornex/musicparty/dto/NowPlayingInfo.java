@@ -5,5 +5,5 @@ import java.util.List;
 public record NowPlayingInfo(
         PlayableMusic music,
         long startTimeMillis,
-        String enqueuedBy
+        String enqueuedById
 ) {}

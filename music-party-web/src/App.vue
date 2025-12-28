@@ -35,12 +35,16 @@
 
         <!-- 原有的搜索按钮 -->
         <button
-            @click="showSearch = true"
+            @click="handleSearchClick"
             class="flex items-center justify-center transition-colors font-bold text-sm
                        md:px-3 md:py-1 md:bg-medical-100 md:hover:bg-medical-200 md:w-auto md:h-auto md:border-0
                        w-9 h-9 bg-medical-50 border border-medical-200 text-medical-500 hover:text-medical-900 md:text-medical-800"
+            :class="{'opacity-50 cursor-not-allowed': userStore.isGuest}"
         >
-          <Search class="w-5 h-5 md:w-4 md:h-4" /> <!-- 图标大小微调 -->
+          <!-- 如果是游客，显示锁图标 -->
+          <Lock v-if="userStore.isGuest" class="w-4 h-4 mr-1" />
+          <Search v-else class="w-5 h-5 md:w-4 md:h-4" />
+
           <span class="hidden md:inline md:ml-2">SEARCH</span>
         </button>
         <div class="font-mono text-xs text-medical-500 hidden md:block">{{ currentTime }}</div>
@@ -101,13 +105,19 @@
     <!-- 🟢 新增：Toast 挂载点 -->
     <ToastNotification ref="toastInstance" />
 
+    <!-- 强制改名弹窗 -->
+    <NamePromptModal />
+
+    <!-- Toast 挂载点 -->
+    <ToastNotification ref="toastInstance" />
+
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
 import { usePlayerStore } from './stores/player';
-import { Search, ListMusic, Users } from 'lucide-vue-next';
+import { Search, ListMusic, Users, Lock } from 'lucide-vue-next';
 import dayjs from 'dayjs';
 import UserList from './components/UserList.vue';
 import QueueList from './components/QueueList.vue';
@@ -117,6 +127,8 @@ import CenterConsole from './components/CenterConsole.vue';
 import ToastNotification from './components/ToastNotification.vue'; // 导入组件
 import { useToast } from './composables/useToast'; // 导入钩子
 import AuthOverlay from './components/AuthOverlay.vue';
+import NamePromptModal from './components/NamePromptModal.vue'; // 🟢 [新增]
+import { useUserStore } from './stores/user'; // 🟢 [新增] 确保导入了 userStore
 
 const player = usePlayerStore();
 const hasStarted = ref(false);
@@ -127,6 +139,7 @@ const toastInstance = ref(null);
 const isAuthPassed = ref(false);
 const { register } = useToast();
 const mobileUserOpen = ref(false);
+const userStore = useUserStore();
 
 let timeInterval;
 
@@ -155,4 +168,12 @@ onMounted(() => {
 });
 
 onUnmounted(() => clearInterval(timeInterval));
+
+const handleSearchClick = () => {
+  if (userStore.isGuest) {
+    userStore.showNameModal = true; // 游客点搜索 -> 弹改名窗
+  } else {
+    showSearch.value = true; // 正常用户 -> 弹搜索窗
+  }
+};
 </script>

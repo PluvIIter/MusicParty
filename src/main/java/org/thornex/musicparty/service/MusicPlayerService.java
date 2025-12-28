@@ -124,7 +124,7 @@ public class MusicPlayerService {
         log.info("Auto-playing from history: {}", randomSong.name());
 
         // 构造一个“系统”用户
-        UserSummary systemUser = new UserSummary("SYSTEM", "AutoDJ");
+        UserSummary systemUser = new UserSummary("ADMIN", "AutoDJ");
 
         // 构造队列项
         MusicQueueItem item = new MusicQueueItem(
@@ -185,7 +185,7 @@ public class MusicPlayerService {
                     NowPlayingInfo newNowPlaying = new NowPlayingInfo(
                             finalPlayableMusic,
                             Instant.now().toEpochMilli(),
-                            nextItem.enqueuedBy().name());
+                            nextItem.enqueuedBy().sessionId());
 
                     if (nowPlaying.compareAndSet(null, newNowPlaying)) {
                         log.info("Now playing: {}", finalPlayableMusic.name());
@@ -276,7 +276,7 @@ public class MusicPlayerService {
             infoToSend = new NowPlayingInfo(
                     current.music(),
                     effectiveStartTime,
-                    current.enqueuedBy()
+                    current.enqueuedById()
             );
         }
         return new PlayerState(
@@ -314,7 +314,7 @@ public class MusicPlayerService {
 
                     broadcastQueueUpdate();
                     // 🟢 广播添加成功事件
-                    broadcastEvent("SUCCESS", enqueuer.getName() + " 添加了: " + music.name(), enqueuer.getName());
+                    broadcastEvent("SUCCESS", "ADD", sessionId, music.name());
                 });
     }
 
@@ -335,12 +335,11 @@ public class MusicPlayerService {
 
                     broadcastQueueUpdate();
                     // 🟢 广播批量添加事件
-                    broadcastEvent("SUCCESS", operatorName + " 导入了歌单 (" + itemsToAdd.size() + " 首)", operatorName);
+                    broadcastEvent("SUCCESS", "IMPORT", sessionId, String.valueOf(itemsToAdd.size()));
                 });
     }
 
     public synchronized void topSong(String queueId, String sessionId) {
-        String operatorName = getUserName(sessionId);
 
         Optional<MusicQueueItem> itemToTop = musicQueue.stream()
                 .filter(item -> item.queueId().equals(queueId))
@@ -358,28 +357,25 @@ public class MusicPlayerService {
             log.info("Song topped: {}", item.music().name());
             broadcastQueueUpdate();
             // 🟢 广播置顶事件
-            broadcastEvent("INFO", operatorName + " 置顶了: " + item.music().name(), operatorName);
+            broadcastEvent("INFO", "TOP", sessionId, item.music().name());
         }
     }
 
     // 🟢 辅助方法：检查冷却时间
-    private boolean isRateLimited(String operatorName) {
+    private boolean isRateLimited(String userId) {
         long now = System.currentTimeMillis();
         long last = lastControlTimestamp.get();
         if (now - last < GLOBAL_COOLDOWN_MS) {
-            log.warn("Action rate limited for user: {}", operatorName);
+            log.warn("Action rate limited for user: {}", userId);
             // 广播警告
-            broadcastEvent("ERROR", "系统冷却中，请勿频繁操作", operatorName);
-            return true;
+            broadcastEvent("ERROR", "RATE_LIMIT", userId, null);            return true;
         }
         lastControlTimestamp.set(now);
         return false;
     }
 
     public void skipToNext(String sessionId) {
-        String operatorName = getUserName(sessionId);
-
-        if (isRateLimited(operatorName)) return;
+        if (isRateLimited(sessionId)) return;
 
         NowPlayingInfo current = nowPlaying.getAndSet(null);
         if (current != null) {
@@ -389,17 +385,16 @@ public class MusicPlayerService {
         }
 
         // 🟢 广播切歌事件
-        broadcastEvent("INFO", operatorName + " 切到了下一首", operatorName);
+        broadcastEvent("INFO", "SKIP", sessionId, null);
 
         broadcastPlayerState();
         playerLoop();
     }
 
     public void togglePause(String sessionId) {
-        String operatorName = getUserName(sessionId);
         if (nowPlaying.get() == null) return;
-
-        if (isRateLimited(operatorName)) return;
+        if (isRateLimited(sessionId)) return;
+        String operatorName = getUserName(sessionId);
 
         long now = Instant.now().toEpochMilli();
         if (isPaused.compareAndSet(false, true)) {
@@ -407,7 +402,7 @@ public class MusicPlayerService {
             log.info("Player paused by {}", operatorName);
             broadcastPlayerState();
             // 🟢 广播暂停
-            broadcastEvent("INFO", operatorName + " 暂停了播放", operatorName);
+            broadcastEvent("INFO", "PAUSE", sessionId, null);
         } else if (isPaused.compareAndSet(true, false)) {
             long pausedDuration = now - pauseStateChangeTime.get();
             totalPausedTimeMillis.addAndGet(pausedDuration);
@@ -415,7 +410,7 @@ public class MusicPlayerService {
             log.info("Player resumed by {}", operatorName);
             broadcastPlayerState();
             // 🟢 广播继续
-            broadcastEvent("INFO", operatorName + " 继续了播放", operatorName);
+            broadcastEvent("INFO", "RESUME", sessionId, null);
         }
     }
 
@@ -427,8 +422,8 @@ public class MusicPlayerService {
 
 
     public void toggleShuffle(String sessionId) {
+        if (isRateLimited(sessionId)) return;
         String operatorName = getUserName(sessionId);
-        if (isRateLimited(operatorName)) return;
         boolean current;
         do {
             current = isShuffle.get();
@@ -437,7 +432,7 @@ public class MusicPlayerService {
         log.info("Shuffle mode set to {} by {}", newState, operatorName);
         broadcastPlayerState();
         // 🟢 广播随机模式
-        broadcastEvent("INFO", operatorName + (newState ? " 开启了随机播放" : " 关闭了随机播放"), operatorName);
+        broadcastEvent("INFO", "SHUFFLE", sessionId, newState ? "ON" : "OFF");
     }
 
     // --- Helper and Broadcasting methods ---
@@ -468,7 +463,7 @@ public class MusicPlayerService {
             log.info("Removed song from queue by {}", operatorName);
             broadcastQueueUpdate();
             // 🟢 广播删除事件
-            broadcastEvent("INFO", operatorName + " 移除了: " + target.get().music().name(), operatorName);
+            broadcastEvent("INFO", "REMOVE", sessionId, target.get().music().name());
         }
     }
 
@@ -502,8 +497,8 @@ public class MusicPlayerService {
     }
 
     // 🟢 新增：广播通用事件
-    private void broadcastEvent(String type, String message, String user) {
-        messagingTemplate.convertAndSend("/topic/player/events", new PlayerEvent(type, message, user));
+    private void broadcastEvent(String type, String action, String userId, String payload) {
+        messagingTemplate.convertAndSend("/topic/player/events", new PlayerEvent(type, action, userId, payload));
     }
 
     public void resetSystem() {
@@ -533,6 +528,6 @@ public class MusicPlayerService {
         broadcastNowPlaying(null);
 
         log.warn("System reset complete.");
-        broadcastEvent("ERROR", "⚠️ 系统已被管理员重置", "ADMIN");
+        broadcastEvent("ERROR", "RESET", "ADMIN", null);
     }
 }

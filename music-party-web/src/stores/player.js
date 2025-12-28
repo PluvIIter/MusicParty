@@ -23,6 +23,33 @@ export const usePlayerStore = defineStore('player', () => {
     const lastControlTime = ref(0);
     const LOCAL_COOLDOWN = 800; // 本地防抖 800ms (略小于后端，提升手感)
 
+    // 🟢 辅助：权限检查
+    const requireAuth = () => {
+        if (userStore.isGuest) {
+            userStore.showNameModal = true; // 唤起弹窗
+            return false;
+        }
+        return true;
+    };
+
+    // 🟢 辅助：构建文案
+    const formatEventMessage = (action, userId, payload) => {
+        const userName = userStore.resolveName(userId);
+        switch (action) {
+            case 'SKIP': return `${userName} 切到了下一首`;
+            case 'PAUSE': return `${userName} 暂停了播放`;
+            case 'RESUME': return `${userName} 继续了播放`;
+            case 'ADD': return `${userName} 添加了: ${payload}`;
+            case 'IMPORT': return `${userName} 导入了歌单 (${payload}首)`;
+            case 'TOP': return `${userName} 置顶了: ${payload}`;
+            case 'REMOVE': return `${userName} 移除了: ${payload}`;
+            case 'SHUFFLE': return `${userName} ${payload === 'ON' ? '开启' : '关闭'}了随机播放`;
+            case 'RESET': return `系统已被重置`;
+            default: return `${userName} 执行了操作`;
+        }
+    };
+
+
     // ... (getCurrentProgress 不变)
     const getCurrentProgress = () => {
         if (!nowPlaying.value) return 0;
@@ -38,19 +65,20 @@ export const usePlayerStore = defineStore('player', () => {
         }
     };
 
-    // 🟢 辅助函数：根据后端消息内容推断合适的标题
-    // 后端消息格式如："ThorNex 切到了下一首", "ThorNex 添加了: SongName"
-    const deriveTitle = (msg) => {
-        if (msg.includes("切到了")) return "TRACK SWITCHED";
-        if (msg.includes("添加了")) return "ADDED TO QUEUE";
-        if (msg.includes("导入了")) return "PLAYLIST IMPORT";
-        if (msg.includes("暂停了")) return "PLAYER PAUSED";
-        if (msg.includes("继续了")) return "PLAYER RESUMED";
-        if (msg.includes("随机播放")) return "SHUFFLE MODE";
-        if (msg.includes("置顶了")) return "PRIORITY UPDATE";
-        if (msg.includes("移除了")) return "QUEUE REMOVAL";
-        if (msg.includes("重置")) return "SYSTEM ALERT";
-        return "SYSTEM NOTICE";
+    // 🟢 辅助：构建标题
+    const deriveTitle = (action) => {
+        const map = {
+            'SKIP': 'TRACK SWITCHED',
+            'ADD': 'ADDED TO QUEUE',
+            'IMPORT': 'PLAYLIST IMPORT',
+            'PAUSE': 'PLAYER PAUSED',
+            'RESUME': 'PLAYER RESUMED',
+            'SHUFFLE': 'SHUFFLE MODE',
+            'TOP': 'PRIORITY UPDATE',
+            'REMOVE': 'QUEUE REMOVAL',
+            'RESET': 'SYSTEM ALERT'
+        };
+        return map[action] || 'SYSTEM NOTICE';
     };
 
     const connect = () => {
@@ -72,17 +100,14 @@ export const usePlayerStore = defineStore('player', () => {
                     }
                 });
 
-                // 🟢 核心修改：优化 Toast 显示逻辑
                 client.subscribe('/topic/player/events', (message) => {
                     const event = JSON.parse(message.body);
-                    // event 结构: { type: "SUCCESS"|"INFO"|"ERROR", message: "UserX 做了什么...", user: "UserX" }
+                    // event: { type, action, userId, payload }
+                    const msgText = formatEventMessage(event.action, event.userId, event.payload);
 
                     show({
-                        // 1. 标题：根据内容推断操作类型（全大写，更有工业感）
-                        title: deriveTitle(event.message),
-                        // 2. 内容：保持后端发来的完整描述（包含用户名）
-                        message: event.message,
-                        // 3. 类型：转换为小写适配组件
+                        title: deriveTitle(event.action),
+                        message: msgText,
                         type: event.type.toLowerCase(),
                         duration: 3000
                     });
@@ -115,7 +140,6 @@ export const usePlayerStore = defineStore('player', () => {
         stompClient.value = client;
     };
 
-    // ... (handleStateUpdate, Actions 等保持不变，省略以节省篇幅)
     const handleStateUpdate = (state) => {
         nowPlaying.value = state.nowPlaying;
         queue.value = state.queue;
@@ -148,18 +172,26 @@ export const usePlayerStore = defineStore('player', () => {
         return true;
     };
     const playNext = () => {
-        if(checkCooldown()) sendCommand('/app/control/next');
+        if(requireAuth() && checkCooldown()) sendCommand('/app/control/next');
     }
     const togglePause = () => {
-        if(checkCooldown()) sendCommand('/app/control/toggle-pause');
+        if(requireAuth() && checkCooldown()) sendCommand('/app/control/toggle-pause');
     }
     const toggleShuffle = () => {
-        if(checkCooldown()) sendCommand('/app/control/toggle-shuffle');
+        if(requireAuth() && checkCooldown()) sendCommand('/app/control/toggle-shuffle');
     }
-    const enqueue = (platform, musicId) => sendCommand('/app/enqueue', { platform, musicId });
-    const enqueuePlaylist = (platform, playlistId) => sendCommand('/app/enqueue/playlist', { platform, playlistId });
-    const topSong = (queueId) => sendCommand('/app/queue/top', { queueId });
-    const removeSong = (queueId) => sendCommand('/app/queue/remove', { queueId });
+    const enqueue = (platform, musicId) => {
+        if(requireAuth()) sendCommand('/app/enqueue', { platform, musicId });
+    }
+    const enqueuePlaylist = (platform, playlistId) => {
+        if(requireAuth()) sendCommand('/app/enqueue/playlist', { platform, playlistId });
+    }
+    const topSong = (queueId) => {
+        if(requireAuth()) sendCommand('/app/queue/top', { queueId });
+    }
+    const removeSong = (queueId) => {
+        if(requireAuth()) sendCommand('/app/queue/remove', { queueId });
+    }
     const bindAccount = (platform, accountId) => {
         sendCommand('/app/user/bind', { platform, accountId });
         userStore.updateBinding(platform, accountId);
@@ -195,6 +227,7 @@ export const usePlayerStore = defineStore('player', () => {
         removeSong,
         bindAccount,
         renameUser,
-        lyricText
+        lyricText,
+        requireAuth
     };
 });

@@ -108,9 +108,9 @@
     <div class="relative z-30 flex items-center justify-center pointer-events-auto">
       <div class="relative">
         <!-- 点歌人信息 -->
-        <div v-if="player.nowPlaying?.enqueuedBy" class="absolute -top-4 right-0 text-[10px] font-mono text-medical-400 flex items-center gap-2 z-20 select-none">
+        <div v-if="player.nowPlaying?.enqueuedById" class="absolute -top-4 right-0 text-[10px] font-mono text-medical-400 flex items-center gap-2 z-20 select-none">
           <span>REQ_BY</span>
-          <span class="font-bold text-medical-500 border-b border-medical-300 leading-tight">{{ player.nowPlaying.enqueuedBy }}</span>
+          <span class="font-bold text-medical-500 border-b border-medical-300 leading-tight">{{ userStore.resolveName(player.nowPlaying.enqueuedById) }}</span>
         </div>
 
         <!-- 封面本体 -->
@@ -142,7 +142,9 @@
 import {ref, onMounted, onUnmounted, computed, watch} from 'vue';
 import {usePlayerStore} from '../stores/player';
 import {useWindowSize} from '@vueuse/core';
+import { useUserStore } from '../stores/user'; // 🟢 引入 userStore
 
+const userStore = useUserStore();
 const player = usePlayerStore();
 const canvasRef = ref(null);
 const currentCover = computed(() => player.nowPlaying?.music.coverUrl);

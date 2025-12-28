@@ -21,12 +21,14 @@
                 <div class="text-sm font-bold text-medical-800 truncate">{{ item.music.name }}</div>
                 <div class="flex justify-between items-center">
                    <div class="text-xs text-medical-500 truncate">{{ item.music.artists[0] }}</div>
-                   <div class="text-[10px] text-medical-300 bg-medical-50 px-1 border border-medical-100">{{ item.enqueuedBy.name }}</div>
+                  <div class="text-[10px] text-medical-300 bg-medical-50 px-1 border border-medical-100">
+                    {{ userStore.resolveName(item.enqueuedBy.sessionId, item.enqueuedBy.name) }}
+                  </div>
                 </div>
             </div>
 
             <!-- 操作遮罩 -->
-            <div class="absolute inset-y-0 right-0 bg-white/90 px-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div v-if="!userStore.isGuest" class="absolute inset-y-0 right-0 bg-white/90 px-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button @click="player.topSong(item.queueId)" title="Top" class="p-1 hover:text-accent"><ArrowUpToLine class="w-4 h-4"/></button>
                 <button @click="player.removeSong(item.queueId)" title="Remove" class="p-1 hover:text-red-500"><Trash2 class="w-4 h-4"/></button>
             </div>
@@ -42,7 +44,9 @@
 import { computed } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { Trash2, ArrowUpToLine } from 'lucide-vue-next';
+import { useUserStore } from '../stores/user';
 
 const player = usePlayerStore();
 const queue = computed(() => player.queue);
+const userStore = useUserStore();
 </script>
