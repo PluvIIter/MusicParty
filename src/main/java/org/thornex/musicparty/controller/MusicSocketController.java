@@ -126,7 +126,7 @@ public class MusicSocketController {
     }
 
     // 订阅时获取历史记录
-    @SubscribeMapping("/topic/chat/history")
+    @SubscribeMapping("/chat/history")
     public List<ChatMessage> getChatHistory() {
         return chatService.getHistory();
     }

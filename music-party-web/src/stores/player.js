@@ -157,7 +157,7 @@ export const usePlayerStore = defineStore('player', () => {
 
                 // 订阅并获取历史记录 (这是 SubscribeMapping，订阅即返回一次)
                 // 注意：这里返回的是数组，我们需要批量替换或添加
-                client.subscribe('/topic/chat/history', (message) => {
+                client.subscribe('/app/chat/history', (message) => {
                     const history = JSON.parse(message.body);
                     chatStore.setHistory(history);
                 });
