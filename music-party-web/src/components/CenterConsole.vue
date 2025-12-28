@@ -260,7 +260,7 @@ const loop = () => {
     const targetWidthScale = isPlaying ? 1.0 : 0.3;
 
     // 3. 执行线性插值 (0.05 是平滑系数，越小越慢)
-    smoothAlpha += (targetAlpha - smoothAlpha) * 0.05;
+    smoothAlpha += (targetAlpha - smoothAlpha) * 0.03;
     smoothWidthScale += (targetWidthScale - smoothWidthScale) * 0.05;
 
 

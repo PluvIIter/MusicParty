@@ -12,7 +12,7 @@
       <!-- 头部 -->
       <div class="p-4 md:p-6 border-b border-medical-200 bg-white flex-shrink-0">
         <h2 class="text-xl md:text-2xl font-bold font-mono mb-4 text-medical-900 flex items-center gap-2">
-          <Search class="w-5 h-5 text-accent"/> RESOURCE_SEARCH
+          <Search class="w-5 h-5 text-accent"/> SEARCH
         </h2>
 
         <!-- 平台切换 TAB -->
@@ -40,7 +40,7 @@
           <input
               v-model="keyword"
               @keyup.enter="doSearch"
-              :placeholder="isAdminMode ? '!!!ENTER ADMIN PASSWORD!!!' : 'INPUT KEYWORDS OR ID...'"
+              :placeholder="isAdminMode ? '!!!输入管理员密码!!!' : '搜索音乐...'"
               class="flex-1 border p-3 outline-none font-mono transition-colors duration-300"
               :class="isAdminMode
                   ? 'bg-red-50 border-red-500 text-red-600 placeholder-red-300 focus:border-red-600'
@@ -51,7 +51,7 @@
               class="text-white px-3 md:px-6 py-2 font-bold transition-colors text-xs md:text-base flex-shrink-0"
               :class="isAdminMode ? 'bg-red-600 hover:bg-red-700' : 'bg-accent hover:bg-accent-hover'"
           >
-            {{ isAdminMode ? 'N U K E' : 'EXECUTE' }}
+            {{ isAdminMode ? 'NUKE' : 'SEARCH' }}
           </button>
         </div>
       </div>
@@ -84,7 +84,7 @@
                   <input
                       v-model="searchUserKeyword"
                       @keyup.enter="searchUser"
-                      placeholder="Search Username..."
+                      placeholder="搜索用户名..."
                       class="flex-1 min-w-0 bg-white border border-medical-200 p-1 text-sm outline-none focus:border-accent"
                   />
                   <button @click="searchUser" class="bg-medical-200 hover:bg-medical-300 p-1">

@@ -47,7 +47,7 @@
             }}
           </p>
         </div>
-        
+
         <!-- 时间显示 -->
         <div class="hidden md:block font-mono text-xs text-medical-800/60 flex-shrink-0 ml-2">
            <span v-if="isBuffering" class="animate-pulse text-accent">BUFFERING...</span>
