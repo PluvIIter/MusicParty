@@ -19,7 +19,7 @@ export const useUserStore = defineStore('user', () => {
     const isGuest = ref(!storageName);
 
     // 🟢 [新增] 核心方法：将 SessionID 翻译成名字
-    const resolveName = (sessionId) => {
+    const resolveName = (sessionId, fallbackName) => {
         if (!sessionId) return 'Unknown';
         if (sessionId === 'ADMIN') return 'AUTO_DJ';
         // 如果 ID 是我自己，优先返回我当前输入框里的名字（即时响应）
