@@ -1,7 +1,7 @@
 #  Music Party 
 > 一个高颜值的实时在线协作听歌平台。
 >
-> *本项目灵感来源于 [EveElseIf/MusicParty](https://github.com/EveElseIf/MusicParty)，开发过程大量借助AI*
+> *本项目灵感来源于 [EveElseIf/MusicParty](https://github.com/EveElseIf/MusicParty)，开发过程大量借助AI。*
 
 ---
 
@@ -26,13 +26,6 @@
     *   临时用户身份，支持自定义昵称。
     *   显示在线用户列表，当前点播人高亮显示。
     *   **房间保护**：支持设置房间密码，防止未授权用户进入操作。
-
----
-
-##  技术栈 (Tech Stack)
-
-**Gemini 3.0（不是）**
-** JAVA **
 
 ---
 
