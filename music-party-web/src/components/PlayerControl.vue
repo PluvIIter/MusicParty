@@ -121,33 +121,34 @@
       <!-- 音量控制 -->
       <div class="flex items-center gap-2 group">
         <button @click="toggleMute" class="text-medical-500 hover:text-medical-900 transition-colors">
-            <VolumeX v-if="volume === 0" class="w-5 h-5" />
-            <Volume1 v-else-if="volume < 0.5" class="w-5 h-5" />
-            <Volume2 v-else class="w-5 h-5" />
+          <VolumeX v-if="volume === 0" class="w-5 h-5" />
+          <Volume1 v-else-if="volume < 0.5" class="w-5 h-5" />
+          <Volume2 v-else class="w-5 h-5" />
         </button>
-        
-        <!-- 自定义音量滑块 -->
-        <div class="w-24 h-6 flex items-center relative cursor-pointer" @click="handleVolumeClick">
-            <!-- 轨道 -->
-            <div class="w-full h-1 bg-medical-200 relative">
-                <!-- 填充 -->
-                <div class="h-full bg-medical-500 group-hover:bg-accent transition-colors relative" :style="{ width: (volume * 100) + '%' }">
-                     <div class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-3 bg-medical-900 group-hover:bg-accent transition-colors scale-0 group-hover:scale-100"></div>
-                </div>
-            </div>
-            <!-- 透明 Input Range -->
-            <input 
-                type="range" 
-                min="0" 
-                max="1" 
-                step="0.01" 
-                v-model.number="volume" 
-                class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            />
-        </div>
-        <div class="w-8 text-[10px] font-mono text-medical-400 text-right">{{ Math.round(volume * 100) }}%</div>
-      </div>
 
+        <!-- 滑块容器 -->
+        <div
+            ref="volumeTrackRef"
+            class="w-24 h-6 flex items-center relative cursor-pointer touch-none"
+            @mousedown="handleVolumeMouseDown"
+        >
+          <!-- 灰色轨道 -->
+          <div class="w-full h-1 bg-medical-200 relative">
+            <!-- 橙色填充层 -->
+            <div
+                class="h-full bg-medical-500 group-hover:bg-accent transition-colors relative"
+                :style="{ width: (volume * 100) + '%' }"
+            >
+              <!-- 装饰滑块 (只在悬停时显示) -->
+              <div class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-3 bg-medical-900 group-hover:bg-accent transition-colors scale-0 group-hover:scale-100"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="w-8 text-[10px] font-mono text-medical-400 text-right">
+          {{ Math.round(volume * 100) }}%
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -167,6 +168,8 @@ const localProgress = ref(0);
 const isBuffering = ref(false);
 const toast = useToast();
 const { info, error } = useToast();
+const volumeTrackRef = ref(null);
+const isDraggingVolume = ref(false);
 
 // 音量状态
 const volume = ref(parseFloat(localStorage.getItem('mp_volume') || '0.5'));
@@ -179,6 +182,30 @@ const audioSrc = computed(() => {
   if (!nowPlaying.value) return '';
   return nowPlaying.value.music.url;
 });
+
+const updateMediaSession = () => {
+  if ('mediaSession' in navigator && player.nowPlaying) {
+    const music = player.nowPlaying.music;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: music.name,
+      artist: music.artists.join(' / '),
+      album: 'Music Party',
+      artwork: [
+        { src: music.coverUrl || '/vite.svg', sizes: '512x512', type: 'image/png' }
+      ]
+    });
+
+    // 允许锁屏界面控制
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      player.playNext();
+    });
+  }
+};
+
+// 监听歌曲变化
+watch(() => player.nowPlaying?.music?.id, () => {
+  updateMediaSession();
+}, { immediate: true });
 
 const progressPercent = computed(() => {
     if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
@@ -214,6 +241,45 @@ watch(volume, (newVal) => {
     if (audioRef.value) {
         audioRef.value.volume = newVal;
     }
+});
+
+const updateVolumeByMouse = (e) => {
+  if (!volumeTrackRef.value) return;
+
+  const rect = volumeTrackRef.value.getBoundingClientRect();
+  // 计算鼠标距离轨道左侧的距离
+  const x = e.clientX - rect.left;
+  // 限制在 0 到 rect.width 之间，然后转为 0-1 的比例
+  const percentage = Math.max(0, Math.min(1, x / rect.width));
+  volume.value = parseFloat(percentage.toFixed(2));
+};
+
+// 鼠标按下
+const handleVolumeMouseDown = (e) => {
+  isDraggingVolume.value = true;
+  updateVolumeByMouse(e); // 按下时立即跳转音量
+
+  // 绑定全局事件，这样鼠标移出轨道也能继续拖拽
+  window.addEventListener('mousemove', handleVolumeMouseMove);
+  window.addEventListener('mouseup', handleVolumeMouseUp);
+};
+
+const handleVolumeMouseMove = (e) => {
+  if (isDraggingVolume.value) {
+    updateVolumeByMouse(e);
+  }
+};
+
+const handleVolumeMouseUp = () => {
+  isDraggingVolume.value = false;
+  window.removeEventListener('mousemove', handleVolumeMouseMove);
+  window.removeEventListener('mouseup', handleVolumeMouseUp);
+};
+
+// 记得清理
+onUnmounted(() => {
+  window.removeEventListener('mousemove', handleVolumeMouseMove);
+  window.removeEventListener('mouseup', handleVolumeMouseUp);
 });
 
 // --- 自动播放与状态同步逻辑 ---

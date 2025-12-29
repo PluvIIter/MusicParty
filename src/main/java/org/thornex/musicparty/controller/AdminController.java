@@ -45,6 +45,7 @@ public class AdminController {
 
         if (adminPassword != null && adminPassword.equals(inputAdminPassword)) {
             authController.forceSetPassword(newRoomPassword);
+            musicPlayerService.broadcastPasswordChanged();
             return ResponseEntity.ok(Map.of("message", "ROOM PASSWORD UPDATED"));
         } else {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));

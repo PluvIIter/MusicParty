@@ -522,7 +522,11 @@ public class MusicPlayerService {
         messagingTemplate.convertAndSend("/topic/users/online", userService.getOnlineUserSummaries());
     }
 
-    // 🟢 新增：广播通用事件
+    public void broadcastPasswordChanged() {
+        broadcastEvent("ERROR", "PASSWORD_CHANGED", "ADMIN", null);
+    }
+
+    // 广播通用事件
     private void broadcastEvent(String type, String action, String userId, String payload) {
         messagingTemplate.convertAndSend("/topic/player/events", new PlayerEvent(type, action, userId, payload));
     }

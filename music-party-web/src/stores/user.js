@@ -24,6 +24,7 @@ const currentUser = ref({
 export const useUserStore = defineStore('user', () => {
     const onlineUsers = ref([]);
 
+    const isAuthPassed = ref(false);
 
     // 启动时：严格从 LocalStorage 读取，默认值只在这里设定一次
     const storageName = localStorage.getItem('mp_username');
@@ -104,6 +105,11 @@ export const useUserStore = defineStore('user', () => {
         onNameSetCallback.value = fn;
     }
 
+    const resetAuthentication = () => {
+        isAuthPassed.value = false;
+        localStorage.removeItem('mp_room_password'); // 清除本地保存的旧密码
+    };
+
     return {
         onlineUsers,
         currentUser,
@@ -116,6 +122,8 @@ export const useUserStore = defineStore('user', () => {
         showNameModal,
         resolveName,
         userToken,
-        setPostNameAction
+        setPostNameAction,
+        isAuthPassed,
+        resetAuthentication
     };
 });

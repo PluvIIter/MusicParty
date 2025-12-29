@@ -114,6 +114,24 @@ export const usePlayerStore = defineStore('player', () => {
                         chatStore.messages = []; // 直接清空聊天记录
                     }
 
+                    // 处理密码变更
+                    if (event.action === 'PASSWORD_CHANGED') {
+                        show({
+                            title: 'SECURITY ALERT',
+                            message: '房间密码已更改，请重新验证',
+                            type: 'error',
+                            duration: 5000
+                        });
+
+                        // 强制延迟一下刷新或重置，让用户看清提示
+                        setTimeout(() => {
+                            userStore.resetAuthentication();
+                            // 可选：直接刷新页面确保状态最干净
+                            window.location.reload();
+                        }, 1500);
+                        return;
+                    }
+
                     if (event.type === 'ERROR' && event.message.includes('taken')) {
                         show({
                             title: 'NAME TAKEN',

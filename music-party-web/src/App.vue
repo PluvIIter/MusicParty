@@ -1,9 +1,9 @@
 <template>
   <div class="h-[100dvh] w-screen flex flex-col relative overflow-hidden bg-medical-50">
-    <AuthOverlay @unlocked="isAuthPassed = true" />
+    <AuthOverlay @unlocked="userStore.isAuthPassed = true" v-if="!userStore.isAuthPassed" />
     
     <!-- 启动遮罩 (需要用户点击以允许自动播放) -->
-    <div v-if="isAuthPassed && !hasStarted" class="absolute inset-0 z-[100] bg-medical-50 flex flex-col items-center justify-center space-y-8">
+    <div v-if="userStore.isAuthPassed && !hasStarted" class="absolute inset-0 z-[100] bg-medical-50 flex flex-col items-center justify-center space-y-8">
         <div class="text-4xl font-black tracking-tighter text-medical-900">MUSIC PARTY</div>
         <div class="font-mono text-xs text-medical-400 tracking-widest">SYSTEM READY / WAITING FOR LINK</div>
         <button 
@@ -79,7 +79,7 @@
     </header>
 
     <!-- 主体布局 -->
-    <div v-if="isAuthPassed" class="flex-1 flex overflow-hidden relative">
+    <div v-if="userStore.isAuthPassed" class="flex-1 flex overflow-hidden relative">
       <!-- 左侧边栏 (PC only) -->
       <aside class="w-64 bg-medical-50 border-r border-medical-200 hidden md:block overflow-y-auto">
         <UserList />
@@ -166,7 +166,6 @@ const showSearch = ref(false);
 const mobileQueueOpen = ref(false);
 const currentTime = ref('');
 const toastInstance = ref(null);
-const isAuthPassed = ref(false);
 const { register } = useToast();
 const mobileUserOpen = ref(false);
 const userStore = useUserStore();
