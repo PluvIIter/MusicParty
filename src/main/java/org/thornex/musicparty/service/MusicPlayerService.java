@@ -49,6 +49,8 @@ public class MusicPlayerService {
 
     private final ChatService chatService;
 
+    private final AtomicReference<String> lastPlayedUserToken = new AtomicReference<>("");
+
     public MusicPlayerService(SimpMessagingTemplate messagingTemplate, List<IMusicApiService> apiServices, UserService userService, MusicProxyService musicProxyService, ChatService chatService) {
         this.messagingTemplate = messagingTemplate;
         // Create a map of services, keyed by platform name for easy lookup
@@ -235,51 +237,53 @@ public class MusicPlayerService {
                 .findFirst();
 
         if (toppedItem.isPresent()) {
-            musicQueue.remove(toppedItem.get());
-            log.info("Playing topped song: {}", toppedItem.get().music().name());
-            return toppedItem.get();
+            MusicQueueItem item = toppedItem.get();
+            musicQueue.remove(item);
+            lastPlayedUserToken.set(item.enqueuedBy().token()); // 记录置顶者
+            return item;
         }
 
-        // 2. 随机模式逻辑 (智能穿插)
+        // --- 改进后的随机 (公平调度) ---
         if (isShuffle.get()) {
-            // 将队列快照转换为 List，方便操作
             List<MusicQueueItem> snapshot = new ArrayList<>(musicQueue);
 
-            // 核心算法：选择“下一个播放者”
-            // 我们不直接随机选一首歌，而是随机选一个“还没轮到的用户”的一首歌
+            // A. 按用户分组
+            Map<String, List<MusicQueueItem>> userSongsMap = snapshot.stream()
+                    .collect(Collectors.groupingBy(item -> item.enqueuedBy().token()));
 
-            // Step A: 按用户分组
-            Map<String, List<MusicQueueItem>> userSongsMap = new HashMap<>();
-            for (MusicQueueItem item : snapshot) {
-                // 使用 sessionId 或 name 作为分组依据
-                String userId = item.enqueuedBy().sessionId();
-                userSongsMap.computeIfAbsent(userId, k -> new ArrayList<>()).add(item);
+            List<String> userIds = new ArrayList<>(userSongsMap.keySet());
+
+            String luckyUserId;
+
+            // B. 核心改进：如果有多个用户在排队，排除掉上一个播放的人
+            if (userIds.size() > 1) {
+                String lastToken = lastPlayedUserToken.get();
+                // 过滤掉刚刚播过的用户
+                List<String> candidates = userIds.stream()
+                        .filter(id -> !id.equals(lastToken))
+                        .toList();
+
+                // 从剩下的候选人中随机选一个
+                luckyUserId = candidates.get(new Random().nextInt(candidates.size()));
+            } else {
+                // 如果只有一个人点歌，那就只能还是他
+                luckyUserId = userIds.getFirst();
             }
 
-            // Step B: 获取所有有歌的用户ID，并随机打乱
-            // 这决定了这一轮“发牌”的顺序
-            List<String> userIds = new ArrayList<>(userSongsMap.keySet());
-            Collections.shuffle(userIds);
+            // C. 更新最后播放者记录
+            lastPlayedUserToken.set(luckyUserId);
 
-            // Step C: 选歌
-            // 简单策略：直接取打乱后的第一个用户的列表中的第一首歌
-            // 进阶策略：这里其实还可以更复杂，比如记录上一次播放的用户，这次尽量避开他。
-            // 但“随机打乱用户顺序”已经能在概率上很好地解决扎堆问题了。
-
-            String luckyUserId = userIds.getFirst();
+            // D. 从选定用户的歌单中随机挑一首
             List<MusicQueueItem> luckyUserSongs = userSongsMap.get(luckyUserId);
+            MusicQueueItem selectedItem = luckyUserSongs.get(new Random().nextInt(luckyUserSongs.size()));
 
-            // 再次随机：从该用户的歌单里随机挑一首
-            // (这样既保证了用户间的公平，又保证了用户内部的随机)
-            int songIndex = new Random().nextInt(luckyUserSongs.size());
-            MusicQueueItem selectedItem = luckyUserSongs.get(songIndex);
-
-            // Step D: 从实际队列中移除并返回
             musicQueue.remove(selectedItem);
             return selectedItem;
         } else {
-            // Normal mode: poll from the front
-            return musicQueue.poll();
+            // 顺序模式
+            MusicQueueItem item = musicQueue.poll();
+            if (item != null) lastPlayedUserToken.set(item.enqueuedBy().token());
+            return item;
         }
     }
 
@@ -382,12 +386,12 @@ public class MusicPlayerService {
 
             log.info("Song topped: {}", item.music().name());
             broadcastQueueUpdate();
-            // 🟢 广播置顶事件
+            // 广播置顶事件
             broadcastEvent("INFO", "TOP", sessionId, item.music().name());
         }
     }
 
-    // 🟢 辅助方法：检查冷却时间
+    // 辅助方法：检查冷却时间
     private boolean isRateLimited(String userId) {
         long now = System.currentTimeMillis();
         long last = lastControlTimestamp.get();
