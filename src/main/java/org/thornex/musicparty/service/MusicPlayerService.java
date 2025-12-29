@@ -551,7 +551,6 @@ public class MusicPlayerService {
         // 6. 广播全空状态
         broadcastPlayerState();
         broadcastQueueUpdate();
-        broadcastNowPlaying(null);
 
         //清空聊天历史
         chatService.clearHistory();
