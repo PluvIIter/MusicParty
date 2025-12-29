@@ -27,10 +27,26 @@
         <!-- 🟢 新增：移动端用户列表开关按钮 -->
         <button
             @click="toggleMobileUser"
-            class="md:hidden flex items-center justify-center w-9 h-9 bg-medical-50 border border-medical-200 text-medical-500 hover:text-medical-900 transition-colors"
+            class="md:hidden relative flex items-center justify-center w-9 h-9 bg-medical-50 border border-medical-200 text-medical-500 hover:text-medical-900 transition-colors overflow-hidden group rounded-sm transform-gpu"
             :class="{ 'bg-medical-200 text-medical-900 border-medical-300': mobileUserOpen }"
         >
-          <Users class="w-5 h-5" />
+          <!--
+            absolute inset-0: 占满容器
+            flex-center: 居中
+            text-5xl: 超大字体 (容器才 h-10 约 40px，5xl 是 48px，必然溢出)
+            font-black: 最粗
+            text-accent/20: 淡橙色
+            scale-110: 进一步放大，确保填满
+            translate-y-[2px]: 视觉微调，让数字重心居中
+         -->
+          <span
+              class="absolute inset-0 flex items-center justify-center font-black text-4xl leading-none text-accent/15 pointer-events-none z-0 select-none scale-110 font-mono"
+          >
+            {{ userStore.onlineUsers.length > 9 ? 'N' : userStore.onlineUsers.length }}
+          </span>
+
+          <!-- 图标 (相对定位，z-10 保证在数字上层) -->
+          <Users class="w-5 h-5 relative z-10" />
         </button>
 
         <!-- 搜索按钮 -->
