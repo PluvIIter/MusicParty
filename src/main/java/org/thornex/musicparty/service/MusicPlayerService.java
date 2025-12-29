@@ -543,7 +543,7 @@ public class MusicPlayerService {
         isPaused.set(false);
         totalPausedTimeMillis.set(0);
         pauseStateChangeTime.set(0);
-        isShuffle.set(false); // 重Ht随机模式
+        isShuffle.set(false); //
 
         // 5. 停止所有正在进行的代理下载
         musicProxyService.cancelCurrentProxy();

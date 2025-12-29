@@ -110,6 +110,10 @@ export const usePlayerStore = defineStore('player', () => {
                 client.subscribe('/topic/player/events', (message) => {
                     const event = JSON.parse(message.body);
 
+                    if (event.action === 'RESET') {
+                        chatStore.messages = []; // 直接清空聊天记录
+                    }
+
                     if (event.type === 'ERROR' && event.message.includes('taken')) {
                         show({
                             title: 'NAME TAKEN',
@@ -161,6 +165,7 @@ export const usePlayerStore = defineStore('player', () => {
                     const history = JSON.parse(message.body);
                     chatStore.setHistory(history);
                 });
+
             },
             onDisconnect: () => {
                 connected.value = false;

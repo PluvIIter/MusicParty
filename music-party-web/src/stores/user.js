@@ -37,6 +37,8 @@ export const useUserStore = defineStore('user', () => {
     // 全局状态：控制改名弹窗显示
     const showNameModal = ref(false);
 
+    const onNameSetCallback = ref(null);
+
     const isGuest = ref(!storageName);
 
     // 核心方法：将 SessionID 翻译成名字
@@ -91,6 +93,15 @@ export const useUserStore = defineStore('user', () => {
         isGuest.value = false;
         // 🟢 [新增] 保存成功后，自动关闭弹窗
         showNameModal.value = false;
+
+        if (onNameSetCallback.value) {
+            onNameSetCallback.value();
+            onNameSetCallback.value = null;
+        }
+    }
+
+    const setPostNameAction = (fn) => {
+        onNameSetCallback.value = fn;
     }
 
     return {
@@ -104,6 +115,7 @@ export const useUserStore = defineStore('user', () => {
         isGuest,
         showNameModal,
         resolveName,
-        userToken
+        userToken,
+        setPostNameAction
     };
 });

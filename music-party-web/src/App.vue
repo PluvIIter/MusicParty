@@ -192,10 +192,16 @@ onUnmounted(() => clearInterval(timeInterval));
 
 const handleSearchClick = () => {
   hasInteracted.value = true;
+
   if (userStore.isGuest) {
-    userStore.showNameModal = true; // 游客点搜索 -> 弹改名窗
+    // 注册回调：改名成功后，把 showSearch 设为 true
+    userStore.setPostNameAction(() => {
+      showSearch.value = true;
+    });
+
+    userStore.showNameModal = true;
   } else {
-    showSearch.value = true; // 正常用户 -> 弹搜索窗
+    showSearch.value = true;
   }
 };
 </script>

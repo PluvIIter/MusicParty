@@ -164,6 +164,11 @@ const handleClick = (e) => {
   if (dx > 5 || dy > 5) return; // 位移过大视为拖拽
 
   if (userStore.isGuest) {
+    // 注册回调：改名成功后打开聊天
+    userStore.setPostNameAction(() => {
+      if(!chatStore.isOpen) chatStore.toggleChat();
+    });
+
     userStore.showNameModal = true;
     return;
   }
