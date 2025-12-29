@@ -47,7 +47,7 @@
 
 ```yaml
 services:
-  # 1. 网易云音乐 API 服务 (第三方)
+  # 1. 网易云音乐 API 服务
   netease-api:
     image: moefurina/ncm-api:latest
     container_name: music-party-netease
@@ -59,7 +59,6 @@ services:
 
   # 2. Music Party 主应用
   music-party:
-    # 如果你是拉取源码构建
     build: .
     container_name: music-party-app
     restart: always
