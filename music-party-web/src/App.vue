@@ -173,12 +173,9 @@ const hasInteracted = ref(false);
 
 let timeInterval;
 
-const keepAliveAudio = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=");
-keepAliveAudio.loop = true;
 const startGame = () => {
-  keepAliveAudio.play(); // 播放静音，锁定音频焦点
-  hasStarted.value = true;
-  player.connect();
+    hasStarted.value = true;
+    player.connect(); // 连接 WebSocket
 };
 
 // 是否处于“新手引导高亮”状态
