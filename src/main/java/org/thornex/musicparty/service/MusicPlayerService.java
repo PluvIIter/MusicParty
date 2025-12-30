@@ -103,7 +103,6 @@ public class MusicPlayerService {
                     musicProxyService.cancelCurrentProxy();
                 }
 
-                nowPlaying.set(null); // Clear current song
                 playNextInQueue(); // Immediately attempt to play the next song
             }
         } else {
@@ -158,7 +157,12 @@ public class MusicPlayerService {
     }
 
     private synchronized void playNextInQueue() {
-        if (nowPlaying.get() != null || musicQueue.isEmpty() || isLoading.get()) {
+        if (musicQueue.isEmpty() || isLoading.get()) {
+            // 如果确实没歌了，才设为 null
+            if (musicQueue.isEmpty()) {
+                nowPlaying.set(null);
+                broadcastPlayerState();
+            }
             return;
         }
 

@@ -3,8 +3,7 @@
     <!-- 音频元素 -->
     <!-- 增加 v-if="audioSrc" 防止空链接报错 -->
     <!-- 增加 @canplay 用于拦截自动播放 -->
-    <audio 
-      v-if="audioSrc"
+    <audio
       ref="audioRef" 
       :src="audioSrc" 
       autoplay 
@@ -179,26 +178,25 @@ const lastVolume = ref(0.5);
 const nowPlaying = computed(() => player.nowPlaying);
 
 const audioSrc = computed(() => {
-  if (!nowPlaying.value) return '';
+  if (!nowPlaying.value) return "";
   return nowPlaying.value.music.url;
 });
 
 const updateMediaSession = () => {
-  if ('mediaSession' in navigator && player.nowPlaying) {
-    const music = player.nowPlaying.music;
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: music.name,
-      artist: music.artists.join(' / '),
-      album: 'Music Party',
-      artwork: [
-        { src: music.coverUrl || '/vite.svg', sizes: '512x512', type: 'image/png' }
-      ]
-    });
-
-    // 允许锁屏界面控制
-    navigator.mediaSession.setActionHandler('nexttrack', () => {
-      player.playNext();
-    });
+  if ('mediaSession' in navigator) {
+    if (player.nowPlaying) {
+      const music = player.nowPlaying.music;
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: music.name,
+        artist: music.artists.join(' / '),
+        album: 'Music Party',
+        artwork: [{ src: music.coverUrl, sizes: '512x512', type: 'image/png' }]
+      });
+      navigator.mediaSession.playbackState = 'playing';
+    } else {
+      // 🟢 没歌的时候，设为 paused 而不是直接清空
+      navigator.mediaSession.playbackState = 'paused';
+    }
   }
 };
 
@@ -206,6 +204,22 @@ const updateMediaSession = () => {
 watch(() => player.nowPlaying?.music?.id, () => {
   updateMediaSession();
 }, { immediate: true });
+
+// 增强监听逻辑
+watch(audioSrc, async (newVal) => {
+  if (!newVal) return;
+
+  await nextTick();
+  if (audioRef.value) {
+    // 强制告诉浏览器：媒体流发生了变化，请保持存活
+    audioRef.value.load();
+    if (!player.isPaused) {
+      audioRef.value.play().catch(e => {
+        console.warn("后台播放被拦截，可能需要引导用户前台点击一次", e);
+      });
+    }
+  }
+});
 
 const progressPercent = computed(() => {
     if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
