@@ -265,9 +265,14 @@ const handleError = (e) => {
 // 兜底重连：如果 audio 结束了，但后端 2 秒内没反应，主动申请同步
 const handleEnded = () => {
   setTimeout(() => {
-    if (!player.nowPlaying) {
+    // 确保 player.stompClient 存在且处于连接状态
+    if (!player.nowPlaying && player.stompClient && player.connected) {
       console.log("Detecting idle state after song end, resyncing...");
-      player.stompClient.publish({ destination: '/app/player/resync' });
+      try {
+        player.stompClient.publish({ destination: '/app/player/resync' });
+      } catch (e) {
+        console.error("Failed to send resync command:", e);
+      }
     }
   }, 2000);
 };

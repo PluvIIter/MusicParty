@@ -301,6 +301,7 @@ export const usePlayerStore = defineStore('player', () => {
         lyricText,
         requireAuth,
         isLoading,
-        sendChatMessage
+        sendChatMessage,
+        stompClient
     };
 });
