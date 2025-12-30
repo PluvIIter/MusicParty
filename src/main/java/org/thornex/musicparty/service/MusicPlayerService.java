@@ -193,10 +193,11 @@ public class MusicPlayerService {
                         if (playableMusic.needsProxy()) {
                             musicProxyService.startProxy(playableMusic.url());
                             // Rewrite the URL to point to our proxy
+                            String uniqueProxyUrl = "/proxy/stream?t=" + System.currentTimeMillis();
                             finalPlayableMusic = new PlayableMusic(
                                     playableMusic.id(), playableMusic.name(), playableMusic.artists(),
                                     playableMusic.duration(), playableMusic.platform(),
-                                    "/proxy/stream", // The static proxy URL
+                                    uniqueProxyUrl,
                                     playableMusic.coverUrl(), true
                             );
                         }

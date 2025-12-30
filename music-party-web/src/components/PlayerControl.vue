@@ -178,16 +178,7 @@ const nowPlaying = computed(() => player.nowPlaying);
 
 const audioSrc = computed(() => {
   if (!nowPlaying.value) return '';
-  let url = nowPlaying.value.music.url;
-
-  // 如果是代理流，追加时间戳强制浏览器刷新音频流
-  if (url.includes('/proxy/stream')) {
-    // 使用 music.id 或时间戳确保唯一性，防止浏览器认为 src 没变而不去请求
-    const ts = new Date().getTime();
-    return `${url}?t=${ts}&mid=${nowPlaying.value.music.id}`;
-  }
-
-  return url;
+  return nowPlaying.value.music.url;
 });
 
 const updateMediaSession = () => {
@@ -324,7 +315,7 @@ watch(() => player.isPaused, (newPaused) => {
 watch(audioSrc, () => {
     // 延迟检查，确保 DOM 更新
     setTimeout(() => {
-        // 修复点：这里必须使用 player.isPaused，不能用 newPaused
+        // 这里必须使用 player.isPaused，不能用 newPaused
         if (player.isPaused && audioRef.value) {
             audioRef.value.pause();
         }

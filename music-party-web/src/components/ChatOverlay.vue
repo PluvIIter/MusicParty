@@ -105,16 +105,23 @@
         ref="dragHandle"
         @pointerdown="handlePointerDown"
         @click="handleClick"
-        class="pointer-events-auto w-10 h-10 border shadow-lg flex items-center justify-center transition-all cursor-move select-none rounded-sm relative"
+        class="pointer-events-auto w-10 h-10 border flex items-center justify-center transition-all cursor-move select-none rounded-sm relative overflow-hidden"
         :class="chatStore.unreadCount > 0
-            ? 'bg-accent border-accent text-white shadow-accent/30 animate-pulse-slow'
-            : 'bg-white border-medical-200 text-medical-500 hover:text-medical-900 hover:border-medical-300'"
+            ? 'bg-accent border-accent text-white shadow-[0_0_15px_rgba(249,115,22,0.6)] scale-110'
+            : 'bg-white border-medical-200 text-medical-500 shadow-lg hover:text-medical-900 hover:border-medical-300'"
     >
-      <!-- 如果有未读消息，显示数字；否则显示图标 -->
-      <span v-if="chatStore.unreadCount > 0" class="font-bold font-mono text-sm">
+      <!-- 扫描线装饰 (仅在有未读时显示) -->
+      <div v-if="chatStore.unreadCount > 0"
+           class="absolute inset-0 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAADCAYAAABS3WWCAAAAE0lEQVQYV2NkYGD4zwABjFAQAwBATgMJy2B8NAAAAABJRU5ErkJggg==')] opacity-30 pointer-events-none animate-scan z-0">
+      </div>
+
+      <!-- 如果有未读消息，显示数字 -->
+      <span v-if="chatStore.unreadCount > 0" class="font-bold font-mono text-sm relative z-10 animate-pulse">
          {{ chatStore.unreadCount > 9 ? '9+' : chatStore.unreadCount }}
       </span>
-      <MessageSquare v-else class="w-5 h-5"/>
+
+      <!-- 否则显示图标 -->
+      <MessageSquare v-else class="w-5 h-5 relative z-10"/>
 
     </div>
 
