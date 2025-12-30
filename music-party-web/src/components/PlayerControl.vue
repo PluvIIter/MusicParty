@@ -3,8 +3,7 @@
     <!-- 音频元素 -->
     <!-- 增加 v-if="audioSrc" 防止空链接报错 -->
     <!-- 增加 @canplay 用于拦截自动播放 -->
-    <audio 
-      v-if="audioSrc"
+    <audio
       ref="audioRef" 
       :src="audioSrc" 
       autoplay 
@@ -166,7 +165,6 @@ const player = usePlayerStore();
 const audioRef = ref(null);
 const localProgress = ref(0);
 const isBuffering = ref(false);
-const toast = useToast();
 const { info, error } = useToast();
 const volumeTrackRef = ref(null);
 const isDraggingVolume = ref(false);
@@ -180,25 +178,33 @@ const nowPlaying = computed(() => player.nowPlaying);
 
 const audioSrc = computed(() => {
   if (!nowPlaying.value) return '';
-  return nowPlaying.value.music.url;
+  let url = nowPlaying.value.music.url;
+
+  // 如果是代理流，追加时间戳强制浏览器刷新音频流
+  if (url.includes('/proxy/stream')) {
+    // 使用 music.id 或时间戳确保唯一性，防止浏览器认为 src 没变而不去请求
+    const ts = new Date().getTime();
+    return `${url}?t=${ts}&mid=${nowPlaying.value.music.id}`;
+  }
+
+  return url;
 });
 
 const updateMediaSession = () => {
-  if ('mediaSession' in navigator && player.nowPlaying) {
-    const music = player.nowPlaying.music;
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: music.name,
-      artist: music.artists.join(' / '),
-      album: 'Music Party',
-      artwork: [
-        { src: music.coverUrl || '/vite.svg', sizes: '512x512', type: 'image/png' }
-      ]
-    });
-
-    // 允许锁屏界面控制
-    navigator.mediaSession.setActionHandler('nexttrack', () => {
-      player.playNext();
-    });
+  if ('mediaSession' in navigator) {
+    if (player.nowPlaying) {
+      const music = player.nowPlaying.music;
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: music.name,
+        artist: music.artists.join(' / '),
+        album: 'Music Party',
+        artwork: [{ src: music.coverUrl, sizes: '512x512', type: 'image/png' }]
+      });
+      navigator.mediaSession.playbackState = 'playing';
+    } else {
+      //没歌的时候，设为 paused 而不是直接清空
+      navigator.mediaSession.playbackState = 'paused';
+    }
   }
 };
 
@@ -287,7 +293,8 @@ onUnmounted(() => {
 // 1. 拦截自动播放
 // 当音频准备好时，如果全局是暂停状态，强制暂停
 const checkAutoPlay = () => {
-    isBuffering.value = false;
+  if (!audioSrc.value) return;
+  isBuffering.value = false;
     // 修复点：这里必须使用 player.isPaused，不能用 newPaused
     if (player.isPaused && audioRef.value) {
         console.log("State is paused, preventing autoplay.");
@@ -362,6 +369,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => clearInterval(syncTimer));
+
 
 const downloadCurrentMusic = async () => {
   if (!nowPlaying.value) return;
