@@ -36,6 +36,10 @@ public class MusicProxyService {
      * @param targetUrl 要代理的Bilibili音频URL
      */
     public synchronized void startProxy(String targetUrl) {
+        if (targetUrl == null || !targetUrl.startsWith("http")) {
+            log.error("Invalid proxy target URL: {}", targetUrl);
+            return;
+        }
         log.info("Request to start proxy for URL: {}", targetUrl);
         cancelCurrentProxy(); // 停止并清理上一个任务
 
@@ -49,6 +53,10 @@ public class MusicProxyService {
                     .header("Referer", "https://www.bilibili.com/")
                     .exchangeToMono(response -> {
                         long totalLength = response.headers().contentLength().orElse(-1);
+                        if (totalLength > 50 * 1024 * 1024) {
+                            log.error("File too large for memory buffer: {} bytes", totalLength);
+                            return Mono.error(new RuntimeException("File too large"));
+                        }
                         if (totalLength <= 0) {
                             log.error("Invalid content length: {}", totalLength);
                             currentState = currentState.withStatus(ProxyStatus.ERROR);

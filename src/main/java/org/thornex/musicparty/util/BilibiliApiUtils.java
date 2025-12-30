@@ -10,8 +10,10 @@ import java.util.List;
 
 public class BilibiliApiUtils {
 
+    // 内部记录类，用于一次性返回 CID 和 Music 详情
+    public record BilibiliVideoInfo(String cid, Music music) {}
+
     public static long durationToMillis(String durationStr) {
-        // ... (no changes in this method)
         if (durationStr == null || durationStr.isEmpty()) return 0;
         String[] parts = durationStr.split(":");
         long millis = 0;
@@ -22,42 +24,48 @@ public class BilibiliApiUtils {
         return millis;
     }
 
-    // UPDATED: Added sessdata parameter
     private static WebClient.RequestHeadersSpec<?> buildRequest(String uri, String sessdata, WebClient webClient) {
         return webClient.get().uri(uri)
                 .header("Cookie", "SESSDATA=" + sessdata)
                 .header("Referer", "https://www.bilibili.com/");
     }
 
-    // UPDATED: Added sessdata parameter
     public static Mono<String> getVideoCid(String bvid, WebClient webClient, String baseUrl, String sessdata) {
-        return buildRequest(baseUrl + "/x/web-interface/view?bvid={bvid}", sessdata, webClient)
-                .retrieve()
-                .bodyToMono(JsonNode.class)
-                .map(jsonNode -> {
-                    if (jsonNode.path("code").asInt() != 0) {
-                        throw new ApiRequestException("Could not get Bilibili video info: " + jsonNode.path("message").asText());
-                    }
-                    return jsonNode.path("data").path("cid").asText();
-                });
+        return getVideoInfo(bvid, webClient, baseUrl, sessdata).map(BilibiliVideoInfo::cid);
     }
 
-    // UPDATED: Added sessdata parameter
     public static Mono<Music> getVideoDetails(String bvid, WebClient webClient, String baseUrl, String sessdata) {
-        return buildRequest(baseUrl + "/x/web-interface/view?bvid={bvid}", sessdata, webClient)
+        return getVideoInfo(bvid, webClient, baseUrl, sessdata).map(BilibiliVideoInfo::music);
+    }
+
+    /**
+     * 🟢 核心方法：一次请求获取 CID 和 视频详情
+     */
+    public static Mono<BilibiliVideoInfo> getVideoInfo(String bvid, WebClient webClient, String baseUrl, String sessdata) {
+        return buildRequest(baseUrl + "/x/web-interface/view?bvid=" + bvid, sessdata, webClient)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
-                .map(jsonNode -> {
-                    if (jsonNode.path("code").asInt() != 0) throw new ApiRequestException("Could not get Bilibili video info: " + jsonNode.path("message").asText());
+                .handle((jsonNode, sink) -> {
+                    if (jsonNode.path("code").asInt() != 0) {
+                        sink.error(new ApiRequestException("Could not get Bilibili video info: " + jsonNode.path("message").asText()));
+                        return;
+                    }
                     JsonNode data = jsonNode.path("data");
-                    return new Music(
+                    String cid = data.path("cid").asText();
+
+                    // 获取时长（API 返回的是秒）
+                    long durationMs = data.path("duration").asLong() * 1000;
+
+                    Music music = new Music(
                             bvid,
                             data.path("title").asText(),
                             List.of(data.path("owner").path("name").asText()),
-                            data.path("duration").asLong() * 1000,
+                            durationMs,
                             "bilibili",
-                            data.path("pic").asText() // NEW
+                            data.path("pic").asText()
                     );
+
+                    sink.next(new BilibiliVideoInfo(cid, music));
                 });
     }
 }

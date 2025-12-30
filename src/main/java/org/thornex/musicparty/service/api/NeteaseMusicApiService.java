@@ -15,12 +15,6 @@ import org.thornex.musicparty.exception.ApiRequestException;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
 
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.StreamSupport;
@@ -32,83 +26,62 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private final WebClient webClient;
     private final String baseUrl;
     private final String initialCookieFromConfig;
+    private volatile String currentCookie;
     private static final String PLATFORM = "netease";
-    private static final Path COOKIE_FILE_PATH = Paths.get("cookie.txt");
 
     public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getNetease().getBaseUrl();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
+        // 初始化时先使用配置文件的内容
+        this.currentCookie = initialCookieFromConfig;
     }
 
     @PostConstruct
     public void initialize() {
         log.info("Initializing NeteaseCloudMusic API client...");
-        try {
-            login().block();
-            log.info("NeteaseCloudMusic API client login successful.");
-        } catch (Exception e) {
-            log.error("NeteaseCloudMusic API login failed. Application startup will be aborted.", e);
-            throw new RuntimeException("Failed to initialize NeteaseCloudMusic API", e);
+        if (!StringUtils.hasText(currentCookie) || "YOUR_NETEASE_COOKIE_STRING_HERE".equals(currentCookie)) {
+            log.warn("Netease Cookie is empty. Some APIs may not work.");
+            return;
         }
-    }
 
-    private Mono<Void> login() {
-        return Mono.defer(() -> {
-            if (Files.exists(COOKIE_FILE_PATH)) {
-                log.info("Found cookie.txt, attempting to use it for login.");
-                try {
-                    String cookieFromFile = Files.readString(COOKIE_FILE_PATH, StandardCharsets.UTF_8);
-                    return checkCookie(cookieFromFile)
-                            .flatMap(isValid -> {
-                                if (isValid) {
-                                    log.info("Cookie from file is valid.");
-                                    return Mono.empty();
-                                } else {
-                                    log.warn("Cookie from file is invalid. Deleting it and trying config cookie.");
-                                    try {
-                                        Files.delete(COOKIE_FILE_PATH);
-                                    } catch (IOException e) {
-                                        return Mono.error(new RuntimeException("Failed to delete invalid cookie.txt", e));
-                                    }
-                                    return attemptLoginWithConfigCookie();
-                                }
-                            });
-                } catch (IOException e) {
-                    return Mono.error(new RuntimeException("Failed to read cookie.txt", e));
-                }
+        // 验证初始 Cookie
+        checkCookie(currentCookie).subscribe(isValid -> {
+            if (isValid) {
+                log.info("NeteaseCloudMusic API client login successful (Memory).");
             } else {
-                return attemptLoginWithConfigCookie();
+                log.error("Initial Netease Cookie is invalid!");
             }
         });
     }
 
-    private Mono<Void> attemptLoginWithConfigCookie() {
-        if (!StringUtils.hasText(initialCookieFromConfig) || "YOUR_NETEASE_COOKIE_STRING_HERE".equals(initialCookieFromConfig)) {
-            return Mono.error(new ApiRequestException("cookie.txt not found and no valid cookie provided in application.yml."));
-        }
-        log.info("Attempting to login with cookie from application.yml.");
-        return checkCookie(initialCookieFromConfig)
-                .flatMap(isValid -> {
-                    if (isValid) {
-                        log.info("Cookie from config is valid. Saving to cookie.txt.");
-                        try {
-                            Files.writeString(COOKIE_FILE_PATH, initialCookieFromConfig, StandardCharsets.UTF_8);
-                            return Mono.empty();
-                        } catch (IOException e) {
-                            return Mono.error(new RuntimeException("Failed to write valid cookie to cookie.txt", e));
-                        }
-                    } else {
-                        return Mono.error(new ApiRequestException("The cookie provided in application.yml is invalid."));
-                    }
-                });
+    public void updateCookie(String newCookie) {
+        this.currentCookie = newCookie;
     }
 
-    // UPDATED: No longer encoding the cookie.
+    private Mono<Void> login() {
+        return Mono.defer(() -> {
+            if (!StringUtils.hasText(initialCookieFromConfig) || "YOUR_NETEASE_COOKIE_STRING_HERE".equals(initialCookieFromConfig)) {
+                return Mono.error(new ApiRequestException("No valid cookie provided in application.yml."));
+            }
+
+            log.info("Attempting to login with cookie from application.yml.");
+            return checkCookie(initialCookieFromConfig)
+                    .flatMap(isValid -> {
+                        if (isValid) {
+                            // 🟢 验证通过，保存在内存变量即可，不再写文件
+                            this.currentCookie = initialCookieFromConfig;
+                            log.info("Cookie from config is valid and stored in memory.");
+                            return Mono.empty();
+                        } else {
+                            return Mono.error(new ApiRequestException("The cookie provided in application.yml is invalid."));
+                        }
+                    });
+        });
+    }
+
     private Mono<Boolean> checkCookie(String cookie) {
-        // REMOVED: String encodedCookie = URLEncoder.encode(cookie, StandardCharsets.UTF_8);
         return webClient.get()
-                // Directly pass the raw cookie string. WebClient handles URI variable expansion correctly.
                 .uri(baseUrl + "/user/account?cookie={cookie}", cookie)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
@@ -118,13 +91,9 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     // UPDATED: Renamed method and removed encoding.
     private String getCookie() {
-        try {
-            // Just read the cookie and return it raw.
-            return Files.readString(COOKIE_FILE_PATH, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read cookie.txt during API call.", e);
-        }
+        return currentCookie != null ? currentCookie : "";
     }
+
 
     @Override
     public String getPlatformName() {

@@ -27,10 +27,29 @@ public class MusicProxyController {
     @GetMapping("/proxy/stream")
     public void proxyBilibiliStream(HttpServletRequest request, HttpServletResponse response) {
         MusicProxyService.ProxyState state = musicProxyService.getCurrentState();
+        long waitStart = System.currentTimeMillis();
 
-        // 检查代理是否准备就绪
-        if (state.status() == MusicProxyService.ProxyStatus.IDLE || state.buffer() == null) {
-            sendError(response, HttpStatus.SERVICE_UNAVAILABLE, "Proxy is not ready.");
+        while (state.status() == MusicProxyService.ProxyStatus.BUFFERING && state.buffer() == null) {
+            if (System.currentTimeMillis() - waitStart > 5000) {
+                log.error("Proxy initialization timed out.");
+                break;
+            }
+            try {
+                TimeUnit.MILLISECONDS.sleep(50); // 每 50ms 检查一次
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            state = musicProxyService.getCurrentState(); // 刷新状态
+        }
+
+        // 只有在真正失败或空闲时才返回 503
+        if (state.status() == MusicProxyService.ProxyStatus.IDLE ||
+                state.status() == MusicProxyService.ProxyStatus.ERROR ||
+                state.buffer() == null) {
+
+            // 只有这里才认为是真的没准备好
+            sendError(response, HttpStatus.SERVICE_UNAVAILABLE, "Proxy is not ready or failed.");
             return;
         }
 

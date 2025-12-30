@@ -26,12 +26,11 @@
           </button>
 
           <button
-              disabled
-              class="px-6 py-2 text-sm font-bold uppercase transition-all bg-medical-100 text-medical-300 cursor-not-allowed border border-medical-200 relative overflow-hidden"
-              title="System Maintenance"
+              @click="platform = 'bilibili'"
+              class="px-6 py-2 text-sm font-bold uppercase transition-all"
+              :class="platform === 'bilibili' ? 'bg-medical-900 text-white clip-tab' : 'bg-medical-200 text-medical-500 hover:bg-medical-300'"
           >
             BILIBILI
-            <div class="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(0,0,0,0.05)_25%,rgba(0,0,0,0.05)_50%,transparent_50%,transparent_75%,rgba(0,0,0,0.05)_75%,rgba(0,0,0,0.05))] bg-[length:10px_10px]"></div>
           </button>
         </div>
 
@@ -40,7 +39,7 @@
           <input
               v-model="keyword"
               @keyup.enter="doSearch"
-              :placeholder="isAdminMode ? '!!!输入管理员密码!!!' : '搜索音乐...'"
+              :placeholder="isAdminMode ? '!!!' : '搜索音乐...'"
               class="flex-1 border p-3 outline-none font-mono transition-colors duration-300"
               :class="isAdminMode
                   ? 'bg-red-50 border-red-500 text-red-600 placeholder-red-300 focus:border-red-600'
@@ -51,7 +50,7 @@
               class="text-white px-3 md:px-6 py-2 font-bold transition-colors text-xs md:text-base flex-shrink-0"
               :class="isAdminMode ? 'bg-red-600 hover:bg-red-700' : 'bg-accent hover:bg-accent-hover'"
           >
-            {{ isAdminMode ? 'NUKE' : 'SEARCH' }}
+            {{ isAdminMode ? 'DONE' : 'SEARCH' }}
           </button>
         </div>
       </div>
@@ -190,17 +189,25 @@
               <div
                   v-for="song in songs"
                   :key="song.id"
-                  class="flex items-center p-3 bg-white border border-transparent hover:border-medical-300 hover:shadow-sm transition-all group"
+                  class="flex items-center p-3 border border-transparent transition-all group"
+                  :class="[
+        isUnplayable(song)
+            ? 'opacity-50 grayscale bg-medical-50 cursor-not-allowed'
+            : 'bg-white hover:border-medical-300 hover:shadow-sm'
+    ]"
               >
                 <!--
-                   🔴 终极修复：
-                   1. 移除了外层的 'justify-between' (因为我们用 flex-1 撑开)。
-                   2. 将左侧大容器设为 'flex-1 w-0'。
-                      'w-0' 强制将内容基准宽度设为0，这是解决 Flex 溢出最强硬的手段。
+                   样式解释：
+                   opacity-50: 半透明
+                   grayscale:  去色（符合置灰要求）
+                   cursor-not-allowed: 鼠标变成禁止符号
                 -->
+
                 <div class="flex-1 w-0 flex items-center gap-3">
-                  <div class="w-8 h-8 bg-medical-200 flex-shrink-0">
+                  <div class="w-8 h-8 bg-medical-200 flex-shrink-0 relative overflow-hidden">
                     <CoverImage :src="song.coverUrl" class="w-full h-full" />
+                    <!-- 可选：在封面也加个遮罩 -->
+                    <div v-if="isUnplayable(song)" class="absolutenV inset-0 bg-medical-200/50 z-10"></div>
                   </div>
                   <div class="min-w-0 flex-1">
                     <div class="text-sm font-bold truncate">{{ song.name }}</div>
@@ -208,8 +215,16 @@
                   </div>
                 </div>
 
-                <!-- 按钮：保持 flex-shrink-0 防止被压缩 -->
-                <button @click="enqueue(song.id)" class="ml-2 p-2 text-medical-300 hover:text-accent flex-shrink-0">
+                <!-- 按钮区域修改 -->
+                <!-- 如果不可播放，显示 >10MIN 标签 -->
+                <div v-if="isUnplayable(song)" class="ml-2 flex-shrink-0">
+      <span class="px-1.5 py-0.5 text-[10px] font-mono font-bold text-medical-400 border border-medical-300 bg-medical-100 rounded-sm select-none">
+          &gt;10MIN
+      </span>
+                </div>
+
+                <!-- 否则显示正常的添加按钮 -->
+                <button v-else @click="enqueue(song.id)" class="ml-2 p-2 text-medical-300 hover:text-accent flex-shrink-0">
                   <PlusCircle class="w-5 h-5"/>
                 </button>
               </div>
@@ -233,7 +248,8 @@
 
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { X, Search, PlusCircle, ListPlus, Loader2, ArrowLeft, ChevronRight } from 'lucide-vue-next';
+import { X, Search, PlusCircle, ListPlus, Loader2, ArrowLeft, ChevronRight} from 'lucide-vue-next';
+import dayjs from 'dayjs';
 import { useUserStore } from '../stores/user';
 import { usePlayerStore } from '../stores/player';
 import { useDebounceFn } from '@vueuse/core';
@@ -259,7 +275,9 @@ const isSearchingUser = ref(false);
 
 const scrollContainer = ref(null);
 const offset = ref(0);
-const limit = 50;
+const limit = computed(() => {
+  return platform.value === 'bilibili' ? 20 : 50;
+});
 const hasMore = ref(true);
 const isLoadingMore = ref(false);
 
@@ -273,6 +291,17 @@ const commandArg = ref('');
 const mobileView = ref('playlists');
 
 const isAdminMode = ref(false);
+
+const MAX_DURATION = 10 * 60 * 1000; // 10分钟
+
+// 判断是否超时不可用
+const isUnplayable = (song) => {
+  // 仅针对 bilibili 平台限制时长，网易云通常流媒体没有这个硬性限制
+  if (platform.value === 'bilibili' && song.duration > MAX_DURATION) {
+    return true;
+  }
+  return false;
+};
 
 // 搜索歌曲
 const doSearch = async () => {
@@ -392,10 +421,10 @@ const fetchSongsPage = async () => {
   if (!currentPlaylistId.value) return;
   try {
     const res = await axios.get(`/api/playlist/songs/${platform.value}/${currentPlaylistId.value}`, {
-      params: { offset: offset.value, limit: limit }
+      params: { offset: offset.value, limit: limit.value }
     });
     const newSongs = res.data;
-    if (newSongs.length < limit) hasMore.value = false;
+    if (newSongs.length < limit.value) hasMore.value = false;
     songs.value.push(...newSongs);
   } catch (e) {
     console.error("Fetch songs failed", e);
@@ -410,7 +439,7 @@ const handleScroll = useDebounceFn(async () => {
   const bottom = el.scrollHeight - el.scrollTop - el.clientHeight;
   if (bottom < 100 && hasMore.value && !isLoadingMore.value && !loading.value) {
     isLoadingMore.value = true;
-    offset.value += limit;
+    offset.value += limit.value;
     try {
       await fetchSongsPage();
     } finally {
