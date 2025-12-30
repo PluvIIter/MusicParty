@@ -11,6 +11,12 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
+    private final WebSocketAuthInterceptor authInterceptor;
+
+    public WebSocketConfig(WebSocketAuthInterceptor authInterceptor) {
+        this.authInterceptor = authInterceptor;
+    }
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
         ThreadPoolTaskScheduler te = new ThreadPoolTaskScheduler();
@@ -31,5 +37,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // 允许所有来源，专门针对 SockJS 的严格模式
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*");
+    }
+
+    @Override
+    public void configureClientInboundChannel(org.springframework.messaging.simp.config.ChannelRegistration registration) {
+        // 注册拦截器
+        registration.interceptors(authInterceptor);
     }
 }

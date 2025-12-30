@@ -87,12 +87,14 @@ export const usePlayerStore = defineStore('player', () => {
     const connect = () => {
         const savedName = localStorage.getItem('mp_username') || 'Guest';
         const token = userStore.userToken;
+        const roomPassword = localStorage.getItem('mp_room_password') || '';
 
         const client = new Client({
             brokerURL: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`,
             connectHeaders: {
                 'user-name': savedName,
-                'user-token': token
+                'user-token': token,
+                'room-password': roomPassword
             },
             heartbeatIncoming: 10000,
             heartbeatOutgoing: 10000,
@@ -187,6 +189,17 @@ export const usePlayerStore = defineStore('player', () => {
             },
             onDisconnect: () => {
                 connected.value = false;
+            },
+            onStompError: (frame) => {
+                console.error('STOMP Error:', frame.body);
+                if (frame.body === 'INVALID_ROOM_PASSWORD') {
+                    show({
+                        title: 'ACCESS DENIED',
+                        message: '身份认证失效，请重新输入房间密码',
+                        type: 'error'
+                    });
+                    userStore.resetAuthentication();
+                }
             }
         });
         client.activate();

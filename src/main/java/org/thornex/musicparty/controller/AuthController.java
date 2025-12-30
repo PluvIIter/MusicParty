@@ -103,4 +103,8 @@ public class AuthController {
             return ResponseEntity.status(401).body(Map.of("valid", false));
         }
     }
+
+    public String getRawPassword() {
+        return roomPassword.get();
+    }
 }
