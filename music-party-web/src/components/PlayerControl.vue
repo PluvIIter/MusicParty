@@ -153,10 +153,9 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
-import { Download } from 'lucide-vue-next';
+import {computed, ref, watch, onMounted, onUnmounted, nextTick} from 'vue';
+import { Download, Play, Pause, SkipForward, Shuffle, Volume2, Volume1, VolumeX } from 'lucide-vue-next';
 import { usePlayerStore } from '../stores/player';
-import { Play, Pause, SkipForward, Shuffle, Volume2, Volume1, VolumeX } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { useToast } from '../composables/useToast';
 import dayjs from 'dayjs';
@@ -170,6 +169,8 @@ const { info, error } = useToast();
 const volumeTrackRef = ref(null);
 const isDraggingVolume = ref(false);
 
+const persistentSrc = ref("");
+
 // 音量状态
 const volume = ref(parseFloat(localStorage.getItem('mp_volume') || '0.5'));
 const lastVolume = ref(0.5);
@@ -177,11 +178,18 @@ const lastVolume = ref(0.5);
 // 核心数据引用
 const nowPlaying = computed(() => player.nowPlaying);
 
+// 优化后的音频源计算：确保 src 永远不为空，防止移动端后台被杀
 const audioSrc = computed(() => {
-  if (!nowPlaying.value) return "";
-  return nowPlaying.value.music.url;
+  if (!nowPlaying.value) {
+    // 没歌时返回静音 Base64 占位，或者保持上一个地址
+    return persistentSrc.value || "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=";
+  }
+  const url = nowPlaying.value.music.url;
+  persistentSrc.value = url; // 备份当前有效地址
+  return url;
 });
 
+// 统一的媒体信息更新：Media Session API
 const updateMediaSession = () => {
   if ('mediaSession' in navigator) {
     if (player.nowPlaying) {
@@ -194,94 +202,111 @@ const updateMediaSession = () => {
       });
       navigator.mediaSession.playbackState = 'playing';
     } else {
-      // 🟢 没歌的时候，设为 paused 而不是直接清空
       navigator.mediaSession.playbackState = 'paused';
     }
   }
 };
 
-// 监听歌曲变化
-watch(() => player.nowPlaying?.music?.id, () => {
-  updateMediaSession();
-}, { immediate: true });
+// 🟢 合并后的核心监听器：处理切歌、加载、播放、音量同步
+watch(audioSrc, async (newVal, oldVal) => {
+  if (!newVal || newVal === oldVal) return;
 
-// 增强监听逻辑
-watch(audioSrc, async (newVal) => {
-  if (!newVal) return;
+  updateMediaSession(); // 同步系统控制面板
 
   await nextTick();
-  if (audioRef.value) {
-    // 强制告诉浏览器：媒体流发生了变化，请保持存活
-    audioRef.value.load();
+  const el = audioRef.value;
+  if (el) {
+    // 1. 即使是相同地址也强制执行 load (针对某些代理流)
+    if (player.nowPlaying?.music.needsProxy) {
+      el.load();
+    }
+
+    // 2. 应用当前音量
+    el.volume = volume.value;
+
+    // 3. 处理播放逻辑
     if (!player.isPaused) {
-      audioRef.value.play().catch(e => {
-        console.warn("后台播放被拦截，可能需要引导用户前台点击一次", e);
+      // 捕获异步播放错误，防止后台切歌时报错卡顿
+      el.play().catch(e => {
+        console.warn("[Audio] Background play blocked or pending interaction.", e.message);
       });
+    } else {
+      el.pause();
+    }
+  }
+}, { immediate: true });
+
+// 🟢 监听暂停状态变化（当用户点击 UI 上的暂停/播放按钮时）
+watch(() => player.isPaused, (newPaused) => {
+  if (audioRef.value) {
+    if (newPaused) {
+      audioRef.value.pause();
+    } else {
+      audioRef.value.play().catch(() => {});
     }
   }
 });
 
 const progressPercent = computed(() => {
-    if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
-    return Math.min(100, (localProgress.value / nowPlaying.value.music.duration) * 100);
+  if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
+  return Math.min(100, (localProgress.value / nowPlaying.value.music.duration) * 100);
 });
 
 const formatTime = (ms) => {
-    if(!ms) return "00:00";
-    return dayjs(ms).format('mm:ss');
-};
-
-const handleEnded = () => {
+  if(!ms) return "00:00";
+  return dayjs(ms).format('mm:ss');
 };
 
 const handleError = (e) => {
-    if (!audioSrc.value) return; // 忽略空链接错误
-    console.error("Audio Error:", e.target.error);
+  if (!audioSrc.value || audioSrc.value.startsWith('data:')) return;
+  console.error("Audio Error:", e.target.error);
+};
+
+// 兜底重连：如果 audio 结束了，但后端 2 秒内没反应，主动申请同步
+const handleEnded = () => {
+  setTimeout(() => {
+    if (!player.nowPlaying) {
+      console.log("Detecting idle state after song end, resyncing...");
+      player.stompClient.publish({ destination: '/app/player/resync' });
+    }
+  }, 2000);
 };
 
 // --- 音量逻辑 ---
 const toggleMute = () => {
-    if (volume.value > 0) {
-        lastVolume.value = volume.value;
-        volume.value = 0;
-    } else {
-        volume.value = lastVolume.value > 0 ? lastVolume.value : 0.5;
-    }
+  if (volume.value > 0) {
+    lastVolume.value = volume.value;
+    volume.value = 0;
+  } else {
+    volume.value = lastVolume.value > 0 ? lastVolume.value : 0.5;
+  }
 };
 
-// 监听音量变化
+// 监听音量变化，直接反映到 audio 标签
 watch(volume, (newVal) => {
-    localStorage.setItem('mp_volume', newVal);
-    if (audioRef.value) {
-        audioRef.value.volume = newVal;
-    }
+  localStorage.setItem('mp_volume', newVal);
+  if (audioRef.value) {
+    audioRef.value.volume = newVal;
+  }
 });
 
 const updateVolumeByMouse = (e) => {
   if (!volumeTrackRef.value) return;
-
   const rect = volumeTrackRef.value.getBoundingClientRect();
-  // 计算鼠标距离轨道左侧的距离
   const x = e.clientX - rect.left;
-  // 限制在 0 到 rect.width 之间，然后转为 0-1 的比例
   const percentage = Math.max(0, Math.min(1, x / rect.width));
   volume.value = parseFloat(percentage.toFixed(2));
 };
 
-// 鼠标按下
 const handleVolumeMouseDown = (e) => {
   isDraggingVolume.value = true;
-  updateVolumeByMouse(e); // 按下时立即跳转音量
-
-  // 绑定全局事件，这样鼠标移出轨道也能继续拖拽
+  updateVolumeByMouse(e);
   window.addEventListener('mousemove', handleVolumeMouseMove);
   window.addEventListener('mouseup', handleVolumeMouseUp);
 };
 
 const handleVolumeMouseMove = (e) => {
-  if (isDraggingVolume.value) {
-    updateVolumeByMouse(e);
-  }
+  if (isDraggingVolume.value) updateVolumeByMouse(e);
 };
 
 const handleVolumeMouseUp = () => {
@@ -290,124 +315,69 @@ const handleVolumeMouseUp = () => {
   window.removeEventListener('mouseup', handleVolumeMouseUp);
 };
 
-// 记得清理
 onUnmounted(() => {
   window.removeEventListener('mousemove', handleVolumeMouseMove);
   window.removeEventListener('mouseup', handleVolumeMouseUp);
 });
 
-// --- 自动播放与状态同步逻辑 ---
-
-// 1. 拦截自动播放
-// 当音频准备好时，如果全局是暂停状态，强制暂停
+// 自动播放与状态同步逻辑
 const checkAutoPlay = () => {
-    isBuffering.value = false;
-    // 修复点：这里必须使用 player.isPaused，不能用 newPaused
-    if (player.isPaused && audioRef.value) {
-        console.log("State is paused, preventing autoplay.");
-        audioRef.value.pause();
-    }
-    // 同时应用音量
-    if (audioRef.value) {
-        audioRef.value.volume = volume.value;
-    }
+  isBuffering.value = false;
+  if (audioRef.value) {
+    audioRef.value.volume = volume.value;
+    if (player.isPaused) audioRef.value.pause();
+  }
 };
 
-// 2. 监听暂停状态变化
-// 这里参数名为 newPaused，所以在内部可以使用 newPaused
-watch(() => player.isPaused, (newPaused) => {
-    if (audioRef.value) {
-        if (newPaused) {
-            audioRef.value.pause();
-        } else {
-            if (audioSrc.value) {
-                audioRef.value.play().catch(e => console.log("Autoplay prevented", e));
-            }
-        }
-    }
-});
-
-// 3. 监听切歌 (Src 变化)
-watch(audioSrc, () => {
-    // 延迟检查，确保 DOM 更新
-    setTimeout(() => {
-        // 修复点：这里必须使用 player.isPaused，不能用 newPaused
-        if (player.isPaused && audioRef.value) {
-            audioRef.value.pause();
-        }
-        // 切歌后重新应用音量
-        if (audioRef.value) {
-             audioRef.value.volume = volume.value;
-        }
-    }, 100);
-});
-
-// --- 进度条同步逻辑 ---
 let syncTimer;
-
 onMounted(() => {
-    syncTimer = setInterval(() => {
-        if(!nowPlaying.value) { 
-            localProgress.value = 0;
-            return;
-        }
+  syncTimer = setInterval(() => {
+    if(!nowPlaying.value) {
+      localProgress.value = 0;
+      return;
+    }
+    const backendTime = player.getCurrentProgress();
+    const domTime = (audioRef.value?.currentTime || 0) * 1000;
+    const duration = nowPlaying.value.music.duration;
 
-        const backendTime = player.getCurrentProgress(); 
-        const domTime = (audioRef.value?.currentTime || 0) * 1000;
-        const duration = nowPlaying.value.music.duration;
+    if (duration > 0 && backendTime > duration) {
+      localProgress.value = duration;
+      return;
+    }
 
-        // 防止时间溢出
-        if (duration > 0 && backendTime > duration) {
-            localProgress.value = duration;
-            return;
-        }
+    localProgress.value = player.isPaused ? domTime : backendTime;
 
-        localProgress.value = player.isPaused ? domTime : backendTime;
-
-        // 同步时间
-        if (!player.isPaused && Math.abs(domTime - backendTime) > 2000) {
-            if (duration > 0 && backendTime < duration) {
-                if(audioRef.value) {
-                    audioRef.value.currentTime = backendTime / 1000;
-                }
-            }
-        }
-    }, 500);
+    if (!player.isPaused && Math.abs(domTime - backendTime) > 2000) {
+      if (duration > 0 && backendTime < duration && audioRef.value) {
+        audioRef.value.currentTime = backendTime / 1000;
+      }
+    }
+  }, 500);
 });
 
 onUnmounted(() => clearInterval(syncTimer));
 
+// 下载逻辑
 const downloadCurrentMusic = async () => {
   if (!nowPlaying.value) return;
-
   const music = nowPlaying.value.music;
   const url = music.url;
   const filename = `${music.name} - ${music.artists[0]}.mp3`;
-
   info(`Starting download: ${music.name}...`);
-
   try {
-    // 使用 fetch 获取文件流，强制触发下载
     const response = await fetch(url);
-    if (!response.ok) throw new Error('Network response was not ok');
-
     const blob = await response.blob();
     const blobUrl = window.URL.createObjectURL(blob);
-
     const link = document.createElement('a');
     link.href = blobUrl;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
-
-    //TC理
     document.body.removeChild(link);
     window.URL.revokeObjectURL(blobUrl);
   } catch (e) {
-    console.error("Download failed", e);
-    // 如果 fetch 失败（可能是严重的跨域限制），尝试回退到 window.open
     window.open(url, '_blank');
-    error('Download via blob failed, opening in new tab.');
+    error('Download opened in new tab.');
   }
 };
 </script>
