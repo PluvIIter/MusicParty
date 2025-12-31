@@ -9,6 +9,7 @@ import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -182,7 +183,8 @@ public class MusicPlayerService {
         service.getPlayableMusic(nextItem.music().id())
                 .doOnSuccess(data -> log.info("成功获取播放链接: {}", data.url()))
                 .doOnError(e -> {
-                    log.error("获取播放链接失败，原因: ", e); // 【关键】把异常堆栈打印出来
+                    log.error("获取播放链接失败，原因: ", e);
+                    broadcastEvent("ERROR", "LOAD_FAILED", "ADMIN", nextItem.music().name());
                     isLoading.set(false);
                     broadcastQueueUpdate();
                     playNextInQueue();
@@ -191,6 +193,7 @@ public class MusicPlayerService {
                     if (playableMusic.needsProxy()) {
                         // B站源：必须等待代理准备就绪
                         musicProxyService.startProxy(playableMusic.url())
+                                .timeout(Duration.ofSeconds(10))
                                 .doOnSuccess(unused -> {
                                     // 代理准备好了！
                                     log.info("Proxy ready, broadcasting to clients.");
@@ -210,6 +213,7 @@ public class MusicPlayerService {
                                 .doOnError(e -> {
                                     log.error("Proxy start failed", e);
                                     isLoading.set(false);
+                                    broadcastPlayerState();
                                     playNextInQueue();
                                 })
                                 .subscribe(); // 触发 Mono

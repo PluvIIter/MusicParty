@@ -30,7 +30,7 @@ public class MusicProxyController {
         long waitStart = System.currentTimeMillis();
 
         while (state.status() == MusicProxyService.ProxyStatus.BUFFERING && state.buffer() == null) {
-            if (System.currentTimeMillis() - waitStart > 10000) {
+            if (System.currentTimeMillis() - waitStart > 8000) {
                 log.error("Proxy initialization timed out.");
                 break;
             }

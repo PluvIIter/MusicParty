@@ -48,6 +48,7 @@ export const usePlayerStore = defineStore('player', () => {
             case 'REMOVE': return `${userName} 移除了: ${payload}`;
             case 'SHUFFLE': return `${userName} ${payload === 'ON' ? '开启' : '关闭'}了随机播放`;
             case 'RESET': return `系统已被重置`;
+            case 'LOAD_FAILED': return `资源获取失败: ${payload} (自动跳过)`;
             default: return `${userName} 执行了操作`;
         }
     };
@@ -79,7 +80,8 @@ export const usePlayerStore = defineStore('player', () => {
             'SHUFFLE': 'SHUFFLE MODE',
             'TOP': 'PRIORITY UPDATE',
             'REMOVE': 'QUEUE REMOVAL',
-            'RESET': 'SYSTEM ALERT'
+            'RESET': 'SYSTEM ALERT',
+            'LOAD_FAILED': 'PLAYBACK ERROR'
         };
         return map[action] || 'SYSTEM NOTICE';
     };
