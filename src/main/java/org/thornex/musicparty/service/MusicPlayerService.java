@@ -505,7 +505,7 @@ public class MusicPlayerService {
 
         return new PlayerState(
                 infoToSend, // 使用修正后的 info
-                new ArrayList<>(musicQueue),
+                getQueueWithUpdatedStatus(),
                 isShuffle.get(),
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
@@ -590,6 +590,38 @@ public class MusicPlayerService {
                     // 广播批量添加事件
                     broadcastEvent("SUCCESS", "IMPORT", enqueuer.getToken(), String.valueOf(itemsToAdd.size()));
                 });
+    }
+
+    private List<MusicQueueItem> getQueueWithUpdatedStatus() {
+        return musicQueue.stream().map(item -> {
+            // 网易云永远是 READY
+            if ("netease".equals(item.music().platform())) {
+                // 如果原始状态不是 READY，修正它 (避免反复创建对象)
+                return "READY".equals(item.status()) ? item : item.withStatus("READY");
+            }
+
+            // Bilibili 查询缓存服务
+            if ("bilibili".equals(item.music().platform())) {
+                CacheStatus cacheStatus = localCacheService.getStatus(item.music().id());
+
+                String statusStr;
+                if (cacheStatus == CacheStatus.COMPLETED) {
+                    statusStr = "READY";
+                } else if (cacheStatus == CacheStatus.DOWNLOADING) {
+                    statusStr = "DOWNLOADING";
+                } else if (cacheStatus == CacheStatus.FAILED) {
+                    statusStr = "FAILED";
+                } else {
+                    statusStr = "PENDING";
+                }
+
+                // 只有状态不一致时才创建新对象
+                if (!statusStr.equals(item.status())) {
+                    return item.withStatus(statusStr);
+                }
+            }
+            return item;
+        }).toList();
     }
 
     public synchronized void topSong(String queueId, String sessionId) {
@@ -747,36 +779,7 @@ public class MusicPlayerService {
     }
 
     private void broadcastQueueUpdate() {
-        // 将队列中的每个 Item 映射为带有最新状态的 Item
-        List<MusicQueueItem> queueWithStatus = musicQueue.stream().map(item -> {
-            // 网易云永远是 READY
-            if ("netease".equals(item.music().platform())) {
-                return item.withStatus("READY");
-            }
-
-            // Bilibili 查询缓存服务
-            if ("bilibili".equals(item.music().platform())) {
-                CacheStatus cacheStatus = localCacheService.getStatus(item.music().id());
-
-                // 映射 CacheStatus 到前端需要的字符串
-                String statusStr;
-                if (cacheStatus == CacheStatus.COMPLETED) {
-                    statusStr = "READY";
-                } else if (cacheStatus == CacheStatus.DOWNLOADING) {
-                    statusStr = "DOWNLOADING";
-                } else if (cacheStatus == CacheStatus.FAILED) {
-                    statusStr = "FAILED";
-                } else {
-                    // null or PENDING
-                    statusStr = "PENDING";
-                }
-                return item.withStatus(statusStr);
-            }
-
-            return item;
-        }).toList();
-
-        messagingTemplate.convertAndSend("/topic/player/queue", queueWithStatus);
+        messagingTemplate.convertAndSend("/topic/player/queue", getQueueWithUpdatedStatus());
     }
 
     @EventListener
