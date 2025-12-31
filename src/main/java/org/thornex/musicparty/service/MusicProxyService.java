@@ -9,6 +9,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
@@ -35,13 +36,15 @@ public class MusicProxyService {
      * 启动一个新的代理任务。这将取消任何正在进行的旧任务。
      * @param targetUrl 要代理的Bilibili音频URL
      */
-    public synchronized void startProxy(String targetUrl) {
+    public synchronized Mono<Void> startProxy(String targetUrl) {
         if (targetUrl == null || !targetUrl.startsWith("http")) {
             log.error("Invalid proxy target URL: {}", targetUrl);
-            return;
+            return Mono.error(new IllegalArgumentException("Invalid URL"));
         }
         log.info("Request to start proxy for URL: {}", targetUrl);
         cancelCurrentProxy(); // 停止并清理上一个任务
+
+        CompletableFuture<Void> readyFuture = new CompletableFuture<>();
 
         // 初始化新任务的状态
         this.currentState = new ProxyState(ProxyStatus.BUFFERING, targetUrl, 0, 0, null);
@@ -58,6 +61,8 @@ public class MusicProxyService {
                             return Mono.error(new RuntimeException("File too large"));
                         }
                         if (totalLength <= 0) {
+                            // 失败时通知 Future
+                            readyFuture.completeExceptionally(new RuntimeException("Invalid content length"));
                             log.error("Invalid content length: {}", totalLength);
                             currentState = currentState.withStatus(ProxyStatus.ERROR);
                             return Mono.error(new RuntimeException("Invalid content length for proxy target."));
@@ -67,6 +72,8 @@ public class MusicProxyService {
                         byte[] buffer = new byte[(int) totalLength];
                         currentState = currentState.withBuffer(buffer).withTotalLength(totalLength);
                         log.info("Allocated buffer of size {} bytes for proxy.", totalLength);
+
+                        readyFuture.complete(null);
 
                         // 使用 a non-blocking subscriber on a separate thread to handle the stream
                         return response.bodyToFlux(org.springframework.core.io.buffer.DataBuffer.class)
@@ -91,6 +98,8 @@ public class MusicProxyService {
 
             currentDownloadTask.set(disposable);
         });
+
+        return Mono.fromFuture(readyFuture);
     }
 
     /**

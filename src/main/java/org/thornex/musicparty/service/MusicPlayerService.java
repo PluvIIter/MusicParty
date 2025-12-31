@@ -188,44 +188,58 @@ public class MusicPlayerService {
                     playNextInQueue();
                 })
                 .subscribe(playableMusic -> {
-                    PlayableMusic finalPlayableMusic = playableMusic;
-                    try {
-                        if (playableMusic.needsProxy()) {
-                            musicProxyService.startProxy(playableMusic.url());
-                            // Rewrite the URL to point to our proxy
-                            String uniqueProxyUrl = "/proxy/stream?t=" + System.currentTimeMillis();
-                            finalPlayableMusic = new PlayableMusic(
-                                    playableMusic.id(), playableMusic.name(), playableMusic.artists(),
-                                    playableMusic.duration(), playableMusic.platform(),
-                                    uniqueProxyUrl,
-                                    playableMusic.coverUrl(), true
-                            );
-                        }
+                    if (playableMusic.needsProxy()) {
+                        // B站源：必须等待代理准备就绪
+                        musicProxyService.startProxy(playableMusic.url())
+                                .doOnSuccess(unused -> {
+                                    // 代理准备好了！
+                                    log.info("Proxy ready, broadcasting to clients.");
 
-                        NowPlayingInfo newNowPlaying = new NowPlayingInfo(
-                                finalPlayableMusic,
-                                Instant.now().toEpochMilli(),
-                                nextItem.enqueuedBy().token(),
-                                nextItem.enqueuedBy().name());
+                                    // 构建代理地址 + 时间戳
+                                    String uniqueProxyUrl = "/proxy/stream?t=" + System.currentTimeMillis();
 
-                        if (nowPlaying.compareAndSet(null, newNowPlaying)) {
-                            log.info("Now playing: {}", finalPlayableMusic.name());
+                                    PlayableMusic proxyMusic = new PlayableMusic(
+                                            playableMusic.id(), playableMusic.name(), playableMusic.artists(),
+                                            playableMusic.duration(), playableMusic.platform(),
+                                            uniqueProxyUrl,
+                                            playableMusic.coverUrl(), true
+                                    );
 
-                            isLoading.set(false);
-
-                            // 1. 推送当前播放信息 (前端收到这个才会开始播放)
-                            broadcastNowPlaying(newNowPlaying);
-
-                            // 2. 推送最新状态 (包含时间戳等)
-                            broadcastPlayerState();
-
-                            // 3. 推送队列更新 (因为歌曲从队列移出了)
-                            broadcastQueueUpdate();
-                        }
-                    } finally {
-                        isLoading.set(false);
+                                    applyNewSong(proxyMusic, nextItem);
+                                })
+                                .doOnError(e -> {
+                                    log.error("Proxy start failed", e);
+                                    isLoading.set(false);
+                                    playNextInQueue();
+                                })
+                                .subscribe(); // 触发 Mono
+                    } else {
+                        // 网易云源：直接播放
+                        applyNewSong(playableMusic, nextItem);
                     }
                 });
+    }
+
+    private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
+        NowPlayingInfo newNowPlaying = new NowPlayingInfo(
+                music,
+                Instant.now().toEpochMilli(),
+                queueItem.enqueuedBy().token(),
+                queueItem.enqueuedBy().name());
+
+        if (nowPlaying.compareAndSet(null, newNowPlaying)) {
+            log.info("Now playing: {}", music.name());
+
+            // 这里 isLoading 设为 false，前端 Loading 消失，开始请求音频
+            isLoading.set(false);
+
+            broadcastNowPlaying(newNowPlaying);
+            broadcastPlayerState();
+            broadcastQueueUpdate();
+        } else {
+            // 极少情况：并发冲突
+            isLoading.set(false);
+        }
     }
 
     private MusicQueueItem getNextMusicFromQueue() {
@@ -326,8 +340,13 @@ public class MusicPlayerService {
     }
 
     public void enqueue(EnqueueRequest request, String sessionId) {
-        User enqueuer = userService.getUser(sessionId)
-                .orElseThrow(() -> new IllegalStateException("User not found"));
+        Optional<User> userOpt = userService.getUser(sessionId);
+        if (userOpt.isEmpty()) {
+            log.warn("Enqueue ignored: User session {} not found (Server restarted?).", sessionId);
+            //TODO 发送一个错误提示给前端让其刷新
+            return;
+        }
+        User enqueuer = userOpt.get();
 
         boolean alreadyExists = musicQueue.stream()
                 .anyMatch(item -> item.music().id().equals(request.musicId()) && item.music().platform().equals(request.platform()));
@@ -350,7 +369,13 @@ public class MusicPlayerService {
     }
 
     public void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {
-        User enqueuer = userService.getUser(sessionId).orElseThrow();
+        Optional<User> userOpt = userService.getUser(sessionId);
+        if (userOpt.isEmpty()) {
+            log.warn("Enqueue ignored: User session {} not found (Server restarted?).", sessionId);
+            //TODO 发送一个错误提示给前端让其刷新
+            return;
+        }
+        User enqueuer = userOpt.get();
         String operatorName = enqueuer.getName();
 
         IMusicApiService service = getApiService(request.platform());
