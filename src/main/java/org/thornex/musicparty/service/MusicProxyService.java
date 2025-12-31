@@ -19,8 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class MusicProxyService {
 
     private final WebClient webClient;
-    // 使用单线程执行器确保全局只有一个下载任务在运行
-    private final ExecutorService downloadExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService downloadExecutor = Executors.newCachedThreadPool();
 
     // --- 全局代理状态 ---
     // volatile确保多线程之间的可见性

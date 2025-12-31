@@ -214,6 +214,7 @@ public class MusicPlayerService {
                                     log.error("Proxy start failed", e);
                                     isLoading.set(false);
                                     broadcastPlayerState();
+                                    broadcastQueueUpdate();
                                     playNextInQueue();
                                 })
                                 .subscribe(); // 触发 Mono
