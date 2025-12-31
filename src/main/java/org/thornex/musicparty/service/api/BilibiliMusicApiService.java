@@ -290,7 +290,17 @@ public class BilibiliMusicApiService implements IMusicApiService {
                         medias.forEach(media -> {
                             String title = media.path("title").asText();
                             // 过滤失效视频
-                            if ("已失效视频".equals(title)) return;
+                            if ("已失效视频".equals(title)) {
+                                musicList.add(new Music(
+                                        "INVALID_SKIP", // 特殊 ID
+                                        "已失效视频",
+                                        List.of("Unknown"),
+                                        0,
+                                        PLATFORM,
+                                        ""
+                                ));
+                                return; // 结束当前循环，继续下一个
+                                }
 
                             // 构造 Music 对象
                             musicList.add(new Music(

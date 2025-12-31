@@ -423,9 +423,46 @@ const fetchSongsPage = async () => {
     const res = await axios.get(`/api/playlist/songs/${platform.value}/${currentPlaylistId.value}`, {
       params: { offset: offset.value, limit: limit.value }
     });
-    const newSongs = res.data;
-    if (newSongs.length < limit.value) hasMore.value = false;
-    songs.value.push(...newSongs);
+    // 原始数据（包含 INVALID_SKIP）
+    const rawSongs = res.data;
+
+    // B站源：只有当彻底没数据返回时(0条)，才认为是到底了。
+    // 即使返回了 5 条，也可能有下一页（因为B站可能有过滤逻辑导致这一页很短）。
+    if (platform.value === 'bilibili') {
+      if (rawSongs.length === 0) hasMore.value = false;
+    } else {
+      // 网易云等标准源：保持原有逻辑
+      if (rawSongs.length < limit.value) hasMore.value = false;
+    }
+
+    // 过滤掉失效占位符
+    const validSongs = rawSongs.filter(s => s.id !== 'INVALID_SKIP');
+
+    // 加入列表
+    songs.value.push(...validSongs);
+
+    // 贪婪加载
+    // 条件：
+    // 1. 还有下一页 (hasMore)
+    // 2. 且 (原始数据不为空 但 有效数据为0) OR (有效数据太少，不足以撑起滚动条)
+    // 这里的 10 是一个经验值，通常手机屏幕能显示 7-8 个，PC 能显示 10+ 个
+    const isInsufficient = validSongs.length < 10;
+
+    if (hasMore.value && (rawSongs.length > 0 && isInsufficient)) {
+      console.log(`当前页有效数据不足(${validSongs.length}条)，自动贪婪加载下一页...`);
+      offset.value += limit.value;
+
+      // 立即递归，无需等待用户操作
+      setTimeout(() => {
+        fetchSongsPage();
+      }, 50);
+    }
+
+    // 兜底处理
+    // 如果 B站返回了空数组 []，但是后端没给结束信号（极少见），强制停止防止死循环
+    if (rawSongs.length === 0) {
+      isLoadingMore.value = false; // 确保加载状态结束
+    }
   } catch (e) {
     console.error("Fetch songs failed", e);
     hasMore.value = false;
