@@ -57,11 +57,16 @@
 
       <!-- 进度条 -->
       <div class="h-1 bg-medical-200 w-full relative">
-        <div 
-          class="h-full bg-accent transition-all duration-300 ease-linear relative"
-          :style="{ width: progressPercent + '%' }"
+        <div
+            class="h-full transition-all duration-300 ease-linear relative"
+            :class="isErrorState ? 'bg-red-500' : 'bg-accent'"
+            :style="{ width: progressPercent + '%' }"
         >
-           <div class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-accent rotate-45"></div>
+          <div
+              v-if="!isErrorState"
+              class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 transition-all duration-300"
+              :class="retryCount > 0 ? 'bg-yellow-500 scale-150 animate-pulse shadow-md shadow-yellow-500/50' : 'bg-accent'"
+          ></div>
         </div>
       </div>
       
@@ -153,7 +158,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { Download } from 'lucide-vue-next';
 import { usePlayerStore } from '../stores/player';
 import { Play, Pause, SkipForward, Shuffle, Volume2, Volume1, VolumeX } from 'lucide-vue-next';
@@ -168,6 +173,9 @@ const isBuffering = ref(false);
 const { info, error } = useToast();
 const volumeTrackRef = ref(null);
 const isDraggingVolume = ref(false);
+const retryCount = ref(0);
+const MAX_RETRIES = 3;
+const isErrorState = ref(false); // 是否处于不可恢复的错误状态
 
 // 音量状态
 const volume = ref(parseFloat(localStorage.getItem('mp_volume') || '0.5'));
@@ -220,6 +228,39 @@ const handleEnded = () => {
 const handleError = (e) => {
     if (!audioSrc.value) return; // 忽略空链接错误
     console.error("Audio Error:", e.target.error);
+
+  isBuffering.value = false;
+
+  if (retryCount.value >= MAX_RETRIES) {
+    isErrorState.value = true; // 标记为错误状态，用于停止进度条
+    error(`播放失败: ${nowPlaying.value?.music?.name || '未知曲目'}`);
+    return;
+  }
+
+  // 开始重试
+  retryCount.value++;
+  const delay = 1500; // 1.5秒后重试
+
+  info(`音频异常，尝试重连 (${retryCount.value}/${MAX_RETRIES})...`);
+
+  setTimeout(() => {
+    if (!audioRef.value) return;
+
+    // 尝试重新加载流
+    // load() 会重新请求 src，对于 B站代理流，浏览器会发起新的请求
+    audioRef.value.load();
+
+    // 尝试播放
+    audioRef.value.play().then(() => {
+      // 如果播放成功，重置错误状态
+      retryCount.value = 0;
+      isErrorState.value = false;
+      success("重连成功，继续播放");
+    }).catch(playErr => {
+      console.warn("Retry play failed:", playErr);
+      // 这里的 catch 不需要做太多，因为如果 load 失败通常会再次触发 @error，形成循环直到上限
+    });
+  }, delay);
 };
 
 // --- 音量逻辑 ---
@@ -313,7 +354,10 @@ watch(() => player.isPaused, (newPaused) => {
 
 // 3. 监听切歌 (Src 变化)
 watch(audioSrc, () => {
-    // 延迟检查，确保 DOM 更新
+  // 切歌时，重置所有错误计数器
+  retryCount.value = 0;
+  isErrorState.value = false;
+  // 延迟检查，确保 DOM 更新
     setTimeout(() => {
         // 这里必须使用 player.isPaused，不能用 newPaused
         if (player.isPaused && audioRef.value) {
@@ -336,6 +380,12 @@ onMounted(() => {
             return;
         }
 
+      // 如果处于错误状态，停止更新进度条
+      // 这样用户就能直观看到进度条卡住了，而不是在“假唱”
+      if (isErrorState.value) {
+        return;
+      }
+
         const backendTime = player.getCurrentProgress(); 
         const domTime = (audioRef.value?.currentTime || 0) * 1000;
         const duration = nowPlaying.value.music.duration;
@@ -348,14 +398,18 @@ onMounted(() => {
 
         localProgress.value = player.isPaused ? domTime : backendTime;
 
-        // 同步时间
-        if (!player.isPaused && Math.abs(domTime - backendTime) > 2000) {
-            if (duration > 0 && backendTime < duration) {
-                if(audioRef.value) {
-                    audioRef.value.currentTime = backendTime / 1000;
-                }
+      // 同步时间
+      if (!player.isPaused && Math.abs(domTime - backendTime) > 2000) {
+        // 只有在非 buffering 且非 error 状态下才强制 seek
+        // 否则在缓冲/重试时 seek 会导致鬼畜
+        if (!isBuffering.value && !isErrorState.value) {
+          if (duration > 0 && backendTime < duration) {
+            if(audioRef.value) {
+              audioRef.value.currentTime = backendTime / 1000;
             }
+          }
         }
+      }
     }, 500);
 });
 
