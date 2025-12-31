@@ -3,6 +3,7 @@ package org.thornex.musicparty.service;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.Disposable;
@@ -78,10 +79,14 @@ public class MusicProxyService {
                         return response.bodyToFlux(org.springframework.core.io.buffer.DataBuffer.class)
                                 .publishOn(Schedulers.boundedElastic())
                                 .doOnNext(dataBuffer -> {
-                                    int readableBytes = dataBuffer.readableByteCount();
-                                    long currentBytesRead = currentState.bytesRead();
-                                    dataBuffer.read(buffer, (int) currentBytesRead, readableBytes);
-                                    currentState = currentState.withBytesRead(currentBytesRead + readableBytes);
+                                    try {
+                                        int readableBytes = dataBuffer.readableByteCount();
+                                        long currentBytesRead = currentState.bytesRead();
+                                        dataBuffer.read(buffer, (int) currentBytesRead, readableBytes);
+                                        currentState = currentState.withBytesRead(currentBytesRead + readableBytes);
+                                    } finally {
+                                        DataBufferUtils.release(dataBuffer);
+                                    }
                                 })
                                 .doOnComplete(() -> {
                                     log.info("Proxy download completed for URL: {}", targetUrl);
