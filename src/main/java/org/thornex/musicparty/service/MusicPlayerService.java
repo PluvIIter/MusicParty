@@ -422,66 +422,6 @@ public class MusicPlayerService {
         }
     }
 
-    private MusicQueueItem getNextMusicFromQueue() {
-        if (musicQueue.isEmpty()) {
-            return null;
-        }
-
-        Optional<MusicQueueItem> toppedItem = musicQueue.stream()
-                .filter(i -> i.queueId().startsWith("TOP-"))
-                .findFirst();
-
-        if (toppedItem.isPresent()) {
-            MusicQueueItem item = toppedItem.get();
-            musicQueue.remove(item);
-            lastPlayedUserToken.set(item.enqueuedBy().token()); // 记录置顶者
-            return item;
-        }
-
-        // --- 改进后的随机 (公平调度) ---
-        if (isShuffle.get()) {
-            List<MusicQueueItem> snapshot = new ArrayList<>(musicQueue);
-
-            // A. 按用户分组
-            Map<String, List<MusicQueueItem>> userSongsMap = snapshot.stream()
-                    .collect(Collectors.groupingBy(item -> item.enqueuedBy().token()));
-
-            List<String> userIds = new ArrayList<>(userSongsMap.keySet());
-
-            String luckyUserId;
-
-            // B. 核心改进：如果有多个用户在排队，排除掉上一个播放的人
-            if (userIds.size() > 1) {
-                String lastToken = lastPlayedUserToken.get();
-                // 过滤掉刚刚播过的用户
-                List<String> candidates = userIds.stream()
-                        .filter(id -> !id.equals(lastToken))
-                        .toList();
-
-                // 从剩下的候选人中随机选一个
-                luckyUserId = candidates.get(new Random().nextInt(candidates.size()));
-            } else {
-                // 如果只有一个人点歌，那就只能还是他
-                luckyUserId = userIds.getFirst();
-            }
-
-            // C. 更新最后播放者记录
-            lastPlayedUserToken.set(luckyUserId);
-
-            // D. 从选定用户的歌单中随机挑一首
-            List<MusicQueueItem> luckyUserSongs = userSongsMap.get(luckyUserId);
-            MusicQueueItem selectedItem = luckyUserSongs.get(new Random().nextInt(luckyUserSongs.size()));
-
-            musicQueue.remove(selectedItem);
-            return selectedItem;
-        } else {
-            // 顺序模式
-            MusicQueueItem item = musicQueue.poll();
-            if (item != null) lastPlayedUserToken.set(item.enqueuedBy().token());
-            return item;
-        }
-    }
-
     public PlayerState getCurrentPlayerState() {
         NowPlayingInfo current = nowPlaying.get();
         NowPlayingInfo infoToSend = null;
@@ -536,9 +476,6 @@ public class MusicPlayerService {
         }
 
         IMusicApiService service = getApiService(request.platform());
-
-        // 触发预下载 (不会阻塞)
-        service.prefetchMusic(request.musicId());
 
         service.getPlayableMusic(request.musicId())
                 .subscribe(playableMusic -> {
@@ -698,12 +635,17 @@ public class MusicPlayerService {
         //广播切歌事件
         broadcastEvent("INFO", "SKIP", getUserToken(sessionId), null);
 
-        broadcastPlayerState();
-        playerLoop();
+        playNextInQueue();
     }
 
     public void togglePause(String sessionId) {
-        if (nowPlaying.get() == null) return;
+        if (nowPlaying.get() == null) {
+            // 如果没歌但队列有歌，尝试播放
+            if (!musicQueue.isEmpty()) {
+                playNextInQueue();
+            }
+            return;
+        }
         if (isRateLimited(sessionId)) return;
         String operatorName = getUserName(sessionId);
 

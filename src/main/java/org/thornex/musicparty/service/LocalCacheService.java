@@ -98,7 +98,7 @@ public class LocalCacheService {
                                     return Mono.empty(); // 吞掉异常，防止队列崩溃
                                 })
                                 // 🟢 关键：强制冷却时间，防止风控
-                                .delayElement(Duration.ofSeconds(DOWNLOAD_COOLDOWN_SECONDS))
+                                .then(Mono.delay(Duration.ofSeconds(DOWNLOAD_COOLDOWN_SECONDS)))
                 )
                 .subscribe();
     }
@@ -124,9 +124,13 @@ public class LocalCacheService {
             return;
         }
 
-        // 如果正在下载，忽略
-        if (cacheIndex.containsKey(musicId) && cacheIndex.get(musicId).getStatus() == CacheStatus.DOWNLOADING) {
-            return;
+        // 2. 检查是否正在处理或排队 (关键去重)
+        if (cacheIndex.containsKey(musicId)) {
+            CacheStatus status = cacheIndex.get(musicId).getStatus();
+            if (status == CacheStatus.DOWNLOADING || status == CacheStatus.PENDING) {
+                log.debug("Task {} is already pending or downloading, skip enqueue.", musicId);
+                return; // 直接返回，不要重复 emit
+            }
         }
 
         // 初始化条目

@@ -158,8 +158,8 @@ public class BilibiliMusicApiService implements IMusicApiService {
         } else {
             // 3. 如果本地没有（可能是下载失败，或者还没下载完就被强制切歌）
             CacheStatus status = localCacheService.getStatus(bvid);
-            if (status != CacheStatus.DOWNLOADING) {
-                prefetchMusic(bvid); // 触发下载
+            if (status != CacheStatus.DOWNLOADING && status != CacheStatus.PENDING && status != CacheStatus.COMPLETED) {
+                prefetchMusic(bvid);
             }
 
             // 即使在下载中，也返回元数据，但 URL 设为特殊值
