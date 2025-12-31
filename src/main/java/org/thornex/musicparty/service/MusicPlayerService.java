@@ -633,11 +633,28 @@ public class MusicPlayerService {
         if (itemToTop.isPresent()) {
             MusicQueueItem item = itemToTop.get();
             musicQueue.remove(item);
+
+            String currentStatus = "PENDING";
+
+            if ("bilibili".equals(item.music().platform())) {
+                CacheStatus status = localCacheService.getStatus(item.music().id());
+                if (status == CacheStatus.COMPLETED) {
+                    currentStatus = "READY";
+                } else if (status == CacheStatus.DOWNLOADING) {
+                    currentStatus = "DOWNLOADING";
+                } else if (status == CacheStatus.FAILED) {
+                    currentStatus = "FAILED";
+                }
+            } else {
+                // 网易云直接 Ready
+                currentStatus = "READY";
+            }
+
             MusicQueueItem toppedItem = new MusicQueueItem(
                     "TOP-" + item.queueId(),
                     item.music(),
                     item.enqueuedBy(),
-                    item.status());
+                    currentStatus);
             List<MusicQueueItem> tempQueue = new ArrayList<>(musicQueue);
             musicQueue.clear();
             musicQueue.add(toppedItem);
@@ -647,7 +664,7 @@ public class MusicPlayerService {
             broadcastQueueUpdate();
             // 广播置顶事件
             broadcastEvent("INFO", "TOP", sessionId, item.music().name());
-            if (nowPlaying.get() == null && isReadyToPlay(toppedItem)) {
+            if (nowPlaying.get() == null) {
                 playNextInQueue();
             }
         }

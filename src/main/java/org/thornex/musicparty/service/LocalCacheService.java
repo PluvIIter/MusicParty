@@ -1,6 +1,7 @@
 package org.thornex.musicparty.service;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -11,7 +12,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.LocalResourceConfig;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.event.DownloadStatusEvent;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 import java.io.File;
@@ -20,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,12 +35,22 @@ public class LocalCacheService {
 
     private final WebClient webClient;
     // 限制 200MB
-    private static final long MAX_CACHE_SIZE = 200 * 1024 * 1024;
+    private static final long MAX_CACHE_SIZE = 1024 * 1024 * 1024;
+    private static final long DOWNLOAD_COOLDOWN_SECONDS = 3;
 
     // 内存中维护缓存文件的元数据
     private final Map<String, CacheEntry> cacheIndex = new ConcurrentHashMap<>();
     private final AtomicLong currentTotalSize = new AtomicLong(0);
     private final ApplicationEventPublisher eventPublisher;
+    private final Sinks.Many<DownloadTask> downloadQueue = Sinks.many().unicast().onBackpressureBuffer();
+    private Disposable queueSubscription;
+
+    private record DownloadTask(
+            String musicId,
+            Mono<String> urlProvider,
+            Map<String, String> headers,
+            String extension
+    ) {}
 
     public LocalCacheService(WebClient webClient, ApplicationEventPublisher eventPublisher) {
         this.webClient = webClient;
@@ -75,6 +89,25 @@ public class LocalCacheService {
             }
         }
         log.info("LocalCacheService initialized. Current cache size: {} bytes", currentTotalSize.get());
+
+        this.queueSubscription = downloadQueue.asFlux()
+                .concatMap(task ->
+                        processTask(task)
+                                .onErrorResume(e -> {
+                                    log.error("Unexpected error in download queue processing", e);
+                                    return Mono.empty(); // 吞掉异常，防止队列崩溃
+                                })
+                                // 🟢 关键：强制冷却时间，防止风控
+                                .delayElement(Duration.ofSeconds(DOWNLOAD_COOLDOWN_SECONDS))
+                )
+                .subscribe();
+    }
+
+    @PreDestroy
+    public void cleanup() {
+        if (queueSubscription != null && !queueSubscription.isDisposed()) {
+            queueSubscription.dispose();
+        }
     }
 
     /**
@@ -99,63 +132,80 @@ public class LocalCacheService {
         // 初始化条目
         CacheEntry entry = new CacheEntry();
         entry.setId(musicId);
-        entry.setStatus(CacheStatus.DOWNLOADING);
+        entry.setStatus(CacheStatus.PENDING); // 🟢 状态：排队中
         entry.setLastAccessTime(System.currentTimeMillis());
         cacheIndex.put(musicId, entry);
 
         eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
 
-        urlProvider.flatMap(url -> {
-            entry.setOriginalUrl(url);
-            String fileName = musicId + extension;
-            entry.setFileName(fileName);
-            Path destPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName);
+        Sinks.EmitResult result = downloadQueue.tryEmitNext(new DownloadTask(musicId, urlProvider, headers, extension));
 
-            log.info("Starting download for {} to {}", url, destPath);
+        if (result.isFailure()) {
+            log.error("Failed to enqueue download task for {}", musicId);
+            entry.setStatus(CacheStatus.FAILED);
+            eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
+        } else {
+            log.info("Download enqueued: {}", musicId);
+        }
+    }
 
-            return webClient.get()
-                    .uri(url)
-                    .headers(httpHeaders -> headers.forEach(httpHeaders::add))
-                    .retrieve()
-                    .bodyToFlux(DataBuffer.class)
-                    .collectList() // 简单起见，先收集到内存再写文件 (注意：如果单文件巨大这里要改用流式写入)
-                    .publishOn(Schedulers.boundedElastic())
-                    .doOnSuccess(dataBuffers -> {
-                        try {
-                            // 写入文件
-                            try (var os = Files.newOutputStream(destPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-                                for (DataBuffer buffer : dataBuffers) {
-                                    byte[] bytes = new byte[buffer.readableByteCount()];
-                                    buffer.read(bytes);
-                                    os.write(bytes);
-                                    DataBufferUtils.release(buffer);
+    private Mono<Void> processTask(DownloadTask task) {
+        String musicId = task.musicId();
+        CacheEntry entry = cacheIndex.get(musicId);
+
+        // 双重检查：如果任务在排队期间被移除了，就跳过
+        if (entry == null) return Mono.empty();
+
+        // 🟢 状态变更：PENDING -> DOWNLOADING
+        entry.setStatus(CacheStatus.DOWNLOADING);
+        eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
+        log.info("Processing download: {}", musicId);
+
+        return task.urlProvider()
+                .flatMap(url -> {
+                    entry.setOriginalUrl(url);
+                    String fileName = musicId + task.extension();
+                    entry.setFileName(fileName);
+                    Path destPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName);
+
+                    return webClient.get()
+                            .uri(url)
+                            .headers(httpHeaders -> task.headers().forEach(httpHeaders::add))
+                            .retrieve()
+                            .bodyToFlux(DataBuffer.class)
+                            .collectList()
+                            .publishOn(Schedulers.boundedElastic())
+                            .doOnSuccess(dataBuffers -> {
+                                try {
+                                    try (var os = Files.newOutputStream(destPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                                        for (DataBuffer buffer : dataBuffers) {
+                                            byte[] bytes = new byte[buffer.readableByteCount()];
+                                            buffer.read(bytes);
+                                            os.write(bytes);
+                                            DataBufferUtils.release(buffer);
+                                        }
+                                    }
+                                    long size = Files.size(destPath);
+                                    entry.setSize(size);
+                                    entry.setStatus(CacheStatus.COMPLETED);
+                                    currentTotalSize.addAndGet(size);
+                                    log.info("Download completed: {}", fileName);
+                                    eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
+                                    ensureCapacity();
+                                } catch (IOException e) {
+                                    throw new RuntimeException("File write error", e);
                                 }
-                            }
-
-                            long size = Files.size(destPath);
-                            entry.setSize(size);
-                            entry.setStatus(CacheStatus.COMPLETED);
-                            long total = currentTotalSize.addAndGet(size);
-
-                            eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-                            log.info("Download completed: {}. Total cache: {}/{}", fileName, total, MAX_CACHE_SIZE);
-
-                            // 触发清理
-                            ensureCapacity();
-
-                        } catch (IOException e) {
-                            log.error("File write error", e);
-                            entry.setStatus(CacheStatus.FAILED);
-                            eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-                        }
-                    })
-                    .doOnError(e -> {
-                        log.error("Download failed for {}", musicId, e);
-                        entry.setStatus(CacheStatus.FAILED);
-                        cacheIndex.remove(musicId); // 失败移除
-                        eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-                    });
-        }).subscribe();
+                            });
+                })
+                // 错误处理
+                .doOnError(error -> {
+                    log.error("Download Task failed for {}: {}", musicId, error.getMessage());
+                    entry.setStatus(CacheStatus.FAILED);
+                    eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
+                })
+                // 这里的 onErrorResume 保证即使这个任务失败，Flux 链也不会断，会继续执行 delay 和下一个任务
+                .onErrorResume(e -> Mono.empty())
+                .then(); // 转为 Mono<Void>
     }
 
     /**
