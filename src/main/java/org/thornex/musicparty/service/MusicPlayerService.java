@@ -493,6 +493,19 @@ public class MusicPlayerService {
                     broadcastQueueUpdate();
                     // 广播添加事件
                     broadcastEvent("SUCCESS", "ADD", enqueuer.getToken(), music.name());
+                },
+                error -> {
+                    log.error("Enqueue failed for musicId: {}", request.musicId(), error);
+
+                    // 提取错误信息 (去掉一些技术性前缀，只保留核心原因)
+                    String msg = error.getMessage();
+                    if (msg.contains("Could not get Bilibili video info")) {
+                        msg = "无效资源或API受限";
+                    }
+
+                    // 广播错误事件给前端
+                    // 前端 Toast 会显示: [ERROR] 加载失败: 无效资源或API受限
+                    broadcastEvent("ERROR", "LOAD_FAILED", enqueuer.getToken(), "添加失败: " + msg);
                 });
     }
 
@@ -631,6 +644,9 @@ public class MusicPlayerService {
                 musicProxyService.cancelCurrentProxy();
             }
         }
+
+        broadcastNowPlaying(null);
+        broadcastPlayerState();
 
         //广播切歌事件
         broadcastEvent("INFO", "SKIP", getUserToken(sessionId), null);
