@@ -3,7 +3,7 @@
 <template>
   <div class="p-4">
     <div class="mb-4 flex items-center justify-between">
-      <h3 class="font-mono text-xs font-bold text-medical-400">在线成员</h3>
+      <h3 class="text-sm font-bold text-medical-400">在线成员</h3>
       <div class="text-xs font-mono bg-accent/10 text-accent px-1">{{ users.length }}</div>
     </div>
 

@@ -13,7 +13,7 @@ export default {
           100: '#F3F4F6', // 次级背景
           200: '#E5E7EB', // 边框
           300: '#D1D5DB', // 补充：深一点的边框
-          400: '#9CA3AF', // 补充：滚动条悬停色 (报错的就是缺失了这个)
+          400: '#9CA3AF', // 补充：滚动条悬停色
           500: '#6B7280', // 补充：次级文字
           600: '#4B5563', // 补充
           700: '#374151', // 补充
@@ -26,8 +26,21 @@ export default {
         }
       },
       fontFamily: {
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
-        sans: ['ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace','"Noto Sans SC"', '"Microsoft YaHei"',],
+        sans: [
+          '"Noto Sans SC"',
+          'ui-sans-serif',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          '"Helvetica Neue"',
+          'Arial',
+          '"Zn ZenHei"', // 针对 Linux
+          '"Microsoft YaHei"', // 针对 Windows 本地
+          'sans-serif'
+        ],
       }
     },
   },

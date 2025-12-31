@@ -40,7 +40,7 @@
               v-model="keyword"
               @keyup.enter="doSearch"
               :placeholder="isAdminMode ? '!!!' : '搜索音乐...'"
-              class="flex-1 border p-3 outline-none font-mono transition-colors duration-300"
+              class="flex-1 border p-3 outline-none transition-colors duration-300"
               :class="isAdminMode
                   ? 'bg-red-50 border-red-500 text-red-600 placeholder-red-300 focus:border-red-600'
                   : 'bg-medical-100 border-medical-200 focus:border-accent'"
