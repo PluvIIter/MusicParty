@@ -16,8 +16,17 @@
     ></audio>
 
     <!-- 封面 -->
-    <div class="w-16 h-16 md:w-20 md:h-20 -mt-6 md:mt-0 shadow-lg border-2 border-white chamfer-br flex-shrink-0 relative z-10 bg-medical-800">
-      <CoverImage :src="nowPlaying?.music.coverUrl" class="w-full h-full" />
+    <div
+        @click="openSourcePage"
+        class="w-16 h-16 md:w-20 md:h-20 -mt-6 md:mt-0 shadow-lg border-2 border-white chamfer-br flex-shrink-0 relative z-10 bg-medical-800 cursor-pointer group overflow-hidden"
+        title="Open Source Page"
+    >
+      <CoverImage :src="nowPlaying?.music.coverUrl" class="w-full h-full transition-transform duration-300 group-hover:scale-110 group-hover:opacity-50" />
+
+      <!-- 悬浮时的遮罩和图标 -->
+      <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/40">
+        <ExternalLink class="w-6 h-6 text-white" />
+      </div>
     </div>
 
     <!-- 中间：信息与进度 -->
@@ -158,10 +167,10 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { Download } from 'lucide-vue-next';
 import { usePlayerStore } from '../stores/player';
-import { Play, Pause, SkipForward, Shuffle, Volume2, Volume1, VolumeX } from 'lucide-vue-next';
+import { Play, Pause, SkipForward, Shuffle, Volume2, Volume1, VolumeX, ExternalLink } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { useToast } from '../composables/useToast';
 import dayjs from 'dayjs';
@@ -261,6 +270,29 @@ const handleError = (e) => {
       // 这里的 catch 不需要做太多，因为如果 load 失败通常会再次触发 @error，形成循环直到上限
     });
   }, delay);
+};
+
+// 跳转源页面逻辑
+const openSourcePage = () => {
+  if (!nowPlaying.value) return;
+
+  const music = nowPlaying.value.music;
+  const platform = music.platform;
+  const id = music.id;
+
+  let url = '';
+
+  if (platform === 'netease') {
+    // 网易云音乐链接
+    url = `https://music.163.com/#/song?id=${id}`;
+  } else if (platform === 'bilibili') {
+    // Bilibili 视频链接
+    url = `https://www.bilibili.com/video/${id}`;
+  }
+
+  if (url) {
+    window.open(url, '_blank');
+  }
 };
 
 // --- 音量逻辑 ---

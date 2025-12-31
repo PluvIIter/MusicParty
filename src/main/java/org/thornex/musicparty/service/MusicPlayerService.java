@@ -5,9 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 import org.thornex.musicparty.dto.*;
+import org.thornex.musicparty.enums.CacheStatus;
+import org.thornex.musicparty.event.DownloadStatusEvent;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
+import org.springframework.context.event.EventListener;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -27,6 +31,7 @@ public class MusicPlayerService {
     private final Map<String, IMusicApiService> apiServiceMap;
     private final UserService userService;
     private final MusicProxyService musicProxyService;
+    private final LocalCacheService localCacheService;
 
     // Player State
     private final AtomicReference<NowPlayingInfo> nowPlaying = new AtomicReference<>(null);
@@ -52,13 +57,14 @@ public class MusicPlayerService {
 
     private final AtomicReference<String> lastPlayedUserToken = new AtomicReference<>("");
 
-    public MusicPlayerService(SimpMessagingTemplate messagingTemplate, List<IMusicApiService> apiServices, UserService userService, MusicProxyService musicProxyService, ChatService chatService) {
+    public MusicPlayerService(SimpMessagingTemplate messagingTemplate, List<IMusicApiService> apiServices, UserService userService, MusicProxyService musicProxyService, LocalCacheService localCacheService, ChatService chatService) {
         this.messagingTemplate = messagingTemplate;
         // Create a map of services, keyed by platform name for easy lookup
         this.apiServiceMap = apiServices.stream()
                 .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
         this.musicProxyService = musicProxyService;
+        this.localCacheService = localCacheService;
         this.chatService = chatService;
     }
 
@@ -141,12 +147,20 @@ public class MusicPlayerService {
         // 构造一个“系统”用户
         UserSummary systemUser = new UserSummary("ADMIN", "ADMIN", "AutoDJ");
 
+        String initStatus = "bilibili".equals(randomSong.platform()) ? "PENDING" : "READY";
+
         // 构造队列项
         MusicQueueItem item = new MusicQueueItem(
                 UUID.randomUUID().toString(),
                 randomSong,
-                systemUser
+                systemUser,
+                initStatus
         );
+
+        if ("bilibili".equals(randomSong.platform())) {
+            IMusicApiService service = getApiService(randomSong.platform());
+            service.prefetchMusic(randomSong.id());
+        }
 
         // 加入队列
         musicQueue.add(item);
@@ -163,67 +177,228 @@ public class MusicPlayerService {
             return;
         }
 
-        isLoading.set(true);
-        broadcastPlayerState();
+        //  尝试寻找一首“就绪”的歌
+        MusicQueueItem nextItem = findNextPlayableMusic();
 
-        MusicQueueItem nextItem = getNextMusicFromQueue();
+        //  如果队列不为空，但没找到可播放的（说明都在下载中）
+        // 或者是真的空了，且可以从历史播放
         if (nextItem == null) {
-            broadcastNowPlaying(null);
-            broadcastPlayerState();
-            isLoading.set(false); // 队列为空，解锁
+            // 如果队列真的空了，且允许历史播放
+            if (musicQueue.isEmpty() && !playHistory.isEmpty() && !userService.getOnlineUserSummaries().isEmpty()) {
+                triggerAutoPlayFromHistory();
+            } else {
+                // 队列里有歌，但都在下载中...
+                // 暂时什么都不做，等待下一次 playerLoop 或 下载完成事件(未实现) 触发
+                // 前端会看到队列里的歌，但播放器处于 Idle 状态
+                log.info("All items in queue are downloading or queue empty. Waiting...");
+            }
             return;
         }
 
-        // NEW: Reset pause state for the new song
+        isLoading.set(true);
+        broadcastPlayerState();
         resetPauseState();
 
-        log.info("Attempting to play next song: {}", nextItem.music().name());
+        log.info("Playing next: {}", nextItem.music().name());
 
-        IMusicApiService service = getApiService(nextItem.music().platform());
-        service.getPlayableMusic(nextItem.music().id())
-                .doOnSuccess(data -> log.info("成功获取播放链接: {}", data.url()))
-                .doOnError(e -> {
-                    log.error("获取播放链接失败，原因: ", e);
-                    broadcastEvent("ERROR", "LOAD_FAILED", "ADMIN", nextItem.music().name());
-                    isLoading.set(false);
-                    broadcastQueueUpdate();
-                    playNextInQueue();
-                })
-                .subscribe(playableMusic -> {
-                    if (playableMusic.needsProxy()) {
-                        // B站源：必须等待代理准备就绪
-                        musicProxyService.startProxy(playableMusic.url())
-                                .timeout(Duration.ofSeconds(10))
-                                .doOnSuccess(unused -> {
-                                    // 代理准备好了！
-                                    log.info("Proxy ready, broadcasting to clients.");
+        try {
+            // 检查是否为 Bilibili 源且已缓存
+            if ("bilibili".equals(nextItem.music().platform())) {
+                String localUrl = localCacheService.getLocalUrl(nextItem.music().id());
 
-                                    // 构建代理地址 + 时间戳
-                                    String uniqueProxyUrl = "/proxy/stream?t=" + System.currentTimeMillis();
+                // 如果本地有缓存，直接构造对象，跳过 Service 层（避免多余的网络请求）
+                if (localUrl != null) {
+                    log.info("Hit local cache for Bilibili: {}", nextItem.music().name());
 
-                                    PlayableMusic proxyMusic = new PlayableMusic(
-                                            playableMusic.id(), playableMusic.name(), playableMusic.artists(),
-                                            playableMusic.duration(), playableMusic.platform(),
-                                            uniqueProxyUrl,
-                                            playableMusic.coverUrl(), true
-                                    );
+                    // 利用队列中已有的元数据构建播放对象
+                    PlayableMusic cachedMusic = new PlayableMusic(
+                            nextItem.music().id(),
+                            nextItem.music().name(),
+                            nextItem.music().artists(),
+                            nextItem.music().duration(),
+                            nextItem.music().platform(),
+                            localUrl, // 使用本地静态资源路径
+                            nextItem.music().coverUrl(),
+                            false // 不需要代理，直接播静态文件
+                    );
 
-                                    applyNewSong(proxyMusic, nextItem);
-                                })
-                                .doOnError(e -> {
-                                    log.error("Proxy start failed", e);
-                                    isLoading.set(false);
-                                    broadcastPlayerState();
-                                    broadcastQueueUpdate();
-                                    playNextInQueue();
-                                })
-                                .subscribe(); // 触发 Mono
-                    } else {
-                        // 网易云源：直接播放
+                    // 直接应用，无需 subscribe 异步等待
+                    applyNewSong(cachedMusic, nextItem);
+                    return; // 结束方法
+                }
+            }
+
+            // 获取服务并播放 (此时 getPlayableMusic 应该返回本地链接)
+            IMusicApiService service = getApiService(nextItem.music().platform());
+            service.getPlayableMusic(nextItem.music().id())
+                    .timeout(Duration.ofSeconds(10))
+                    .subscribe(playableMusic -> {
+                        // 此时 playableMusic.needsProxy 应该为 false (B站源返回本地url)
                         applyNewSong(playableMusic, nextItem);
-                    }
-                });
+                    }, error -> {
+                        log.error("Play failed", error);
+                        broadcastEvent("ERROR", "LOAD_FAILED", "ADMIN", nextItem.music().name());
+                        isLoading.set(false);
+                        // 失败了移除，尝试下一首
+                        musicQueue.remove(nextItem); // 确保移除
+                        broadcastQueueUpdate();
+                        broadcastPlayerState();
+                        playNextInQueue();
+                    });
+        } catch (Exception e) {
+            log.error("Unexpected error in playNextInQueue", e);
+            isLoading.set(false);
+            broadcastPlayerState();
+        }
     }
+
+    /**
+     * 新增核心逻辑：寻找下一首可播放的歌曲
+     * 规则：
+     * 1. 优先找 "TOP-" 置顶的。
+     * 2. 如果是随机模式，随机找一首。
+     * 3. 如果是顺序模式，找队头。
+     * 4. 关键：无论选中谁，如果它是 Bilibili 源且还没下载完，就跳过它找下一个。
+     *    如果所有候选都在下载，返回 null。
+     */
+    private MusicQueueItem findNextPlayableMusic() {
+        // 创建副本以防并发修改
+        List<MusicQueueItem> snapshot = new ArrayList<>(musicQueue);
+        if (snapshot.isEmpty()) return null;
+
+        // ---------------------------------------------------------
+        // 1. 优先处理置顶 (TOP-)
+        // ---------------------------------------------------------
+        List<MusicQueueItem> topItem = snapshot.stream()
+                .filter(i -> i.queueId().startsWith("TOP-"))
+                .toList();
+
+        if (!CollectionUtils.isEmpty(topItem)) {
+            for (MusicQueueItem item : topItem) {
+                // 检查 Bilibili 源的状态
+                if ("bilibili".equals(item.music().platform())) {
+                    CacheStatus status = localCacheService.getStatus(item.music().id());
+
+                    if (status == CacheStatus.FAILED) {
+                        // 下载失败：从主队列移除，广播通知，递归查找下一首
+                        log.warn("Top song {} failed to download. Removing.", item.music().name());
+                        musicQueue.remove(item);
+                        broadcastQueueUpdate();
+                        broadcastEvent("ERROR", "LOAD_FAILED", "SYSTEM", item.music().name());
+                        return findNextPlayableMusic();
+                    }
+
+                    if (status == null) {
+                        log.warn("Song {} status unknown (restart?). Re-triggering download.", item.music().name());
+                        // 重新触发下载
+                        getApiService("bilibili").prefetchMusic(item.music().id());
+                        // 跳过，等下载好了再说
+                    }
+
+                    else if (status != CacheStatus.COMPLETED) {
+                        // 下载中 (PENDING / DOWNLOADING)：暂时跳过置顶，去尝试播放普通队列的歌
+                        // (策略选择：不阻塞播放器，优先让已就绪的歌播放)
+                        log.info("Top song {} is downloading, looking for others...", item.music().name());
+                    }
+                    else {
+                        // 下载完成：播放
+                        musicQueue.remove(item);
+                        lastPlayedUserToken.set(item.enqueuedBy().token());
+                        return item;
+                    }
+                } else {
+                    // 网易云等无需下载的源：直接播放
+                    musicQueue.remove(item);
+                    lastPlayedUserToken.set(item.enqueuedBy().token());
+                    return item;
+                }
+            }
+        }
+
+        // 剔除掉置顶歌曲，剩下的参与常规调度
+        List<MusicQueueItem> candidates = snapshot.stream()
+                .filter(i -> !i.queueId().startsWith("TOP-"))
+                .toList();
+
+        if (candidates.isEmpty()) return null;
+
+
+
+        // ---------------------------------------------------------
+        // 2. 随机模式 (Fair Shuffle - 公平调度)
+        // ---------------------------------------------------------
+        if (isShuffle.get()) {
+            // A. 按用户分组 Map<UserToken, List<Song>>
+            Map<String, List<MusicQueueItem>> userSongsMap = candidates.stream()
+                    .collect(Collectors.groupingBy(item -> item.enqueuedBy().token()));
+
+            // B. 获取所有待播放的用户列表
+            List<String> userTokens = new ArrayList<>(userSongsMap.keySet());
+
+            // C. 随机打乱用户顺序
+            Collections.shuffle(userTokens);
+
+            // D. 关键逻辑：防连续播放
+            // 如果排队用户不止一人，且列表里包含上一个播放的人，把他移到最后
+            String lastToken = lastPlayedUserToken.get();
+            if (userTokens.size() > 1 && userTokens.contains(lastToken)) {
+                userTokens.remove(lastToken);
+                userTokens.add(lastToken); // 放到队尾
+            }
+
+            // E. 双重遍历：遍历用户 -> 遍历该用户的歌
+            for (String userToken : userTokens) {
+                List<MusicQueueItem> userSongs = userSongsMap.get(userToken);
+
+                // 打乱该用户的歌单（实现该用户内部的随机）
+                Collections.shuffle(userSongs);
+
+                // 寻找该用户第一首 "Ready" 的歌
+                for (MusicQueueItem item : userSongs) {
+                    // --- 状态检查 ---
+                    if (isReadyToPlay(item)) continue;
+
+                    musicQueue.remove(item);
+                    lastPlayedUserToken.set(userToken);
+                    return item;
+                    }
+                }
+                // 如果这个用户的所有歌都在下载中，循环继续，检查下一个用户...
+            }else {
+            // 顺序模式
+            // 从前往后找，找到第一个 Ready 的
+            for (MusicQueueItem item : candidates) {
+                if (isReadyToPlay(item)) continue; // 下载中，跳过
+
+                // 找到可播放歌曲
+                musicQueue.remove(item);
+                lastPlayedUserToken.set(item.enqueuedBy().token());
+                return item;
+            }
+        }
+
+        return null; // 所有候选歌曲都在下载中，或者队列为空
+    }
+
+    private boolean isReadyToPlay(MusicQueueItem item) {
+        if ("bilibili".equals(item.music().platform())) {
+            CacheStatus status = localCacheService.getStatus(item.music().id());
+
+            if (status == CacheStatus.FAILED) {
+                log.warn("Song {} failed to download. Removing.", item.music().name());
+                musicQueue.remove(item); // 剔除坏死节点
+                broadcastQueueUpdate();
+                // 不返回，继续检查该用户的下一首歌
+                return true;
+            }
+            if (status != CacheStatus.COMPLETED) {
+                // 下载中，跳过这首，检查该用户的下一首
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
         NowPlayingInfo newNowPlaying = new NowPlayingInfo(
@@ -353,6 +528,7 @@ public class MusicPlayerService {
         }
         User enqueuer = userOpt.get();
 
+        // 查重
         boolean alreadyExists = musicQueue.stream()
                 .anyMatch(item -> item.music().id().equals(request.musicId()) && item.music().platform().equals(request.platform()));
         if (alreadyExists) {
@@ -360,10 +536,20 @@ public class MusicPlayerService {
         }
 
         IMusicApiService service = getApiService(request.platform());
+
+        // 触发预下载 (不会阻塞)
+        service.prefetchMusic(request.musicId());
+
         service.getPlayableMusic(request.musicId())
                 .subscribe(playableMusic -> {
                     Music music = new Music(playableMusic.id(), playableMusic.name(), playableMusic.artists(), playableMusic.duration(), playableMusic.platform(), playableMusic.coverUrl());
-                    MusicQueueItem newItem = new MusicQueueItem(UUID.randomUUID().toString(), music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName()));
+
+                    // 初始化状态：如果是 B站，默认 PENDING，网易云则 READY
+                    String initStatus = "bilibili".equals(request.platform()) ? "PENDING" : "READY";
+
+                    MusicQueueItem newItem = new MusicQueueItem(UUID.randomUUID().toString(), music,
+                            new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(),
+                                    enqueuer.getName()), initStatus);
                     musicQueue.add(newItem);
                     log.info("{} enqueued: {}", enqueuer.getName(), music.name());
 
@@ -386,9 +572,15 @@ public class MusicPlayerService {
         IMusicApiService service = getApiService(request.platform());
         service.getPlaylistMusics(request.playlistId(), 0, PLAYLIST_ADD_LIMIT)
                 .subscribe(musics -> {
+                    musics.forEach(m -> service.prefetchMusic(m.id()));
+
+                    // 初始化状态：如果是 B站，默认 PENDING，网易云则 READY
+                    String initStatus = "bilibili".equals(request.platform()) ? "PENDING" : "READY";
+
                     List<MusicQueueItem> itemsToAdd = musics.stream()
                             .filter(music -> musicQueue.stream().noneMatch(item -> item.music().id().equals(music.id())))
-                            .map(music -> new MusicQueueItem(UUID.randomUUID().toString(), music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName())))
+                            .map(music -> new MusicQueueItem(UUID.randomUUID().toString(), music,
+                                    new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName()), initStatus))
                             .toList();
 
                     musicQueue.addAll(itemsToAdd);
@@ -409,7 +601,11 @@ public class MusicPlayerService {
         if (itemToTop.isPresent()) {
             MusicQueueItem item = itemToTop.get();
             musicQueue.remove(item);
-            MusicQueueItem toppedItem = new MusicQueueItem("TOP-" + item.queueId(), item.music(), item.enqueuedBy());
+            MusicQueueItem toppedItem = new MusicQueueItem(
+                    "TOP-" + item.queueId(),
+                    item.music(),
+                    item.enqueuedBy(),
+                    item.status());
             List<MusicQueueItem> tempQueue = new ArrayList<>(musicQueue);
             musicQueue.clear();
             musicQueue.add(toppedItem);
@@ -419,6 +615,9 @@ public class MusicPlayerService {
             broadcastQueueUpdate();
             // 广播置顶事件
             broadcastEvent("INFO", "TOP", sessionId, item.music().name());
+            if (nowPlaying.get() == null && isReadyToPlay(toppedItem)) {
+                playNextInQueue();
+            }
         }
     }
 
@@ -437,6 +636,8 @@ public class MusicPlayerService {
 
     public void skipToNext(String sessionId) {
         if (isRateLimited(sessionId)) return;
+
+        isLoading.set(false);
 
         NowPlayingInfo current = nowPlaying.getAndSet(null);
         if (current != null) {
@@ -546,7 +747,57 @@ public class MusicPlayerService {
     }
 
     private void broadcastQueueUpdate() {
-        messagingTemplate.convertAndSend("/topic/player/queue", new ArrayList<>(musicQueue));
+        // 将队列中的每个 Item 映射为带有最新状态的 Item
+        List<MusicQueueItem> queueWithStatus = musicQueue.stream().map(item -> {
+            // 网易云永远是 READY
+            if ("netease".equals(item.music().platform())) {
+                return item.withStatus("READY");
+            }
+
+            // Bilibili 查询缓存服务
+            if ("bilibili".equals(item.music().platform())) {
+                CacheStatus cacheStatus = localCacheService.getStatus(item.music().id());
+
+                // 映射 CacheStatus 到前端需要的字符串
+                String statusStr;
+                if (cacheStatus == CacheStatus.COMPLETED) {
+                    statusStr = "READY";
+                } else if (cacheStatus == CacheStatus.DOWNLOADING) {
+                    statusStr = "DOWNLOADING";
+                } else if (cacheStatus == CacheStatus.FAILED) {
+                    statusStr = "FAILED";
+                } else {
+                    // null or PENDING
+                    statusStr = "PENDING";
+                }
+                return item.withStatus(statusStr);
+            }
+
+            return item;
+        }).toList();
+
+        messagingTemplate.convertAndSend("/topic/player/queue", queueWithStatus);
+    }
+
+    @EventListener
+    public void handleDownloadEvent(DownloadStatusEvent event) {
+        // 只有当队列里包含这首歌时，才需要广播更新
+        boolean existsInQueue = musicQueue.stream()
+                .anyMatch(item -> item.music().id().equals(event.getMusicId()));
+
+        if (existsInQueue) {
+            log.debug("Download status changed for {}, updating queue UI.", event.getMusicId());
+            // 如果是失败状态，findNextPlayableMusic 会负责移除和发通知
+            // 这里我们主要负责刷新 UI (LOADING -> READY)
+            broadcastQueueUpdate();
+
+            // 额外检查：如果是失败了，是否需要立即触发清理逻辑？
+            // 虽然 playerLoop 会定期跑，但立即触发能让用户更快收到“移除通知”
+            if (localCacheService.getStatus(event.getMusicId()) == CacheStatus.FAILED) {
+                // 简单触发一次调度检查，它会自动剔除坏死节点
+                playNextInQueue();
+            }
+        }
     }
 
     public void broadcastPlayerState() {

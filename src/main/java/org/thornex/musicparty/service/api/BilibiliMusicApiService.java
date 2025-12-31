@@ -9,7 +9,9 @@ import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
+import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
+import org.thornex.musicparty.service.LocalCacheService;
 import org.thornex.musicparty.service.MusicProxyService;
 import org.thornex.musicparty.util.BilibiliApiUtils;
 import reactor.core.publisher.Mono;
@@ -25,18 +27,18 @@ public class BilibiliMusicApiService implements IMusicApiService {
     private final WebClient webClient;
     private final String baseUrl;
     private final String sessdata; // NEW: SESSDATA cookie
-    private final MusicProxyService musicProxyService;
+    private final LocalCacheService localCacheService;
     private static final String PLATFORM = "bilibili";
     private final BilibiliWbiService wbiService;
 
     //最大时长
     private static final long MAX_DURATION_MS = 10 * 60 * 1000;
 
-    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, MusicProxyService musicProxyService, BilibiliWbiService wbiService) {
+    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, MusicProxyService musicProxyService, LocalCacheService localCacheService, BilibiliWbiService wbiService) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getBilibili().getBaseUrl();
         this.sessdata = appProperties.getBilibili().getSessdata();
-        this.musicProxyService = musicProxyService; // NEW
+        this.localCacheService = localCacheService;
         this.wbiService = wbiService;
     }
 
@@ -119,71 +121,87 @@ public class BilibiliMusicApiService implements IMusicApiService {
     }
 
     @Override
+    public void prefetchMusic(String bvid) {
+        // 检查缓存状态，如果已经下载或正在下载，直接返回
+        CacheStatus status = localCacheService.getStatus(bvid);
+        if (status == CacheStatus.COMPLETED || status == CacheStatus.DOWNLOADING) {
+            return;
+        }
+
+        log.info("Prefetching Bilibili music: {}", bvid);
+
+        // 复用之前的解析逻辑，获取 DASH 音频流地址
+        Mono<String> urlProvider = resolveDashAudioUrl(bvid);
+
+        // 准备请求头 (防盗链)
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Referer", "https://www.bilibili.com/video/" + bvid);
+        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+        // 提交异步下载任务 (.m4a 是 B站 dash 音频的常用格式)
+        localCacheService.submitDownload(bvid, urlProvider, headers, ".m4a");
+    }
+
+    @Override
     public Mono<PlayableMusic> getPlayableMusic(String bvid) {
-        // 1. 先获取 CID (Page ID)
-        return BilibiliApiUtils.getVideoInfo(bvid, webClient, baseUrl, sessdata)
-                .flatMap(info -> {
-                    if (info.music().duration() > MAX_DURATION_MS) {
-                        return Mono.error(new ApiRequestException("视频过长（超过10分钟），禁止点播"));
-                    }
+        // 1. 检查本地缓存
+        String localUrl = localCacheService.getLocalUrl(bvid);
 
-                    String cid = info.cid();
+        if (localUrl != null) {
+            // 2. 如果本地存在，直接返回静态资源路径
+            // 此时 needsProxy = false，因为对于前端来说，这就是一个普通的 http 链接
+            return BilibiliApiUtils.getVideoDetails(bvid, webClient, baseUrl, sessdata)
+                    .map(music -> new PlayableMusic(
+                            music.id(), music.name(), music.artists(), music.duration(),
+                            PLATFORM, localUrl, music.coverUrl(), false // needsProxy = false
+                    ));
+        } else {
+            // 3. 如果本地没有（可能是下载失败，或者还没下载完就被强制切歌）
+            CacheStatus status = localCacheService.getStatus(bvid);
+            if (status != CacheStatus.DOWNLOADING) {
+                prefetchMusic(bvid); // 触发下载
+            }
 
-                    // 2. 准备参数，严格按照 WBI 要求
+            // 即使在下载中，也返回元数据，但 URL 设为特殊值
+            // 这样 MusicPlayerService.enqueue 就能拿到名字、封面等信息成功入队
+            return BilibiliApiUtils.getVideoDetails(bvid, webClient, baseUrl, sessdata)
+                    .map(music -> new PlayableMusic(
+                            music.id(), music.name(), music.artists(), music.duration(),
+                            PLATFORM, "PENDING_DOWNLOAD", music.coverUrl(), false
+                    ));
+        }
+    }
+
+    private Mono<String> resolveDashAudioUrl(String bvid) {
+        return BilibiliApiUtils.getVideoCid(bvid, webClient, baseUrl, sessdata)
+                .flatMap(cid -> {
                     Map<String, String> params = new HashMap<>();
                     params.put("bvid", bvid);
                     params.put("cid", cid);
-                    // fnval=16 是关键：请求 DASH 格式，这样才能把 Audio 单独提取出来
-                    // 如果不加这个，可能只返回 mp4 混流，处理起来很麻烦
-                    params.put("fnval", "16");
-                    // params.put("fourk", "1"); // 可选：请求 4K (虽然这里只取音频，但加上无妨)
+                    params.put("fnval", "16"); // DASH
 
-                    // 3. 进行 WBI 签名
                     return wbiService.signParams(params)
                             .flatMap(signedParams -> {
-                                // 4. 构建 WBI 接口 URL
-                                UriComponentsBuilder builder = UriComponentsBuilder
-                                        .fromHttpUrl(baseUrl + "/x/player/wbi/playurl");
-
+                                UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(baseUrl + "/x/player/wbi/playurl");
                                 signedParams.forEach(builder::queryParam);
 
                                 return webClient.get()
                                         .uri(builder.build().toUri())
                                         .header("Cookie", "SESSDATA=" + sessdata)
-                                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                                        // Referer 必须带，B站防盗链检查很严
                                         .header("Referer", "https://www.bilibili.com/video/" + bvid)
                                         .retrieve()
                                         .bodyToMono(JsonNode.class)
-                                        .flatMap(jsonNode -> {
-                                            // 5. 错误检查
+                                        .map(jsonNode -> {
                                             if (jsonNode.path("code").asInt() != 0) {
-                                                return Mono.error(new ApiRequestException("Bilibili playurl error: " + jsonNode.path("message").asText()));
+                                                throw new ApiRequestException("Bilibili API Error");
                                             }
+                                            JsonNode audioStreams = jsonNode.path("data").path("dash").path("audio");
+                                            if (audioStreams.isMissingNode()) throw new ApiRequestException("No DASH audio found");
 
-                                            // 6. 提取 DASH 音频流
-                                            JsonNode dash = jsonNode.path("data").path("dash");
-                                            JsonNode audioStreams = dash.path("audio");
-
-                                            // 如果没有 dash.audio，尝试检查是否是老式 durl (通常意味着 fnval=16 没生效或视频不支持)
-                                            if (audioStreams.isMissingNode() || !audioStreams.isArray() || audioStreams.isEmpty()) {
-                                                // 兜底逻辑：有些非 DASH 视频
-                                                JsonNode durl = jsonNode.path("data").path("durl");
-                                                if (!durl.isEmpty() && durl.isArray()) {
-                                                    String mp4Url = durl.get(0).path("url").asText();
-                                                    log.info("Using fallback DURL (MP4) for bvid: {}", bvid);
-                                                    return processAudioUrl(info.music(), mp4Url);
-                                                }
-                                                return Mono.error(new ApiRequestException("No audio stream found for bvid: " + bvid));
-                                            }
-
-                                            // 7. 寻找最佳音质 (ID 越大音质越好: 30280 > 30232 > 30216)
-                                            String audioUrl = StreamSupport.stream(audioStreams.spliterator(), false)
+                                            return StreamSupport.stream(audioStreams.spliterator(), false)
                                                     .max(Comparator.comparingInt(a -> a.path("id").asInt()))
                                                     .map(a -> a.path("baseUrl").asText())
-                                                    .orElseThrow(() -> new ApiRequestException("Failed to extract audio url"));
-
-                                            return processAudioUrl(info.music(), audioUrl);
+                                                    .orElseThrow(() -> new ApiRequestException("No audio url"));
                                         });
                             });
                 });

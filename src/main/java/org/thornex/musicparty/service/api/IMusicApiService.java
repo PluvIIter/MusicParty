@@ -16,4 +16,5 @@ public interface IMusicApiService {
     Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit);
     Mono<List<UserSearchResult>> searchUsers(String keyword);
     Mono<String> getLyric(String musicId);
+    default void prefetchMusic(String musicId) {};
 }

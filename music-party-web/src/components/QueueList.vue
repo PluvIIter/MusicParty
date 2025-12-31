@@ -20,7 +20,19 @@
             <div class="flex-1 min-w-0">
                 <div class="text-sm font-bold text-medical-800 truncate">{{ item.music.name }}</div>
                 <div class="flex justify-between items-center">
-                   <div class="text-xs text-medical-500 truncate">{{ item.music.artists[0] }}</div>
+                  <div v-if="!item.status || item.status === 'READY'" class="text-xs text-medical-500 truncate">
+                    {{ item.music.artists[0] }}
+                  </div>
+
+                  <!-- 下载中状态：显示闪烁的 LOADING -->
+                  <div v-else-if="item.status === 'DOWNLOADING' || item.status === 'PENDING'" class="text-xs font-mono font-bold text-accent animate-pulse flex items-center gap-1">
+                    <Loader2 class="w-3 h-3 animate-spin" /> LOADING...
+                  </div>
+
+                  <!-- 失败状态 (理论上会被后端秒删，但为了防抖动处理一下) -->
+                  <div v-else-if="item.status === 'FAILED'" class="text-xs font-mono font-bold text-red-500">
+                    DOWNLOAD FAILED
+                  </div>
                   <div class="text-[10px] text-medical-300 bg-medical-50 px-1 border border-medical-100">
                     {{ userStore.resolveName(item.enqueuedBy.token, item.enqueuedBy.name) }}
                   </div>
@@ -43,7 +55,7 @@
 <script setup>
 import { computed } from 'vue';
 import { usePlayerStore } from '../stores/player';
-import { Trash2, ArrowUpToLine } from 'lucide-vue-next';
+import { Trash2, ArrowUpToLine, Loader2 } from 'lucide-vue-next';
 import { useUserStore } from '../stores/user';
 
 const player = usePlayerStore();
