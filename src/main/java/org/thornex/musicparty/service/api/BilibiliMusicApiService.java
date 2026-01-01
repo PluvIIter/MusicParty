@@ -12,10 +12,10 @@ import org.thornex.musicparty.dto.UserSearchResult;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.LocalCacheService;
-import org.thornex.musicparty.service.MusicProxyService;
 import org.thornex.musicparty.util.BilibiliApiUtils;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
+import reactor.util.retry.Retry;
 
 import java.util.*;
 import java.util.stream.StreamSupport;
@@ -31,10 +31,11 @@ public class BilibiliMusicApiService implements IMusicApiService {
     private static final String PLATFORM = "bilibili";
     private final BilibiliWbiService wbiService;
 
-    //最大时长
-    private static final long MAX_DURATION_MS = 10 * 60 * 1000;
+    private static class WbiSignatureException extends RuntimeException {
+        public WbiSignatureException(String message) { super(message); }
+    }
 
-    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, MusicProxyService musicProxyService, LocalCacheService localCacheService, BilibiliWbiService wbiService) {
+    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, LocalCacheService localCacheService, BilibiliWbiService wbiService) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getBilibili().getBaseUrl();
         this.sessdata = appProperties.getBilibili().getSessdata();
@@ -63,7 +64,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
         params.put("page_size", "20"); // 文档默认 20
 
         // 2. 调用 WBI 签名服务
-        return wbiService.signParams(params)
+        Mono<List<Music>> requestMono = wbiService.signParams(params)
                 .flatMap(signedParams -> {
                     // 3. 构建 QueryString，注意：WBI 签名要求参数顺序及 URL 编码
                     // 这里我们直接利用 UriComponentsBuilder 确保符合文档要求
@@ -79,14 +80,25 @@ public class BilibiliMusicApiService implements IMusicApiService {
                             .header("Referer", "https://www.bilibili.com/") // 必须带 Referer
                             .retrieve()
                             .bodyToMono(JsonNode.class)
-                            .map(json -> {
-                                List<Music> musicList = new ArrayList<>();
-
-                                // 校验返回码
-                                if (json.path("code").asInt() != 0) {
-                                    log.error("Bilibili search failed: {}", json.path("message").asText());
-                                    return musicList;
+                            .handle((json, sink) -> {
+                                int code = json.path("code").asInt();
+                                // 🟢 关键点 1: 检测 WBI 潜在的错误码
+                                // -403: 访问权限不足 (可能是签名挂了)
+                                // -400: 请求错误 (可能是参数/签名校验不过)
+                                if (code == -403 || code == -400) {
+                                    sink.error(new WbiSignatureException("WBI signature invalid, code: " + code));
+                                    return;
                                 }
+
+                                // 其他常规错误，不重试，直接记录日志返回空列表
+                                if (code != 0) {
+                                    log.error("Bilibili search failed: {}", json.path("message").asText());
+                                    sink.next(new ArrayList<>());
+                                    return;
+                                }
+
+
+                                List<Music> musicList = new ArrayList<>();
 
                                 JsonNode results = json.path("data").path("result");
                                 if (results.isArray()) {
@@ -111,12 +123,24 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                                 List.of(video.path("author").asText()),
                                                 durationMs,
                                                 PLATFORM,
-                                                picUrl
-                                        ));
+                                                picUrl));
                                     });
                                 }
-                                return musicList;
+                                sink.next(musicList);
                             });
+                });
+
+        // 添加重试机制
+        return requestMono.retryWhen(Retry.max(1) // 最多重试 1 次
+                        .filter(throwable -> throwable instanceof WbiSignatureException) // 只针对签名异常重试
+                        .doBeforeRetry(retrySignal -> {
+                            log.warn("Detected WBI signature error, refreshing key and retrying...");
+                            wbiService.invalidateCache(); // 清除缓存
+                        }))
+                // 如果重试后还是失败，降级为空列表
+                .onErrorResume(WbiSignatureException.class, e -> {
+                    log.error("Bilibili search failed after retry: {}", e.getMessage());
+                    return Mono.just(new ArrayList<>());
                 });
     }
 
@@ -157,10 +181,8 @@ public class BilibiliMusicApiService implements IMusicApiService {
                     ));
         } else {
             // 3. 如果本地没有（可能是下载失败，或者还没下载完就被强制切歌）
-            CacheStatus status = localCacheService.getStatus(bvid);
-            if (status != CacheStatus.DOWNLOADING && status != CacheStatus.PENDING && status != CacheStatus.COMPLETED) {
-                prefetchMusic(bvid);
-            }
+            // 触发一次预加载（如果任务不存在的话）
+            prefetchMusic(bvid);
 
             // 即使在下载中，也返回元数据，但 URL 设为特殊值
             // 这样 MusicPlayerService.enqueue 就能拿到名字、封面等信息成功入队
@@ -191,37 +213,35 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                         .header("Referer", "https://www.bilibili.com/video/" + bvid)
                                         .retrieve()
                                         .bodyToMono(JsonNode.class)
-                                        .map(jsonNode -> {
-                                            if (jsonNode.path("code").asInt() != 0) {
-                                                throw new ApiRequestException("Bilibili API Error");
+                                        .flatMap(jsonNode -> {
+                                            int code = jsonNode.path("code").asInt();
+                                            if (code == -403 || code == -400) {
+                                                return Mono.error(new WbiSignatureException("Invalid WBI signature, code: " + code));
+                                            }
+                                            if (code != 0) {
+                                                return Mono.error(new ApiRequestException("Bilibili API Error, code: " + code));
                                             }
                                             JsonNode audioStreams = jsonNode.path("data").path("dash").path("audio");
-                                            if (audioStreams.isMissingNode()) throw new ApiRequestException("No DASH audio found");
+                                            if (audioStreams.isMissingNode()) {
+                                                return Mono.error(new ApiRequestException("No DASH audio found"));
+                                            }
 
-                                            return StreamSupport.stream(audioStreams.spliterator(), false)
+                                            String url = StreamSupport.stream(audioStreams.spliterator(), false)
                                                     .max(Comparator.comparingInt(a -> a.path("id").asInt()))
                                                     .map(a -> a.path("baseUrl").asText())
-                                                    .orElseThrow(() -> new ApiRequestException("No audio url"));
+                                                    .orElseThrow(() -> new ApiRequestException("No audio url found in json"));
+                                            return Mono.just(url);
                                         });
-                            });
+                            })
+                            // 将 retryWhen 应用于整个 wbiService.signParams(...).flatMap(...) 链
+                            .retryWhen(Retry.max(1)
+                                    .filter(throwable -> throwable instanceof WbiSignatureException)
+                                    .doBeforeRetry(retrySignal -> {
+                                        log.warn("WBI signature error on getting play url. Invalidating cache and retrying...");
+                                        wbiService.invalidateCache();
+                                    })
+                            );
                 });
-    }
-
-    /**
-     * 辅助方法：处理提取到的 URL (启动代理 + 获取元数据)
-     */
-    private Mono<PlayableMusic> processAudioUrl(Music music, String targetUrl) {
-
-        return Mono.just(new PlayableMusic(
-                music.id(),
-                music.name(),
-                music.artists(),
-                music.duration(),
-                PLATFORM,
-                targetUrl,
-                music.coverUrl(),
-                true
-        ));
     }
 
     @Override

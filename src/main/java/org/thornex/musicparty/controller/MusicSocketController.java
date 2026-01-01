@@ -30,7 +30,7 @@ public class MusicSocketController {
 
     @MessageMapping("/player/resync")
     public void requestResync(@Header("simpSessionId") String sessionId) {
-        musicPlayerService.broadcastPlayerState();
+        musicPlayerService.broadcastFullPlayerState();
     }
 
     @MessageMapping("/enqueue")

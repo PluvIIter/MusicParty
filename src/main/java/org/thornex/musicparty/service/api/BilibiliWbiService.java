@@ -121,4 +121,10 @@ public class BilibiliWbiService {
             throw new RuntimeException(e);
         }
     }
+
+    public void invalidateCache() {
+        keyCache.remove("mixin_key");
+        lastCacheTime = 0;
+        log.info("WBI Key cache invalidated due to retry mechanism.");
+    }
 }
