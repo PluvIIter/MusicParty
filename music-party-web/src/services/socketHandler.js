@@ -4,6 +4,8 @@ import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
 import { useToast } from '../composables/useToast';
+import {socketService} from "./socket.js";
+import {WS_DEST} from "../constants/api.js";
 
 /**
  * 处理游戏/播放器事件通知 (Toast)
@@ -122,7 +124,9 @@ export const createSocketCallbacks = () => {
         onConnect: () => {
             playerStore.connected = true;
             // 发起同步
-            socketService.send(WS_DEST.RESYNC);
+            setTimeout(() => {
+                socketService.send(WS_DEST.RESYNC);
+            }, 300);
             // 恢复绑定
             Object.entries(userStore.bindings).forEach(([platform, id]) => {
                 if (id) playerStore.bindAccount(platform, id);

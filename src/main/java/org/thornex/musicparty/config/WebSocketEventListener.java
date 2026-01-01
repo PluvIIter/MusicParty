@@ -33,6 +33,7 @@ public class WebSocketEventListener {
 
         if (sessionId != null) {
             userService.handleConnect(sessionId, token, initialName);
+            musicPlayerService.broadcastOnlineUsers();
         }
     }
 
