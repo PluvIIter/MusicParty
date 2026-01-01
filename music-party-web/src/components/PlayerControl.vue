@@ -1,18 +1,15 @@
 <template>
   <div class="h-24 bg-white border-t border-medical-200 flex items-center px-4 md:px-8 relative z-50 shadow-lg">
     <!-- 音频元素 -->
-    <!-- 增加 v-if="audioSrc" 防止空链接报错 -->
-    <!-- 增加 @canplay 用于拦截自动播放 -->
     <audio
-      ref="audioRef" 
-      :src="audioSrc" 
-      autoplay 
-      @ended="handleEnded" 
-      @error="handleError" 
-      @waiting="isBuffering = true" 
-      @playing="isBuffering = false"
-      @canplay="checkAutoPlay"
-      referrerpolicy="no-referrer"
+        ref="audioRef"
+        :src="audioSrc"
+        @ended="player.playNext"
+        @error="handleError"
+        @waiting="isBuffering = true"
+        @playing="isBuffering = false"
+        @canplay="checkAutoPlay"
+        referrerpolicy="no-referrer"
     ></audio>
 
     <!-- 封面 -->
@@ -60,7 +57,7 @@
         <div class="hidden md:block font-mono text-xs text-medical-800/60 flex-shrink-0 ml-2">
            <span v-if="player.isLoading" class="text-accent animate-pulse">SYNCING SERVER...</span>
            <span v-if="isBuffering" class="animate-pulse text-accent">BUFFERING...</span>
-           <span v-else>{{ formatTime(localProgress) }} / {{ formatTime(nowPlaying?.music.duration || 0) }}</span>
+           <span v-else>{{ formatDuration(localProgress) }} / {{ formatDuration(nowPlaying?.music.duration || 0) }}</span>
         </div>
       </div>
 
@@ -167,318 +164,113 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
-import { Download } from 'lucide-vue-next';
+// <script setup> 内
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
-import { Play, Pause, SkipForward, Shuffle, Volume2, Volume1, VolumeX, ExternalLink } from 'lucide-vue-next';
+import { useAudio } from '../composables/useAudio'; // 🟢
+import { formatDuration } from '../utils/format';
+import { STORAGE_KEYS } from '../constants/keys';
+import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { useToast } from '../composables/useToast';
-import dayjs from 'dayjs';
 
 const player = usePlayerStore();
 const audioRef = ref(null);
-const localProgress = ref(0);
-const isBuffering = ref(false);
-const { info, error } = useToast();
 const volumeTrackRef = ref(null);
-const isDraggingVolume = ref(false);
-const retryCount = ref(0);
-const MAX_RETRIES = 3;
-const isErrorState = ref(false); // 是否处于不可恢复的错误状态
+const { info, error } = useToast();
 
-// 音量状态
-const volume = ref(parseFloat(localStorage.getItem('mp_volume') || '0.5'));
-const lastVolume = ref(0.5);
+const {
+  localProgress,
+  isBuffering,
+  isErrorState,
+  retryCount,
+  handleError,
+  checkAutoPlay
+} = useAudio(audioRef, player);
 
-// 核心数据引用
 const nowPlaying = computed(() => player.nowPlaying);
+const audioSrc = computed(() => nowPlaying.value?.music.url || '');
 
-const audioSrc = computed(() => {
-  if (!nowPlaying.value) return '';
-  return nowPlaying.value.music.url;
-});
-
-const updateMediaSession = () => {
-  if ('mediaSession' in navigator) {
-    if (player.nowPlaying) {
-      const music = player.nowPlaying.music;
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: music.name,
-        artist: music.artists.join(' / '),
-        album: 'Music Party',
-        artwork: [{ src: music.coverUrl, sizes: '512x512', type: 'image/png' }]
-      });
-      navigator.mediaSession.playbackState = 'playing';
-    } else {
-      //没歌的时候，设为 paused 而不是直接清空
-      navigator.mediaSession.playbackState = 'paused';
-    }
-  }
-};
-
-// 监听歌曲变化
-watch(() => player.nowPlaying?.music?.id, () => {
-  updateMediaSession();
-}, { immediate: true });
-
+// 计算进度百分比
 const progressPercent = computed(() => {
-    if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
-    return Math.min(100, (localProgress.value / nowPlaying.value.music.duration) * 100);
+  if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
+  return Math.min(100, (localProgress.value / nowPlaying.value.music.duration) * 100);
 });
 
-const formatTime = (ms) => {
-    if(!ms) return "00:00";
-    return dayjs(ms).format('mm:ss');
-};
+// --- 音量逻辑 (暂时保留在组件内，因为涉及 UI 交互) ---
+const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
+const lastVolume = ref(0.5);
+const isDraggingVolume = ref(false);
 
-const handleEnded = () => {
-};
-
-const handleError = (e) => {
-    if (!audioSrc.value) return; // 忽略空链接错误
-    console.error("Audio Error:", e.target.error);
-
-  isBuffering.value = false;
-
-  if (retryCount.value >= MAX_RETRIES) {
-    isErrorState.value = true; // 标记为错误状态，用于停止进度条
-    error(`播放失败: ${nowPlaying.value?.music?.name || '未知曲目'}`);
-    return;
-  }
-
-  // 开始重试
-  retryCount.value++;
-  const delay = 1500; // 1.5秒后重试
-
-  info(`音频异常，尝试重连 (${retryCount.value}/${MAX_RETRIES})...`);
-
-  setTimeout(() => {
-    if (!audioRef.value) return;
-
-    // 尝试重新加载流
-    // load() 会重新请求 src，对于 B站代理流，浏览器会发起新的请求
-    audioRef.value.load();
-
-    // 尝试播放
-    audioRef.value.play().then(() => {
-      // 如果播放成功，重置错误状态
-      retryCount.value = 0;
-      isErrorState.value = false;
-      success("重连成功，继续播放");
-    }).catch(playErr => {
-      console.warn("Retry play failed:", playErr);
-      // 这里的 catch 不需要做太多，因为如果 load 失败通常会再次触发 @error，形成循环直到上限
-    });
-  }, delay);
-};
-
-// 跳转源页面逻辑
-const openSourcePage = () => {
-  if (!nowPlaying.value) return;
-
-  const music = nowPlaying.value.music;
-  const platform = music.platform;
-  const id = music.id;
-
-  let url = '';
-
-  if (platform === 'netease') {
-    // 网易云音乐链接
-    url = `https://music.163.com/#/song?id=${id}`;
-  } else if (platform === 'bilibili') {
-    // Bilibili 视频链接
-    url = `https://www.bilibili.com/video/${id}`;
-  }
-
-  if (url) {
-    window.open(url, '_blank');
-  }
-};
-
-// --- 音量逻辑 ---
 const toggleMute = () => {
-    if (volume.value > 0) {
-        lastVolume.value = volume.value;
-        volume.value = 0;
-    } else {
-        volume.value = lastVolume.value > 0 ? lastVolume.value : 0.5;
-    }
+  if (volume.value > 0) {
+    lastVolume.value = volume.value;
+    volume.value = 0;
+  } else {
+    volume.value = lastVolume.value > 0 ? lastVolume.value : 0.5;
+  }
 };
 
-// 监听音量变化
 watch(volume, (newVal) => {
-    localStorage.setItem('mp_volume', newVal);
-    if (audioRef.value) {
-        audioRef.value.volume = newVal;
-    }
+  localStorage.setItem(STORAGE_KEYS.VOLUME, newVal);
+  if (audioRef.value) audioRef.value.volume = newVal;
 });
 
+// 音量拖拽
 const updateVolumeByMouse = (e) => {
   if (!volumeTrackRef.value) return;
-
   const rect = volumeTrackRef.value.getBoundingClientRect();
-  // 计算鼠标距离轨道左侧的距离
   const x = e.clientX - rect.left;
-  // 限制在 0 到 rect.width 之间，然后转为 0-1 的比例
   const percentage = Math.max(0, Math.min(1, x / rect.width));
   volume.value = parseFloat(percentage.toFixed(2));
 };
 
-// 鼠标按下
 const handleVolumeMouseDown = (e) => {
   isDraggingVolume.value = true;
-  updateVolumeByMouse(e); // 按下时立即跳转音量
-
-  // 绑定全局事件，这样鼠标移出轨道也能继续拖拽
+  updateVolumeByMouse(e);
   window.addEventListener('mousemove', handleVolumeMouseMove);
   window.addEventListener('mouseup', handleVolumeMouseUp);
 };
-
-const handleVolumeMouseMove = (e) => {
-  if (isDraggingVolume.value) {
-    updateVolumeByMouse(e);
-  }
-};
-
+const handleVolumeMouseMove = (e) => { if (isDraggingVolume.value) updateVolumeByMouse(e); };
 const handleVolumeMouseUp = () => {
   isDraggingVolume.value = false;
   window.removeEventListener('mousemove', handleVolumeMouseMove);
   window.removeEventListener('mouseup', handleVolumeMouseUp);
 };
 
-// 记得清理
+// --- 下载逻辑 ---
+const downloadCurrentMusic = async () => {
+  if (!nowPlaying.value) return;
+  const music = nowPlaying.value.music;
+  info(`Starting download: ${music.name}...`);
+  try {
+    const response = await fetch(music.url);
+    if (!response.ok) throw new Error('Network error');
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `${music.name} - ${music.artists[0]}.mp3`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (e) {
+    window.open(music.url, '_blank');
+    error('Blob download failed, opening new tab.');
+  }
+};
+
+// 跳转源页面
+const openSourcePage = () => {
+  if (!nowPlaying.value) return;
+  const { platform, id } = nowPlaying.value.music;
+  let url = platform === 'netease' ? `https://music.163.com/#/song?id=${id}` : `https://www.bilibili.com/video/${id}`;
+  if (url) window.open(url, '_blank');
+};
+
 onUnmounted(() => {
   window.removeEventListener('mousemove', handleVolumeMouseMove);
   window.removeEventListener('mouseup', handleVolumeMouseUp);
 });
-
-// --- 自动播放与状态同步逻辑 ---
-
-// 1. 拦截自动播放
-// 当音频准备好时，如果全局是暂停状态，强制暂停
-const checkAutoPlay = () => {
-  if (!audioSrc.value) return;
-  isBuffering.value = false;
-    // 修复点：这里必须使用 player.isPaused，不能用 newPaused
-    if (player.isPaused && audioRef.value) {
-        console.log("State is paused, preventing autoplay.");
-        audioRef.value.pause();
-    }
-    // 同时应用音量
-    if (audioRef.value) {
-        audioRef.value.volume = volume.value;
-    }
-};
-
-// 2. 监听暂停状态变化
-// 这里参数名为 newPaused，所以在内部可以使用 newPaused
-watch(() => player.isPaused, (newPaused) => {
-    if (audioRef.value) {
-        if (newPaused) {
-            audioRef.value.pause();
-        } else {
-            if (audioSrc.value) {
-                audioRef.value.play().catch(e => console.log("Autoplay prevented", e));
-            }
-        }
-    }
-});
-
-// 3. 监听切歌 (Src 变化)
-watch(audioSrc, () => {
-  // 切歌时，重置所有错误计数器
-  retryCount.value = 0;
-  isErrorState.value = false;
-  // 延迟检查，确保 DOM 更新
-    setTimeout(() => {
-        // 这里必须使用 player.isPaused，不能用 newPaused
-        if (player.isPaused && audioRef.value) {
-            audioRef.value.pause();
-        }
-        // 切歌后重新应用音量
-        if (audioRef.value) {
-             audioRef.value.volume = volume.value;
-        }
-    }, 100);
-});
-
-// --- 进度条同步逻辑 ---
-let syncTimer;
-
-onMounted(() => {
-    syncTimer = setInterval(() => {
-        if(!nowPlaying.value) { 
-            localProgress.value = 0;
-            return;
-        }
-
-      // 如果处于错误状态，停止更新进度条
-      // 这样用户就能直观看到进度条卡住了，而不是在“假唱”
-      if (isErrorState.value) {
-        return;
-      }
-
-        const backendTime = player.getCurrentProgress(); 
-        const domTime = (audioRef.value?.currentTime || 0) * 1000;
-        const duration = nowPlaying.value.music.duration;
-
-        // 防止时间溢出
-        if (duration > 0 && backendTime > duration) {
-            localProgress.value = duration;
-            return;
-        }
-
-        localProgress.value = player.isPaused ? domTime : backendTime;
-
-      // 同步时间
-      if (!player.isPaused && Math.abs(domTime - backendTime) > 2000) {
-        // 只有在非 buffering 且非 error 状态下才强制 seek
-        // 否则在缓冲/重试时 seek 会导致鬼畜
-        if (!isBuffering.value && !isErrorState.value) {
-          if (duration > 0 && backendTime < duration) {
-            if(audioRef.value) {
-              audioRef.value.currentTime = backendTime / 1000;
-            }
-          }
-        }
-      }
-    }, 500);
-});
-
-onUnmounted(() => clearInterval(syncTimer));
-
-
-const downloadCurrentMusic = async () => {
-  if (!nowPlaying.value) return;
-
-  const music = nowPlaying.value.music;
-  const url = music.url;
-  const filename = `${music.name} - ${music.artists[0]}.mp3`;
-
-  info(`Starting download: ${music.name}...`);
-
-  try {
-    // 使用 fetch 获取文件流，强制触发下载
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Network response was not ok');
-
-    const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-
-    //TC理
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(blobUrl);
-  } catch (e) {
-    console.error("Download failed", e);
-    // 如果 fetch 失败（可能是严重的跨域限制），尝试回退到 window.open
-    window.open(url, '_blank');
-    error('Download via blob failed, opening in new tab.');
-  }
-};
 </script>

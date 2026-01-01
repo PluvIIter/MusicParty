@@ -1,309 +1,144 @@
-// File Path: music-party-web\src\stores\player.js
+// src/stores/player.js
 
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
-import { Client } from '@stomp/stompjs';
 import { useUserStore } from './user';
-import { useToast } from '../composables/useToast';
-import axios from 'axios';
-import { useChatStore } from './chat';
+import { socketService } from '../services/socket';
+import { createSocketSubscriptions, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
+import { musicApi } from '../api/music';
+import { WS_DEST } from '../constants/api';
+import { STORAGE_KEYS } from '../constants/keys';
 
 export const usePlayerStore = defineStore('player', () => {
-    // ... (状态变量不变)
-    const userStore = useUserStore();
-    const { show } = useToast();
+    // === 1. State ===
     const nowPlaying = ref(null);
     const queue = ref([]);
     const isPaused = ref(false);
-    const pauseTimeMillis = ref(0);
     const isShuffle = ref(false);
+    const pauseTimeMillis = ref(0);
     const serverTimeOffset = ref(0);
     const lyricText = ref('');
-    const stompClient = ref(null);
     const connected = ref(false);
-    const lastControlTime = ref(0);
-    const LOCAL_COOLDOWN = 800; // 本地防抖 800ms (略小于后端，提升手感)
     const isLoading = ref(false);
-    const chatStore = useChatStore();
+    const lastControlTime = ref(0);
 
-    // 🟢 辅助：权限检查
-    const requireAuth = () => {
-        if (userStore.isGuest) {
-            userStore.showNameModal = true; // 唤起弹窗
-            return false;
-        }
-        return true;
-    };
+    const userStore = useUserStore();
+    const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
 
-    // 🟢 辅助：构建文案
-    const formatEventMessage = (action, userId, payload) => {
-        const userName = userStore.resolveName(userId);
-        switch (action) {
-            case 'SKIP': return `${userName} 切到了下一首`;
-            case 'PAUSE': return `${userName} 暂停了播放`;
-            case 'RESUME': return `${userName} 继续了播放`;
-            case 'ADD': return `${userName} 添加了: ${payload}`;
-            case 'IMPORT': return `${userName} 导入了歌单 (${payload}首)`;
-            case 'TOP': return `${userName} 置顶了: ${payload}`;
-            case 'REMOVE': return `${userName} 移除了: ${payload}`;
-            case 'SHUFFLE': return `${userName} ${payload === 'ON' ? '开启' : '关闭'}了随机播放`;
-            case 'RESET': return `系统已被重置`;
-            case 'LOAD_FAILED': return `资源获取失败: ${payload} (自动跳过)`;
-            default: return `${userName} 执行了操作`;
-        }
-    };
-
-
-    // ... (getCurrentProgress 不变)
+    // === 2. Logic ===
     const getCurrentProgress = () => {
         if (!nowPlaying.value) return 0;
         const effectiveStartTime = nowPlaying.value.startTimeMillis;
         if (isPaused.value) {
-            if (pauseTimeMillis.value > 0) {
-                return Math.max(0, pauseTimeMillis.value - effectiveStartTime);
-            }
-            return 0;
+            return pauseTimeMillis.value > 0
+                ? Math.max(0, pauseTimeMillis.value - effectiveStartTime)
+                : 0;
         } else {
             const currentServerTime = Date.now() + serverTimeOffset.value;
             return Math.max(0, currentServerTime - effectiveStartTime);
         }
     };
 
-    // 🟢 辅助：构建标题
-    const deriveTitle = (action) => {
-        const map = {
-            'SKIP': 'TRACK SWITCHED',
-            'ADD': 'ADDED TO QUEUE',
-            'IMPORT': 'PLAYLIST IMPORT',
-            'PAUSE': 'PLAYER PAUSED',
-            'RESUME': 'PLAYER RESUMED',
-            'SHUFFLE': 'SHUFFLE MODE',
-            'TOP': 'PRIORITY UPDATE',
-            'REMOVE': 'QUEUE REMOVAL',
-            'RESET': 'SYSTEM ALERT',
-            'LOAD_FAILED': 'PLAYBACK ERROR'
-        };
-        return map[action] || 'SYSTEM NOTICE';
+    const requireAuth = () => {
+        if (userStore.isGuest) {
+            userStore.showNameModal = true;
+            return false;
+        }
+        return true;
     };
 
-    const connect = () => {
-        const savedName = localStorage.getItem('mp_username') || 'Guest';
-        const token = userStore.userToken;
-        const roomPassword = localStorage.getItem('mp_room_password') || '';
-
-        const client = new Client({
-            brokerURL: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`,
-            connectHeaders: {
-                'user-name': savedName,
-                'user-token': token,
-                'room-password': roomPassword
-            },
-            heartbeatIncoming: 10000,
-            heartbeatOutgoing: 10000,
-            onConnect: (frame) => {
-                connected.value = true;
-
-                client.subscribe('/app/user/me', (message) => {
-                    const me = JSON.parse(message.body);
-                    const needsSync = userStore.initUser(me.sessionId, me.name);
-                    if (needsSync) {
-                        renameUser(userStore.currentUser.name);
-                    }
-                });
-
-                client.subscribe('/topic/player/events', (message) => {
-                    const event = JSON.parse(message.body);
-
-                    if (event.action === 'RESET') {
-                        chatStore.messages = []; // 直接清空聊天记录
-                    }
-
-                    // 处理密码变更
-                    if (event.action === 'PASSWORD_CHANGED') {
-                        show({
-                            title: 'SECURITY ALERT',
-                            message: '房间密码已更改，请重新验证',
-                            type: 'error',
-                            duration: 5000
-                        });
-
-                        // 强制延迟一下刷新或重置，让用户看清提示
-                        setTimeout(() => {
-                            userStore.resetAuthentication();
-                            // 可选：直接刷新页面确保状态最干净
-                            window.location.reload();
-                        }, 1500);
-                        return;
-                    }
-
-                    if (event.type === 'ERROR' && event.message.includes('taken')) {
-                        show({
-                            title: 'NAME TAKEN',
-                            message: '该代号已被占用，请更换。',
-                            type: 'error'
-                        });
-                        // 可以在这里把 showNameModal 重新打开
-                        userStore.showNameModal = true;
-                        return;
-                    }
-                    // event: { type, action, userId, payload }
-                    const msgText = formatEventMessage(event.action, event.userId, event.payload);
-
-                    show({
-                        title: deriveTitle(event.action),
-                        message: msgText,
-                        type: event.type.toLowerCase(),
-                        duration: 3000
-                    });
-                });
-
-                client.subscribe('/topic/player/state', (message) => {
-                    handleStateUpdate(JSON.parse(message.body));
-                });
-                client.subscribe('/topic/player/now-playing', () => {});
-                client.subscribe('/topic/player/queue', (message) => {
-                    queue.value = JSON.parse(message.body);
-                });
-                client.subscribe('/topic/users/online', (message) => {
-                    userStore.setOnlineUsers(JSON.parse(message.body));
-                });
-                client.subscribe('/user/queue/player/state', (message) => {
-                    handleStateUpdate(JSON.parse(message.body));
-                });
-
-                client.publish({ destination: '/app/player/resync' });
-                Object.entries(userStore.bindings).forEach(([platform, id]) => {
-                    if(id) bindAccount(platform, id);
-                });
-
-                client.subscribe('/topic/chat', (message) => {
-                    const msg = JSON.parse(message.body);
-                    chatStore.addMessage(msg);
-                });
-
-                // 订阅并获取历史记录 (这是 SubscribeMapping，订阅即返回一次)
-                // 注意：这里返回的是数组，我们需要批量替换或添加
-                client.subscribe('/app/chat/history', (message) => {
-                    const history = JSON.parse(message.body);
-                    chatStore.setHistory(history);
-                });
-
-            },
-            onDisconnect: () => {
-                connected.value = false;
-            },
-            onStompError: (frame) => {
-                console.error('STOMP Error:', frame.body);
-                if (frame.body === 'INVALID_ROOM_PASSWORD') {
-                    show({
-                        title: 'ACCESS DENIED',
-                        message: '身份认证失效，请重新输入房间密码',
-                        type: 'error'
-                    });
-                    userStore.resetAuthentication();
-                }
-            }
-        });
-        client.activate();
-        stompClient.value = client;
+    const checkCooldown = () => {
+        const now = Date.now();
+        if (now - lastControlTime.value < LOCAL_COOLDOWN) {
+            // 这里可以不再弹 Toast 报错，而是静默失败，避免刷屏
+            return false;
+        }
+        lastControlTime.value = now;
+        return true;
     };
 
-    const handleStateUpdate = (state) => {
+    // === 3. Actions ===
+
+    // [新增] 纯粹的状态同步 Action
+    const syncState = (state) => {
         nowPlaying.value = state.nowPlaying;
         queue.value = state.queue;
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
         pauseTimeMillis.value = state.pauseTimeMillis || 0;
         isLoading.value = state.isLoading || false;
+
         if (state.serverTimestamp) {
             serverTimeOffset.value = state.serverTimestamp - Date.now();
         }
-        if(state.onlineUsers) userStore.setOnlineUsers(state.onlineUsers);
+        if (state.onlineUsers) {
+            userStore.setOnlineUsers(state.onlineUsers);
+        }
+    };
+
+    const connect = () => {
+        const authHeaders = {
+            'user-name': localStorage.getItem(STORAGE_KEYS.USERNAME) || 'Guest',
+            'user-token': userStore.userToken,
+            'room-password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || ''
+        };
+
+        // 使用抽离出的订阅配置
+        const subscriptions = createSocketSubscriptions();
+
+        // 补充 UserMe 的特殊处理 (因为它需要用到 renameUser，如果放在 socketHandler 会导致循环依赖)
+        subscriptions[WS_DEST.USER_ME] = (me) => {
+            const needsSync = userStore.initUser(me.sessionId, me.name);
+            if (needsSync) renameUser(userStore.currentUser.name);
+        };
+
+        const callbacks = createSocketCallbacks();
+
+        socketService.connect(authHeaders, callbacks, subscriptions);
+    };
+
+    // --- 指令发送 ---
+    const playNext = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_NEXT);
+    const togglePause = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_PAUSE);
+    const toggleShuffle = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_SHUFFLE);
+
+    const enqueue = (platform, musicId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
+    const enqueuePlaylist = (platform, playlistId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_PLAYLIST, { platform, playlistId });
+    const topSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_TOP, { queueId });
+    const removeSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_REMOVE, { queueId });
+
+    const bindAccount = (platform, accountId) => {
+        socketService.send(WS_DEST.USER_BIND, { platform, accountId });
+        userStore.updateBinding(platform, accountId);
+    };
+
+    const renameUser = (newName) => {
+        socketService.send(WS_DEST.USER_RENAME, { newName });
+        userStore.saveName(newName);
     };
 
     const sendChatMessage = (content) => {
-        if(requireAuth()) sendCommand('/app/chat', { content });
+        if (requireAuth()) socketService.send(WS_DEST.CHAT_SEND, { content });
     };
 
-    const sendCommand = (dest, body = {}) => {
-        if (!stompClient.value || !connected.value) return;
-        stompClient.value.publish({ destination: dest, body: JSON.stringify(body) });
-    };
-
-    const checkCooldown = () => {
-        const now = Date.now();
-        if (now - lastControlTime.value < LOCAL_COOLDOWN) {
-            show({
-                title: "RATE LIMITED",
-                message: "操作频繁，请等待...",
-                type: "error",
-                duration: 2000
-            });
-            return false;
-        }
-        lastControlTime.value = now;
-        return true;
-    };
-    const playNext = () => {
-        if(requireAuth() && checkCooldown()) sendCommand('/app/control/next');
-    }
-    const togglePause = () => {
-        if(requireAuth() && checkCooldown()) sendCommand('/app/control/toggle-pause');
-    }
-    const toggleShuffle = () => {
-        if(requireAuth() && checkCooldown()) sendCommand('/app/control/toggle-shuffle');
-    }
-    const enqueue = (platform, musicId) => {
-        if(requireAuth()) sendCommand('/app/enqueue', { platform, musicId });
-    }
-    const enqueuePlaylist = (platform, playlistId) => {
-        if(requireAuth()) sendCommand('/app/enqueue/playlist', { platform, playlistId });
-    }
-    const topSong = (queueId) => {
-        if(requireAuth()) sendCommand('/app/queue/top', { queueId });
-    }
-    const removeSong = (queueId) => {
-        if(requireAuth()) sendCommand('/app/queue/remove', { queueId });
-    }
-    const bindAccount = (platform, accountId) => {
-        sendCommand('/app/user/bind', { platform, accountId });
-        userStore.updateBinding(platform, accountId);
-    }
-    const renameUser = (newName) => {
-        sendCommand('/app/user/rename', { newName });
-        userStore.saveName(newName);
-    }
+    // 歌词监听
     watch(() => nowPlaying.value?.music?.id, async (newId) => {
         lyricText.value = '';
         if (!newId) return;
-        const platform = nowPlaying.value.music.platform;
         try {
-            const res = await axios.get(`/api/music/lyric/${platform}/${newId}`);
-            lyricText.value = res.data || '';
-        } catch (e) { console.error(e); }
+            const platform = nowPlaying.value.music.platform;
+            const data = await musicApi.getLyric(platform, newId);
+            lyricText.value = data || '';
+        } catch (e) {
+            console.error("Lyrics Error", e);
+        }
     });
 
     return {
-        nowPlaying,
-        queue,
-        isPaused,
-        isShuffle,
-        connected,
-        getCurrentProgress,
-        connect,
-        playNext,
-        togglePause,
-        toggleShuffle,
-        enqueue,
-        enqueuePlaylist,
-        topSong,
-        removeSong,
-        bindAccount,
-        renameUser,
-        lyricText,
-        requireAuth,
-        isLoading,
-        sendChatMessage,
-        stompClient
+        nowPlaying, queue, isPaused, isShuffle, connected, isLoading, lyricText,
+        connect, getCurrentProgress, syncState, // 导出 syncState
+        playNext, togglePause, toggleShuffle,
+        enqueue, enqueuePlaylist, topSong, removeSong,
+        bindAccount, renameUser, sendChatMessage
     };
 });

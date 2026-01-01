@@ -43,7 +43,7 @@ esac
 
 # set JAVACMD and JAVACCMD
 set_java_home() {
-  # For Cygwin and MinGW, ensure paths are in Unix format before anything is touched
+  # For Cygwin and MinGW, ensure paths are in Unix format.js before anything is touched
   if [ -n "${JAVA_HOME-}" ]; then
     if [ -x "$JAVA_HOME/jre/sh/java" ]; then
       # IBM's JDK on AIX uses strange locations for the executables
@@ -215,7 +215,7 @@ elif set_java_home; then
 	  }
 	}
 	END
-  # For Cygwin/MinGW, switch paths to Windows format before running javac and java
+  # For Cygwin/MinGW, switch paths to Windows format.js before running javac and java
   verbose " - Compiling Downloader.java ..."
   "$(native_path "$JAVACCMD")" "$(native_path "$javaSource")" || die "Failed to compile Downloader.java"
   verbose " - Running Downloader.java ..."

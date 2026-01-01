@@ -1,5 +1,3 @@
-// File Path: music-party-web\src\components\AuthOverlay.vue
-
 <template>
   <div v-if="!passed" class="fixed inset-0 z-[200] bg-medical-50 flex items-center justify-center p-4">
     <div class="bg-white p-8 shadow-2xl border border-medical-200 w-full max-w-md chamfer-br relative">
@@ -16,18 +14,16 @@
       </div>
 
       <div class="space-y-4">
-        <!-- 只有在非 Setup 模式，或者 Setup 模式下想设置密码时才显示输入框 -->
         <input
             v-if="!isSetupMode || (isSetupMode && setupType === 'password')"
             v-model="inputPassword"
             type="password"
             :placeholder="isSetupMode ? 'SET NEW PASSWORD' : 'INPUT PASSWORD'"
             @keyup.enter="handleAction"
-            class="w-full bg-medical-50 border border-medical-200 p-3 outline-none focus:border-accent font-monoTZ text-center tracking-widest text-lg"
+            class="w-full bg-medical-50 border border-medical-200 p-3 outline-none focus:border-accent font-mono text-center tracking-widest text-lg"
             autofocus
         />
 
-        <!-- 正常模式 / 设置密码模式 的确认按钮 -->
         <button
             v-if="!isSetupMode || setupType === 'password'"
             @click="handleAction"
@@ -37,7 +33,6 @@
           {{ loading ? 'VERIFYING...' : (isSetupMode ? 'CONFIRM PASSWORD' : 'UNLOCK') }}
         </button>
 
-        <!-- Setup 模式下的选择区域 -->
         <div v-if="isSetupMode && setupType === 'initial'" class="space-y-3">
           <button
               @click="setupType = 'password'"
@@ -60,7 +55,6 @@
           </button>
         </div>
 
-        <!-- Setup 模式下返回选择 -->
         <button
             v-if="isSetupMode && setupType === 'password'"
             @click="setupType = 'initial'"
@@ -79,8 +73,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
-import axios from 'axios';
+import {ref, onMounted} from 'vue';
+import {authApi} from '../api/auth';
+import {STORAGE_KEYS} from '../constants/keys';
 
 const emit = defineEmits(['unlocked']);
 
@@ -91,34 +86,29 @@ const inputPassword = ref('');
 const errorMsg = ref('');
 const loading = ref(false);
 
-const STORAGE_KEY = 'mp_room_password';
-
-// 检查状态
 const checkStatus = async () => {
   loading.value = true;
   try {
-    const statusRes = await axios.get('/api/auth/status');
-    // 解构新的返回对象
-    const { isSetup, hasProtection } = statusRes.data;
+    // 🟢 修复点：直接获取数据，不再需要 .data
+    // 我们的 api/client.js 里的拦截器已经帮我们把 data 取出来了
+    const data = await authApi.getStatus();
+    const {isSetup, hasProtection} = data;
 
     if (!isSetup) {
-      // 1. 未初始化 -> 进入设置模式
       isSetupMode.value = true;
     } else {
-      // 2. 已初始化
       if (!hasProtection) {
-        // A. 无密码模式 -> 直接放行
         passed.value = true;
         emit('unlocked');
       } else {
-        // B. 有密码模式 -> 检查本地缓存
-        const cachedPass = localStorage.getItem(STORAGE_KEY);
+        const cachedPass = localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD);
         if (cachedPass) {
           await verify(cachedPass, true);
         }
       }
     }
   } catch (e) {
+    console.error("Auth Status Error:", e); // 在控制台打印真实错误
     errorMsg.value = "CONNECTION FAILED";
   } finally {
     loading.value = false;
@@ -127,9 +117,8 @@ const checkStatus = async () => {
 
 const verify = async (pwd, isAuto = false) => {
   try {
-    await axios.post('/api/auth/verify', { password: pwd });
-    // 验证通过
-    localStorage.setItem(STORAGE_KEY, pwd);
+    await authApi.verify(pwd);
+    localStorage.setItem(STORAGE_KEYS.ROOM_PASSWORD, pwd);
     passed.value = true;
     emit('unlocked');
   } catch (e) {
@@ -137,13 +126,11 @@ const verify = async (pwd, isAuto = false) => {
       errorMsg.value = "INVALID PASSWORD";
       inputPassword.value = '';
     } else {
-      // 自动登录失败，清除缓存
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEYS.ROOM_PASSWORD);
     }
   }
 };
 
-// 设置密码
 const setup = async () => {
   if (!inputPassword.value) {
     errorMsg.value = "PASSWORD CANNOT BE EMPTY";
@@ -152,18 +139,15 @@ const setup = async () => {
   await performSetup(inputPassword.value);
 };
 
-// 设置为无密码
 const setupNoPassword = async () => {
   await performSetup("");
 };
 
-// 统一的 Setup 请求逻辑
 const performSetup = async (pwd) => {
   loading.value = true;
   try {
-    await axios.post('/api/auth/setup', { password: pwd });
-    // 设置成功后，自动视为验证通过
-    if(pwd) localStorage.setItem(STORAGE_KEY, pwd);
+    await authApi.setup(pwd);
+    if (pwd) localStorage.setItem(STORAGE_KEYS.ROOM_PASSWORD, pwd);
     passed.value = true;
     emit('unlocked');
   } catch (e) {

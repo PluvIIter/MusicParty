@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { STORAGE_KEYS } from '../constants/keys';
 
 const generateToken = () => {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -8,14 +9,14 @@ const generateToken = () => {
     });
 }
 
-let storedToken = localStorage.getItem('mp_user_token');
+let storedToken = localStorage.getItem(STORAGE_KEYS.TOKEN);
 if (!storedToken) {
     storedToken = generateToken();
-    localStorage.setItem('mp_user_token', storedToken);
+    localStorage.setItem(STORAGE_KEYS.TOKEN, storedToken);
 }
 const userToken = ref(storedToken);
 
-const storageName = localStorage.getItem('mp_username');
+const storageName = localStorage.getItem(STORAGE_KEYS.USERNAME);
 const currentUser = ref({
     name: storageName || 'Guest',
     sessionId: ''
@@ -33,8 +34,7 @@ export const useUserStore = defineStore('user', () => {
         sessionId: ''
     });
 
-    const bindings = ref(JSON.parse(localStorage.getItem('mp_bindings') || '{}'));
-
+    const bindings = ref(JSON.parse(localStorage.getItem(STORAGE_KEYS.BINDINGS) || '{}'));
     // 全局状态：控制改名弹窗显示
     const showNameModal = ref(false);
 
@@ -71,8 +71,7 @@ export const useUserStore = defineStore('user', () => {
             console.log(`Syncing name from server: ${serverName}`);
             currentUser.value.name = serverName;
             if (!isGuest.value) {
-                localStorage.setItem('mp_username', serverName);
-            }
+                localStorage.setItem(STORAGE_KEYS.USERNAME, serverName);            }
         }
         return false; // 不需要再发 rename 了，后端已经处理好了
     };
@@ -83,16 +82,16 @@ export const useUserStore = defineStore('user', () => {
 
     const updateBinding = (platform, accountId) => {
         bindings.value[platform] = accountId;
-        localStorage.setItem('mp_bindings', JSON.stringify(bindings.value));
+        localStorage.setItem(STORAGE_KEYS.BINDINGS, JSON.stringify(bindings.value));
     };
 
-    // 🟢 3. 只有这个方法有权修改 LocalStorage
+    // 只有这个方法有权修改 LocalStorage
     const saveName = (newName) => {
         if(!newName) return;
         currentUser.value.name = newName;
-        localStorage.setItem('mp_username', newName);
+        localStorage.setItem(STORAGE_KEYS.USERNAME, newName);
         isGuest.value = false;
-        // 🟢 [新增] 保存成功后，自动关闭弹窗
+        // 保存成功后，自动关闭弹窗
         showNameModal.value = false;
 
         if (onNameSetCallback.value) {
@@ -107,7 +106,7 @@ export const useUserStore = defineStore('user', () => {
 
     const resetAuthentication = () => {
         isAuthPassed.value = false;
-        localStorage.removeItem('mp_room_password'); // 清除本地保存的旧密码
+        localStorage.removeItem(STORAGE_KEYS.ROOM_PASSWORD);// 清除本地保存的旧密码
     };
 
     return {
