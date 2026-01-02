@@ -126,7 +126,27 @@
                   </div>
                 </div>
                 <div v-if="isUnplayable(song)" class="ml-2 flex-shrink-0"><span class="px-1.5 py-0.5 text-[10px] font-mono font-bold text-medical-400 border border-medical-300 bg-medical-100 rounded-sm">>10MIN</span></div>
-                <button v-else @click="playerStore.enqueue(platform, song.id)" class="ml-2 p-2 text-medical-300 hover:text-accent flex-shrink-0"><PlusCircle class="w-5 h-5"/></button>
+
+                <button
+                    v-else
+                    @click="handleAddClick(song)"
+                    class="ml-2 p-2 flex-shrink-0 transition-all duration-300"
+                    :class="[
+                        isInQueue(song.id) ? 'text-green-500 cursor-default' :
+                        pendingIds.has(song.id) ? 'text-accent cursor-wait' :
+                        'text-medical-300 hover:text-accent'
+                    ]"
+                    :disabled="pendingIds.has(song.id) || isInQueue(song.id)"
+                >
+                  <!-- 状态 1: 正在添加 -->
+                  <Loader2 v-if="pendingIds.has(song.id)" class="w-5 h-5 animate-spin" />
+
+                  <!-- 状态 2: 已经在队列中 -->
+                  <Check v-else-if="isInQueue(song.id)" class="w-5 h-5" />
+
+                  <!-- 状态 3: 普通添加按钮 -->
+                  <PlusCircle v-else class="w-5 h-5"/>
+                </button>
               </div>
             </div>
 
@@ -147,7 +167,7 @@ import { ref, watch } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { usePlaylistLogic } from '../composables/usePlaylistLogic';
-import { X, Search, PlusCircle, ListPlus, Loader2, ArrowLeft, ChevronRight } from 'lucide-vue-next';
+import { X, Search, PlusCircle, ListPlus, Loader2, ArrowLeft, ChevronRight, Check } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 
 const props = defineProps(['isOpen']);
@@ -191,6 +211,33 @@ const handleSelectPlaylist = (pid) => {
 const handleImportPlaylist = () => {
   playerStore.enqueuePlaylist(platform.value, currentPlaylistId.value);
   emit('close');
+};
+
+// 本地维护正在添加中的歌曲 ID 集合
+const pendingIds = ref(new Set());
+
+// 检查歌曲是否已经在队列中
+const isInQueue = (songId) => {
+  return playerStore.queue.some(item => item.music.id === songId);
+};
+
+// 处理点击添加
+const handleAddClick = (song) => {
+  // 防抖：如果正在添加或已在队列，直接忽略
+  if (pendingIds.value.has(song.id) || isInQueue(song.id)) return;
+
+  // 1. 设置 loading 状态
+  pendingIds.value.add(song.id);
+
+  // 2. 发送请求
+  playerStore.enqueue(platform.value, song.id);
+
+  // 3. 设定一个“冷却时间”用于视觉反馈 (2秒)
+  // WebSocket 是异步的，我们不需要一直等到服务器返回，
+  // 这里的 loading 主要是为了告诉用户“操作已受理”并防止连点
+  setTimeout(() => {
+    pendingIds.value.delete(song.id);
+  }, 2000);
 };
 
 // 监听搜索动作 -> 自动切视图
