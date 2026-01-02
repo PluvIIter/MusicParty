@@ -117,6 +117,10 @@ export const usePlayerStore = defineStore('player', () => {
         userStore.saveName(newName);
     };
 
+    const sendLike = () => {
+        if (requireAuth()) socketService.send(WS_DEST.PLAYER_LIKE);
+    };
+
     const sendChatMessage = (content) => {
         if (requireAuth()) socketService.send(WS_DEST.CHAT_SEND, { content });
     };
@@ -139,6 +143,6 @@ export const usePlayerStore = defineStore('player', () => {
         connect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
         enqueue, enqueuePlaylist, topSong, removeSong,
-        bindAccount, renameUser, sendChatMessage
+        bindAccount, renameUser, sendChatMessage, sendLike
     };
 });

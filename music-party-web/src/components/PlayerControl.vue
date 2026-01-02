@@ -4,7 +4,6 @@
     <audio
         ref="audioRef"
         :src="audioSrc"
-        @ended="player.playNext"
         @error="handleError"
         @waiting="isBuffering = true"
         @playing="isBuffering = false"
@@ -63,6 +62,19 @@
 
       <!-- 进度条 -->
       <div class="h-1 bg-medical-200 w-full relative">
+
+        <div
+            v-for="(marker, index) in likeMarkers"
+            :key="index"
+            class="absolute z-20 transition-all duration-300 transform -translate-y-1/2 top-1/2"
+            :style="{ left: (marker / (nowPlaying?.music.duration || 1)) * 100 + '%' }"
+        >
+          <Zap
+              class="w-3 h-3 drop-shadow-md "
+              :class="'text-accent fill-accent'"
+          />
+        </div>
+
         <div
             class="h-full transition-all duration-300 ease-linear relative"
             :class="isErrorState ? 'bg-red-500' : 'bg-accent'"
@@ -170,7 +182,7 @@ import { usePlayerStore } from '../stores/player';
 import { useAudio } from '../composables/useAudio'; // 🟢
 import { formatDuration } from '../utils/format';
 import { STORAGE_KEYS } from '../constants/keys';
-import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink } from 'lucide-vue-next';
+import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink, Zap } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { useToast } from '../composables/useToast';
 
@@ -189,6 +201,7 @@ const {
 } = useAudio(audioRef, player);
 
 const nowPlaying = computed(() => player.nowPlaying);
+const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
 const audioSrc = computed(() => nowPlaying.value?.music.url || '');
 
 // 计算进度百分比

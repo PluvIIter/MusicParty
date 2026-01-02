@@ -18,6 +18,9 @@ public enum PlayerAction {
     SHUFFLE_OFF,
     IMPORT_PLAYLIST,
 
+    // 交互
+    LIKE,
+
     // 系统级
     RESET,
     ERROR_LOAD

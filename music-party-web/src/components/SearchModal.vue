@@ -35,7 +35,7 @@
               :class="isAdminMode ? 'bg-red-50 border-red-500 text-red-600 focus:border-red-600' : 'bg-medical-100 border-medical-200 focus:border-accent'"
           />
           <button
-              @click="doSearch"
+              @click="handleSearchAction"
               class="text-white px-3 md:px-6 py-2 font-bold transition-colors text-xs md:text-base flex-shrink-0"
               :class="isAdminMode ? 'bg-red-600 hover:bg-red-700' : 'bg-accent hover:bg-accent-hover'"
           >
@@ -158,6 +158,14 @@ const playerStore = usePlayerStore();
 const {
   platform, keyword, songs, loading, listMode, isAdminMode, doSearch
 } = useSearchLogic(emit);
+
+const handleSearchAction = async () => {
+  await doSearch();
+  // 无论 listMode 之前是不是 search，只要用户手动搜索了，就切到列表视图
+  if (!isAdminMode.value) {
+    mobileView.value = 'songs';
+  }
+};
 
 // 2. 引入歌单逻辑 (注入依赖)
 const {

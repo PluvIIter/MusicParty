@@ -43,34 +43,35 @@ public class MusicSocketController {
         musicPlayerService.enqueuePlaylist(request, sessionId);
     }
 
-    // 🟢 修改：增加 sessionId 参数
     @MessageMapping("/control/next")
     public void nextSong(@Header("simpSessionId") String sessionId) {
         musicPlayerService.skipToNext(sessionId);
     }
 
-    // 🟢 修改：增加 sessionId 参数
     @MessageMapping("/control/toggle-shuffle")
     public void toggleShuffle(@Header("simpSessionId") String sessionId) {
         musicPlayerService.toggleShuffle(sessionId);
     }
 
-    // 🟢 修改：增加 sessionId 参数
     @MessageMapping("/control/toggle-pause")
     public void togglePause(@Header("simpSessionId") String sessionId) {
         musicPlayerService.togglePause(sessionId);
     }
 
-    // 🟢 修改：增加 sessionId 参数
     @MessageMapping("/queue/top")
     public void topSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
         musicPlayerService.topSong(request.queueId(), sessionId);
     }
 
-    // 🟢 修改：增加 sessionId 参数
     @MessageMapping("/queue/remove")
     public void removeSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
         musicPlayerService.removeSongFromQueue(request.queueId(), sessionId);
+    }
+
+    // 点赞接口
+    @MessageMapping("/control/like")
+    public void likeSong(@Header("simpSessionId") String sessionId) {
+        musicPlayerService.likeSong(sessionId);
     }
 
     @MessageMapping("/user/rename")

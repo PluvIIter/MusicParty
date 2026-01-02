@@ -15,6 +15,12 @@ function handleGameEvent(event) {
     const userStore = useUserStore();
     const chatStore = useChatStore();
     const { show, error } = useToast();
+    const userName = userStore.resolveName(event.userId);
+
+    if (event.action === 'LIKE') {
+        // 使用 CustomEvent 传递数据（如果需要）
+        window.dispatchEvent(new CustomEvent('player:like', { detail: { userId: event.userId } }));
+    }
 
     // 1. 特殊指令处理
     if (event.action === 'RESET') {
@@ -37,13 +43,10 @@ function handleGameEvent(event) {
     }
 
     // 2. 构建通知文案
-    const userName = userStore.resolveName(event.userId);
     let msgText = `${userName} 执行了操作`;
 
-    // 辅助函数：判断 payload 是否为真值 (兼容 boolean 和 string)
-    const isTrue = (val) => val === true || val === 'true' || val === 'ON' || val === 'on';
-
     const actionMap = {
+        'LIKE': `${userName} 觉得很赞！`,
         'SKIP': `${userName} 切到了下一首`,
         'PAUSE': `${userName} 暂停了播放`,
         'RESUME': `${userName} 继续了播放`,

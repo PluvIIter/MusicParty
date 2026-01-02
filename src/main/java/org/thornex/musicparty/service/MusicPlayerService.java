@@ -19,10 +19,9 @@ import org.thornex.musicparty.service.api.IMusicApiService;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -50,6 +49,10 @@ public class MusicPlayerService {
     private final AtomicLong totalPausedTimeMillis = new AtomicLong(0);
     private final AtomicBoolean isLoading = new AtomicBoolean(false);
 
+    private final Map<String, Object> likeLock = new HashMap<>();
+    private Set<String> currentLikedUserIds;
+    private List<Long> currentLikeMarkers;
+
     private final AtomicLong lastControlTimestamp = new AtomicLong(0);
     private static final long GLOBAL_COOLDOWN_MS = 1000;
     private static final int PLAYLIST_ADD_LIMIT = 100;
@@ -67,6 +70,8 @@ public class MusicPlayerService {
         this.chatService = chatService;
         this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
+        this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
+        this.currentLikeMarkers = new CopyOnWriteArrayList<>();
     }
 
     @PostConstruct
@@ -171,11 +176,17 @@ public class MusicPlayerService {
     }
 
     private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
+        currentLikedUserIds.clear();
+        currentLikeMarkers.clear();
+
         NowPlayingInfo newNowPlaying = new NowPlayingInfo(
                 music,
                 Instant.now().toEpochMilli(),
                 queueItem.enqueuedBy().token(),
-                queueItem.enqueuedBy().name());
+                queueItem.enqueuedBy().name(),
+                currentLikedUserIds,
+                currentLikeMarkers
+        );
 
         if (nowPlaying.compareAndSet(null, newNowPlaying)) {
             log.info("Now playing: {}", music.name());
@@ -197,7 +208,9 @@ public class MusicPlayerService {
                     current.music(),
                     effectiveStartTime,
                     current.enqueuedById(),
-                    current.enqueuedByName()
+                    current.enqueuedByName(),
+                    currentLikedUserIds,
+                    currentLikeMarkers
             );
         }
 
@@ -243,6 +256,37 @@ public class MusicPlayerService {
                             String msg = error.getMessage().contains("Could not get Bilibili video info") ? "无效资源或API受限" : error.getMessage();
                             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: " + msg));
                         });
+    }
+
+    // 点赞逻辑
+    public void likeSong(String sessionId) {
+        NowPlayingInfo current = nowPlaying.get();
+        if (current == null) return; // 没歌放，不能点赞
+
+        String token = getUserToken(sessionId);
+
+        // 1. 检查去重 (单人单曲一次)
+        if (currentLikedUserIds.contains(token)) return;
+
+        // 2. 更新数据
+        currentLikedUserIds.add(token);
+
+        // 计算相对时间 (进度)
+        long progress = 0;
+        if (isPaused.get()) {
+            progress = pauseStateChangeTime.get() - (current.startTimeMillis() + totalPausedTimeMillis.get());
+        } else {
+            progress = System.currentTimeMillis() - (current.startTimeMillis() + totalPausedTimeMillis.get());
+        }
+        currentLikeMarkers.add(progress);
+
+        log.info("Like received from {}", getUserName(sessionId));
+
+        // 3. 广播
+        // 广播事件用于触发特效
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, token, null));
+        // 广播状态更新进度条打点和用户列表
+        broadcastFullPlayerState();
     }
 
     public void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {

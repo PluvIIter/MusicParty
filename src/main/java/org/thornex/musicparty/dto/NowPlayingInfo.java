@@ -1,10 +1,13 @@
 package org.thornex.musicparty.dto;
 
 import java.util.List;
+import java.util.Set;
 
 public record NowPlayingInfo(
         PlayableMusic music,
         long startTimeMillis,
         String enqueuedById,
-        String enqueuedByName
+        String enqueuedByName,
+        Set<String> likedUserIds,
+        List<Long> likeMarkers
 ) {}

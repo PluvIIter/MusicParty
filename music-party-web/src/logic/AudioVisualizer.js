@@ -18,6 +18,11 @@ export class AudioVisualizer {
         // 状态标记
         this.isPlaying = false;
 
+        // 爆发控制变量
+        this.speedMultiplier = 1.0;
+        this.widthMultiplier = 1.0;
+        this.roughnessMultiplier = 1.0;
+
         // 配置参数
         this.breatheBars = 120;
         this.breatheRadiusBase = 180;
@@ -60,6 +65,14 @@ export class AudioVisualizer {
         this.isPlaying = isPlaying;
     }
 
+    //触发爆发特效
+    impulse() {
+        // 瞬间拉高参数
+        this.speedMultiplier = 6.0;   // 速度变快 8 倍
+        this.widthMultiplier = 2.0;   // 宽度变粗 1.8 倍
+        this.roughnessMultiplier = 1.5; // 波动幅度变大
+    }
+
     startLoop() {
         const loop = () => {
             if (!this.canvas || !this.ctx) return;
@@ -74,13 +87,16 @@ export class AudioVisualizer {
         const { ctx, width, height, center } = this;
         ctx.clearRect(0, 0, width, height);
 
+        const decayFactor = 0.005;
+
+        this.speedMultiplier += (1.0 - this.speedMultiplier) * decayFactor;
+        this.widthMultiplier += (1.0 - this.widthMultiplier) * decayFactor;
+        this.roughnessMultiplier += (1.0 - this.roughnessMultiplier) * decayFactor;
+
         // --- 1. 状态计算与平滑过渡 (Lerp) ---
         // 时间流速
-        if (this.isPlaying) {
-            this.rippleTime += 0.5;
-        } else {
-            this.rippleTime += 0.1;
-        }
+        const baseSpeed = this.isPlaying ? 0.5 : 0.1;
+        this.rippleTime += baseSpeed * this.speedMultiplier;
 
         // 目标透明度与宽度
         const targetAlpha = this.isPlaying ? 0.25 : 0.05;
@@ -99,7 +115,7 @@ export class AudioVisualizer {
         this.rings.forEach((ring) => {
             ctx.beginPath();
             const count = 240;
-            const currentMaxWidth = ring.maxWidth * this.smoothWidthScale;
+            const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
 
             // 外圈
             for (let i = 0; i <= count; i++) {
