@@ -107,9 +107,9 @@
                 class="absolute inset-0 z-40 flex items-center justify-center select-none"
                 :class="[
                     // 已点赞状态下，只显示极淡的角落标记，不遮挡封面
-                    hasLiked && !isBursting && !isHovering ? 'opacity-100' : '',
+                    hasLiked && !isBursting ? 'opacity-100' : '',
                     // 交互或爆发时，增加暗色扫描背景
-                    (!hasLiked || isBursting || isHovering) ? 'bg-medical-900/40' : ''
+                    (isBursting || (!hasLiked && (isHovering || mobileLikePending))) ? 'bg-medical-900/40' : ''
                 ]"
             >
               <!-- 1. 动态网格背景 (仅在交互时显示) -->
@@ -138,7 +138,10 @@
                       'text-white/70 scale-100 group-hover:scale-110 group-hover:text-white'
                   ]"
                 >
-                  <Activity v-if="!hasLiked && isHovering && !isBursting" class="w-10 h-10 animate-pulse" />
+                  <Activity
+                      v-if="!hasLiked && (isHovering || mobileLikePending) && !isBursting"
+                      class="w-10 h-10 animate-pulse"
+                  />
 
                   <Zap v-else class="w-10 h-10" :class="hasLiked || isBursting ? 'fill-current stroke-none' : ''" />
                 </div>
@@ -165,7 +168,7 @@
 
           <!-- 状态标签：悬停或点赞时隐藏 -->
           <div
-              class="absolute top-0 left-0 z-30 px-3 py-1 font-mono text-xs font-bold chamfer-br transition-colors duration-300 bg-medical-900/80 backdrop-blur-sm text-white"
+              class="absolute top-0 left-0 z-50 px-3 py-1 font-mono text-xs font-bold chamfer-br transition-colors duration-300 bg-medical-900/80 backdrop-blur-sm text-white"
           >
             {{ player.isPaused ? 'PAUSED' : 'PLAYING' }}
           </div>

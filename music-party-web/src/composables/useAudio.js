@@ -10,20 +10,68 @@ export function useAudio(audioRef, playerStore) {
     const isErrorState = ref(false);
     const { info, error, success } = useToast();
     let syncTimer = null;
+    let wakeLock = null;
 
-    // === 核心：尝试播放并处理浏览器拦截 ===
+    // 请求唤醒锁 (防止 WebSocket 断连)
+    const requestWakeLock = async () => {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                console.log('Wake Lock active');
+            } catch (err) {
+                console.warn('Wake Lock request failed:', err);
+            }
+        }
+    };
+
+    // 释放唤醒锁
+    const releaseWakeLock = async () => {
+        if (wakeLock !== null) {
+            await wakeLock.release();
+            wakeLock = null;
+        }
+    };
+
+    // 更新系统媒体中心 (锁屏控制)
+    const updateMediaSession = () => {
+        if (!('mediaSession' in navigator) || !playerStore.nowPlaying) return;
+
+        const music = playerStore.nowPlaying.music;
+
+        // 1. 设置元数据
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: music.name,
+            artist: music.artists.join(' / '),
+            artwork: [
+                { src: music.coverUrl, sizes: '512x512', type: 'image/png' }
+            ]
+        });
+
+        // 2. 注册控制事件 (关键：告诉系统我们支持后台控制)
+        // 这样点击锁屏的下一首/暂停，会通过 WebSocket 发送给服务器
+        try {
+            navigator.mediaSession.setActionHandler('play', () => playerStore.togglePause());
+            navigator.mediaSession.setActionHandler('pause', () => playerStore.togglePause());
+            navigator.mediaSession.setActionHandler('previoustrack', null); // 暂不支持上一首
+            navigator.mediaSession.setActionHandler('nexttrack', () => playerStore.playNext());
+        } catch (e) {
+            console.warn('Media Session actions warning:', e);
+        }
+    };
+
+    // 尝试播放并处理浏览器拦截
     const safePlay = async () => {
         if (!audioRef.value || !playerStore.nowPlaying) return;
 
         try {
             await audioRef.value.play();
             isErrorState.value = false;
+            updateMediaSession();
+            requestWakeLock();
         } catch (e) {
             // NotAllowedError 是浏览器由于缺乏用户交互而拦截
             if (e.name === 'NotAllowedError') {
-                error('自动播放被拦截，请点击播放按钮');
-                // 这里我们不改变 store 的状态，因为后端确实在播放
-                // 只是本地没声音，需要用户手动点一下 UI 上的播放键来“解锁”
+                console.warn("Autoplay blocked. User interaction required.");
             } else if (e.name !== 'AbortError') {
                 console.warn("Play failed:", e);
             }
@@ -39,9 +87,7 @@ export function useAudio(audioRef, playerStore) {
         if (playerStore.isPaused) {
             audioRef.value.pause();
         } else {
-            // 修复点：如果不暂停，就应该播放！
-            // 延迟一点点，给浏览器喘息时间
-            setTimeout(() => safePlay(), 50);
+            safePlay();
         }
     };
 
@@ -50,8 +96,11 @@ export function useAudio(audioRef, playerStore) {
         if (!audioRef.value) return;
         if (newPaused) {
             audioRef.value.pause();
+            navigator.mediaSession.playbackState = 'paused';
+            releaseWakeLock();
         } else {
             safePlay();
+            navigator.mediaSession.playbackState = 'playing';
         }
     });
 
@@ -71,6 +120,7 @@ export function useAudio(audioRef, playerStore) {
         isErrorState.value = false;
         // 切歌会导致 src 变化，自动触发 load -> canplay -> checkAutoPlay
         // 所以这里不需要手动 call play
+        updateMediaSession();
     });
 
     // === 4. 错误重试机制 ===
@@ -96,8 +146,19 @@ export function useAudio(audioRef, playerStore) {
         }, 1500);
     };
 
+    // 页面可见性变化监听
+    // 当重新回到前台时，如果发现 WebSocket 断了，应该自动重连
+    // 这里主要处理 Wake Lock 的重新获取
+    const handleVisibilityChange = async () => {
+        if (document.visibilityState === 'visible' && !playerStore.isPaused) {
+            await requestWakeLock();
+        }
+    };
+
     // === 5. 进度条同步 ===
     onMounted(() => {
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
         syncTimer = setInterval(() => {
             if (!playerStore.nowPlaying) {
                 localProgress.value = 0;
@@ -117,14 +178,22 @@ export function useAudio(audioRef, playerStore) {
                 if (Math.abs(domTime - backendTime) > 2000) {
                     // 只有在音频就绪时才跳转
                     if (audioRef.value.readyState >= 2) {
-                        audioRef.value.currentTime = backendTime / 1000;
+                        try {
+                            audioRef.value.currentTime = backendTime / 1000;
+                        } catch(e) {
+                            //iOS 在后台禁止修改 currentTime，除非音频正在播放
+                        }
                     }
                 }
             }
         }, 500);
     });
 
-    onUnmounted(() => clearInterval(syncTimer));
+    onUnmounted(() => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        clearInterval(syncTimer);
+        releaseWakeLock();
+    });
 
     return {
         localProgress,

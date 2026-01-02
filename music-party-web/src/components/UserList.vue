@@ -9,13 +9,21 @@
       <!-- 自己 -->
       <div
           class="flex items-center gap-3 pb-3 border-b border-medical-200 border-dashed transition-all duration-300 p-2 -mx-2 rounded"
-          :class="isEnqueuerById(userStore.userToken) ? 'bg-accent/10 border-accent/30 shadow-sm' : ''"
+          :class="[
+              isEnqueuerById(userStore.userToken) ? 'bg-accent/10 border-accent/30 shadow-sm' :
+              isLikedUser(userStore.userToken) ? 'bg-accent/5' : ''
+          ]"
       >
         <div
             class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors rounded-none"
-            :class="isEnqueuerById(userStore.userToken) ? 'bg-accent text-white' : 'bg-medical-900 text-white'"
+            :class="[
+                isEnqueuerById(userStore.userToken) ? 'bg-accent text-white' :
+                isLikedUser(userStore.userToken) ? 'bg-accent text-white' :
+                'bg-medical-900 text-white'
+            ]"
         >
           <span v-if="isEnqueuerById(userStore.userToken)">DJ</span>
+          <Zap v-else-if="isLikedUser(userStore.userToken)" class="w-4 h-4 fill-white text-white" />
           <span v-else>ME</span>
         </div>
         <div class="flex-1 min-w-0">

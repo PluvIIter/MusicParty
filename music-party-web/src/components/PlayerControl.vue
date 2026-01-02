@@ -177,7 +177,7 @@
 
 <script setup>
 // <script setup> 内
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useAudio } from '../composables/useAudio'; // 🟢
 import { formatDuration } from '../utils/format';
@@ -281,6 +281,12 @@ const openSourcePage = () => {
   let url = platform === 'netease' ? `https://music.163.com/#/song?id=${id}` : `https://www.bilibili.com/video/${id}`;
   if (url) window.open(url, '_blank');
 };
+
+onMounted(() => {
+  if (audioRef.value) {
+    audioRef.value.volume = volume.value;
+  }
+});
 
 onUnmounted(() => {
   window.removeEventListener('mousemove', handleVolumeMouseMove);

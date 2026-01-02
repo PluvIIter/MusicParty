@@ -15,14 +15,12 @@ function handleGameEvent(event) {
     const userStore = useUserStore();
     const chatStore = useChatStore();
     const { show, error } = useToast();
-    const userName = userStore.resolveName(event.userId);
+    const userName = event.userId === 'SYSTEM' ? '系统' : userStore.resolveName(event.userId);
 
     if (event.action === 'LIKE') {
-        // 使用 CustomEvent 传递数据（如果需要）
         window.dispatchEvent(new CustomEvent('player:like', { detail: { userId: event.userId } }));
     }
 
-    // 1. 特殊指令处理
     if (event.action === 'RESET') {
         chatStore.messages = []; // 清空聊天
     }
@@ -37,38 +35,54 @@ function handleGameEvent(event) {
     }
 
     if (event.type === 'ERROR' && event.message && event.message.includes('taken')) {
-        error('该代号已被占用，请更换。');
+        error('该名称已被占用，请更换。');
         userStore.showNameModal = true;
         return;
     }
 
     // 2. 构建通知文案
-    let msgText = `${userName} 执行了操作`;
-
     const actionMap = {
-        'LIKE': `${userName} 觉得很赞！`,
-        'SKIP': `${userName} 切到了下一首`,
-        'PAUSE': `${userName} 暂停了播放`,
-        'RESUME': `${userName} 继续了播放`,
-        'ADD': `${userName} 添加了: ${event.payload}`,
-        'IMPORT': `${userName} 导入了歌单 (${event.payload}首)`,
-        'TOP': `${userName} 置顶了: ${event.payload}`,
-        'REMOVE': `${userName} 移除了: ${event.payload}`,
-        'SHUFFLE_ON': `${userName} 开启了随机播放`,
-        'SHUFFLE_OFF': `${userName} 关闭了随机播放`,
-        'RESET': '系统已被重置',
-        'LOAD_FAILED': `资源获取失败: ${event.payload} (自动跳过)`
+        // 播放控制
+        'PLAY': (u) => `${u} 开始了播放`,
+        'PAUSE': (u) => `${u} 暂停了播放`,
+        'RESUME': (u) => `${u} 继续了播放`,
+        'SKIP': (u) => `${u} 切到了下一首`,
+
+        // 队列操作
+        'ADD': (u, p) => `${u} 添加了: ${p}`,
+        'REMOVE': (u, p) => `${u} 移除了: ${p}`,
+        'TOP': (u, p) => `${u} 置顶了: ${p}`,
+        'IMPORT_PLAYLIST': (u, p) => `${u} 导入了歌单 (${p}首)`,
+        'SHUFFLE_ON': (u) => `${u} 开启了随机播放`,
+        'SHUFFLE_OFF': (u) => `${u} 关闭了随机播放`,
+
+        // 交互
+        'LIKE': (u) => `${u} 觉得很赞！`,
+
+        // 系统级
+        'RESET': () => `系统已被重置`,
+        'ERROR_LOAD': (u, p) => `加载失败: ${p || '未知错误'} (已跳过)`
     };
 
-    if (actionMap[event.action]) {
-        msgText = actionMap[event.action];
+    let msgText = '';
+    const generator = actionMap[event.action];
+
+    if (generator) {
+        msgText = generator(userName, event.payload);
+    } else {
+        // 兜底：未知的 Action
+        msgText = `${userName} 执行了操作: ${event.action}`;
+        if (event.payload) msgText += ` (${event.payload})`;
     }
 
-    // 3. 显示 Toast
+    // 如果是 ERROR_LOAD，强制类型为 error，否则使用后端传来的 type (INFO/WARN/SUCCESS)
+    let type = event.type ? event.type.toLowerCase() : 'info';
+    if (event.action === 'ERROR_LOAD') type = 'error';
+
     show({
-        title: event.action,
+        title: event.action === 'ERROR_LOAD' ? 'PLAYBACK ERROR' : event.action,
         message: msgText,
-        type: event.type ? event.type.toLowerCase() : 'info',
+        type: type,
         duration: 3000
     });
 }
