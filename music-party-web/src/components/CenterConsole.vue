@@ -140,7 +140,6 @@
                 >
                   <Activity v-if="!hasLiked && isHovering && !isBursting" class="w-10 h-10 animate-pulse" />
 
-                  <!-- [MODIFIED] 添加 stroke-none: 去除描边，只保留填充 -->
                   <Zap v-else class="w-10 h-10" :class="hasLiked || isBursting ? 'fill-current stroke-none' : ''" />
                 </div>
 
@@ -150,8 +149,8 @@
                      :class="isBursting || hasLiked ? 'text-accent' : 'text-white/70'"
                 >
                   <span v-if="isBursting">INJECTING...</span>
-                  <span v-else-if="hasLiked">VITAL: LINKED</span>
-                  <span v-else>EST_LINK</span>
+                  <span v-else-if="hasLiked">WONDERFUL MUSIC</span>
+                  <span v-else>LIKE_THIS</span>
                 </div>
               </div>
             </div>

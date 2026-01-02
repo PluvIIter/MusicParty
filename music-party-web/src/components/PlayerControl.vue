@@ -251,12 +251,6 @@ const handleVolumeMouseUp = () => {
   window.removeEventListener('mouseup', handleVolumeMouseUp);
 };
 
-onMounted(() => {
-  if (audioRef.value) {
-    audioRef.value.volume = volume.value;
-  }
-});
-
 // --- 下载逻辑 ---
 const downloadCurrentMusic = async () => {
   if (!nowPlaying.value) return;
