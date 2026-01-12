@@ -26,7 +26,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     private final WebClient webClient;
     private final String baseUrl;
-    private final String sessdata; // NEW: SESSDATA cookie
+    private volatile String sessdata;
     private final LocalCacheService localCacheService;
     private static final String PLATFORM = "bilibili";
     private final BilibiliWbiService wbiService;
@@ -41,6 +41,12 @@ public class BilibiliMusicApiService implements IMusicApiService {
         this.sessdata = appProperties.getBilibili().getSessdata();
         this.localCacheService = localCacheService;
         this.wbiService = wbiService;
+    }
+
+    public void updateSessdata(String newSessdata) {
+        this.sessdata = newSessdata;
+        this.wbiService.updateSessdata(newSessdata);
+        log.info("Bilibili API Service SESSDATA updated.");
     }
 
     @Override

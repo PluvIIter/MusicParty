@@ -57,6 +57,13 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     public void updateCookie(String newCookie) {
         this.currentCookie = newCookie;
+        checkCookie(newCookie).subscribe(isValid -> {
+            if (isValid) {
+                log.info("Netease cookie updated and verified successfully.");
+            } else {
+                log.warn("The newly updated Netease cookie appears to be invalid.");
+            }
+        });
     }
 
     private Mono<Void> login() {

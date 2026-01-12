@@ -6,3 +6,4 @@ public record PlayerEvent(
         String userId,    // 修改: SessionID
         String payload    //  新增: 额外信息 (如歌曲名)
 ) {}
+

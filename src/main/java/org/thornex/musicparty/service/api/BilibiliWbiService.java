@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 public class BilibiliWbiService {
 
     private final WebClient webClient;
-    private final String sessdata;
+    private volatile String sessdata;
 
     // 混淆表
     private static final int[] MIXIN_TABLE = {
@@ -38,6 +38,12 @@ public class BilibiliWbiService {
     public BilibiliWbiService(WebClient webClient, AppProperties appProperties) {
         this.webClient = webClient;
         this.sessdata = appProperties.getBilibili().getSessdata();
+    }
+
+    public void updateSessdata(String newSessdata) {
+        this.sessdata = newSessdata;
+        invalidateCache(); // Cookie 变了，WBI key 可能也需要刷新
+        log.info("Bilibili WBI Service SESSDATA updated.");
     }
 
     /**

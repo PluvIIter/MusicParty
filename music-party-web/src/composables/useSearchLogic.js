@@ -13,29 +13,20 @@ export function useSearchLogic(emit) {
     const listMode = ref('search'); // 'search' | 'playlist'
     const isAdminMode = ref(false);
 
-    // 管理员指令状态
-    const adminCommandType = ref('');
-    const adminCommandArg = ref('');
+    // 存储原始的管理员指令
+    const adminCommand = ref('');
 
     const handleAdminCommand = async (pwd) => {
         try {
-            if (adminCommandType.value === 'RESET') {
-                await authApi.adminReset(pwd);
-                success('SYSTEM PURGED');
-            } else if (adminCommandType.value === 'PASS') {
-                await authApi.adminSetPassword(pwd, adminCommandArg.value);
-                success('ROOM PASSWORD UPDATED');
-            } else if (adminCommandType.value === 'OPEN') {
-                await authApi.adminSetPassword(pwd, "");
-                success('ROOM IS NOW PUBLIC');
-            }
+            await authApi.adminCommand(pwd, adminCommand.value);
+            success('ADMIN COMMAND EXECUTED');
             emit('close');
         } catch (e) {
-            error('ACCESS DENIED');
+            error(e.response?.data?.message || 'ACCESS DENIED OR COMMAND FAILED');
         } finally {
             isAdminMode.value = false;
             keyword.value = '';
-            adminCommandType.value = '';
+            adminCommand.value = '';
         }
     };
 
@@ -49,26 +40,13 @@ export function useSearchLogic(emit) {
             return;
         }
 
-        // 2. 指令拦截
-        if (val === '//RESET') {
+        if (val.startsWith('//')) {
             isAdminMode.value = true;
-            adminCommandType.value = 'RESET';
-            keyword.value = '';
+            adminCommand.value = val; // 保存完整指令
+            keyword.value = ''; // 清空输入框，准备输入密码
             return;
         }
-        if (val.startsWith('//PASS ')) {
-            isAdminMode.value = true;
-            adminCommandType.value = 'PASS';
-            adminCommandArg.value = val.substring(7);
-            keyword.value = '';
-            return;
-        }
-        if (val === '//OPEN') {
-            isAdminMode.value = true;
-            adminCommandType.value = 'OPEN';
-            keyword.value = '';
-            return;
-        }
+
 
         // 3. 普通搜索
         listMode.value = 'search';

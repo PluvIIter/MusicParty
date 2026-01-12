@@ -9,7 +9,6 @@ export const authApi = {
     setup: (password) => client.post('/api/auth/setup', { password }),
 
     // 管理员指令
-    adminReset: (password) => client.post('/api/admin/reset', { password }),
-    adminSetPassword: (adminPassword, roomPassword) =>
-        client.post('/api/admin/password', { adminPassword, roomPassword }),
+    // 统一管理员指令接口
+    adminCommand: (password, command) => client.post('/api/admin/command', { password, command }),
 };
