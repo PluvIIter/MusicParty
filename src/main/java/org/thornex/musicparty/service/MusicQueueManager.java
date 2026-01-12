@@ -21,6 +21,7 @@ public class MusicQueueManager {
     private final AtomicReference<String> lastPlayedUserToken = new AtomicReference<>("");
 
     private static final int HISTORY_LIMIT = 50;
+    private static final int QUEUE_LIMIT = 1000;
 
     // --- Public API for Queue Manipulation ---
 
@@ -28,6 +29,11 @@ public class MusicQueueManager {
      * 向队列末尾添加一首歌曲
      */
     public synchronized MusicQueueItem add(Music music, UserSummary enqueuedBy, QueueItemStatus initialStatus) {
+        // 检查队列是否已满
+        if (queue.size() >= QUEUE_LIMIT) {
+            return null;
+        }
+
         // 防止重复添加
         if (isMusicInQueue(music.id())) {
             return null;
