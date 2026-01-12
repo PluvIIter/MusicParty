@@ -10,10 +10,7 @@ import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.enums.QueueItemStatus;
-import org.thornex.musicparty.event.DownloadStatusEvent;
-import org.thornex.musicparty.event.PlayerStateEvent;
-import org.thornex.musicparty.event.QueueUpdateEvent;
-import org.thornex.musicparty.event.SystemMessageEvent;
+import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
 
@@ -106,6 +103,9 @@ public class MusicPlayerService {
                 playNextInQueue();
             }
         } else {
+            if (userService.getOnlineUserSummaries().isEmpty()) {
+                return;
+            }
             if (!queueManager.getQueueSnapshot().isEmpty()) {
                 playNextInQueue();
             }
@@ -422,6 +422,28 @@ public class MusicPlayerService {
                 playNextInQueue();
             }
         }
+    }
+
+    /**
+     * 监听用户数量变化事件
+     */
+    @EventListener
+    public void onUserCountChanged(UserCountChangeEvent event) {
+        if (event.getOnlineUserCount() == 0) {
+            enterIdleMode();
+        }
+    }
+
+    /**
+     * 进入空闲模式，停止播放
+     */
+    private void enterIdleMode() {
+        log.info("Last user disconnected. Entering idle mode.");
+        nowPlaying.set(null); // 立即停止当前歌曲
+        isLoading.set(false); // 取消加载状态
+        //isPaused.set(true);   // 设置为暂停状态，防止 playerLoop 意外触发
+        //resetPauseState();    // 重置暂停计时器
+        broadcastFullPlayerState(); // 广播最终的空闲状态
     }
 
     // --- Broadcasting and Helper Methods ---

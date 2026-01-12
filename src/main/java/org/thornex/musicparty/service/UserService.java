@@ -1,11 +1,13 @@
 package org.thornex.musicparty.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.dto.UserSummary;
+import org.thornex.musicparty.event.UserCountChangeEvent;
 
 import java.util.List;
 import java.util.Map;
@@ -17,13 +19,19 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class UserService {
 
-    // 🟢 主存储：Token -> User
+    // 主存储：Token -> User
     private final Map<String, User> usersByToken = new ConcurrentHashMap<>();
 
-    // 🟢 辅助索引：SessionId -> Token (用于快速查找当前发消息的是谁)
+    // 辅助索引：SessionId -> Token (用于快速查找当前发消息的是谁)
     private final Map<String, String> sessionToToken = new ConcurrentHashMap<>();
 
+    private final ApplicationEventPublisher eventPublisher;
+
     private static final long USER_EXPIRATION_MS = 1 * 60 * 60 * 1000L;
+
+    public UserService(ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
 
     /**
      * 处理连接
@@ -69,6 +77,9 @@ public class UserService {
 
         // 建立索引
         sessionToToken.put(sessionId, user.getToken());
+
+        // 发布用户数量变更事件
+        eventPublisher.publishEvent(new UserCountChangeEvent(this, getOnlineUserSummaries().size()));
         return user;
     }
 
@@ -83,6 +94,7 @@ public class UserService {
             user.setSessionId(null); // 标记离线
             user.setLastActiveTime(System.currentTimeMillis());
             log.info("User Offline: {}", user.getName());
+            eventPublisher.publishEvent(new UserCountChangeEvent(this, getOnlineUserSummaries().size()));
             return Optional.of(user);
         }
         return Optional.empty();
