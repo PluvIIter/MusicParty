@@ -461,14 +461,17 @@ public class MusicPlayerService {
         isLoading.set(false);
 
         // 如果正在播放，自动暂停，记录当前进度
-        if (currentMusic.get() != null && isPaused.compareAndSet(false, true)) {
-            // 暂停时，更新锚点为当前进度
+        if (currentMusic.get() != null && !isPaused.get()) {
             long currentPos = calculateCurrentPosition();
-            positionAnchor.set(currentPos);
-            timestampAnchor.set(System.currentTimeMillis()); // 这个时间在暂停期间主要用于超时判断
 
-            log.info("Player paused as all users have disconnected.");
-            broadcastFullPlayerState();
+            if (isPaused.compareAndSet(false, true)) {
+                // 暂停时，更新锚点为刚才计算出的准确进度
+                positionAnchor.set(currentPos);
+                timestampAnchor.set(System.currentTimeMillis()); // 这个时间在暂停期间主要用于超时判断
+
+                log.info("Player paused as all users have disconnected. Position saved at: {}", currentPos);
+                broadcastFullPlayerState();
+            }
         }
     }
 
