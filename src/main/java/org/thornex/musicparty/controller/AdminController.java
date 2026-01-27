@@ -51,6 +51,10 @@ public class AdminController {
                 musicPlayerService.resetSystem();
                 return ResponseEntity.ok(Map.of("message", "SYSTEM PURGED"));
 
+            case "//CLEAR":
+                musicPlayerService.clearQueue();
+                return ResponseEntity.ok(Map.of("message", "QUEUE CLEARED"));
+
             case "//PASS":
                 if (parts.length < 2) {
                     return ResponseEntity.badRequest().body(Map.of("message", "Usage: //PASS <new_password>"));

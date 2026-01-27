@@ -180,6 +180,10 @@ public class MusicQueueManager {
         lastPlayedUserToken.set("");
     }
 
+    public synchronized void clearPendingQueue() {
+        queue.clear();
+    }
+
     public List<MusicQueueItem> getQueueSnapshot() {
         return new ArrayList<>(queue);
     }

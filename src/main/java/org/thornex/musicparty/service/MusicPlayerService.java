@@ -411,6 +411,15 @@ public class MusicPlayerService {
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.RESET, "SYSTEM", null));
     }
 
+    public void clearQueue() {
+        queueManager.clearPendingQueue();
+        log.info("Queue cleared by Admin.");
+        // 广播队列更新
+        broadcastQueueUpdate();
+        // 发送全员通知
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "播放列表已由管理员清空"));
+    }
+
     @EventListener
     public void handleDownloadEvent(DownloadStatusEvent event) {
         boolean existsInQueue = queueManager.getQueueSnapshot().stream()
