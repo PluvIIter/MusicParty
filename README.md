@@ -10,6 +10,7 @@
 **Music Party** 是一个开源的、私有化部署的多人实时在线听歌平台。
 
 它允许你和朋友在一个虚拟房间内，通过 **网易云音乐** 或 **Bilibili** 搜索并点播歌曲。系统实现了毫秒级的播放进度同步，无论是在 PC 端还是移动端，所有人听到的都是同一秒的旋律。
+<img width="1778" height="1080" alt="image" src="https://github.com/user-attachments/assets/64d7f5d1-9837-43ab-8c1b-dad78361b348" />
 
 ## 核心特性
 
