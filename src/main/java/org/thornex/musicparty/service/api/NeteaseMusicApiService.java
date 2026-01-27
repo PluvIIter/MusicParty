@@ -41,18 +41,16 @@ public class NeteaseMusicApiService implements IMusicApiService {
     public void initialize() {
         log.info("Initializing NeteaseCloudMusic API client...");
         if (!StringUtils.hasText(currentCookie) || "YOUR_NETEASE_COOKIE_STRING_HERE".equals(currentCookie)) {
-            log.warn("Netease Cookie is empty. Some APIs may not work.");
-            return;
+            log.info("Netease Cookie is empty. Service running in passive mode (waiting for config).");
+        } else {
+            log.info("Netease Cookie configured.");
         }
+    }
 
-        // 验证初始 Cookie
-        checkCookie(currentCookie).subscribe(isValid -> {
-            if (isValid) {
-                log.info("NeteaseCloudMusic API client login successful (Memory).");
-            } else {
-                log.error("Initial Netease Cookie is invalid!");
-            }
-        });
+    private void ensureConfigured() {
+        if (!StringUtils.hasText(currentCookie) || "YOUR_NETEASE_COOKIE_STRING_HERE".equals(currentCookie)) {
+            throw new ApiRequestException("尚未配置网易云 Cookie，请联系管理员设置");
+        }
     }
 
     public void updateCookie(String newCookie) {
@@ -63,27 +61,6 @@ public class NeteaseMusicApiService implements IMusicApiService {
             } else {
                 log.warn("The newly updated Netease cookie appears to be invalid.");
             }
-        });
-    }
-
-    private Mono<Void> login() {
-        return Mono.defer(() -> {
-            if (!StringUtils.hasText(initialCookieFromConfig) || "YOUR_NETEASE_COOKIE_STRING_HERE".equals(initialCookieFromConfig)) {
-                return Mono.error(new ApiRequestException("No valid cookie provided in application.yml."));
-            }
-
-            log.info("Attempting to login with cookie from application.yml.");
-            return checkCookie(initialCookieFromConfig)
-                    .flatMap(isValid -> {
-                        if (isValid) {
-                            // 🟢 验证通过，保存在内存变量即可，不再写文件
-                            this.currentCookie = initialCookieFromConfig;
-                            log.info("Cookie from config is valid and stored in memory.");
-                            return Mono.empty();
-                        } else {
-                            return Mono.error(new ApiRequestException("The cookie provided in application.yml is invalid."));
-                        }
-                    });
         });
     }
 
@@ -117,6 +94,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     // UPDATED: All API calls now use the raw cookie from getCookie()
     @Override
     public Mono<List<Music>> searchMusic(String keyword) {
+        ensureConfigured();
         return webClient.get()
                 .uri(baseUrl + "/search?keywords={keyword}&cookie={cookie}", keyword, getCookie())
                 .retrieve()
@@ -146,6 +124,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<PlayableMusic> getPlayableMusic(String musicId) {
+        ensureConfigured();
         Mono<Music> musicDetailsMono = getMusicDetails(musicId);
         Mono<String> musicUrlMono = webClient.get()
                 .uri(baseUrl + "/song/url/v1?id={musicId}&level=lossless&cookie={cookie}", musicId, getCookie())
@@ -168,6 +147,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     }
 
     private Mono<Music> getMusicDetails(String musicId) {
+        ensureConfigured();
         return webClient.get()
                 .uri(baseUrl + "/song/detail?ids={musicId}&cookie={cookie}", musicId, getCookie())
                 .retrieve()
@@ -191,6 +171,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Playlist>> getUserPlaylists(String userId) {
+        ensureConfigured();
         return webClient.get()
                 .uri(baseUrl + "/user/playlist?uid={userId}&cookie={cookie}", userId, getCookie())
                 .retrieve()
@@ -211,6 +192,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit) {
+        ensureConfigured();
         return webClient.get()
                 .uri(baseUrl + "/playlist/track/all?id={playlistId}&limit={limit}&offset={offset}&cookie={cookie}", playlistId, limit, offset, getCookie())
                 .retrieve()
@@ -238,6 +220,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<UserSearchResult>> searchUsers(String keyword) {
+        ensureConfigured();
         // type=1002 表示搜索用户
         return webClient.get()
                 .uri(baseUrl + "/search?keywords={keyword}&type=1002&cookie={cookie}", keyword, getCookie())
@@ -261,6 +244,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<String> getLyric(String musicId) {
+        ensureConfigured();
         return webClient.get()
                 .uri(baseUrl + "/lyric?id={id}", musicId)
                 .retrieve()

@@ -57,7 +57,8 @@ export function useSearchLogic(emit) {
             songs.value = data;
         } catch (e) {
             console.error(e);
-            error('Search Failed');
+            const msg = e.response?.data?.message || 'Search Failed';
+            error(msg);
         } finally {
             loading.value = false;
         }

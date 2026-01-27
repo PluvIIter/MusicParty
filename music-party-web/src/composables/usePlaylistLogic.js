@@ -3,10 +3,12 @@ import { useUserStore } from '../stores/user.js';
 import { usePlayerStore } from '../stores/player.js';
 import { musicApi } from '../api/music.js';
 import { useDebounceFn } from '@vueuse/core';
+import { useToast } from './useToast';
 
 export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef) {
     const userStore = useUserStore();
     const playerStore = usePlayerStore();
+    const { error } = useToast();
 
     // State
     const playlists = ref([]);
@@ -36,6 +38,9 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         } catch (e) {
             console.error(e);
             playlists.value = [];
+            if (e.response?.data?.message) {
+                error(e.response.data.message);
+            }
         }
     };
 
@@ -49,6 +54,11 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
             userSearchResults.value = data;
         } catch (e) {
             console.error(e);
+            if (e.response?.data?.message) {
+                error(e.response.data.message);
+            } else {
+                error('User Search Failed');
+            }
         } finally {
             isSearchingUser.value = false;
         }

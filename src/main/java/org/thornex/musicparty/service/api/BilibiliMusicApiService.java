@@ -43,6 +43,12 @@ public class BilibiliMusicApiService implements IMusicApiService {
         this.wbiService = wbiService;
     }
 
+    private void ensureConfigured() {
+        if (!org.springframework.util.StringUtils.hasText(sessdata)) {
+            throw new ApiRequestException("尚未配置 Bilibili SESSDATA，请联系管理员设置");
+        }
+    }
+
     public void updateSessdata(String newSessdata) {
         this.sessdata = newSessdata;
         this.wbiService.updateSessdata(newSessdata);
@@ -62,6 +68,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Music>> searchMusic(String keyword) {
+        ensureConfigured();
         // 1. 准备请求参数（严格按照文档要求的 type 搜索）
         Map<String, String> params = new HashMap<>();
         params.put("search_type", "video");
@@ -152,6 +159,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public void prefetchMusic(String bvid) {
+        ensureConfigured();
         // 检查缓存状态，如果已经下载或正在下载，直接返回
         CacheStatus status = localCacheService.getStatus(bvid);
         if (status == CacheStatus.COMPLETED || status == CacheStatus.DOWNLOADING) {
@@ -174,6 +182,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<PlayableMusic> getPlayableMusic(String bvid) {
+        ensureConfigured();
         // 1. 检查本地缓存
         String localUrl = localCacheService.getLocalUrl(bvid);
 
@@ -252,6 +261,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Playlist>> getUserPlaylists(String userId) {
+        ensureConfigured();
         // API: /x/v3/fav/folder/created/list-all
         // 参数: up_mid (目标用户ID)
         // 注意：移除了 type=2，以获取所有类型的收藏夹
@@ -299,6 +309,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit) {
+        ensureConfigured();
         int safeLimit = Math.min(limit, 20);
 
         int pageNumber = (offset / safeLimit) + 1;
@@ -363,6 +374,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<UserSearchResult>> searchUsers(String keyword) {
+        ensureConfigured();
         // 1. 准备 WBI 搜索参数
         Map<String, String> params = new HashMap<>();
         params.put("search_type", "bili_user"); // 搜索用户类型
