@@ -5,9 +5,8 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<!-- 版本已降级到稳定的 3.2.5 -->
 		<version>3.2.5</version>
-		<relativePath/> <!-- lookup parent from repository -->
+		<relativePath/>
 	</parent>
 	<groupId>org.thornex</groupId>
 	<artifactId>MusicParty</artifactId>
@@ -18,10 +17,6 @@
 		<java.version>21</java.version>
 	</properties>
 	<dependencies>
-		<!--
-            spring-boot-starter-web 同时包含了 spring-boot-starter-webmvc 和 spring-boot-starter-json
-            为了方便，我们将 webmvc 替换为 web。
-        -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
@@ -40,11 +35,6 @@
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
-
-		<!--
-            spring-boot-starter-test 是一个集合依赖，
-            它已经包含了测试Web, WebFlux等所需的所有核心库，无需单独引入。
-        -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
@@ -66,11 +56,6 @@
 					</excludes>
 				</configuration>
 			</plugin>
-			<!--
-                对于Lombok，spring-boot-starter-parent通常已经配置好了maven-compiler-plugin。
-                除非有特殊需求，否则这里的自定义配置可以省略，让父POM来管理。
-                为了简洁，此处已移除。
-            -->
 		</plugins>
 	</build>
 

@@ -53,6 +53,7 @@ public class MusicPlayerService {
     private final AtomicLong lastControlTimestamp = new AtomicLong(0);
     private static final long GLOBAL_COOLDOWN_MS = 1000;
     private static final int PLAYLIST_ADD_LIMIT = 100;
+    private static final long IDLE_RESET_TIMEOUT_MS = Duration.ofHours(2).toMillis();
 
     private final AtomicLong playHeadVersion = new AtomicLong(0);
 
@@ -439,11 +440,31 @@ public class MusicPlayerService {
      */
     private void enterIdleMode() {
         log.info("Last user disconnected. Entering idle mode.");
-        nowPlaying.set(null); // 立即停止当前歌曲
+        //nowPlaying.set(null); // 立即停止当前歌曲
         isLoading.set(false); // 取消加载状态
         //isPaused.set(true);   // 设置为暂停状态，防止 playerLoop 意外触发
         //resetPauseState();    // 重置暂停计时器
-        broadcastFullPlayerState(); // 广播最终的空闲状态
+        if (nowPlaying.get() != null && isPaused.compareAndSet(false, true)) {
+            pauseStateChangeTime.set(Instant.now().toEpochMilli());
+            log.info("Player paused as all users have disconnected.");
+            broadcastFullPlayerState();
+        }
+    }
+
+    /**
+     * 定时清理长时间暂停的播放器状态
+     */
+    @Scheduled(fixedRate = 600000) // 每10分钟检查一次
+    public void cleanupIdlePlayer() {
+        if (isPaused.get() && nowPlaying.get() != null) {
+            long pausedDuration = Instant.now().toEpochMilli() - pauseStateChangeTime.get();
+            if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
+                log.info("Idle player timeout reached ({} hours). Resetting now playing.", Duration.ofMillis(IDLE_RESET_TIMEOUT_MS).toHours());
+                nowPlaying.set(null);
+                resetPauseState();
+                broadcastFullPlayerState();
+            }
+        }
     }
 
     // --- Broadcasting and Helper Methods ---
