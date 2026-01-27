@@ -1,61 +1,49 @@
 #  Music Party 
 > 一个高颜值的实时在线协作听歌平台。
 >
-> *本项目灵感来源于 [EveElseIf/MusicParty](https://github.com/EveElseIf/MusicParty)，开发过程大量使用LLM。*
+> *本项目参考自 [EveElseIf/MusicParty](https://github.com/EveElseIf/MusicParty)，通过vibi coding完成开发。*
 
----
+***
 
-##  特性
+![Java](https://img.shields.io/badge/Java-21-orange) ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.2.5-green) ![Vue](https://img.shields.io/badge/Vue.js-3-4FC08D) ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 
-### 核心体验
-*    网易云支持：支持网易云音乐，BILIBILI的搜索与播放。
-*    实时同步：基于 WebSocket (STOMP)，实现播放进度、歌词滚动、播放队列、暂停/播放状态的全员毫秒级同步。
-*    响应式布局：完美适配 PC 与移动端。
+**Music Party** 是一个开源的、私有化部署的多人实时在线听歌平台。
 
-### 功能细节
-*   **点歌系统**：
-    *   支持关键词搜索 。
-    *   支持导入网易云 (绑定 ID)。
-    *   支持批量导入歌单所有歌曲。
-*   **队列管理**：
-    *   查看待播放列表。
-    *   支持置顶歌曲 。
-    *   支持移除歌曲 。
-    *   随机播放模式 (智能算法，防止同一用户连续霸屏)。
-*   **用户系统**：
-    *   临时用户身份，支持自定义昵称。
-    *   显示在线用户列表，当前点播人高亮显示。
-    *   **房间保护**：支持设置房间密码，防止未授权用户进入操作。
-    *   附带一个简易的聊天框。
+它允许你和朋友在一个虚拟房间内，通过 **网易云音乐** 或 **Bilibili** 搜索并点播歌曲。系统实现了毫秒级的播放进度同步，无论是在 PC 端还是移动端，所有人听到的都是同一秒的旋律。
 
----
+## 核心特性
 
-##  快速开始 (Docker 部署)
+*   **多平台支持**：
+    *   **网易云音乐**：支持搜索、歌单导入、VIP 歌曲。
+    *   **Bilibili**：支持搜索视频/音频、导入收藏夹。内置 **WBI 签名**算法与**本地防盗链缓存代理**，解决 B 站音频流过期和 Referer 限制问题。
+*   **精准同步**：基于 WebSocket (STOMP) 的状态分发，结合前端追帧算法，实现播放状态、进度、歌单、歌词的实时同步。
+*   **响应式设计**：完美适配 PC 宽屏与移动端（Apple手机端可能存在保活问题，后台播放受限）。
+*   **房间权限**：支持设置房间密码，或管理员指令实时锁定/解锁房间。
+*   **沉浸体验**：内置 Canvas 音频可视化效果、同步歌词显示、全屏沉浸模式。
+*   **实时互动**：内置聊天室、点赞动效、系统日志广播。
+*   **智能队列**：实现“公平随机”算法，防止单人霸榜。
 
-这是最推荐的部署方式。
+## Docker 一键部署（推荐）
 
-### 1. 准备环境
-确保服务器安装了 [Docker](https://www.docker.com/) 和 [Docker Compose](https://docs.docker.com/compose/)。
+本项目包含完整的 `docker-compose.yml`，这是最快的启动方式。
 
-### 2. 获取 Cookie
-为了正常使用搜索和播放功能，你需要获取网易云和 B 站的 Cookie：
-
-*   **网易云音乐 (`NETEASE_COOKIE`)**: 登录网易云网页版，F12 控制台 -> Application -> Cookies，复制完整的 Cookie 字符串。
-
-### 3. 配置 docker-compose.yml
-创建或修改 `docker-compose.yml`，填入你的配置：
+### 1. 准备配置文件
+创建一个目录（例如 `music-party`），并在其中创建 `docker-compose.yml` 文件，填入以下内容：
 
 ```yaml
 services:
-  # 1. 网易云音乐 API 服务
+  # 1. 网易云音乐 API 服务 (依赖项)
   netease-api:
     image: moefurina/ncm-api:latest
     container_name: music-party-netease
     restart: always
     environment:
       - PORT=3000
+      - HTTPS=true
     networks:
       - music-net
+    volumes:
+      - ./logs/ncm:/app/logs
 
   # 2. Music Party 主应用
   music-party:
@@ -63,91 +51,112 @@ services:
     container_name: music-party-app
     restart: always
     ports:
-      - "8080:8080"
+      - "8848:8080"  # 宿主机端口:容器端口
     environment:
       # 管理员密码 (用于执行 //RESET 等指令)
-      - ADMIN_PASSWORD=your_admin_secret
-      # 网易云 API 地址 (容器内互联)
+      - ADMIN_PASSWORD=admin123
+      
+      # 网易云 API 地址 (指向上面的容器)
       - NETEASE_API_URL=http://netease-api:3000
-      # 必填：网易云 Cookie
-      - NETEASE_COOKIE="你的完整COOKIE..."
+
+      # 需要对应平台的凭证才能使用曲库
+      # B站 SESSDATA 
+      - BILIBILI_SESSDATA="your_bilibili_sessdata_here"
+      
+      # 网易云 Cookie 
+      - NETEASE_COOKIE="your_netease_cookie_here"
     depends_on:
       - netease-api
     networks:
       - music-net
     volumes:
-      - ./logs:/app/logs
+      # 挂载 B 站音频缓存目录 (防止重启后重新下载)
+      - ./cached_media:/app/cached_media
 
 networks:
   music-net:
     driver: bridge
 ```
 
-### 4. 启动
+### 2. 启动服务
+在目录下运行：
+
 ```bash
 docker-compose up -d
 ```
-访问 `http://localhost:8080` 即可开始 Party。
+
+启动后，访问 `http://localhost:8848` 即可进入应用。公网部署请使用IP/域名。
 
 ---
 
-##  本地开发
+## 环境变量说明
 
-### 前端
-```bash
-cd music-party-web
-npm install
-npm run dev
-```
-*前端默认代理 API 到 `localhost:8080`*
-
-### 后端
-1.  启动本地 NeteaseCloudMusicApi (端口 3000)。
-2.  修改 `src/main/resources/application.yml` 中的配置 (Cookie/Sessdata)。
-3.  运行 Spring Boot 应用。
+| 变量名 | 必填 | 说明 |
+| :--- | :--- | :--- |
+| `ADMIN_PASSWORD` | 是 | 管理员密码，用于在搜索框输入指令控制系统。 |
+| `NETEASE_API_URL` | 是 | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。 |
+| `BILIBILI_SESSDATA`| 否 | B站账号的 SESSDATA。不填会导致搜索结果受限、无法解析 1080P/Hi-Res 音频流，且极易触发风控。 |
+| `NETEASE_COOKIE` | 否 | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。 |
 
 ---
 
-##  使用指南
+## 搜索框指令 (Admin Commands)
 
-### 搜索与点歌
-1.  点击顶部栏的 **SEARCH** 按钮。
-2.  输入关键词搜索，点击右侧 `+` 号加入队列。
-3.  **导入歌单**：在左侧面板输入用户 ID 绑定账号，可以查看和加入歌单里的音乐。
+在前端**搜索框**中输入以下指令（需拥有管理员权限或在输入指令前先输入一次管理员密码解锁 Session）：
 
-### 房间控制
-初次启动时，系统处于 **未初始化状态**。
-1.  **设置房间密码**：在进入页面时的 AuthOverlay 中设置。
-2.  **修改昵称**：点击左侧用户列表中的自己名字即可重命名。
-
-### 管理员指令 (Admin Commands)
-在搜索框中输入以下指令（不区分大小写）并回车：
-
-| 指令 | 描述 |
-| :--- | :--- |
-| `//RESET` | **系统重置**。清空队列、停止播放、踢出所有代理任务、清除历史记录。需要验证管理员密码。 |
-| `//PASS <new_pwd>` | **修改房间密码**。例如 `//PASS 123456`。需要验证管理员密码。 |
-| `//OPEN` | **开放房间**。移除房间密码，允许任何人进入。需要验证管理员密码。 |
-
-*(注：执行指令时会弹出红色的管理员密码输入框)*
+*   `//RESET`: **重置系统**。切歌、清空播放列表、重置播放状态（慎用）。
+*   `//CLEAR`: **清空队列**。保留当前播放的歌曲，清空等待队列。
+*   `//PASS <新密码>`: **设置房间密码**。例如 `//PASS 123456`。
+*   `//OPEN`: **开放房间**。取消房间密码，允许任何人进入。
+*   `//COOKIE <platform> <value>`: 动态更新 Cookie。
+    *   例：`//COOKIE netease MUSIC_U=xxxx...`
+    *   例：`//COOKIE bilibili xxxxx...`
 
 ---
 
-##计划
+## 本地开发指南
 
-以下是计划中的功能更新：
+### 前端 (music-party-web)
 
-- 允许用户脱离同步，随意拖动进度条与暂停（本地播放模式）。
-- 歌单全选、队列批量删除。
-- bilibili歌词用弹幕填充。
-- 专辑名显示。
-- 支持上传本地文件并在房间内广播。
-- 通过歌手/专辑搜索。
-- 多次错误熔断。
-- 数据持久化。
-- 聊天窗口附带时间与事件。
-- 处理歌曲链接过期问题。
-- 在线更新cookie。
-- 管理员控制（是否允许暂停/切歌等）。
-- 流接口。
-- 调整歌单顺序。
+1.  环境要求：Node.js 18+
+2.  进入目录并安装依赖：
+    ```bash
+    cd music-party-web
+    npm install
+    ```
+3.  启动开发服务器：
+    ```bash
+    npm run dev
+    ```
+4.  配置代理：`vite.config.js` 默认将 `/api` 和 `/ws` 代理到 `http://localhost:8080`。
+
+### 后端 (Java)
+
+1.  环境要求：JDK 21, Maven 3.x
+2.  配置：修改 `src/main/resources/application.yml` 或通过 IDEA 环境变量传入 `BILIBILI_SESSDATA` 等配置。
+3.  运行：
+    ```bash
+    mvn spring-boot:run
+    ```
+
+### 完整构建
+
+后端采用 Maven 打包，前端静态资源会被 WebFlux 托管（需自行配置资源拷贝或反向代理）。建议直接使用 Docker 构建整个镜像。
+
+---
+
+## 免责声明
+
+*   本项目仅供学习交流使用，请勿用于商业用途。
+*   本项目涉及的第三方 API（网易云音乐、Bilibili）均为非官方接口，项目开发者不对 API 的可用性及账号风险负责。
+*   请尊重版权，支持正版音乐。
+
+---
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！无论是修复 Bug、新增功能还是优化文档。
+
+## License
+
+MIT License
