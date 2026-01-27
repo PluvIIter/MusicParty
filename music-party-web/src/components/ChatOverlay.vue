@@ -38,7 +38,7 @@
             class="h-10 bg-medical-50 border-b border-medical-200 flex items-center justify-between px-3 flex-shrink-0 cursor-move select-none"
         >
           <div class="font-mono text-xs font-bold text-medical-500 flex items-center gap-2">
-            <MessageSquare class="w-3 h-3"/> COMM_Ui
+            <MessageSquare class="w-3 h-3"/> CHAT
           </div>
           <button @click="chatStore.toggleChat" class="text-medical-400 hover:text-medical-900 p-1 cursor-pointer">
             <X class="w-4 h-4"/>
