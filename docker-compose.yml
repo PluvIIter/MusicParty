@@ -9,20 +9,15 @@ services:
       - HTTPS=true
     networks:
       - music-net
-    volumes:
-      - ./logs:/app/logs
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
 
   # 2. Music Party 主应用
   music-party:
     build: .
     container_name: music-party-app
-    restart: always
     ports:
-      - "8848:8080"  # 将容器的 8080 映射到宿主机的 8080
+      - "8848:8080" 
     environment:
-      - ADMIN_PASSWORD=
+      - ADMIN_PASSWORD=admin123
       - NETEASE_API_URL=http://netease-api:3000
       
       # 填入你的 B站 SESSDATA 
@@ -35,11 +30,8 @@ services:
     networks:
       - music-net
     volumes:
-      # 挂载日志目录，方便查看
-      - ./logs:/app/logs
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
+      - ./cached_media:/app/cached_media
 
 networks:
-  music-net:
-    driver: bridge
+  1panel-network:
+    external: true
