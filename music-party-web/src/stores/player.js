@@ -15,12 +15,12 @@ export const usePlayerStore = defineStore('player', () => {
     const queue = ref([]);
     const isPaused = ref(false);
     const isShuffle = ref(false);
-    const pauseTimeMillis = ref(0);
-    const serverTimeOffset = ref(0);
     const lyricText = ref('');
     const connected = ref(false);
     const isLoading = ref(false);
     const lastControlTime = ref(0);
+    const remotePosition = ref(0);
+    const lastSyncTime = ref(0);
 
     const userStore = useUserStore();
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
@@ -28,14 +28,11 @@ export const usePlayerStore = defineStore('player', () => {
     // === 2. Logic ===
     const getCurrentProgress = () => {
         if (!nowPlaying.value) return 0;
-        const effectiveStartTime = nowPlaying.value.startTimeMillis;
         if (isPaused.value) {
-            return pauseTimeMillis.value > 0
-                ? Math.max(0, pauseTimeMillis.value - effectiveStartTime)
-                : 0;
+            return remotePosition.value;
         } else {
-            const currentServerTime = Date.now() + serverTimeOffset.value;
-            return Math.max(0, currentServerTime - effectiveStartTime);
+            // 本地简单的推算：服务器给的进度 + (当前时间 -收到包的时间)
+            return remotePosition.value + (Date.now() - lastSyncTime.value);
         }
     };
 
@@ -59,18 +56,21 @@ export const usePlayerStore = defineStore('player', () => {
 
     // === 3. Actions ===
 
-    // [新增] 纯粹的状态同步 Action
     const syncState = (state) => {
         nowPlaying.value = state.nowPlaying;
         queue.value = state.queue;
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
-        pauseTimeMillis.value = state.pauseTimeMillis || 0;
         isLoading.value = state.isLoading || false;
 
-        if (state.serverTimestamp) {
-            serverTimeOffset.value = state.serverTimestamp - Date.now();
+        // 记录服务器发来的进度和收到包的时间
+        if (state.nowPlaying) {
+            remotePosition.value = state.nowPlaying.currentPosition;
+            lastSyncTime.value = Date.now();
+        } else {
+            remotePosition.value = 0;
         }
+
         if (state.onlineUsers) {
             userStore.setOnlineUsers(state.onlineUsers);
         }

@@ -15,7 +15,6 @@ import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -39,11 +38,17 @@ public class MusicPlayerService {
     private final ApplicationEventPublisher eventPublisher;
 
     // --- Player State ---
-    private final AtomicReference<NowPlayingInfo> nowPlaying = new AtomicReference<>(null);
+    private final AtomicReference<PlayableMusic> currentMusic = new AtomicReference<>(null);
+    private final AtomicReference<String> currentEnqueuerId = new AtomicReference<>(null);
+    private final AtomicReference<String> currentEnqueuerName = new AtomicReference<>(null);
+
+    // 核心计时逻辑
+    private final AtomicLong positionAnchor = new AtomicLong(0); // 上一次更新状态时的进度(ms)
+    private final AtomicLong timestampAnchor = new AtomicLong(0); // 上一次更新状态时的系统时间(ms)
+
+
     private final AtomicBoolean isShuffle = new AtomicBoolean(false);
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
-    private final AtomicLong pauseStateChangeTime = new AtomicLong(0);
-    private final AtomicLong totalPausedTimeMillis = new AtomicLong(0);
     private final AtomicBoolean isLoading = new AtomicBoolean(false);
 
     private final Map<String, Object> likeLock = new HashMap<>();
@@ -83,24 +88,27 @@ public class MusicPlayerService {
             return;
         }
 
-        NowPlayingInfo current = nowPlaying.get();
+        PlayableMusic music = currentMusic.get();
 
-        if (current != null) {
-            long elapsed = Instant.now().toEpochMilli() - current.startTimeMillis() - totalPausedTimeMillis.get();
-            if (elapsed >= current.music().duration() && current.music().duration() > 0) {
-                log.info("Song finished: {}", current.music().name());
+        if (music != null) {
+            long currentPos = calculateCurrentPosition();
+
+            // 检查是否播放结束
+            if (currentPos >= music.duration() && music.duration() > 0) {
+                log.info("Song finished: {}", music.name());
 
                 Music finishedMusic = new Music(
-                        current.music().id(),
-                        current.music().name(),
-                        current.music().artists(),
-                        current.music().duration(),
-                        current.music().platform(),
-                        current.music().coverUrl()
+                        music.id(),
+                        music.name(),
+                        music.artists(),
+                        music.duration(),
+                        music.platform(),
+                        music.coverUrl()
                 );
                 queueManager.addToHistory(finishedMusic);
 
-                nowPlaying.set(null);
+                // 清空当前，触发下一首
+                currentMusic.set(null);
                 playNextInQueue();
             }
         } else {
@@ -114,7 +122,7 @@ public class MusicPlayerService {
     }
 
     private synchronized void playNextInQueue() {
-        if (nowPlaying.get() != null || isLoading.get()) {
+        if (currentMusic.get() != null || isLoading.get()) {
             return;
         }
 
@@ -122,10 +130,8 @@ public class MusicPlayerService {
         MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), statusMap);
 
         if (nextItem == null) {
-            // This is the key moment: no song could be found.
-            // The player is now officially idle. Broadcast this final state ONCE.
             if (isLoading.get()) {
-                isLoading.set(false); // If it was loading, cancel it.
+                isLoading.set(false);
             }
             broadcastFullPlayerState();
             return;
@@ -144,7 +150,7 @@ public class MusicPlayerService {
         long currentVersion = playHeadVersion.incrementAndGet();
         isLoading.set(true);
         broadcastFullPlayerState();
-        resetPauseState();
+        isPaused.set(false);
 
         log.info("Playing next: {}", nextItem.music().name());
 
@@ -176,46 +182,50 @@ public class MusicPlayerService {
         }
     }
 
+    private long calculateCurrentPosition() {
+        if (currentMusic.get() == null) return 0;
+        if (isPaused.get()) {
+            return positionAnchor.get();
+        } else {
+            long now = System.currentTimeMillis();
+            long elapsed = now - timestampAnchor.get();
+            return positionAnchor.get() + elapsed;
+        }
+    }
+
     private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
         currentLikedUserIds.clear();
         currentLikeMarkers.clear();
 
-        NowPlayingInfo newNowPlaying = new NowPlayingInfo(
-                music,
-                Instant.now().toEpochMilli(),
-                queueItem.enqueuedBy().token(),
-                queueItem.enqueuedBy().name(),
-                currentLikedUserIds,
-                currentLikeMarkers
-        );
+        // 重置计时器
+        currentMusic.set(music);
+        currentEnqueuerId.set(queueItem.enqueuedBy().token());
+        currentEnqueuerName.set(queueItem.enqueuedBy().name());
 
-        if (nowPlaying.compareAndSet(null, newNowPlaying)) {
-            log.info("Now playing: {}", music.name());
-            isLoading.set(false);
-            broadcastFullPlayerState();
-            broadcastQueueUpdate();
-        } else {
-            isLoading.set(false);
-        }
+        positionAnchor.set(0);
+        timestampAnchor.set(System.currentTimeMillis());
+        isPaused.set(false);
+
+        log.info("Now playing: {}", music.name());
+        isLoading.set(false);
+        broadcastFullPlayerState();
+        broadcastQueueUpdate();
     }
 
     public PlayerState getCurrentPlayerState() {
-        NowPlayingInfo current = nowPlaying.get();
+        PlayableMusic music = currentMusic.get();
         NowPlayingInfo infoToSend = null;
 
-        if (current != null) {
-            long effectiveStartTime = current.startTimeMillis() + totalPausedTimeMillis.get();
+        if (music != null) {
             infoToSend = new NowPlayingInfo(
-                    current.music(),
-                    effectiveStartTime,
-                    current.enqueuedById(),
-                    current.enqueuedByName(),
+                    music,
+                    calculateCurrentPosition(), // 直接返回计算好的进度
+                    currentEnqueuerId.get(),
+                    currentEnqueuerName.get(),
                     currentLikedUserIds,
                     currentLikeMarkers
             );
         }
-
-        boolean effectiveIsLoading = (current == null) && isLoading.get();
 
         return new PlayerState(
                 infoToSend,
@@ -223,9 +233,8 @@ public class MusicPlayerService {
                 isShuffle.get(),
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
-                isPaused.get() ? pauseStateChangeTime.get() : 0,
-                System.currentTimeMillis(),
-                effectiveIsLoading
+                // 移除了多余的时间字段
+                isLoading.get()
         );
     }
 
@@ -261,8 +270,8 @@ public class MusicPlayerService {
 
     // 点赞逻辑
     public void likeSong(String sessionId) {
-        NowPlayingInfo current = nowPlaying.get();
-        if (current == null) return; // 没歌放，不能点赞
+        PlayableMusic music = currentMusic.get();
+        if (music == null) return;
 
         String token = getUserToken(sessionId);
 
@@ -272,20 +281,15 @@ public class MusicPlayerService {
         // 2. 更新数据
         currentLikedUserIds.add(token);
 
-        // 计算相对时间 (进度)
-        long progress = 0;
-        if (isPaused.get()) {
-            progress = pauseStateChangeTime.get() - (current.startTimeMillis() + totalPausedTimeMillis.get());
-        } else {
-            progress = System.currentTimeMillis() - (current.startTimeMillis() + totalPausedTimeMillis.get());
-        }
+        // 使用计算出的当前进度作为 Marker
+        long progress = calculateCurrentPosition();
         currentLikeMarkers.add(progress);
 
         log.info("Like received from {}", getUserName(sessionId));
 
         // 3. 广播
         // 广播事件用于触发特效
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, token, current.music().name()));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, token, music.name()));
         // 广播状态更新进度条打点和用户列表
         broadcastFullPlayerState();
     }
@@ -326,7 +330,7 @@ public class MusicPlayerService {
             log.info("Song topped: {}", itemToTop.get().music().name());
             broadcastQueueUpdate();
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), itemToTop.get().music().name()));
-            if (nowPlaying.get() == null) {
+            if (currentMusic.get() == null) {
                 playNextInQueue();
             }
         }
@@ -348,14 +352,15 @@ public class MusicPlayerService {
         playHeadVersion.incrementAndGet();
         isLoading.set(false);
 
-        nowPlaying.getAndSet(null);
+        currentMusic.set(null);
+        positionAnchor.set(0);
 
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserToken(sessionId), null));
         playNextInQueue();
     }
 
     public void togglePause(String sessionId) {
-        if (nowPlaying.get() == null) {
+        if (currentMusic.get() == null) {
             if (!queueManager.getQueueSnapshot().isEmpty()) {
                 playNextInQueue();
             }
@@ -363,20 +368,21 @@ public class MusicPlayerService {
         }
         if (isRateLimited(sessionId)) return;
 
-        long now = Instant.now().toEpochMilli();
-        if (isPaused.compareAndSet(false, true)) {
-            pauseStateChangeTime.set(now);
-            log.info("Player paused by {}", getUserName(sessionId));
-            broadcastFullPlayerState();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PAUSE, getUserToken(sessionId), null));
-        } else if (isPaused.compareAndSet(true, false)) {
-            long pausedDuration = now - pauseStateChangeTime.get();
-            totalPausedTimeMillis.addAndGet(pausedDuration);
-            pauseStateChangeTime.set(now);
-            log.info("Player resumed by {}", getUserName(sessionId));
-            broadcastFullPlayerState();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.RESUME, getUserToken(sessionId), null));
-        }
+        // 核心：在切换状态的一瞬间，更新 Anchor
+        // 1. 先计算出当前的进度
+        long currentPos = calculateCurrentPosition();
+
+        // 2. 更新状态
+        boolean newState = !isPaused.get();
+        isPaused.set(newState);
+
+        // 3. 重置锚点：无论是暂停还是播放，当前进度都变成新的基准进度
+        positionAnchor.set(currentPos);
+        timestampAnchor.set(System.currentTimeMillis());
+
+        log.info("Player {} by {}", newState ? "PAUSED" : "RESUMED", getUserName(sessionId));
+        broadcastFullPlayerState();
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.RESUME, getUserToken(sessionId), null));
     }
 
     public void toggleShuffle(String sessionId) {
@@ -398,9 +404,12 @@ public class MusicPlayerService {
 
     public void resetSystem() {
         log.warn("!!!SYSTEM RESET INITIATED!!!");
-        nowPlaying.set(null);
+        currentMusic.set(null);
+        positionAnchor.set(0);
+        timestampAnchor.set(0);
+
         queueManager.clearAll();
-        resetPauseState();
+        isPaused.set(false);
         isShuffle.set(false);
         chatService.clearHistory();
         isLoading.set(false);
@@ -428,7 +437,7 @@ public class MusicPlayerService {
         if (existsInQueue) {
             log.debug("Download status changed for {}, updating queue UI.", event.getMusicId());
             broadcastQueueUpdate();
-            if (nowPlaying.get() == null) {
+            if (currentMusic.get() == null) {
                 playNextInQueue();
             }
         }
@@ -449,12 +458,15 @@ public class MusicPlayerService {
      */
     private void enterIdleMode() {
         log.info("Last user disconnected. Entering idle mode.");
-        //nowPlaying.set(null); // 立即停止当前歌曲
-        isLoading.set(false); // 取消加载状态
-        //isPaused.set(true);   // 设置为暂停状态，防止 playerLoop 意外触发
-        //resetPauseState();    // 重置暂停计时器
-        if (nowPlaying.get() != null && isPaused.compareAndSet(false, true)) {
-            pauseStateChangeTime.set(Instant.now().toEpochMilli());
+        isLoading.set(false);
+
+        // 如果正在播放，自动暂停，记录当前进度
+        if (currentMusic.get() != null && isPaused.compareAndSet(false, true)) {
+            // 暂停时，更新锚点为当前进度
+            long currentPos = calculateCurrentPosition();
+            positionAnchor.set(currentPos);
+            timestampAnchor.set(System.currentTimeMillis()); // 这个时间在暂停期间主要用于超时判断
+
             log.info("Player paused as all users have disconnected.");
             broadcastFullPlayerState();
         }
@@ -465,12 +477,15 @@ public class MusicPlayerService {
      */
     @Scheduled(fixedRate = 600000) // 每10分钟检查一次
     public void cleanupIdlePlayer() {
-        if (isPaused.get() && nowPlaying.get() != null) {
-            long pausedDuration = Instant.now().toEpochMilli() - pauseStateChangeTime.get();
+        if (isPaused.get() && currentMusic.get() != null) {
+            // 在暂停状态下，timestampAnchor 记录的是暂停开始的时间
+            long pausedDuration = System.currentTimeMillis() - timestampAnchor.get();
             if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
-                log.info("Idle player timeout reached ({} hours). Resetting now playing.", Duration.ofMillis(IDLE_RESET_TIMEOUT_MS).toHours());
-                nowPlaying.set(null);
-                resetPauseState();
+                log.info("Idle player timeout reached. Resetting now playing.");
+                currentMusic.set(null);
+                positionAnchor.set(0);
+                timestampAnchor.set(0);
+                isPaused.set(false);
                 broadcastFullPlayerState();
             }
         }
@@ -535,11 +550,11 @@ public class MusicPlayerService {
         };
     }
 
-    private void resetPauseState() {
+    /*private void resetPauseState() {
         isPaused.set(false);
         pauseStateChangeTime.set(0);
         totalPausedTimeMillis.set(0);
-    }
+    }*/
 
     private boolean isRateLimited(String userId) {
         long now = System.currentTimeMillis();

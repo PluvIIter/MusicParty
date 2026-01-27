@@ -5,7 +5,7 @@ import java.util.Set;
 
 public record NowPlayingInfo(
         PlayableMusic music,
-        long startTimeMillis,
+        long currentPosition,
         String enqueuedById,
         String enqueuedByName,
         Set<String> likedUserIds,
