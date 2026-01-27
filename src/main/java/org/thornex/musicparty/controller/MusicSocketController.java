@@ -7,6 +7,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
 import org.springframework.stereotype.Controller;
 import org.thornex.musicparty.dto.*;
+import org.thornex.musicparty.enums.MessageType;
 import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.UserService;
@@ -116,7 +117,7 @@ public class MusicSocketController {
                     user.getName(), // 这个名字作为 Snapshot 存着也行，但前端我们会用 Token 动态查
                     request.content().trim(),
                     System.currentTimeMillis(),
-                    false
+                    MessageType.CHAT
             );
 
             // 保存到历史
@@ -129,6 +130,6 @@ public class MusicSocketController {
     // 订阅时获取历史记录
     @SubscribeMapping("/chat/history")
     public List<ChatMessage> getChatHistory() {
-        return chatService.getHistory();
+        return chatService.getHistory(0, 50);
     }
 }

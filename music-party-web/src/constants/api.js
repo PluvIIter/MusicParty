@@ -2,6 +2,7 @@
 export const WS_DEST = {
     // 发送指令 (Publish)
     CHAT_SEND: '/app/chat',
+    CHAT_HISTORY_FETCH: '/app/chat/history/fetch',
     PLAYER_NEXT: '/app/control/next',
     PLAYER_PAUSE: '/app/control/toggle-pause',
     PLAYER_SHUFFLE: '/app/control/toggle-shuffle',
@@ -23,6 +24,7 @@ export const WS_DEST = {
 
     // 个人频道
     USER_ME: '/app/user/me',
-    CHAT_HISTORY: '/app/chat/history',
-    USER_STATE: '/user/queue/player/state'
+    APP_CHAT_HISTORY: '/app/chat/history',
+    USER_STATE: '/user/queue/player/state',
+    USER_CHAT_HISTORY: '/user/queue/chat/history'
 };

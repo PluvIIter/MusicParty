@@ -186,4 +186,8 @@ public class UserService {
             log.info("Cleanup Complete. Removed {} expired users. Current memory users: {}", (initialSize - finalSize), finalSize);
         }
     }
+
+    public Optional<User> getUserByToken(String token) {
+        return Optional.ofNullable(usersByToken.get(token));
+    }
 }

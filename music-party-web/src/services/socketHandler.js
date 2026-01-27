@@ -59,7 +59,7 @@ function handleGameEvent(event) {
 
         // 系统级
         'RESET': () => `系统已被重置`,
-        'ERROR_LOAD': (u, p) => `加载失败: ${p || '未知错误'} (已跳过)`
+        'ERROR_LOAD': (u, p) => `加载失败: ${p || '未知错误'} (跳过)`
     };
 
     let msgText = '';
@@ -95,34 +95,27 @@ export const createSocketSubscriptions = () => {
     const chatStore = useChatStore();
 
     return {
-        // 1. 状态同步：直接调用 Store 的 Action 更新数据
-        '/topic/player/state': (state) => {
-            playerStore.syncState(state);
-        },
-        '/user/queue/player/state': (state) => {
-            playerStore.syncState(state);
-        },
+        // 1. 状态同步
+        [WS_DEST.TOPIC_STATE]: (state) => playerStore.syncState(state),
+        [WS_DEST.USER_STATE]: (state) => playerStore.syncState(state),
 
-        // 2. 用户列表更新
-        '/topic/users/online': (users) => {
-            userStore.setOnlineUsers(users);
-        },
+        // 2. 用户列表
+        [WS_DEST.TOPIC_USERS]: (users) => userStore.setOnlineUsers(users),
 
-        // 3. 队列更新 (通常 state 里也包含，这里可能是单独推送)
-        '/topic/player/queue': (data) => {
-            playerStore.queue = data;
-        },
+        // 3. 队列更新
+        [WS_DEST.TOPIC_QUEUE]: (data) => { playerStore.queue = data; },
 
-        // 4. 聊天消息
-        '/topic/chat': (msg) => {
-            chatStore.addMessage(msg);
-        },
-        '/app/chat/history': (history) => {
-            chatStore.setHistory(history);
-        },
+        // 4. 事件通知 (Toast)
+        [WS_DEST.TOPIC_EVENTS]: handleGameEvent,
 
-        // 5. 事件通知 (抽离出的逻辑)
-        '/topic/player/events': handleEventMessage
+        // 5. 聊天相关
+        [WS_DEST.TOPIC_CHAT]: (msg) => chatStore.addMessage(msg),
+
+        // 初始历史记录
+        [WS_DEST.APP_CHAT_HISTORY]: (history) => chatStore.setHistory(history),
+
+        // 分页历史记录回调
+        [WS_DEST.USER_CHAT_HISTORY]: (moreMessages) => chatStore.prependHistory(moreMessages)
     };
 };
 
