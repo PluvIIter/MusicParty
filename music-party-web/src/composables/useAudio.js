@@ -164,24 +164,36 @@ export function useAudio(audioRef, playerStore) {
                 localProgress.value = 0;
                 return;
             }
-            // 计算理论进度
-            const backendTime = playerStore.getCurrentProgress();
 
-            // 如果后端在播放，前端却没动（通常是还没加载完，或者被拦截了）
-            // 我们依然优先显示 backendTime，让 UI 看起来是对齐的
-            localProgress.value = backendTime;
+            // 1. 获取理论上的正确进度
+            const targetTime = playerStore.getCurrentProgress();
 
-            // 强行同步逻辑 (纠偏)
-            if (audioRef.value && !playerStore.isPaused && !isBuffering.value && !isErrorState.value) {
-                const domTime = audioRef.value.currentTime * 1000;
-                // 如果偏差超过 2 秒，强制跳转
-                if (Math.abs(domTime - backendTime) > 2000) {
-                    // 只有在音频就绪时才跳转
-                    if (audioRef.value.readyState >= 2) {
-                        try {
-                            audioRef.value.currentTime = backendTime / 1000;
-                        } catch(e) {
-                            //iOS 在后台禁止修改 currentTime，除非音频正在播放
+            // 2. 更新 UI 绑定值 (localProgress)
+            // 如果音频正在播放，直接用 audio.currentTime 作为 UI 显示源，这样最平滑
+            // 如果没在播（缓冲中/暂停），用 targetTime
+            if (audioRef.value && !audioRef.value.paused) {
+                localProgress.value = audioRef.value.currentTime * 1000;
+            } else {
+                localProgress.value = targetTime;
+            }
+
+            // 3. 强行同步逻辑 (纠偏)
+            if (audioRef.value && !isBuffering.value && !isErrorState.value) {
+                // 如果是暂停状态，强制对齐
+                if (playerStore.isPaused) {
+                    // 避免重复赋值导致杂音
+                    if (Math.abs(audioRef.value.currentTime * 1000 - targetTime) > 200) {
+                        audioRef.value.currentTime = targetTime / 1000;
+                    }
+                }
+                // 如果是播放状态，只有偏差过大才对齐
+                else {
+                    const domTime = audioRef.value.currentTime * 1000;
+                    // 允许 2 秒的误差，因为网络延迟和 JS 执行时间
+                    if (Math.abs(domTime - targetTime) > 2000) {
+                        if (audioRef.value.readyState >= 2) {
+                            console.log(`[Sync] Correcting time: ${domTime} -> ${targetTime}`);
+                            audioRef.value.currentTime = targetTime / 1000;
                         }
                     }
                 }
