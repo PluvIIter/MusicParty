@@ -4,6 +4,12 @@
 FROM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend
 
+ARG APP_AUTHOR_NAME="ThorNex"
+ARG VITE_APP_BACK_WORDS="THORNEX"
+
+ENV VITE_APP_AUTHOR_NAME=${APP_AUTHOR_NAME}
+ENV VITE_APP_BACK_WORDS=${APP_BACK_WORDS}
+
 # 复制前端项目定义文件
 COPY music-party-web/package*.json ./
 # 安装依赖
