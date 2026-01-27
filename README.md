@@ -48,7 +48,13 @@ services:
 
   # 2. Music Party 主应用
   music-party:
-    build: .
+    build:
+      context: .
+      args:
+        # 作者名称，反应在左上角标题后面
+        - APP_AUTHOR_NAME=ThorNex
+        # 背景文字，反应在中间可视化后面的装饰性背景字（回强制大写）
+        - APP_BACK_WORDS=MUSIC PARTY
     container_name: music-party-app
     restart: always
     ports:
@@ -94,6 +100,8 @@ docker-compose up -d
 
 | 变量名 | 必填 | 说明 |
 | :--- | :--- | :--- |
+| `APP_AUTHOR_NAME` | 否 | 页面显示的作者名字，地点在左上角标题后面，以by XXX的形式。 |
+| `APP_BACK_WORDS` | 否 | 中间专辑封面后方的装饰性背景字，强制大写。 |
 | `ADMIN_PASSWORD` | 是 | 管理员密码，用于在搜索框输入指令控制系统。 |
 | `NETEASE_API_URL` | 是 | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。 |
 | `BILIBILI_SESSDATA`| 否 | B站账号的 SESSDATA。不填会导致搜索结果受限、无法解析 1080P/Hi-Res 音频流，且极易触发风控。 |
