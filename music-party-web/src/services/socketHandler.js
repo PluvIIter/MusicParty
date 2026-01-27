@@ -1,5 +1,3 @@
-// src/services/socketHandler.js
-
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
@@ -155,16 +153,19 @@ export const createSocketCallbacks = () => {
             playerStore.connected = false;
         },
 
-        // STOMP 协议层错误 (如密码错误)
+        // STOMP 协议层错误 (如密码错误、Token失效、服务器内部错误等)
         onStompError: (frame) => {
-            if (frame.body === 'INVALID_ROOM_PASSWORD') {
-                console.error('Auth Failed: Invalid Password');
+            console.error('STOMP Error:', frame);
+
+            // 无论是密码错误，还是其他未知的协议级错误，都强制刷新以重置状态
+            const isAuthError = frame.body && frame.body.includes('INVALID_ROOM_PASSWORD');
+
+            if (isAuthError) {
                 userStore.resetAuthentication();
-                // 强制刷新页面回到登录状态
-                window.location.reload();
-            } else {
-                console.error('STOMP Error:', frame);
             }
+
+            // 强制刷新页面 (STOMP ERROR 帧通常意味着连接已不可用)
+            window.location.reload();
         }
     };
 };

@@ -28,7 +28,7 @@ class SocketService {
             connectHeaders: authHeaders,
             heartbeatIncoming: 10000,
             heartbeatOutgoing: 10000,
-            reconnectDelay: 5000,
+            reconnectDelay: 2000,
 
             onConnect: (frame) => {
                 this.connected = true;
