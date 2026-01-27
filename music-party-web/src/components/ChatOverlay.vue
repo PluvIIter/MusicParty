@@ -123,8 +123,8 @@
                 class="flex justify-center my-1"
             >
               <div class="bg-accent/5 border border-accent/20 text-accent px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-sm">
-                <Heart class="w-3 h-3 fill-accent"/>
-                <span>{{ userStore.resolveName(item.msg.userId, item.msg.userName) }} Liked!</span>
+                <Zap class="w-3 h-3 fill-accent stroke-accent"/>
+                <span>{{ item.msg.content }}</span>
               </div>
             </div>
 
@@ -188,7 +188,7 @@ import { useChatStore } from '../stores/chat';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useDraggable, useWindowSize, useEventListener, clamp } from '@vueuse/core';
-import { MessageSquare, X, Send, Terminal, Heart, Loader2 } from 'lucide-vue-next';
+import { MessageSquare, X, Send, Terminal, Zap, Loader2 } from 'lucide-vue-next';
 import dayjs from 'dayjs';
 
 const chatStore = useChatStore();

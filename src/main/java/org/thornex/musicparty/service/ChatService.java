@@ -89,10 +89,13 @@ public class ChatService {
         String content = generateSystemMessageContent(event,userName);
         MessageType type = event.getAction() == PlayerAction.LIKE ? MessageType.LIKE : MessageType.SYSTEM;
 
+        String msgUserId = event.getAction() == PlayerAction.LIKE ? event.getUserId() : "SYSTEM";
+        String msgUserName = event.getAction() == PlayerAction.LIKE ? userName : "SYSTEM";
+
         ChatMessage sysMsg = new ChatMessage(
                 UUID.randomUUID().toString(),
-                "SYSTEM", // 系统消息 userId 统一为 SYSTEM，前端靠 type 区分
-                "SYSTEM",
+                msgUserId,
+                msgUserName,
                 content,
                 System.currentTimeMillis(),
                 type
@@ -116,7 +119,7 @@ public class ChatService {
             case ADD -> userName + " 添加了: " + payload;
             case REMOVE -> userName + " 移除了: " + payload;
             case TOP -> userName + " 置顶了: " + payload;
-            case LIKE -> userName + " 觉得这首歌很赞！";
+            case LIKE -> userName + " 觉得 " + payload + " 很赞";
             case IMPORT_PLAYLIST -> userName + " 导入了歌单 (" + payload + "首)";
             case SHUFFLE_ON -> userName + " 开启了随机播放";
             case SHUFFLE_OFF -> userName + " 关闭了随机播放";

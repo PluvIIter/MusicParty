@@ -285,7 +285,7 @@ public class MusicPlayerService {
 
         // 3. 广播
         // 广播事件用于触发特效
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, token, null));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, token, current.music().name()));
         // 广播状态更新进度条打点和用户列表
         broadcastFullPlayerState();
     }
