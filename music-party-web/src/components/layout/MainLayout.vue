@@ -6,7 +6,7 @@
       <div class="font-black text-xl tracking-tighter text-medical-900 flex items-center gap-2">
         <div class="w-3 h-3 bg-accent"></div>
         <span class="text-lg md:text-xl">MUSIC PARTY</span>
-        <span class="text-medical-300 font-mono font-normal text-xs">by ThorNex</span>
+        <span class="text-medical-300 font-mono font-normal text-xs">by {{ authorName }}</span>
       </div>
 
       <div class="flex items-center gap-4">
@@ -97,12 +97,14 @@
 <script setup>
 import { ref } from 'vue';
 import { Search, Users, ListMusic, X } from 'lucide-vue-next';
-import UserList from '../UserList.vue'; // 确保路径正确，可能需要调整 ../
+import UserList from '../UserList.vue';
 import QueueList from '../QueueList.vue';
 import { useUserStore } from '../../stores/user';
 
 const emit = defineEmits(['search']);
 const userStore = useUserStore();
+
+const authorName = import.meta.env.VITE_APP_AUTHOR_NAME || 'ThorNex';
 
 const mobileQueueOpen = ref(false);
 const mobileUserOpen = ref(false);
