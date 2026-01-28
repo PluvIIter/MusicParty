@@ -35,8 +35,7 @@
         <div
             ref="windowHeaderRef"
             @pointerdown="startHeaderDrag"
-            class="h-10 bg-medical-50 border-b border-medical-200 flex items-center justify-between px-3 flex-shrink-0 select-none"
-            :class="isMobile ? '' : 'cursor-move'"
+            class="h-10 bg-medical-50 border-b border-medical-200 flex items-center justify-between px-3 flex-shrink-0 cursor-move select-none"
         >
           <div class="font-mono text-xs font-bold text-medical-500 flex items-center gap-2">
             <MessageSquare class="w-3 h-3"/> CHAT
@@ -161,7 +160,6 @@
       悬浮开关按钮 (拖拽手柄)
     -->
     <div
-        v-show="!isMobile || !chatStore.isOpen"
         ref="dragHandle"
         @pointerdown="handlePointerDown"
         @click="handleClick"
@@ -173,7 +171,14 @@
       <div v-if="chatStore.unreadCount > 0"
            class="absolute inset-0 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAADCAYAAABS3WWCAAAAE0lEQVQYV2NkYGD4zwABjFAQAwBATgMJy2B8NAAAAABJRU5ErkJggg==')] opacity-30 pointer-events-none animate-scan z-0">
       </div>
+
+      <span v-if="chatStore.unreadCount > 0" class="font-bold font-mono text-sm relative z-10 animate-pulse">
+         {{ chatStore.unreadCount > 99 ? '99+' : chatStore.unreadCount }}
+      </span>
+
+      <MessageSquare v-else class="w-5 h-5 relative z-10"/>
     </div>
+
   </div>
 </template>
 
@@ -201,8 +206,6 @@ const activeTab = ref('CHAT'); // 'CHAT' | 'SYSTEM'
 const BUTTON_SIZE = 40;
 const MARGIN = 10;
 
-const isMobile = computed(() => windowWidth.value < 768);
-
 // === 1. 拖拽逻辑 (主控制器) ===
 // useDraggable 绑定在悬浮球上，它是坐标 (x, y) 的事实来源
 const { x, y } = useDraggable(dragHandle, {
@@ -216,7 +219,6 @@ const { x, y } = useDraggable(dragHandle, {
 
 // === 2. 标题栏拖拽同步逻辑 ===
 const startHeaderDrag = (e) => {
-  if (isMobile.value) return;
   // 记录按下时的鼠标位置和当前的 x, y
   const startMouseX = e.clientX;
   const startMouseY = e.clientY;
@@ -270,10 +272,6 @@ const isRightSide = computed(() => x.value > windowWidth.value / 2);
 const isBottomSide = computed(() => y.value > windowHeight.value / 2);
 
 const windowPositionClasses = computed(() => {
-  if (isMobile.value) {
-    return 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[200] shadow-[0_0_100px_rgba(0,0,0,0.3)] w-[90vw] h-[60vh]';
-  }
-
   const classes = [];
   if (isRightSide.value) classes.push('right-12'); else classes.push('left-12');
   if (isBottomSide.value) classes.push('bottom-0'); else classes.push('top-0');
