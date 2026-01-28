@@ -225,6 +225,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                 return webClient.get()
                                         .uri(builder.build().toUri())
                                         .header("Cookie", "SESSDATA=" + sessdata)
+                                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                                         .header("Referer", "https://www.bilibili.com/video/" + bvid)
                                         .retrieve()
                                         .bodyToMono(JsonNode.class)
