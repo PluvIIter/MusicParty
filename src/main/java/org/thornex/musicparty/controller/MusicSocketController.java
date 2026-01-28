@@ -1,8 +1,11 @@
 package org.thornex.musicparty.controller;
 
+import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
 import org.springframework.stereotype.Controller;
@@ -131,5 +134,24 @@ public class MusicSocketController {
     @SubscribeMapping("/chat/history")
     public List<ChatMessage> getChatHistory() {
         return chatService.getHistory(0, 50);
+    }
+
+    // 处理分页获取历史记录的请求
+    @MessageMapping("/chat/history/fetch")
+    public void fetchChatHistory(@Payload ChatHistoryFetchRequest request, @Header("simpSessionId") String sessionId) {
+        List<ChatMessage> history = chatService.getHistory(request.offset(), request.limit());
+        messagingTemplate.convertAndSendToUser(
+                sessionId,
+                "/queue/chat/history",
+                history,
+                createSessionHeaders(sessionId)
+        );
+    }
+
+    private MessageHeaders createSessionHeaders(String sessionId) {
+        SimpMessageHeaderAccessor headerAccessor = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+        headerAccessor.setSessionId(sessionId);
+        headerAccessor.setLeaveMutable(true);
+        return headerAccessor.getMessageHeaders();
     }
 }
