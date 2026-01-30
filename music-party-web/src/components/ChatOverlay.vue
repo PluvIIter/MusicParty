@@ -23,8 +23,8 @@
     >
       <div
           v-if="chatStore.isOpen"
-          class="absolute pointer-events-auto bg-white border border-medical-200 shadow-2xl flex flex-col chamfer-br overflow-hidden w-[85vw] max-w-[340px] h-[50vh] md:h-[480px]"
-          :class="windowPositionClasses"
+          class="pointer-events-auto bg-white border border-medical-200 shadow-2xl flex flex-col chamfer-br overflow-hidden"
+          :class="dynamicWindowClasses"
           @mousedown.stop
           @touchstart.stop
       >
@@ -35,7 +35,8 @@
         <div
             ref="windowHeaderRef"
             @pointerdown="startHeaderDrag"
-            class="h-10 bg-medical-50 border-b border-medical-200 flex items-center justify-between px-3 flex-shrink-0 cursor-move select-none"
+            class="h-10 bg-medical-50 border-b border-medical-200 flex items-center justify-between px-3 flex-shrink-0 select-none"
+            :class="{ 'cursor-move': !isMobile }"
         >
           <div class="font-mono text-xs font-bold text-medical-500 flex items-center gap-2">
             <MessageSquare class="w-3 h-3"/> CHAT
@@ -160,6 +161,7 @@
       悬浮开关按钮 (拖拽手柄)
     -->
     <div
+        v-if="!isMobile || !chatStore.isOpen"
         ref="dragHandle"
         @pointerdown="handlePointerDown"
         @click="handleClick"
@@ -183,7 +185,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, computed, onMounted } from 'vue';
+import { ref, watch, nextTick, computed } from 'vue';
 import { useChatStore } from '../stores/chat';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
@@ -196,6 +198,9 @@ const playerStore = usePlayerStore();
 const userStore = useUserStore();
 const { width: windowWidth, height: windowHeight } = useWindowSize();
 
+// 新增: 创建一个计算属性来判断是否为移动端
+const isMobile = computed(() => windowWidth.value < 768);
+
 const inputContent = ref('');
 const msgListRef = ref(null);
 const dragHandle = ref(null);
@@ -207,7 +212,6 @@ const BUTTON_SIZE = 40;
 const MARGIN = 10;
 
 // === 1. 拖拽逻辑 (主控制器) ===
-// useDraggable 绑定在悬浮球上，它是坐标 (x, y) 的事实来源
 const { x, y } = useDraggable(dragHandle, {
   initialValue: { x: window.innerWidth - 60, y: window.innerHeight - 150 },
   preventDefault: true,
@@ -219,18 +223,18 @@ const { x, y } = useDraggable(dragHandle, {
 
 // === 2. 标题栏拖拽同步逻辑 ===
 const startHeaderDrag = (e) => {
-  // 记录按下时的鼠标位置和当前的 x, y
+  // 修改: 在移动端禁用此功能
+  if (isMobile.value) return;
+
   const startMouseX = e.clientX;
   const startMouseY = e.clientY;
   const startX = x.value;
   const startY = y.value;
 
   const onMouseMove = (me) => {
-    // 计算位移并直接更新 x, y Ref
     let newX = startX + (me.clientX - startMouseX);
     let newY = startY + (me.clientY - startMouseY);
 
-    // 同样应用边界限制
     newX = clamp(newX, MARGIN, window.innerWidth - BUTTON_SIZE - MARGIN);
     newY = clamp(newY, MARGIN, window.innerHeight - BUTTON_SIZE - MARGIN);
 
@@ -278,11 +282,23 @@ const windowPositionClasses = computed(() => {
   return classes.join(' ');
 });
 
+// 新增: 动态计算窗口的样式类
+const dynamicWindowClasses = computed(() => {
+  if (isMobile.value) {
+    // 移动端: 返回固定居中的模态框样式
+    return ['fixed', 'inset-0', 'm-auto', 'w-[90vw]', 'h-[75vh]', 'max-h-[600px]', 'max-w-[420px]'];
+  }
+  // PC端: 返回原有的绝对定位浮窗样式
+  return ['absolute', 'w-[85vw]', 'max-w-[340px]', 'h-[50vh]', 'md:h-[480px]', windowPositionClasses.value];
+});
+
+
 const resetPosition = () => {
   x.value = clamp(x.value, MARGIN, windowWidth.value - BUTTON_SIZE - MARGIN);
   y.value = clamp(y.value, MARGIN, windowHeight.value - BUTTON_SIZE - MARGIN);
 };
 useEventListener(window, 'resize', resetPosition);
+resetPosition(); // 初始化时执行一次
 
 // === 5. 消息处理与展示逻辑 ===
 const isSelf = (msg) => msg.userId === userStore.userToken;
@@ -382,10 +398,6 @@ watch(() => processedMessages.value.length, (newLen, oldLen) => {
   if (newLen > oldLen) {
     scrollToBottom(false);
   }
-});
-
-onMounted(() => {
-  resetPosition();
 });
 </script>
 
