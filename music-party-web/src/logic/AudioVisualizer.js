@@ -23,8 +23,8 @@ export class AudioVisualizer {
         this.widthMultiplier = 1.0;
         this.roughnessMultiplier = 1.0;
 
-        // 配置参数
-        this.breatheBars = 120;
+        // 配置参数 (Performance Optimized)
+        this.breatheBars = 60; // Reduced from 120
         this.breatheRadiusBase = 180;
 
         // 圆环定义
@@ -41,7 +41,7 @@ export class AudioVisualizer {
      */
     mount(canvasElement) {
         this.canvas = canvasElement;
-        this.ctx = this.canvas.getContext('2d');
+        this.ctx = this.canvas.getContext('2d', { alpha: true }); // optimize
         this.width = this.canvas.width;
         this.height = this.canvas.height;
         this.center = this.width / 2;
@@ -87,6 +87,8 @@ export class AudioVisualizer {
         const { ctx, width, height, center } = this;
         ctx.clearRect(0, 0, width, height);
 
+        // 如果不播放且没有爆发，可以降低渲染频率或跳过部分渲染（为了简单起见，这里保持 loop 但降低计算量）
+        
         const decayFactor = 0.005;
 
         this.speedMultiplier += (1.0 - this.speedMultiplier) * decayFactor;
@@ -106,6 +108,9 @@ export class AudioVisualizer {
         this.smoothAlpha += (targetAlpha - this.smoothAlpha) * 0.03;
         this.smoothWidthScale += (targetWidthScale - this.smoothWidthScale) * 0.05;
 
+        // 优化：透明度极低时不渲染复杂图形
+        if (this.smoothAlpha < 0.01) return;
+
         // --- 2. 绘制橙色流体圆环 ---
         ctx.save();
         ctx.globalCompositeOperation = 'screen';
@@ -114,7 +119,7 @@ export class AudioVisualizer {
 
         this.rings.forEach((ring) => {
             ctx.beginPath();
-            const count = 240;
+            const count = 120; // Reduced from 240
             const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
 
             // 外圈
