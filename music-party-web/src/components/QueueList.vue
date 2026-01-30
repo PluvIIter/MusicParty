@@ -1,5 +1,5 @@
 <template>
-  <div class="h-full flex flex-col bg-white border-l border-medical-200">
+  <div id="tutorial-queue" class="h-full flex flex-col bg-white border-l border-medical-200">
     <div class="p-4 bg-medical-50 border-b border-medical-200 flex justify-between items-center">
       <h3 class="text-sm font-bold text-medical-900">播放队列 <span class="text-accent text-xs">[{{ queue.length }}]</span></h3>
     </div>
@@ -10,7 +10,7 @@
     </div>
 
     <!-- Virtual List Container -->
-    <div v-else v-bind="containerProps" id="tutorial-queue" class="flex-1 overflow-y-auto p-2">
+    <div v-else v-bind="containerProps" class="flex-1 overflow-y-auto p-2">
       <div v-bind="wrapperProps">
         <div
             v-for="{ data: item, index } in list"

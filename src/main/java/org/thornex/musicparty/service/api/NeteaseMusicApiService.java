@@ -77,6 +77,14 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private String getCookie() {
         return currentCookie != null ? currentCookie : "";
     }
+    
+    // Helper to force HTTPS
+    private String upgradeToHttps(String url) {
+        if (url != null && url.startsWith("http://")) {
+            return url.replace("http://", "https://");
+        }
+        return url;
+    }
 
 
     @Override
@@ -114,7 +122,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                                     artists,
                                     song.path("dt").asLong(),
                                     PLATFORM,
-                                    song.path("al").path("picUrl").asText()
+                                    upgradeToHttps(song.path("al").path("picUrl").asText())
                             ));
                         }
                     }
@@ -140,7 +148,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                         tuple.getT1().artists(),
                         tuple.getT1().duration(),
                         tuple.getT1().platform(),
-                        tuple.getT2(),
+                        upgradeToHttps(tuple.getT2()),
                         tuple.getT1().coverUrl(),
                         false
                 ));
@@ -164,7 +172,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                             artists,
                             song.path("dt").asLong(),
                             PLATFORM,
-                            song.path("al").path("picUrl").asText()
+                            upgradeToHttps(song.path("al").path("picUrl").asText())
                     );
                 });
     }
@@ -182,7 +190,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                     jsonNode.path("playlist").forEach(pl -> playlists.add(new Playlist(
                             pl.path("id").asText(),
                             pl.path("name").asText(),
-                            pl.path("coverImgUrl").asText(),
+                            upgradeToHttps(pl.path("coverImgUrl").asText()),
                             pl.path("trackCount").asInt(),
                             PLATFORM
                     )));
@@ -211,7 +219,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                                 artists,
                                 song.path("dt").asLong(),
                                 PLATFORM,
-                                song.path("al").path("picUrl").asText()
+                                upgradeToHttps(song.path("al").path("picUrl").asText())
                         ));
                     });
                     return musicList;
@@ -234,7 +242,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                         profiles.forEach(u -> users.add(new UserSearchResult(
                                 u.path("userId").asText(),
                                 u.path("nickname").asText(),
-                                u.path("avatarUrl").asText(),
+                                upgradeToHttps(u.path("avatarUrl").asText()),
                                 PLATFORM
                         )));
                     }
