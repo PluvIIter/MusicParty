@@ -22,3 +22,12 @@ app:
       # Bilibili API base URL, it's public
       base-url: "https://api.bilibili.com"
       sessdata: ${BILIBILI_SESSDATA:}
+    queue:
+      max-size: ${QUEUE_MAX_SIZE:1000}
+      history-size: ${QUEUE_HISTORY_SIZE:50}
+    player:
+      max-playlist-import-size: ${PLAYLIST_IMPORT_LIMIT:100}
+    chat:
+      max-history-size: ${CHAT_HISTORY_LIMIT:1000}
+    cache:
+      max-size: ${CACHE_MAX_SIZE:1GB}

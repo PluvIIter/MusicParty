@@ -13,6 +13,7 @@ import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
+import org.thornex.musicparty.config.AppProperties;
 
 import java.time.Duration;
 import java.util.*;
@@ -36,6 +37,7 @@ public class MusicPlayerService {
     // --- Refactored Dependencies ---
     private final MusicQueueManager queueManager;
     private final ApplicationEventPublisher eventPublisher;
+    private final AppProperties appProperties;
 
     // --- Player State ---
     private final AtomicReference<PlayableMusic> currentMusic = new AtomicReference<>(null);
@@ -57,7 +59,6 @@ public class MusicPlayerService {
 
     private final AtomicLong lastControlTimestamp = new AtomicLong(0);
     private static final long GLOBAL_COOLDOWN_MS = 1000;
-    private static final int PLAYLIST_ADD_LIMIT = 100;
     private static final long IDLE_RESET_TIMEOUT_MS = Duration.ofHours(2).toMillis();
 
     private final AtomicLong playHeadVersion = new AtomicLong(0);
@@ -65,7 +66,8 @@ public class MusicPlayerService {
     public MusicPlayerService(List<IMusicApiService> apiServices, UserService userService,
                               LocalCacheService localCacheService,
                               ChatService chatService, MusicQueueManager queueManager,
-                              ApplicationEventPublisher eventPublisher) {
+                              ApplicationEventPublisher eventPublisher,
+                              AppProperties appProperties) {
         this.apiServiceMap = apiServices.stream()
                 .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
@@ -73,6 +75,7 @@ public class MusicPlayerService {
         this.chatService = chatService;
         this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
+        this.appProperties = appProperties;
         this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
         this.currentLikeMarkers = new CopyOnWriteArrayList<>();
     }
@@ -300,7 +303,7 @@ public class MusicPlayerService {
         User enqueuer = userOpt.get();
 
         IMusicApiService service = getApiService(request.platform());
-        service.getPlaylistMusics(request.playlistId(), 0, PLAYLIST_ADD_LIMIT)
+        service.getPlaylistMusics(request.playlistId(), 0, appProperties.getPlayer().getMaxPlaylistImportSize())
                 .subscribe(musics -> {
                     int count = 0;
                     QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
@@ -382,7 +385,7 @@ public class MusicPlayerService {
 
         log.info("Player {} by {}", newState ? "PAUSED" : "RESUMED", getUserName(sessionId));
         broadcastFullPlayerState();
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.RESUME, getUserToken(sessionId), null));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserToken(sessionId), null));
     }
 
     public void toggleShuffle(String sessionId) {

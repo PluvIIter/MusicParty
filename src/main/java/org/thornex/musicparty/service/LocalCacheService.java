@@ -10,6 +10,7 @@ import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.LocalResourceConfig;
+import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.event.DownloadStatusEvent;
 import reactor.core.Disposable;
@@ -34,14 +35,13 @@ import java.util.concurrent.atomic.AtomicLong;
 public class LocalCacheService {
 
     private final WebClient webClient;
-    // 限制 200MB
-    private static final long MAX_CACHE_SIZE = 1024 * 1024 * 1024;
     private static final long DOWNLOAD_COOLDOWN_SECONDS = 3;
 
     // 内存中维护缓存文件的元数据
     private final Map<String, CacheEntry> cacheIndex = new ConcurrentHashMap<>();
     private final AtomicLong currentTotalSize = new AtomicLong(0);
     private final ApplicationEventPublisher eventPublisher;
+    private final AppProperties appProperties;
     private final Sinks.Many<DownloadTask> downloadQueue = Sinks.many().unicast().onBackpressureBuffer();
     private Disposable queueSubscription;
 
@@ -52,9 +52,10 @@ public class LocalCacheService {
             String extension
     ) {}
 
-    public LocalCacheService(WebClient webClient, ApplicationEventPublisher eventPublisher) {
+    public LocalCacheService(WebClient webClient, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
         this.webClient = webClient;
         this.eventPublisher = eventPublisher;
+        this.appProperties = appProperties;
     }
 
     @Data
@@ -216,7 +217,7 @@ public class LocalCacheService {
      * LRU 清理策略
      */
     private synchronized void ensureCapacity() {
-        if (currentTotalSize.get() <= MAX_CACHE_SIZE) return;
+        if (currentTotalSize.get() <= appProperties.getCache().getMaxSize().toBytes()) return;
 
         log.info("Cache limit exceeded. Cleaning up...");
 
@@ -225,7 +226,7 @@ public class LocalCacheService {
                 .filter(e -> e.getStatus() == CacheStatus.COMPLETED) // 只删已完成的
                 .sorted(Comparator.comparingLong(CacheEntry::getLastAccessTime))
                 .forEach(entry -> {
-                    if (currentTotalSize.get() <= MAX_CACHE_SIZE) return; // 容量够了就停
+                    if (currentTotalSize.get() <= appProperties.getCache().getMaxSize().toBytes()) return; // 容量够了就停
 
                     try {
                         Path path = Paths.get(LocalResourceConfig.CACHE_DIR, entry.getFileName());
