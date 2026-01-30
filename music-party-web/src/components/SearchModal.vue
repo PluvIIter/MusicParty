@@ -79,7 +79,12 @@
                 <span class="text-[10px] font-mono text-medical-400">ID: {{ bindings[platform] }}</span>
                 <button @click="playerStore.bindAccount(platform, '')" class="text-[10px] text-red-400 hover:underline">UNLINK</button>
               </div>
-              <div v-for="pl in playlists" :key="pl.id" @click="handleSelectPlaylist(pl.id)" class="flex items-center gap-3 p-2 hover:bg-medical-50 cursor-pointer group transition-colors border-l-2 border-transparent hover:border-accent">
+              
+              <div v-if="isPlaylistsLoading" class="flex justify-center py-8">
+                <Loader2 class="w-6 h-6 animate-spin text-accent" />
+              </div>
+              
+              <div v-else v-for="pl in playlists" :key="pl.id" @click="handleSelectPlaylist(pl.id)" class="flex items-center gap-3 p-2 hover:bg-medical-50 cursor-pointer group transition-colors border-l-2 border-transparent hover:border-accent">
                 <div class="w-10 h-10 bg-medical-200 flex-shrink-0 overflow-hidden"><CoverImage :src="pl.coverImgUrl" class="w-full h-full" /></div>
                 <div class="overflow-hidden">
                   <div class="text-sm font-bold truncate group-hover:text-accent">{{ pl.name }}</div>
@@ -190,7 +195,7 @@ const handleSearchAction = async () => {
 // 2. 引入歌单逻辑 (注入依赖)
 const {
   playlists, currentPlaylistId, searchUserKeyword, userSearchResults,
-  isSearchingUser, hasMore, isLoadingMore, bindings,
+  isSearchingUser, isPlaylistsLoading, hasMore, isLoadingMore, bindings,
   searchUser, bindUser, loadPlaylist, handleScroll
 } = usePlaylistLogic(platform, songs, listMode, loading);
 
