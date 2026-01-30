@@ -72,6 +72,13 @@ services:
       
       # 网易云 Cookie 
       - NETEASE_COOKIE="your_netease_cookie_here"
+
+      # 队列与限制配置 (可选)
+      - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
+      - QUEUE_HISTORY_SIZE=50        # 历史记录保留数量
+      - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数
+      - CHAT_HISTORY_LIMIT=1000      # 聊天历史记录保留数量
+      - CACHE_MAX_SIZE=1GB           # 本地音乐缓存上限
     depends_on:
       - netease-api
     networks:
@@ -106,6 +113,11 @@ docker-compose up -d
 | `NETEASE_API_URL` | 是 | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。 |
 | `BILIBILI_SESSDATA`| 否 | B站账号的 SESSDATA。不填会导致搜索结果受限、无法解析 1080P/Hi-Res 音频流，且极易触发风控。 |
 | `NETEASE_COOKIE` | 否 | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。 |
+| `QUEUE_MAX_SIZE` | 否 | 播放队列最大长度，默认 `1000`。 |
+| `QUEUE_HISTORY_SIZE` | 否 | 历史记录保留数量，默认 `50`。 |
+| `PLAYLIST_IMPORT_LIMIT` | 否 | 导入歌单时的最大歌曲数限制，默认 `100`。 |
+| `CHAT_HISTORY_LIMIT` | 否 | 聊天历史记录保留数量，默认 `1000`。 |
+| `CACHE_MAX_SIZE` | 否 | 本地音乐缓存上限，默认 `1GB`。支持格式如 `512MB`, `2GB`。 |
 
 ---
 

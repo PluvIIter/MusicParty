@@ -8,6 +8,7 @@ import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.enums.MessageType;
 import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.event.SystemMessageEvent;
+import org.thornex.musicparty.config.AppProperties;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,21 +19,22 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 @Service
 public class ChatService {
 
-    private static final int HISTORY_LIMIT = 1000;
     // 使用并发双端队列存储消息
     private final ConcurrentLinkedDeque<ChatMessage> history = new ConcurrentLinkedDeque<>();
 
     private final SimpMessagingTemplate messagingTemplate;
     private final UserService userService;
+    private final AppProperties appProperties;
 
-    public ChatService(SimpMessagingTemplate messagingTemplate, UserService userService) {
+    public ChatService(SimpMessagingTemplate messagingTemplate, UserService userService, AppProperties appProperties) {
         this.messagingTemplate = messagingTemplate;
         this.userService = userService;
+        this.appProperties = appProperties;
     }
 
     public void addMessage(ChatMessage message) {
         history.addLast(message);
-        if (history.size() > HISTORY_LIMIT) {
+        if (history.size() > appProperties.getChat().getMaxHistorySize()) {
             history.removeFirst();
         }
     }

@@ -1,6 +1,8 @@
 package org.thornex.musicparty.service;
 
 import org.springframework.stereotype.Service;
+import org.thornex.musicparty.config.AppProperties;
+import lombok.RequiredArgsConstructor;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.MusicQueueItem;
 import org.thornex.musicparty.dto.UserSummary;
@@ -11,7 +13,10 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Service
+@RequiredArgsConstructor
 public class MusicQueueManager {
+
+    private final AppProperties appProperties;
 
     // 使用并发安全的双端队列
     private final Deque<MusicQueueItem> queue = new ConcurrentLinkedDeque<>();
@@ -20,9 +25,6 @@ public class MusicQueueManager {
     // 用于实现“公平随机播放”：记录上一个播放的用户
     private final AtomicReference<String> lastPlayedUserToken = new AtomicReference<>("");
 
-    private static final int HISTORY_LIMIT = 50;
-    private static final int QUEUE_LIMIT = 1000;
-
     // --- Public API for Queue Manipulation ---
 
     /**
@@ -30,7 +32,7 @@ public class MusicQueueManager {
      */
     public synchronized MusicQueueItem add(Music music, UserSummary enqueuedBy, QueueItemStatus initialStatus) {
         // 检查队列是否已满
-        if (queue.size() >= QUEUE_LIMIT) {
+        if (queue.size() >= appProperties.getQueue().getMaxSize()) {
             return null;
         }
 
@@ -165,7 +167,7 @@ public class MusicQueueManager {
         synchronized (playHistory) {
             playHistory.removeIf(m -> m.id().equals(music.id()) && m.platform().equals(music.platform()));
             playHistory.add(0, music); // 加到最前面
-            if (playHistory.size() > HISTORY_LIMIT) {
+            if (playHistory.size() > appProperties.getQueue().getHistorySize()) {
                 playHistory.removeLast();
             }
         }

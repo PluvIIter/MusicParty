@@ -25,6 +25,13 @@ services:
       
       # 填入你的网易云 Cookie 
       - NETEASE_COOKIE=""
+
+      # 队列与限制配置
+      - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
+      - QUEUE_HISTORY_SIZE=50        # 历史记录保留数量
+      - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数
+      - CHAT_HISTORY_LIMIT=1000      # 聊天历史记录保留数量
+      - CACHE_MAX_SIZE=1GB           # 本地音乐缓存上限 (e.g. 512MB, 2GB)
     depends_on:
       - netease-api
     networks:
