@@ -38,7 +38,3 @@ services:
       - music-net
     volumes:
       - ./cached_media:/app/cached_media
-
-networks:
-  1panel-network:
-    external: true
