@@ -10,7 +10,7 @@
     </div>
 
     <!-- Virtual List Container -->
-    <div v-else v-bind="containerProps" class="flex-1 overflow-y-auto p-2">
+    <div v-else v-bind="containerProps" id="tutorial-queue" class="flex-1 overflow-y-auto p-2">
       <div v-bind="wrapperProps">
         <div
             v-for="{ data: item, index } in list"

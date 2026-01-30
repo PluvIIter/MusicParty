@@ -198,7 +198,7 @@ export function useAudio(audioRef, playerStore) {
                     }
                 }
             }
-        }, 500);
+        }, 200);
     });
 
     onUnmounted(() => {

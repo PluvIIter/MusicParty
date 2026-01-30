@@ -39,6 +39,7 @@
     <SearchModal :isOpen="showSearch" @close="showSearch = false" />
     <NamePromptModal />
     <ChatOverlay v-if="hasStarted" />
+    <TutorialOverlay v-if="hasStarted" />
   </div>
 </template>
 
@@ -57,6 +58,7 @@ import SearchModal from './components/SearchModal.vue';
 import NamePromptModal from './components/NamePromptModal.vue';
 import ChatOverlay from './components/ChatOverlay.vue';
 import ToastNotification from './components/ToastNotification.vue';
+import TutorialOverlay from './components/TutorialOverlay.vue';
 
 const player = usePlayerStore();
 const userStore = useUserStore();
