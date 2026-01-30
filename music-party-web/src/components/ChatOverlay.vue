@@ -161,6 +161,7 @@
       悬浮开关按钮 (拖拽手柄)
     -->
     <div
+        id="tutorial-chat"
         v-if="!isMobile || !chatStore.isOpen"
         ref="dragHandle"
         @pointerdown="handlePointerDown"

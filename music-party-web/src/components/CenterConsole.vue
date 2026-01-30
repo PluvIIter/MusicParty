@@ -77,6 +77,7 @@
         </div>
 
         <div
+            id="tutorial-like"
             class="relative w-64 h-64 md:w-72 md:h-72 bg-medical-50 chamfer-br flex items-center justify-center overflow-hidden transition-all duration-500 cursor-pointer border border-white shadow-2xl"
             :class="[
                  // 仅保留暂停时的缩放/灰度

@@ -13,6 +13,7 @@
 
     <!-- 封面 -->
     <div
+        id="tutorial-source"
         @click="openSourcePage"
         class="w-16 h-16 md:w-20 md:h-20 -mt-6 md:mt-0 shadow-lg border-2 border-white chamfer-br flex-shrink-0 relative z-10 bg-medical-800 cursor-pointer group overflow-hidden"
         title="Open Source Page"
@@ -118,16 +119,17 @@
       
       <!-- 播放控制 -->
       <div class="flex items-center gap-4 border-r border-medical-200 pr-6">
-        <button @click="player.toggleShuffle" :class="player.isShuffle ? 'text-accent' : 'text-medical-400'" title="Shuffle">
+        <button id="tutorial-random" @click="player.toggleShuffle" :class="player.isShuffle ? 'text-accent' : 'text-medical-400'" title="Shuffle">
             <Shuffle class="w-5 h-5" />
         </button>
 
         <!-- 新增：下载按钮 (放在 Shuffle 旁边或者 Next 后面) -->
-        <button @click="downloadCurrentMusic" class="text-medical-400 hover:text-accent transition-colors" title="Download">
+        <button id="tutorial-download" @click="downloadCurrentMusic" class="text-medical-400 hover:text-accent transition-colors" title="Download">
           <Download class="w-5 h-5" />
         </button>
         
         <button 
+            id="tutorial-pause"
             @click="player.togglePause" 
             class="w-10 h-10 bg-medical-900 text-white flex items-center justify-center hover:bg-accent transition-colors chamfer-tl"
         >
