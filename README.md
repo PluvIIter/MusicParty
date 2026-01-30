@@ -114,7 +114,7 @@ docker-compose up -d
 | `BILIBILI_SESSDATA`| 否 | B站账号的 SESSDATA。不填会导致搜索结果受限、无法解析 1080P/Hi-Res 音频流，且极易触发风控。 |
 | `NETEASE_COOKIE` | 否 | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。 |
 | `QUEUE_MAX_SIZE` | 否 | 播放队列最大长度，默认 `1000`。 |
-| `QUEUE_HISTORY_SIZE` | 否 | 历史记录保留数量，默认 `50`。 |
+| `QUEUE_HISTORY_SIZE` | 否 | 播放历史记录保留数量，默认 `50`。当播放列表里没有音乐时，会从历史记录随机抽选。 |
 | `PLAYLIST_IMPORT_LIMIT` | 否 | 导入歌单时的最大歌曲数限制，默认 `100`。 |
 | `CHAT_HISTORY_LIMIT` | 否 | 聊天历史记录保留数量，默认 `1000`。 |
 | `CACHE_MAX_SIZE` | 否 | 本地音乐缓存上限，默认 `1GB`。支持格式如 `512MB`, `2GB`。 |
