@@ -8,6 +8,7 @@
     <div class="space-y-3">
       <!-- 自己 -->
       <div
+          id="tutorial-rename"
           class="flex items-center gap-3 pb-3 border-b border-medical-200 border-dashed transition-all duration-300 p-2 -mx-2 rounded"
           :class="[
               isEnqueuerById(userStore.userToken) ? 'bg-accent/10 border-accent/30 shadow-sm' :
