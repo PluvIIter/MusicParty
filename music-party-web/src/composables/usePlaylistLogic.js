@@ -16,6 +16,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
     const searchUserKeyword = ref('');
     const userSearchResults = ref([]);
     const isSearchingUser = ref(false);
+    const isPlaylistsLoading = ref(false);
 
     // Pagination
     const offset = ref(0);
@@ -32,6 +33,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
             playlists.value = [];
             return;
         }
+        isPlaylistsLoading.value = true;
         try {
             const data = await musicApi.getUserPlaylists(platformRef.value, uid);
             playlists.value = data;
@@ -41,6 +43,8 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
             if (e.response?.data?.message) {
                 error(e.response.data.message);
             }
+        } finally {
+            isPlaylistsLoading.value = false;
         }
     };
 
@@ -152,6 +156,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         searchUserKeyword,
         userSearchResults,
         isSearchingUser,
+        isPlaylistsLoading,
         hasMore,
         isLoadingMore,
         bindings,
