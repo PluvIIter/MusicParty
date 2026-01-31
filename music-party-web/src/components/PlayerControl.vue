@@ -92,6 +92,7 @@
       <!-- 移动端简易控制 -->
       <div class="flex md:hidden justify-end gap-3 mt-2">
         <button
+            id="tutorial-random-mobile"
             @click="player.toggleShuffle"
             :disabled="!player.connected"
             class="p-2 border rounded-sm disabled:opacity-50 transition-colors"
@@ -101,10 +102,10 @@
         >
           <Shuffle class="w-4 h-4" />
         </button>
-        <button @click="downloadCurrentMusic" class="p-2 bg-medical-50 border border-medical-200 rounded-sm text-medical-500 active:bg-medical-200">
+        <button id="tutorial-download-mobile" @click="downloadCurrentMusic" class="p-2 bg-medical-50 border border-medical-200 rounded-sm text-medical-500 active:bg-medical-200">
           <Download class="w-4 h-4" />
         </button>
-         <button @click="player.togglePause" class="p-2 bg-medical-100 rounded-sm">
+         <button id="tutorial-pause-mobile" @click="player.togglePause" class="p-2 bg-medical-100 rounded-sm">
              <Play v-if="player.isPaused" class="w-4 h-4" />
              <Pause v-else class="w-4 h-4" />
          </button>

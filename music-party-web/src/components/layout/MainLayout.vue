@@ -12,6 +12,7 @@
       <div class="flex items-center gap-4">
         <!-- 移动端：显示人数按钮 -->
         <button
+            id="tutorial-rename-mobile"
             @click="toggleMobileUser"
             class="md:hidden relative flex items-center justify-center w-9 h-9 bg-medical-50 border border-medical-200 text-medical-500 hover:text-medical-900 transition-colors overflow-hidden group rounded-sm transform-gpu"
             :class="{ 'bg-medical-200 text-medical-900 border-medical-300': mobileUserOpen }"
@@ -62,7 +63,7 @@
 
       <!-- 移动端浮层：队列 -->
       <div class="md:hidden absolute top-4 right-4 z-40">
-        <button @click="toggleMobileQueue" class="p-2 bg-white shadow border border-medical-200 rounded-sm">
+        <button id="tutorial-queue-mobile" @click="toggleMobileQueue" class="p-2 bg-white shadow border border-medical-200 rounded-sm">
           <ListMusic class="w-5 h-5 text-medical-600"/>
         </button>
       </div>
