@@ -250,18 +250,6 @@ const triggerBurst = () => {
   }, 500); // 边框高亮持续 0.5s
 };
 
-onMounted(() => {
-  if (canvasRef.value) {
-    visualizer.mount(canvasRef.value);
-    visualizer.setPlaying(!player.isPaused);
-  }
-
-  // 监听全局自定义事件 (来自 socketHandler)
-  useEventListener(window, 'player:like', () => {
-    triggerBurst();
-  });
-});
-
 // === 歌词逻辑 ===
 const parsedLyrics = ref([]);
 const currentLineIndex = ref(-1);
@@ -282,30 +270,45 @@ watch(() => player.lyricText, (newVal) => {
   currentLineIndex.value = -1;
 });
 
-// === 伪日志 ===
-const logs = ref(['SYNC_RATE: 100%', 'AUDIO_STREAM: STABLE']);
+// === 系统日志逻辑 (Realtime) ===
+const logs = ref(['SYS_INIT: COMPLETED', 'LINK_START: OK']);
+const mountTime = Date.now();
 let logInterval;
-
-const isVisualizerActive = computed(() => {
-  return !!player.nowPlaying && !player.isPaused;
-});
+let updateInterval;
 
 const visualizer = new AudioVisualizer();
-let updateInterval; // 用于更新歌词进度，不涉及 Canvas
+const isVisualizerActive = computed(() => !!player.nowPlaying && !player.isPaused);
 
-// 监听状态变化
+// 监听状态变化以控制 Visualizer
 watch(isVisualizerActive, (active) => {
   visualizer.setPlaying(active);
 });
 
+// 脱敏工具
+const maskId = (id) => id ? `...${id.slice(-4).toUpperCase()}` : 'N/A';
+const formatMem = () => {
+  if (performance && performance.memory) {
+    return Math.floor(performance.memory.usedJSHeapSize / 1048576) + 'MB';
+  }
+  return 'N/A';
+};
+
+const pushLog = (msg) => {
+  logs.value.push(msg);
+  if (logs.value.length > 6) logs.value.shift();
+};
+
 onMounted(() => {
-  // 1. 挂载 Canvas
+  // 1. 挂载 Canvas & Visualizer
   if (canvasRef.value) {
     visualizer.mount(canvasRef.value);
     visualizer.setPlaying(isVisualizerActive.value);
   }
 
-  // 2. 歌词与日志更新逻辑
+  // 2. 监听全局自定义事件
+  useEventListener(window, 'player:like', () => triggerBurst());
+
+  // 3. 启动高频更新循环 (歌词进度 & 视觉同步)
   updateInterval = setInterval(() => {
     // 歌词进度更新
     if (player.nowPlaying && !player.isPaused && parsedLyrics.value.length > 0) {
@@ -317,25 +320,68 @@ onMounted(() => {
       }
       if (activeIdx !== currentLineIndex.value) currentLineIndex.value = activeIdx;
     }
-  }, 100); // 100ms 检查一次歌词即可，不需要 RAF
+  }, 100);
 
+  // 4. 启动系统状态日志循环 (真实数据)
   logInterval = setInterval(() => {
-    if (!player.isPaused) {
-      const templates = [
-        () => `MEM_HEAP: ${Math.floor(Math.random() * 128 + 64)}MB`,
-        () => `SYNC_LATENCY: ${Math.floor(Math.random() * 15 + 2)}ms`,
-        () => `SPECTRAL_FLUX: ${(Math.random() * 0.8).toFixed(4)}`,
-        () => `CORE_TEMP: ${Math.floor(Math.random() * 10 + 32)}°C`,
-        () => `PACKET_LOSS: 0.00%`,
-        () => `UPLINK: 0x${Math.floor(Math.random() * 16777215).toString(16).toUpperCase()}`
-      ];
-      const randomMsg = templates[Math.floor(Math.random() * templates.length)]();
-      logs.value.push(randomMsg);
-      // [MODIFIED END]
-      if (logs.value.length > 5) logs.value.shift();
-    }
-  }, 2000);
+    if (player.isPaused && Math.random() > 0.4) return;
 
+    const gfx = visualizer.getStatus();
+    const stateParams = [
+      // 网络与连接
+      { cond: true, msg: `UPLINK: ${player.connected ? 'ESTABLISHED' : 'SEARCHING'}` },
+      { cond: true, msg: `PEERS_ONLINE: ${userStore.onlineUsers.length}` },
+      { cond: true, msg: `STREAM_SYNC: ${player.streamListenerCount} NODES` },
+      { cond: true, msg: `SYNC_DELTA: ${Date.now() - player.lastSyncTime > 10000 ? '>10s' : (Date.now() - player.lastSyncTime) + 'ms'}` },
+      { cond: true, msg: `NET_ONLINE: ${navigator.onLine ? 'YES' : 'NO'}` },
+
+      // 播放器核心状态
+      { cond: player.isLoading, msg: `BUFFER_STATE: LOADING...` },
+      { cond: !player.isLoading, msg: `BUFFER_STATE: STABLE` },
+      { cond: true, msg: `QUEUE_LEN: ${player.queue.length}` },
+      { cond: true, msg: `PLAY_MODE: ${player.isShuffle ? 'SHUFFLE' : 'SEQUENTIAL'}` },
+      { cond: parsedLyrics.value.length > 0, msg: `LYRIC_SYNC: ${parsedLyrics.value.length} LINES` },
+      { cond: !player.isPaused, msg: `CUR_POS: ${Math.floor(player.getCurrentProgress())}MS` },
+
+      // 媒体信息 (脱敏)
+      { cond: !!player.nowPlaying, msg: `MEDIA_HASH: ${maskId(player.nowPlaying?.music?.id)}` },
+      { cond: !!player.nowPlaying, msg: `REQ_USER: ${maskId(player.nowPlaying?.enqueuedById)}` },
+      { cond: true, msg: `SESSION_ID: ${maskId(userStore.currentUser.sessionId)}` },
+
+      // 用户状态
+      { cond: true, msg: `USER_ROLE: ${userStore.isGuest ? 'GUEST' : 'AUTHENTICATED'}` },
+      { cond: Object.keys(userStore.bindings).length > 0, msg: `BIND_PLATFORMS: ${Object.keys(userStore.bindings).length}` },
+
+      // 视觉引擎状态
+      { cond: true, msg: `GFX_INTENSITY: ${gfx.intensity}` },
+      { cond: true, msg: `GFX_RINGS: ${gfx.rings}` },
+      { cond: gfx.active, msg: `GFX_ALPHA: ${gfx.alpha}` },
+
+      // 环境与性能
+      { cond: !!performance?.memory, msg: `JS_HEAP: ${formatMem()}` },
+      { cond: !!performance?.memory, msg: `HEAP_LIMIT: ${Math.floor(performance.memory.jsHeapSizeLimit / 1048576)}MB` },
+      { cond: true, msg: `CORE_THREADS: ${navigator.hardwareConcurrency || 'N/A'}` },
+      { cond: true, msg: `SCREEN_RES: ${window.screen.width}x${window.screen.height}` },
+      { cond: true, msg: `OS_PLATFORM: ${navigator.platform}` },
+      { cond: true, msg: `DPR_RATIO: ${window.devicePixelRatio}` },
+      { cond: true, msg: `UPTIME: ${Math.floor((Date.now() - mountTime) / 1000)}S` },
+      { cond: true, msg: `UI_THEME: ${window.matchMedia('(prefers-color-scheme: dark)').matches ? 'DARK' : 'LIGHT'}` },
+      { cond: true, msg: `LANG_SET: ${navigator.language.toUpperCase()}` },
+      { cond: true, msg: `TOUCH_NODE: ${navigator.maxTouchPoints > 0 ? 'ACTIVE' : 'NONE'}` },
+      { cond: true, msg: `LOCAL_TZ: ${Intl.DateTimeFormat().resolvedOptions().timeZone}` }
+    ];
+
+    // 随机抽取一条有意义的状态显示
+    const validStates = stateParams.filter(s => s.cond);
+    if (validStates.length > 0) {
+      const item = validStates[Math.floor(Math.random() * validStates.length)];
+      if (!logs.value[logs.value.length - 1]?.includes(item.msg.split(':')[0])) {
+         pushLog(item.msg);
+      }
+    }
+  }, 1000);
+
+  // 初始化歌词
   if (player.lyricText) parsedLyrics.value = parseLyrics(player.lyricText);
 });
 

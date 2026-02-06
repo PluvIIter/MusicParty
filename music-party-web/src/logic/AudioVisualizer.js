@@ -65,6 +65,19 @@ export class AudioVisualizer {
         this.isPlaying = isPlaying;
     }
 
+    /**
+     * 获取当前引擎状态指标
+     */
+    getStatus() {
+        return {
+            intensity: this.speedMultiplier.toFixed(2),
+            rings: this.rings.length,
+            bars: this.breatheBars,
+            active: this.isPlaying,
+            alpha: this.smoothAlpha.toFixed(2)
+        };
+    }
+
     //触发爆发特效
     impulse() {
         // 瞬间拉高参数
