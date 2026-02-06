@@ -257,6 +257,10 @@ public class LocalCacheService {
         if (!cacheIndex.containsKey(musicId)) return null;
         return cacheIndex.get(musicId).getStatus();
     }
+    
+    public CacheEntry getCacheEntry(String musicId) {
+        return cacheIndex.get(musicId);
+    }
 
     private void touch(String musicId) {
         CacheEntry entry = cacheIndex.get(musicId);

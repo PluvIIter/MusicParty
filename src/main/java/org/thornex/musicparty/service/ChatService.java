@@ -1,5 +1,6 @@
 package org.thornex.musicparty.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -9,27 +10,49 @@ import org.thornex.musicparty.enums.MessageType;
 import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.service.command.ChatCommand;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class ChatService {
 
-    // 使用并发双端队列存储消息
     private final ConcurrentLinkedDeque<ChatMessage> history = new ConcurrentLinkedDeque<>();
-
     private final SimpMessagingTemplate messagingTemplate;
     private final UserService userService;
     private final AppProperties appProperties;
+    
+    private final Map<String, ChatCommand> commandMap;
 
-    public ChatService(SimpMessagingTemplate messagingTemplate, UserService userService, AppProperties appProperties) {
+    public ChatService(SimpMessagingTemplate messagingTemplate, UserService userService, AppProperties appProperties, List<ChatCommand> commands) {
         this.messagingTemplate = messagingTemplate;
         this.userService = userService;
         this.appProperties = appProperties;
+        this.commandMap = commands.stream().collect(Collectors.toMap(ChatCommand::getCommand, Function.identity()));
+    }
+
+    /**
+     * 处理传入的消息
+     * @return true 如果消息被处理（不广播），false 如果应该继续广播
+     */
+    public boolean processIncomingMessage(String sessionId, String content) {
+        if (content.startsWith("//")) {
+            String fullCmd = content.substring(2).trim();
+            String[] parts = fullCmd.split("\\s+", 2);
+            String cmdKey = parts[0].toLowerCase();
+            String args = parts.length > 1 ? parts[1] : "";
+
+            ChatCommand handler = commandMap.get(cmdKey);
+            if (handler != null) {
+                userService.getUser(sessionId).ifPresent(user -> handler.execute(args, user));
+                return true; // 拦截消息
+            }
+        }
+        return false; // 普通消息，继续处理
     }
 
     public void addMessage(ChatMessage message) {
@@ -38,7 +61,7 @@ public class ChatService {
             history.removeFirst();
         }
     }
-
+// ... existing code ...
     /**
      * 分页获取历史记录 (从最新往旧推)
      * @param offset 跳过最近的多少条

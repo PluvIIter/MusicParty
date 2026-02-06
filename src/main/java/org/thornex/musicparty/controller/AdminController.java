@@ -23,13 +23,15 @@ public class AdminController {
     private final AuthController authController;
     private final NeteaseMusicApiService neteaseMusicApiService;
     private final BilibiliMusicApiService bilibiliMusicApiService;
+    private final org.thornex.musicparty.service.stream.LiveStreamService liveStreamService;
 
-    public AdminController(MusicPlayerService musicPlayerService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService) {
+    public AdminController(MusicPlayerService musicPlayerService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService, org.thornex.musicparty.service.stream.LiveStreamService liveStreamService) {
         this.musicPlayerService = musicPlayerService;
         this.adminPassword = appProperties.getAdminPassword();
         this.authController = authController;
         this.neteaseMusicApiService = neteaseMusicApiService;
         this.bilibiliMusicApiService = bilibiliMusicApiService;
+        this.liveStreamService = liveStreamService;
     }
 
     @PostMapping("/command")
@@ -47,6 +49,21 @@ public class AdminController {
         String action = parts[0].toUpperCase();
 
         switch (action) {
+            case "//STREAM":
+                if (parts.length < 2) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Usage: //STREAM <ON/OFF>"));
+                }
+                String subCmd = parts[1].toUpperCase();
+                if ("ON".equals(subCmd)) {
+                    liveStreamService.setEnabled(true);
+                    return ResponseEntity.ok(Map.of("message", "STREAM SERVICE ENABLED"));
+                } else if ("OFF".equals(subCmd)) {
+                    liveStreamService.setEnabled(false);
+                    return ResponseEntity.ok(Map.of("message", "STREAM SERVICE DISABLED"));
+                } else {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Invalid stream command"));
+                }
+
             case "//RESET":
                 musicPlayerService.resetSystem();
                 return ResponseEntity.ok(Map.of("message", "SYSTEM PURGED"));

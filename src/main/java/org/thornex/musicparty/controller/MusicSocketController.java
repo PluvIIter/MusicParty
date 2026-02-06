@@ -134,14 +134,21 @@ public class MusicSocketController {
     @MessageMapping("/chat")
     public void handleChat(ChatRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
-        userService.getUser(sessionId).ifPresent(user -> {
-            if (request.content() == null || request.content().trim().isEmpty()) return;
-            if (request.content().length() > 200) return;
+        
+        // 1. Check content validity
+        if (request.content() == null || request.content().trim().isEmpty()) return;
+        if (request.content().length() > 200) return;
 
+        // 2. Try process as command
+        if (chatService.processIncomingMessage(sessionId, request.content().trim())) {
+            return;
+        }
+
+        userService.getUser(sessionId).ifPresent(user -> {
             ChatMessage message = new ChatMessage(
                     java.util.UUID.randomUUID().toString(),
                     user.getToken(),
-                    user.getName(), // 这个名字作为 Snapshot 存着也行，但前端我们会用 Token 动态查
+                    user.getName(), 
                     request.content().trim(),
                     System.currentTimeMillis(),
                     MessageType.CHAT

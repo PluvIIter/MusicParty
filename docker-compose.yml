@@ -19,6 +19,7 @@ services:
     environment:
       - ADMIN_PASSWORD=admin123
       - NETEASE_API_URL=http://netease-api:3000
+      - BASE_URL=http://localhost:8848
       
       # 填入你的 B站 SESSDATA 
       - BILIBILI_SESSDATA=""

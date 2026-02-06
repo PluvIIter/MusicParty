@@ -52,6 +52,7 @@ public class MusicPlayerService {
     private final AtomicBoolean isShuffle = new AtomicBoolean(false);
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
     private final AtomicBoolean isLoading = new AtomicBoolean(false);
+    private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
 
     private final Map<String, Object> likeLock = new HashMap<>();
     private Set<String> currentLikedUserIds;
@@ -115,7 +116,7 @@ public class MusicPlayerService {
                 playNextInQueue();
             }
         } else {
-            if (userService.getOnlineUserSummaries().isEmpty()) {
+            if (userService.getOnlineUserSummaries().isEmpty() && !isStreamActive.get()) {
                 return;
             }
             if (!queueManager.getQueueSnapshot().isEmpty()) {
@@ -454,8 +455,35 @@ public class MusicPlayerService {
      */
     @EventListener
     public void onUserCountChanged(UserCountChangeEvent event) {
-        if (event.getOnlineUserCount() == 0) {
+        if (event.getOnlineUserCount() == 0 && !isStreamActive.get()) {
             enterIdleMode();
+        }
+    }
+
+    /**
+     * 监听直播流状态变化
+     */
+    @EventListener
+    public void onStreamStatusChanged(StreamStatusEvent event) {
+        boolean hasListeners = event.isHasListeners();
+        this.isStreamActive.set(hasListeners);
+        log.info("System: Stream active status changed to: {}", hasListeners);
+
+        if (hasListeners) {
+            // 场景 A: 列表为空，有人连入流 -> 尝试开始播放下一首
+            if (currentMusic.get() == null) {
+                playNextInQueue();
+            } 
+            // 场景 B: 正在暂停中，且网页端没人，有人连入流 -> 自动恢复播放
+            else if (isPaused.get() && userService.getOnlineUserSummaries().isEmpty()) {
+                log.info("System: Auto-resuming player for new stream listener.");
+                togglePause("SYSTEM");
+            }
+        } else {
+            // 场景 C: 流用户离开，且网页端也没人 -> 进入休眠
+            if (userService.getOnlineUserSummaries().isEmpty()) {
+                enterIdleMode();
+            }
         }
     }
 
