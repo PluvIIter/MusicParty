@@ -94,7 +94,7 @@
                 class="flex flex-col text-sm group"
                 :class="isSelf(item.msg) ? 'items-end' : 'items-start'"
             >
-              <div class="flex items-center gap-2 text-[10px] text-medical-400 mb-0.5 font-mono">
+              <div class="flex items-center gap-2 text-[10px] text-medical-400 mb-0.5 font-sans">
                 <span v-if="!isSelf(item.msg)">{{ userStore.resolveName(item.msg.userId, item.msg.userName) }}</span>
               </div>
               <div
@@ -113,7 +113,7 @@
                 class="flex items-start gap-2 text-xs text-medical-500/80 px-2 select-none opacity-80"
             >
               <Terminal class="w-3 h-3 mt-0.5 flex-shrink-0 opacity-50"/>
-              <span class="font-mono text-[10px] leading-relaxed break-all">
+              <span class="font-sans text-[10px] leading-relaxed break-all">
                 {{ item.msg.content }}
               </span>
             </div>
@@ -140,7 +140,7 @@
               @mousedown.stop
               @touchstart.stop
               placeholder="TYPE MESSAGE..."
-              class="flex-1 bg-medical-50 border border-medical-200 px-2 py-1.5 text-xs outline-none focus:border-accent font-mono transition-colors rounded-sm text-medical-900 placeholder-medical-300"
+              class="flex-1 bg-medical-50 border border-medical-200 px-2 py-1.5 text-xs outline-none focus:border-accent font-sans transition-colors rounded-sm text-medical-900 placeholder-medical-300"
           />
           <button
               @click="send"

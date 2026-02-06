@@ -31,7 +31,7 @@
               v-model="keyword"
               @keyup.enter="doSearch"
               :placeholder="isAdminMode ? '!!! ENTER ADMIN PASSWORD !!!' : '搜索音乐...'"
-              class="flex-1 border p-3 outline-none transition-colors duration-300"
+              class="flex-1 border p-3 outline-none transition-colors duration-300 font-sans"
               :class="isAdminMode ? 'bg-red-50 border-red-500 text-red-600 focus:border-red-600' : 'bg-medical-100 border-medical-200 focus:border-accent'"
           />
           <button
@@ -51,16 +51,16 @@
         <div class="md:w-1/3 md:h-auto flex-shrink-0 border-b md:border-b-0 md:border-r border-medical-200 flex-col bg-white transition-all"
              :class="mobileView === 'playlists' ? 'flex w-full h-full' : 'hidden md:flex'"
         >
-          <div class="p-2 md:p-3 bg-medical-100 font-mono text-xs font-bold text-medical-500 flex justify-between items-center">
-            <span>USER_PLAYLISTS</span>
+          <div class="p-2 md:p-3 bg-medical-100 text-xs font-bold text-medical-500 flex justify-between items-center">
+            <span>用户歌单</span>
           </div>
 
           <div class="flex-1 overflow-y-auto p-2 space-y-2">
             <!-- 未绑定 -->
             <div v-if="!bindings[platform]" class="p-4 border border-dashed border-medical-300 bg-medical-50">
-              <div class="text-xs text-medical-500 mb-2 font-mono text-center">LINK ACCOUNT TO SYNC</div>
+              <div class="text-xs text-medical-500 mb-2 text-center">绑定用户以获取用户歌单</div>
               <div class="flex gap-1">
-                <input v-model="searchUserKeyword" @keyup.enter="searchUser" placeholder="Search User..." class="flex-1 min-w-0 bg-white border border-medical-200 p-1 text-sm outline-none focus:border-accent" />
+                <input v-model="searchUserKeyword" @keyup.enter="searchUser" placeholder="搜索用户名" class="flex-1 min-w-0 bg-white border border-medical-200 p-1 text-sm outline-none focus:border-accent font-sans" />
                 <button @click="searchUser" class="bg-medical-200 hover:bg-medical-300 p-1"><Search class="w-4 h-4 text-medical-600"/></button>
               </div>
               <!-- 搜索结果列表 -->
@@ -110,12 +110,12 @@
             <!-- 歌单操作头 -->
             <div v-else-if="currentPlaylistId && listMode === 'playlist'" class="mb-4 p-4 bg-white border border-medical-200 flex justify-between items-center shadow-sm">
               <div>
-                <div class="text-xs font-mono text-medical-400">SELECTED PLAYLIST</div>
+                <div class="text-xs font-sans text-medical-400">用户歌单</div>
                 <div class="font-bold text-lg">{{ currentPlaylistId }}</div>
                 <div class="text-xs text-medical-400 font-mono">{{ songs.length }} LOADED</div>
               </div>
               <button @click="handleImportPlaylist" class="bg-medical-900 text-white px-4 py-2 text-sm font-bold hover:bg-accent transition-colors flex items-center gap-2">
-                <ListPlus class="w-4 h-4"/> <span class="hidden sm:inline">IMPORT ALL</span>
+                <ListPlus class="w-4 h-4"/> <span class="hidden sm:inline">导入全部</span>
               </button>
             </div>
 

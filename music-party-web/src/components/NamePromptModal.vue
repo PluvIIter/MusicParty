@@ -6,7 +6,7 @@
       <div class="absolute top-0 left-0 w-2 h-full bg-accent"></div>
 
       <h2 class="text-xl font-black text-medical-900 mb-2">IDENTIFICATION REQUIRED</h2>
-      <p class="text-xs font-mono text-medical-500 mb-6 leading-relaxed">
+      <p class="text-xs font-sans text-medical-500 mb-6 leading-relaxed">
         在操作之前，先给自己取个名字吧<br>
         也可以在用户列表中点击自己的名字重命名
       </p>

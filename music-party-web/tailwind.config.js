@@ -26,8 +26,11 @@ export default {
         }
       },
       fontFamily: {
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace','"Noto Sans SC"', '"Microsoft YaHei"',],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace', '"PingFang SC"', '"Microsoft YaHei"'],
         sans: [
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"Microsoft YaHei"',
           '"Noto Sans SC"',
           'ui-sans-serif',
           'system-ui',
@@ -37,8 +40,6 @@ export default {
           'Roboto',
           '"Helvetica Neue"',
           'Arial',
-          '"Zn ZenHei"', // 针对 Linux
-          '"Microsoft YaHei"', // 针对 Windows 本地
           'sans-serif'
         ],
       }
