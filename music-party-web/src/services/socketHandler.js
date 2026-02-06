@@ -38,8 +38,8 @@ function handleGameEvent(event) {
         return;
     }
 
-    // 过滤掉用户进入/离开的弹窗通知，避免刷屏
-    if (event.action === 'USER_JOIN' || event.action === 'USER_LEAVE') {
+    // 过滤掉用户进入/离开、以及歌曲开始播放的系统内部通知，避免弹窗干扰
+    if (event.action === 'USER_JOIN' || event.action === 'USER_LEAVE' || event.action === 'PLAY_START') {
         return;
     }
 
@@ -47,6 +47,7 @@ function handleGameEvent(event) {
     const actionMap = {
         // 播放控制
         'PLAY': (u) => `${u} 开始了播放`,
+        'PLAY_START': (u, p) => `正在播放: ${p}`,
         'PAUSE': (u) => `${u} 暂停了播放`,
         'RESUME': (u) => `${u} 继续了播放`,
         'SKIP': (u) => `${u} 切到了下一首`,
