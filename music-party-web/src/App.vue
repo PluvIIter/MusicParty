@@ -79,7 +79,7 @@ const startGame = () => {
 
 // 自动性能优化：切后台自动进入精简模式
 useEventListener(document, 'visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && hasStarted.value && !player.isPaused) {
+  if (document.visibilityState === 'hidden' && hasStarted.value && !player.isPaused && uiStore.autoLiteMode) {
     uiStore.isLiteMode = true;
   }
 });
