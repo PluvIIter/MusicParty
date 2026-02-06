@@ -47,7 +47,7 @@ public class StreamCommand implements ChatCommand {
         
         String link = base + "/radio/stream?key=" + token;
         
-        String msg = String.format("您的专属直播流链接已生成（24小时有效，4小时闲置失效）： %s", link);
+        String msg = String.format("直播流链接已生成（24小时有效，4小时闲置失效）： %s", link);
         sendPrivateSystemMessage(user, msg);
     }
 

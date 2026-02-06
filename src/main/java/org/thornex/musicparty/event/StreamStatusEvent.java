@@ -9,9 +9,11 @@ import org.springframework.context.ApplicationEvent;
 @Getter
 public class StreamStatusEvent extends ApplicationEvent {
     private final boolean hasListeners;
+    private final int listenerCount;
 
-    public StreamStatusEvent(Object source, boolean hasListeners) {
+    public StreamStatusEvent(Object source, boolean hasListeners, int listenerCount) {
         super(source);
         this.hasListeners = hasListeners;
+        this.listenerCount = listenerCount;
     }
 }

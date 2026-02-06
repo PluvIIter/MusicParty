@@ -18,6 +18,7 @@ export const usePlayerStore = defineStore('player', () => {
     const lyricText = ref('');
     const connected = ref(false);
     const isLoading = ref(false);
+    const streamListenerCount = ref(0);
     const lastControlTime = ref(0);
     const remotePosition = ref(0);
     const lastSyncTime = ref(0);
@@ -65,6 +66,7 @@ export const usePlayerStore = defineStore('player', () => {
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
         isLoading.value = state.isLoading || false;
+        streamListenerCount.value = state.streamListenerCount || 0;
 
         // 记录服务器发来的进度和收到包的时间
         if (state.nowPlaying) {
@@ -153,7 +155,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     return {
         nowPlaying, queue, isPaused, isShuffle, connected, isLoading, lyricText,
-        localProgress, isBuffering, isErrorState,
+        localProgress, isBuffering, isErrorState, streamListenerCount,
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
         enqueue, enqueuePlaylist, topSong, removeSong,

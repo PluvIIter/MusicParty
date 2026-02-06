@@ -1,5 +1,6 @@
 package org.thornex.musicparty.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +24,7 @@ public class StreamController {
     private final StreamTokenService streamTokenService;
 
     @GetMapping(value = "/stream", produces = "audio/mpeg")
-    public void streamAudio(HttpServletResponse response, @RequestParam(name = "key", required = false) String key) {
+    public void streamAudio(HttpServletRequest request, HttpServletResponse response, @RequestParam(name = "key", required = false) String key) {
         if (!liveStreamService.isEnabled()) {
             response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
             return;
@@ -42,16 +43,11 @@ public class StreamController {
         response.setHeader("Pragma", "no-cache");
         response.setHeader("Expires", "0");
 
+        String remoteAddr = getClientIp(request);
+        OutputStream os = null;
         try {
-            OutputStream os = response.getOutputStream();
-            liveStreamService.addListener(os);
-            
-            // 保持连接，直到客户端断开或服务器关闭
-            // Servlet 线程会被阻塞在这里。对于高并发场景应使用 WebFlux 或 AsyncServlet
-            // 但考虑到这是私人/小规模 Music Party，且 VRChat 实例人数有限，阻塞 Servlet 也是可接受的
-            // 简单实现：无限睡眠，实际数据写入由 Broadcaster 在另一个线程完成
-            // 注意：由于 os 被传递给了 LiveStreamService，写入是在 Service 的线程池中进行的
-            // 这里我们需要防止 Controller 方法返回，否则 Response 会被提交/关闭
+            os = response.getOutputStream();
+            liveStreamService.addListener(os, remoteAddr);
             
             synchronized (os) {
                 os.wait(); 
@@ -60,8 +56,24 @@ public class StreamController {
         } catch (IOException | InterruptedException e) {
             log.debug("Stream client disconnected: {}", e.getMessage());
         } finally {
-            // 清理工作通常由 Broadcaster 的异常处理完成，但这里也做一个兜底
-            // 注意：此时 response.getOutputStream() 可能已经不可用了
+            if (os != null) {
+                liveStreamService.removeListener(os, remoteAddr);
+            }
         }
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("X-Real-IP");
+        }
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+        // 处理多级代理情况，取第一个非 unknown 的 IP
+        if (ip != null && ip.contains(",")) {
+            ip = ip.split(",")[0].trim();
+        }
+        return ip;
     }
 }

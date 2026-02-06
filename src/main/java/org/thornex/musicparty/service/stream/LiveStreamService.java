@@ -48,6 +48,10 @@ public class LiveStreamService {
     // 广播器：负责将转码后的数据分发给所有 HTTP 客户端
     private final StreamBroadcaster broadcaster = new StreamBroadcaster();
 
+    // 统计唯一收听人数 (按 IP 地址去重)
+    private final java.util.Map<String, Integer> ipConnectionCount = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<OutputStream, String> streamToIp = new java.util.concurrent.ConcurrentHashMap<>();
+
     public LiveStreamService(LocalCacheService localCacheService, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
         this.localCacheService = localCacheService;
         this.eventPublisher = eventPublisher;
@@ -57,6 +61,23 @@ public class LiveStreamService {
     @PostConstruct
     public void init() {
         streamExecutor = Executors.newCachedThreadPool();
+        broadcaster.setOnClientRemoved(this::handleClientRemoved);
+    }
+
+    private void handleClientRemoved(OutputStream os) {
+        String ip = streamToIp.remove(os);
+        if (ip != null) {
+            ipConnectionCount.computeIfPresent(ip, (k, v) -> v > 1 ? v - 1 : null);
+            int currentCount = getStreamListenerCount();
+            if (currentCount == 0) {
+                if (hasListeners.compareAndSet(true, false)) {
+                    eventPublisher.publishEvent(new StreamStatusEvent(this, false, 0));
+                }
+                checkState();
+            } else {
+                eventPublisher.publishEvent(new StreamStatusEvent(this, true, currentCount));
+            }
+        }
     }
 
     @PreDestroy
@@ -79,28 +100,30 @@ public class LiveStreamService {
         return isEnabled.get();
     }
 
-    public void addListener(OutputStream outputStream) {
-        boolean previouslyHadNoListeners = !hasListeners.get();
+    public int getStreamListenerCount() {
+        return ipConnectionCount.size();
+    }
+
+    public void addListener(OutputStream outputStream, String remoteAddr) {
         hasListeners.set(true);
         broadcaster.addClient(outputStream);
         
-        if (previouslyHadNoListeners) {
-            eventPublisher.publishEvent(new StreamStatusEvent(this, true));
+        if (remoteAddr != null) {
+            streamToIp.put(outputStream, remoteAddr);
+            ipConnectionCount.merge(remoteAddr, 1, Integer::sum);
         }
+        
+        eventPublisher.publishEvent(new StreamStatusEvent(this, true, getStreamListenerCount()));
         
         checkState();
     }
 
-    public void removeListener(OutputStream outputStream) {
+    public void removeListener(OutputStream outputStream, String remoteAddr) {
         broadcaster.removeClient(outputStream);
-        if (broadcaster.getClientCount() == 0) {
-            if (hasListeners.compareAndSet(true, false)) {
-                eventPublisher.publishEvent(new StreamStatusEvent(this, false));
-            }
-            // 无人收听时，延迟关闭或立即关闭？为了节省资源，这里选择立即停止转码
-            // 如果希望保留一点缓冲，可以加个延迟任务
-            checkState();
-        }
+        // 注意：broadcaster.removeClient 会触发 handleClientRemoved，
+        // 而 handleClientRemoved 已经处理了 ipConnectionCount 和事件发布。
+        // 这里主要作为一个兜底，确保即便 broadcaster 没调到（比如连接还没加入 broadcaster 就断了），也能清理状态。
+        handleClientRemoved(outputStream);
     }
 
     // --- Event Handling ---

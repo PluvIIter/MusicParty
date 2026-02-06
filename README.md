@@ -22,6 +22,7 @@
 *   **房间权限**：支持设置房间密码，或管理员指令实时锁定/解锁房间。
 *   **实时互动**：内置聊天室、点赞动效、系统日志广播。
 *   **智能队列**：实现“公平随机”算法，防止单人霸榜。
+*   **直播音频流**：可以开启直播音频流，使用一个简单的链接来实时收听，用于类似于vrChat等类似场景。
 
 ## Docker 一键部署（推荐）
 
@@ -65,6 +66,9 @@ services:
       # 网易云 API 地址 (指向上面的容器)
       - NETEASE_API_URL=http://netease-api:3000
 
+      # 服务域名，用于直播流链接的拼接
+      - BASE_URL=http://localhost:8848
+
       # 需要对应平台的凭证才能使用曲库
       # B站 SESSDATA 
       - BILIBILI_SESSDATA="your_bilibili_sessdata_here"
@@ -104,23 +108,24 @@ docker-compose up -d
 
 ## 环境变量说明
 
-| 变量名 | 必填 | 说明 |
-| :--- | :--- | :--- |
-| `APP_AUTHOR_NAME` | 否 | 页面显示的作者名字，地点在左上角标题后面，以by XXX的形式。 |
-| `APP_BACK_WORDS` | 否 | 中间专辑封面后方的装饰性背景字，强制大写。 |
-| `ADMIN_PASSWORD` | 是 | 管理员密码，用于在搜索框输入指令控制系统。 |
-| `NETEASE_API_URL` | 是 | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。 |
-| `BILIBILI_SESSDATA`| 否 | B站账号的 SESSDATA。不填会导致搜索结果受限、无法解析 1080P/Hi-Res 音频流，且极易触发风控。 |
-| `NETEASE_COOKIE` | 否 | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。 |
-| `QUEUE_MAX_SIZE` | 否 | 播放队列最大长度，默认 `1000`。 |
-| `QUEUE_HISTORY_SIZE` | 否 | 播放历史记录保留数量，默认 `50`。当播放列表里没有音乐时，会从历史记录随机抽选。 |
-| `PLAYLIST_IMPORT_LIMIT` | 否 | 导入歌单时的最大歌曲数限制，默认 `100`。 |
-| `CHAT_HISTORY_LIMIT` | 否 | 聊天历史记录保留数量，默认 `1000`。 |
-| `CACHE_MAX_SIZE` | 否 | 本地音乐缓存上限，默认 `1GB`。支持格式如 `512MB`, `2GB`。 |
+| 变量名                     | 必填 | 说明                                                                |
+|:------------------------|:---|:------------------------------------------------------------------|
+| `APP_AUTHOR_NAME`       | 否  | 页面显示的作者名字，地点在左上角标题后面，以by XXX的形式。                                  |
+| `APP_BACK_WORDS`        | 否  | 中间专辑封面后方的装饰性背景字，强制大写。                                             |
+| `ADMIN_PASSWORD`        | 是  | 管理员密码，用于在搜索框输入指令控制系统。                                             |
+| `NETEASE_API_URL`       | 是  | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。 |
+| `BASE_URL`              | 否  | 服务的域名。用户获取直播流链接时，拼接在前面。                                           |
+| `BILIBILI_SESSDATA`     | 否  | B站账号的 SESSDATA。不填会导致搜索结果受限、无法解析 1080P/Hi-Res 音频流，且极易触发风控。         |
+| `NETEASE_COOKIE`        | 否  | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。                                |
+| `QUEUE_MAX_SIZE`        | 否  | 播放队列最大长度，默认 `1000`。                                               |
+| `QUEUE_HISTORY_SIZE`    | 否  | 播放历史记录保留数量，默认 `50`。当播放列表里没有音乐时，会从历史记录随机抽选。                        |
+| `PLAYLIST_IMPORT_LIMIT` | 否  | 导入歌单时的最大歌曲数限制，默认 `100`。                                           |
+| `CHAT_HISTORY_LIMIT`    | 否  | 聊天历史记录保留数量，默认 `1000`。                                             |
+| `CACHE_MAX_SIZE`        | 否  | 本地音乐缓存上限，默认 `1GB`。支持格式如 `512MB`, `2GB`。                           |
 
 ---
 
-## 搜索框指令 (Admin Commands)
+## 搜索框指令
 
 在前端**搜索框**中输入以下指令，并在回车后输入管理员密码：
 
@@ -128,9 +133,18 @@ docker-compose up -d
 *   `//CLEAR`: **清空队列**。保留当前播放的歌曲，清空等待队列。
 *   `//PASS <新密码>`: **设置房间密码**。例如 `//PASS 123456`。
 *   `//OPEN`: **开放房间**。取消房间密码，允许任何人进入。
+*   `//STREAM ON`: **开放直播流**。允许用户通过直播流链接进行收听。默认关闭。
+*   `//STREAM OFF`: **关闭直播流**。禁止用户通过直播流链接进行收听。此为默认项。
 *   `//COOKIE <platform> <value>`: 动态更新 Cookie。
     *   例：`//COOKIE netease MUSIC_U=xxxx...`
     *   例：`//COOKIE bilibili xxxxx...`
+
+---
+
+## 直播流链接获取
+1. 确保已经使用`//STREAM ON`启用了直播流。
+2. 在聊天窗口中输入`//stream`
+3. 切换到系统日志窗口，即可看到自己的直播流链接。
 
 ---
 
