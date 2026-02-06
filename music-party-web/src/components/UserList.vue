@@ -43,7 +43,7 @@
           <div class="bar bar-2 bg-accent"></div>
           <div class="bar bar-3 bg-accent"></div>
         </div>
-        <div v-else class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+        <div v-else class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
       </div>
 
       <!-- 其他人 -->
@@ -52,8 +52,8 @@
           :key="u.sessionId"
           class="flex items-center gap-3 transition-all duration-300 p-2 -mx-2 rounded"
           :class="[
-              isEnqueuerById(u.token) ? 'opacity-100 bg-accent/5' :
-              isLikedUser(u.token) ? 'opacity-90 bg-accent/5' : 'opacity-60' // 点赞者背景
+              isEnqueuerById(u.token) ? 'bg-accent/5' :
+              isLikedUser(u.token) ? 'bg-accent/5' : ''
           ]"
       >
         <div
@@ -81,7 +81,21 @@
           <div class="bar bar-2 bg-accent"></div>
           <div class="bar bar-3 bg-accent"></div>
         </div>
-        <div v-else class="w-2 h-2 bg-medical-300 rounded-full"></div>
+        <div v-else class="w-2 h-2 bg-accent rounded-full"></div>
+      </div>
+    </div>
+
+    <!-- 直播流人数 -->
+    <div v-if="playerStore.streamListenerCount > 0" class="mt-4 pt-3 border-t border-medical-200 border-dashed">
+      <div class="flex items-center gap-3 p-2 -mx-2 opacity-60">
+        <div class="w-8 h-8 flex items-center justify-center bg-medical-200 text-medical-500 font-bold text-[10px] rounded-none">
+          LIVE
+        </div>
+        <div class="text-xs font-bold text-medical-800">
+          流在线 [{{ playerStore.streamListenerCount }}]
+        </div>
+        <div class="flex-1"></div>
+        <div class="w-2 h-2 bg-medical-400 rounded-full animate-pulse"></div>
       </div>
     </div>
   </div>

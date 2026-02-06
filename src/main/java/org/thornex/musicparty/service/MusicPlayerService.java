@@ -13,6 +13,7 @@ import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
+import org.thornex.musicparty.service.stream.LiveStreamService;
 import org.thornex.musicparty.config.AppProperties;
 
 import java.time.Duration;
@@ -33,6 +34,7 @@ public class MusicPlayerService {
     private final UserService userService;
     private final LocalCacheService localCacheService;
     private final ChatService chatService;
+    private final LiveStreamService liveStreamService;
 
     // --- Refactored Dependencies ---
     private final MusicQueueManager queueManager;
@@ -66,7 +68,8 @@ public class MusicPlayerService {
 
     public MusicPlayerService(List<IMusicApiService> apiServices, UserService userService,
                               LocalCacheService localCacheService,
-                              ChatService chatService, MusicQueueManager queueManager,
+                              ChatService chatService, LiveStreamService liveStreamService,
+                              MusicQueueManager queueManager,
                               ApplicationEventPublisher eventPublisher,
                               AppProperties appProperties) {
         this.apiServiceMap = apiServices.stream()
@@ -74,6 +77,7 @@ public class MusicPlayerService {
         this.userService = userService;
         this.localCacheService = localCacheService;
         this.chatService = chatService;
+        this.liveStreamService = liveStreamService;
         this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
@@ -241,7 +245,8 @@ public class MusicPlayerService {
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
                 // 移除了多余的时间字段
-                isLoading.get()
+                isLoading.get(),
+                liveStreamService.getStreamListenerCount()
         );
     }
 
@@ -467,7 +472,7 @@ public class MusicPlayerService {
     public void onStreamStatusChanged(StreamStatusEvent event) {
         boolean hasListeners = event.isHasListeners();
         this.isStreamActive.set(hasListeners);
-        log.info("System: Stream active status changed to: {}", hasListeners);
+        log.info("System: Stream active status changed to: {}, Count: {}", hasListeners, event.getListenerCount());
 
         if (hasListeners) {
             // 场景 A: 列表为空，有人连入流 -> 尝试开始播放下一首
@@ -485,6 +490,7 @@ public class MusicPlayerService {
                 enterIdleMode();
             }
         }
+        broadcastFullPlayerState();
     }
 
     /**

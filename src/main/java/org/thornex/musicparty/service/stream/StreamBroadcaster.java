@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.Consumer;
 
 /**
  * 负责将音频数据分发给多个 HTTP 连接
@@ -14,11 +15,11 @@ import java.util.concurrent.CopyOnWriteArraySet;
 public class StreamBroadcaster {
 
     private final Set<OutputStream> clients = new CopyOnWriteArraySet<>();
-    
-    // 简单的静音帧 (MP3 Header + Silence data)，这里仅作占位示意
-    // 实际生产中最好用 FFmpeg 生成一段静音流，或者简单地什么都不发(客户端会缓冲)
-    // 为防止客户端超时断开，发送空字节在某些播放器上可能有效，在 MP3 流中可能导致杂音
-    // 更好的做法是保持 Socket 打开但不发送数据，直到有新数据
+    private Consumer<OutputStream> onClientRemoved;
+
+    public void setOnClientRemoved(Consumer<OutputStream> onClientRemoved) {
+        this.onClientRemoved = onClientRemoved;
+    }
     
     public void addClient(OutputStream os) {
         clients.add(os);
@@ -26,8 +27,12 @@ public class StreamBroadcaster {
     }
 
     public void removeClient(OutputStream os) {
-        clients.remove(os);
-        log.info("Stream client disconnected. Total: {}", clients.size());
+        if (clients.remove(os)) {
+            log.info("Stream client disconnected. Total: {}", clients.size());
+            if (onClientRemoved != null) {
+                onClientRemoved.accept(os);
+            }
+        }
     }
 
     public int getClientCount() {
