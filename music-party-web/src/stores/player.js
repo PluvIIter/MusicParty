@@ -104,6 +104,12 @@ export const usePlayerStore = defineStore('player', () => {
         socketService.connect(authHeaders, callbacks, subscriptions);
     };
 
+    const tryReconnect = () => {
+        if (!connected.value) {
+            socketService.forceReconnect();
+        }
+    };
+
     // --- 指令发送 ---
     const playNext = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_NEXT);
     const togglePause = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_PAUSE);
@@ -148,7 +154,7 @@ export const usePlayerStore = defineStore('player', () => {
     return {
         nowPlaying, queue, isPaused, isShuffle, connected, isLoading, lyricText,
         localProgress, isBuffering, isErrorState,
-        connect, getCurrentProgress, syncState, // 导出 syncState
+        connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
         enqueue, enqueuePlaylist, topSong, removeSong,
         bindAccount, renameUser, sendChatMessage, sendLike

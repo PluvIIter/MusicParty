@@ -81,6 +81,16 @@ class SocketService {
     }
 
     /**
+     * 强制重连 (用于网络恢复或从后台切回时)
+     */
+    forceReconnect() {
+        if (this.client && !this.client.active) {
+            console.log('Force reconnecting socket...');
+            this.client.activate();
+        }
+    }
+
+    /**
      * 断开连接
      */
     disconnect() {
