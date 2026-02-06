@@ -1,16 +1,5 @@
 <template>
   <div class="h-24 bg-white border-t border-medical-200 flex items-center px-4 md:px-8 relative z-50 shadow-lg">
-    <!-- 音频元素 -->
-    <audio
-        ref="audioRef"
-        :src="audioSrc"
-        @error="handleError"
-        @waiting="isBuffering = true"
-        @playing="isBuffering = false"
-        @canplay="checkAutoPlay"
-        referrerpolicy="no-referrer"
-    ></audio>
-
     <!-- 封面 -->
     <div
         id="tutorial-source"
@@ -56,8 +45,8 @@
         <!-- 时间显示 -->
         <div class="hidden md:block font-mono text-xs text-medical-800/60 flex-shrink-0 ml-2">
            <span v-if="player.isLoading" class="text-accent animate-pulse">SYNCING SERVER...</span>
-           <span v-if="isBuffering" class="animate-pulse text-accent">BUFFERING...</span>
-           <span v-else>{{ formatDuration(localProgress) }} / {{ formatDuration(nowPlaying?.music.duration || 0) }}</span>
+           <span v-if="player.isBuffering" class="animate-pulse text-accent">BUFFERING...</span>
+           <span v-else>{{ formatDuration(player.localProgress) }} / {{ formatDuration(nowPlaying?.music.duration || 0) }}</span>
         </div>
       </div>
 
@@ -78,13 +67,12 @@
 
         <div
             class="h-full transition-all duration-300 ease-linear relative"
-            :class="isErrorState ? 'bg-red-500' : 'bg-accent'"
+            :class="player.isErrorState ? 'bg-red-500' : 'bg-accent'"
             :style="{ width: progressPercent + '%' }"
         >
           <div
-              v-if="!isErrorState"
-              class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 transition-all duration-300"
-              :class="retryCount > 0 ? 'bg-yellow-500 scale-150 animate-pulse shadow-md shadow-yellow-500/50' : 'bg-accent'"
+              v-if="!player.isErrorState"
+              class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 transition-all duration-300 bg-accent"
           ></div>
         </div>
       </div>
@@ -146,8 +134,8 @@
       <!-- 音量控制 -->
       <div class="flex items-center gap-2 group">
         <button @click="toggleMute" class="text-medical-500 hover:text-medical-900 transition-colors">
-          <VolumeX v-if="volume === 0" class="w-5 h-5" />
-          <Volume1 v-else-if="volume < 0.5" class="w-5 h-5" />
+          <VolumeX v-if="ui.volume === 0" class="w-5 h-5" />
+          <Volume1 v-else-if="ui.volume < 0.5" class="w-5 h-5" />
           <Volume2 v-else class="w-5 h-5" />
         </button>
 
@@ -162,7 +150,7 @@
             <!-- 橙色填充层 -->
             <div
                 class="h-full bg-medical-500 group-hover:bg-accent transition-colors relative"
-                :style="{ width: (volume * 100) + '%' }"
+                :style="{ width: (ui.volume * 100) + '%' }"
             >
               <!-- 装饰滑块 (只在悬停时显示) -->
               <div class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-3 bg-medical-900 group-hover:bg-accent transition-colors scale-0 group-hover:scale-100"></div>
@@ -171,7 +159,7 @@
         </div>
 
         <div class="w-8 text-[10px] font-mono text-medical-400 text-right">
-          {{ Math.round(volume * 100) }}%
+          {{ Math.round(ui.volume * 100) }}%
         </div>
       </div>
     </div>
@@ -179,58 +167,40 @@
 </template>
 
 <script setup>
-// <script setup> 内
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
-import { useAudio } from '../composables/useAudio'; // 🟢
+import { useUiStore } from '../stores/ui';
 import { formatDuration } from '../utils/format';
-import { STORAGE_KEYS } from '../constants/keys';
 import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink, Zap } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { useToast } from '../composables/useToast';
 
 const player = usePlayerStore();
-const audioRef = ref(null);
+const ui = useUiStore();
 const volumeTrackRef = ref(null);
 const { info, error } = useToast();
 
-const {
-  localProgress,
-  isBuffering,
-  isErrorState,
-  retryCount,
-  handleError,
-  checkAutoPlay
-} = useAudio(audioRef, player);
-
 const nowPlaying = computed(() => player.nowPlaying);
 const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
-const audioSrc = computed(() => nowPlaying.value?.music.url || '');
 
 // 计算进度百分比
 const progressPercent = computed(() => {
   if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
-  return Math.min(100, (localProgress.value / nowPlaying.value.music.duration) * 100);
+  return Math.min(100, (player.localProgress / nowPlaying.value.music.duration) * 100);
 });
 
-// --- 音量逻辑 (暂时保留在组件内，因为涉及 UI 交互) ---
-const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
+// --- 音量逻辑 ---
 const lastVolume = ref(0.5);
 const isDraggingVolume = ref(false);
 
 const toggleMute = () => {
-  if (volume.value > 0) {
-    lastVolume.value = volume.value;
-    volume.value = 0;
+  if (ui.volume > 0) {
+    lastVolume.value = ui.volume;
+    ui.setVolume(0);
   } else {
-    volume.value = lastVolume.value > 0 ? lastVolume.value : 0.5;
+    ui.setVolume(lastVolume.value > 0 ? lastVolume.value : 0.5);
   }
 };
-
-watch(volume, (newVal) => {
-  localStorage.setItem(STORAGE_KEYS.VOLUME, newVal);
-  if (audioRef.value) audioRef.value.volume = newVal;
-});
 
 // 音量拖拽
 const updateVolumeByMouse = (e) => {
@@ -238,7 +208,7 @@ const updateVolumeByMouse = (e) => {
   const rect = volumeTrackRef.value.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const percentage = Math.max(0, Math.min(1, x / rect.width));
-  volume.value = parseFloat(percentage.toFixed(2));
+  ui.setVolume(parseFloat(percentage.toFixed(2)));
 };
 
 const handleVolumeMouseDown = (e) => {
@@ -284,12 +254,6 @@ const openSourcePage = () => {
   let url = platform === 'netease' ? `https://music.163.com/#/song?id=${id}` : `https://www.bilibili.com/video/${id}`;
   if (url) window.open(url, '_blank');
 };
-
-onMounted(() => {
-  if (audioRef.value) {
-    audioRef.value.volume = volume.value;
-  }
-});
 
 onUnmounted(() => {
   window.removeEventListener('mousemove', handleVolumeMouseMove);

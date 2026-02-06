@@ -21,6 +21,9 @@ export const usePlayerStore = defineStore('player', () => {
     const lastControlTime = ref(0);
     const remotePosition = ref(0);
     const lastSyncTime = ref(0);
+    const localProgress = ref(0);
+    const isBuffering = ref(false);
+    const isErrorState = ref(false);
 
     const userStore = useUserStore();
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
@@ -144,6 +147,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     return {
         nowPlaying, queue, isPaused, isShuffle, connected, isLoading, lyricText,
+        localProgress, isBuffering, isErrorState,
         connect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
         enqueue, enqueuePlaylist, topSong, removeSong,
