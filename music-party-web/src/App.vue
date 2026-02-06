@@ -4,6 +4,7 @@
   <ToastNotification ref="toastInstance" />
 
   <div class="h-screen w-screen overflow-hidden font-sans">
+    <AudioEngine />
     <!-- 1. 认证遮罩 -->
     <AuthOverlay @unlocked="userStore.isAuthPassed = true" v-if="!userStore.isAuthPassed" />
 
@@ -38,21 +39,24 @@
     <!-- 4. 全局弹窗 -->
     <SearchModal :isOpen="showSearch" @close="showSearch = false" />
     <NamePromptModal />
-    <ChatOverlay v-if="hasStarted" />
-    <TutorialOverlay v-if="hasStarted" />
+    <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode" />
+    <TutorialOverlay v-if="hasStarted && !uiStore.isLiteMode" />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useEventListener } from '@vueuse/core';
 import { usePlayerStore } from './stores/player';
 import { useUserStore } from './stores/user';
+import { useUiStore } from './stores/ui';
 import { useToast } from './composables/useToast';
 
 // Components
 import MainLayout from './components/layout/MainLayout.vue';
 import CenterConsole from './components/CenterConsole.vue';
 import PlayerControl from './components/PlayerControl.vue';
+import AudioEngine from './components/AudioEngine.vue';
 import AuthOverlay from './components/AuthOverlay.vue';
 import SearchModal from './components/SearchModal.vue';
 import NamePromptModal from './components/NamePromptModal.vue';
@@ -62,6 +66,7 @@ import TutorialOverlay from './components/TutorialOverlay.vue';
 
 const player = usePlayerStore();
 const userStore = useUserStore();
+const uiStore = useUiStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
 const toastInstance = ref(null);
@@ -71,6 +76,13 @@ const startGame = () => {
   hasStarted.value = true;
   player.connect();
 };
+
+// 自动性能优化：切后台自动进入精简模式
+useEventListener(document, 'visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && hasStarted.value && !player.isPaused) {
+    uiStore.isLiteMode = true;
+  }
+});
 
 const handleSearchClick = () => {
   // 简单的搜索逻辑代理
