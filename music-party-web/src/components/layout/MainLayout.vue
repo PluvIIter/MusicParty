@@ -128,7 +128,7 @@ const handleSearchClick = () => {
 
       <div class="relative z-10 w-full max-w-lg flex flex-col items-center gap-10">
         <!-- 头部状态 (文案简化) -->
-        <div class="flex items-center gap-3 font-mono text-[10px] text-medical-400 tracking-[0.2em] uppercase">
+        <div class="flex items-center gap-3 text-[10px] text-medical-400 tracking-[0.2em] uppercase font-sans">
           <Activity class="w-3 h-3 text-accent animate-pulse" />
           <span>精简模式</span>
         </div>
@@ -152,7 +152,7 @@ const handleSearchClick = () => {
             </div>
 
             <!-- 歌曲信息区 -->
-            <div class="flex-1 min-w-0 flex flex-col items-center md:items-start text-center md:text-left">
+            <div class="flex-1 min-w-0 flex flex-col items-center md:items-start text-center md:text-left font-sans">
                <span class="text-[10px] font-mono text-accent mb-1 tracking-widest uppercase">正在播放</span>
                <h2 class="text-2xl md:text-3xl font-black text-medical-900 tracking-tighter leading-tight mb-2 line-clamp-2">
                  {{ playerStore.nowPlaying?.music.name || '系统待机' }}

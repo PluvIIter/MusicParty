@@ -36,7 +36,7 @@
           />
           <button
               @click="handleSearchAction"
-              class="text-white px-3 md:px-6 py-2 font-bold transition-colors text-xs md:text-base flex-shrink-0"
+              class="text-white px-3 md:px-6 py-2 font-bold transition-colors text-xs md:text-base flex-shrink-0 font-sans"
               :class="isAdminMode ? 'bg-red-600 hover:bg-red-700' : 'bg-accent hover:bg-accent-hover'"
           >
             {{ isAdminMode ? 'UNLOCK' : 'SEARCH' }}
@@ -51,14 +51,14 @@
         <div class="md:w-1/3 md:h-auto flex-shrink-0 border-b md:border-b-0 md:border-r border-medical-200 flex-col bg-white transition-all"
              :class="mobileView === 'playlists' ? 'flex w-full h-full' : 'hidden md:flex'"
         >
-          <div class="p-2 md:p-3 bg-medical-100 text-xs font-bold text-medical-500 flex justify-between items-center">
+          <div class="p-2 md:p-3 bg-medical-100 text-xs font-bold text-medical-500 flex justify-between items-center font-sans">
             <span>用户歌单</span>
           </div>
 
           <div class="flex-1 overflow-y-auto p-2 space-y-2">
             <!-- 未绑定 -->
             <div v-if="!bindings[platform]" class="p-4 border border-dashed border-medical-300 bg-medical-50">
-              <div class="text-xs text-medical-500 mb-2 text-center">绑定用户以获取用户歌单</div>
+              <div class="text-xs text-medical-500 mb-2 text-center font-sans">绑定用户以获取用户歌单</div>
               <div class="flex gap-1">
                 <input v-model="searchUserKeyword" @keyup.enter="searchUser" placeholder="搜索用户名" class="flex-1 min-w-0 bg-white border border-medical-200 p-1 text-sm outline-none focus:border-accent font-sans" />
                 <button @click="searchUser" class="bg-medical-200 hover:bg-medical-300 p-1"><Search class="w-4 h-4 text-medical-600"/></button>
@@ -114,7 +114,7 @@
                 <div class="font-bold text-lg">{{ currentPlaylistId }}</div>
                 <div class="text-xs text-medical-400 font-mono">{{ songs.length }} LOADED</div>
               </div>
-              <button @click="handleImportPlaylist" class="bg-medical-900 text-white px-4 py-2 text-sm font-bold hover:bg-accent transition-colors flex items-center gap-2">
+              <button @click="handleImportPlaylist" class="bg-medical-900 text-white px-4 py-2 text-sm font-bold hover:bg-accent transition-colors flex items-center gap-2 font-sans">
                 <ListPlus class="w-4 h-4"/> <span class="hidden sm:inline">导入全部</span>
               </button>
             </div>

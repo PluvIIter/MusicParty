@@ -148,16 +148,30 @@ export function useAudio(audioRef, playerStore) {
 
     // 页面可见性变化监听
     // 当重新回到前台时，如果发现 WebSocket 断了，应该自动重连
-    // 这里主要处理 Wake Lock 的重新获取
+    // 这里主要处理 Wake Lock 的重新获取以及 Socket 的快速恢复
     const handleVisibilityChange = async () => {
-        if (document.visibilityState === 'visible' && !playerStore.isPaused) {
-            await requestWakeLock();
+        if (document.visibilityState === 'visible') {
+            // 1. 尝试恢复 Wake Lock
+            if (!playerStore.isPaused) {
+                await requestWakeLock();
+            }
+            // 2. 检查连接状态，必要时重连
+            playerStore.tryReconnect();
+        }
+    };
+    
+    // 网络状态监听
+    const handleNetworkChange = () => {
+        if (navigator.onLine) {
+            console.log('[Network] Back online, checking socket...');
+            playerStore.tryReconnect();
         }
     };
 
     // === 5. 进度条同步 ===
     onMounted(() => {
         document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('online', handleNetworkChange);
 
         syncTimer = setInterval(() => {
             if (!playerStore.nowPlaying) {
@@ -205,6 +219,7 @@ export function useAudio(audioRef, playerStore) {
 
     onUnmounted(() => {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('online', handleNetworkChange);
         clearInterval(syncTimer);
         releaseWakeLock();
     });

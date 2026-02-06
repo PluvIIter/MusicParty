@@ -26,13 +26,13 @@ export default {
         }
       },
       fontFamily: {
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace', '"PingFang SC"', '"Microsoft YaHei"'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace', '"PingFang SC"', '"Microsoft YaHei"'],
         sans: [
+          '"Noto Sans SC"',
           '"PingFang SC"',
           '"Hiragino Sans GB"',
           '"Microsoft YaHei"',
-          '"Noto Sans SC"',
-          'ui-sans-serif',
+          '"微软雅黑"',
           'system-ui',
           '-apple-system',
           'BlinkMacSystemFont',
