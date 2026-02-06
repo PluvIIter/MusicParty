@@ -189,10 +189,12 @@ export function useAudio(audioRef, playerStore) {
                 // 如果是播放状态，只有偏差过大才对齐
                 else {
                     const domTime = audioRef.value.currentTime * 1000;
-                    // 允许 2 秒的误差，因为网络延迟和 JS 执行时间
-                    if (Math.abs(domTime - targetTime) > 2000) {
+                    // 动态调整阈值：前台 2s，后台 10s (避免后台节流导致的频繁 seek 卡顿)
+                    const threshold = document.hidden ? 10000 : 2000;
+                    
+                    if (Math.abs(domTime - targetTime) > threshold) {
                         if (audioRef.value.readyState >= 2) {
-                            console.log(`[Sync] Correcting time: ${domTime} -> ${targetTime}`);
+                            console.log(`[Sync] Correcting time (${document.hidden ? 'bg' : 'fg'}): ${domTime} -> ${targetTime}`);
                             audioRef.value.currentTime = targetTime / 1000;
                         }
                     }
