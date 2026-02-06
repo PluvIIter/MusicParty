@@ -33,3 +33,5 @@ build/
 .vscode/
 /1.py
 /cookie.txt
+/GEMINI.md
+/.gemini/.env

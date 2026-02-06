@@ -42,7 +42,7 @@
           </h2>
 
           <!-- 副标题显示逻辑与样式 -->
-          <p class="text-xs font-mono truncate transition-colors duration-300"
+          <p class="text-xs font-sans truncate transition-colors duration-300"
              :class="!player.connected ? 'text-orange-500 animate-pulse' : 'text-medical-800/60'"
           >
             {{
