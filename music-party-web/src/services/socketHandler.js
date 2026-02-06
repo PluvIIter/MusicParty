@@ -117,6 +117,7 @@ export const createSocketSubscriptions = () => {
 
         // 5. 聊天相关
         [WS_DEST.TOPIC_CHAT]: (msg) => chatStore.addMessage(msg),
+        [WS_DEST.USER_PRIVATE_CHAT]: (msg) => chatStore.addMessage(msg),
 
         // 初始历史记录
         [WS_DEST.APP_CHAT_HISTORY]: (history) => chatStore.setHistory(history),

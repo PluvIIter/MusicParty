@@ -98,7 +98,7 @@
                 <span v-if="!isSelf(item.msg)">{{ userStore.resolveName(item.msg.userId, item.msg.userName) }}</span>
               </div>
               <div
-                  class="max-w-[90%] px-3 py-1.5 text-xs break-words relative shadow-sm leading-relaxed"
+                  class="max-w-[90%] px-3 py-1.5 text-xs break-words relative shadow-sm leading-relaxed select-text cursor-text"
                   :class="isSelf(item.msg)
                     ? 'bg-medical-900 text-white rounded-l-md rounded-tr-md'
                     : 'bg-white border border-medical-200 text-medical-800 rounded-r-md rounded-tl-md'"
@@ -110,10 +110,10 @@
             <!-- 情况B: 系统日志 (SYSTEM) -->
             <div
                 v-else-if="item.msg.type === 'SYSTEM'"
-                class="flex items-start gap-2 text-xs text-medical-500/80 px-2 select-none opacity-80"
+                class="flex items-start gap-2 text-xs text-medical-500/80 px-2 opacity-80"
             >
               <Terminal class="w-3 h-3 mt-0.5 flex-shrink-0 opacity-50"/>
-              <span class="font-sans text-[10px] leading-relaxed break-all">
+              <span class="font-sans text-[10px] leading-relaxed break-all select-text cursor-text">
                 {{ item.msg.content }}
               </span>
             </div>

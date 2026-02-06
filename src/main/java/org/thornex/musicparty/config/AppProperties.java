@@ -10,6 +10,8 @@ public class AppProperties {
     private NeteaseApiConfig  netease;
     private BilibiliApiConfig bilibili;
     private String adminPassword;
+    private String baseUrl;
+    private String ffmpegPath = "ffmpeg"; // 默认使用环境变量中的 ffmpeg
 
     // 新增配置项
     private QueueConfig queue = new QueueConfig();

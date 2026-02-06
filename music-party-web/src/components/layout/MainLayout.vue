@@ -38,13 +38,15 @@ const handleSearchClick = () => {
   <div class="h-[100dvh] w-screen flex flex-col relative overflow-hidden bg-medical-50">
     <!-- 1. 顶部栏 Header -->
     <header v-if="!uiStore.isLiteMode" class="h-14 bg-white border-b border-medical-200 flex justify-between items-center px-4 md:px-6 flex-shrink-0 relative z-50">
-      <div class="font-black text-xl tracking-tighter text-medical-900 flex items-center gap-2">
-        <div class="w-3 h-3 bg-accent"></div>
-        <span class="text-lg md:text-xl">MUSIC PARTY</span>
-        <span class="text-medical-300 font-mono font-normal text-xs">by {{ authorName }}</span>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="w-2.5 h-2.5 md:w-3 md:h-3 bg-accent flex-shrink-0"></div>
+        <div class="flex items-baseline gap-1">
+          <span class="font-black text-base md:text-xl tracking-tighter text-medical-900 whitespace-nowrap">MUSIC PARTY</span>
+          <span class="text-medical-300 font-mono font-normal text-[10px] md:text-xs whitespace-nowrap">by {{ authorName }}</span>
+        </div>
       </div>
 
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2 md:gap-4">
         <!-- 移动端：显示人数按钮 -->
         <button
             id="tutorial-rename-mobile"
