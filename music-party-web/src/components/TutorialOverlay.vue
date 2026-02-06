@@ -26,6 +26,7 @@
     <!-- 提示框 -->
     <div
         v-if="currentStep"
+        ref="tooltipRef"
         class="absolute bg-white border border-medical-200 p-4 shadow-xl transition-all duration-300 chamfer-br flex flex-col gap-3"
         :style="tooltipStyle"
     >
@@ -51,6 +52,7 @@
       <div 
         class="absolute w-4 h-4 bg-white border-l border-b border-medical-200 transform rotate-45"
         :class="arrowClass"
+        :style="{ left: 'var(--arrow-left)' }"
       ></div>
     </div>
   </div>
@@ -125,6 +127,7 @@ const currentDisplayContent = computed(() => {
   return currentStep.value.content;
 });
 
+const tooltipRef = ref(null);
 const tooltipStyle = ref({});
 const arrowClass = ref('');
 
@@ -170,42 +173,44 @@ const updatePosition = async () => {
   targetRect.value = rect;
 
   // 计算 Tooltip 位置
-  // 响应式宽度：PC端默认300，移动端适应屏幕宽度减去边距
   const screenWidth = window.innerWidth;
+  const screenHeight = window.innerHeight;
   const maxWidth = Math.min(300, screenWidth - 32); 
   
-  // 估算高度，或者在DOM渲染后获取实际高度（这里先用预估值简化）
-  const estimatedHeight = 150; 
-  const margin = 16;
+  // 渲染后再获取实际高度以进行精准定位
+  await nextTick();
+  const actualHeight = tooltipRef.value ? tooltipRef.value.offsetHeight : 150;
+  const margin = 12;
 
   let top, left;
   let arrowPos = '';
 
-  // 策略：
-  // 1. 下方
-  // 2. 上方
-  // 3. 屏幕中间（针对移动端不好定位的情况）
-
-  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceBelow = screenHeight - rect.bottom;
   const spaceAbove = rect.top;
 
-  if (spaceBelow > estimatedHeight + margin) {
+  // 决定放在上面还是下面
+  if (spaceBelow > actualHeight + margin + 20) {
     top = rect.bottom + margin;
     arrowPos = 'top';
-  } else if (spaceAbove > estimatedHeight + margin) {
-    top = rect.top - estimatedHeight - margin;
+  } else if (spaceAbove > actualHeight + margin + 20) {
+    top = rect.top - actualHeight - margin;
     arrowPos = 'bottom';
   } else {
-    // 空间不足，强制放在覆盖位置或中间，这里选择偏下或偏上一点
-    // 如果是移动端，可能需要更激进的处理
+    // 空间都不足，尝试强行放置并修正 Y 轴边界
     if (spaceBelow > spaceAbove) {
       top = rect.bottom + margin;
       arrowPos = 'top';
     } else {
-      top = rect.top - estimatedHeight - margin;
+      top = rect.top - actualHeight - margin;
       arrowPos = 'bottom';
     }
   }
+
+  // 边界修正 (Y轴) - 核心修复点：确保不超出屏幕底部
+  if (top + actualHeight > screenHeight - 16) {
+    top = screenHeight - actualHeight - 16;
+  }
+  if (top < 16) top = 16;
 
   // 水平居中对齐目标
   left = rect.left + (rect.width / 2) - (maxWidth / 2);
@@ -221,26 +226,19 @@ const updatePosition = async () => {
   };
 
   // 箭头样式
-  // 需要计算箭头相对于 tooltip 的位置，因为 tooltip 可能被推移了
-  const arrowLeft = rect.left + (rect.width / 2) - left;
-  // 限制箭头位置不要超出 tooltip 圆角范围
-  const clampedArrowLeft = Math.max(10, Math.min(maxWidth - 10, arrowLeft));
-
   if (arrowPos === 'top') {
     arrowClass.value = `-top-2 bg-white border-t border-l border-medical-200 rotate-45`;
-    // 动态设置箭头 horizontal 位置
-    // 由于 Tailwind 类不能动态插值 left，这里可能需要 style 或者 复杂的类名逻辑
-    // 为了简单，我们直接把 style 注入到 style 对象中，或者使用 CSS 变量
-    // 这里我们简单起见，如果对齐比较歪，箭头可能对不准。
-    // 改进：使用 absolute left 样式
   } else {
     arrowClass.value = `-bottom-2 bg-white border-b border-r border-medical-200 rotate-45`;
   }
   
-  // 添加箭头内联样式
-  // 注意：我们需要直接操作 DOM 或者增加一个 style 绑定给箭头
-  // 为了不破坏模板结构太多，我们将箭头样式也绑定到 style
-  // 但 arrowClass 已经在用了。我们修改一下模板中的 style 绑定。
+  // 计算箭头相对于 tooltip 的水平位置
+  const targetCenter = rect.left + (rect.width / 2);
+  const arrowLeft = targetCenter - left;
+  const clampedArrowLeft = Math.max(12, Math.min(maxWidth - 12, arrowLeft));
+  
+  // 将箭头位置注入 style
+  tooltipStyle.value['--arrow-left'] = `${clampedArrowLeft}px`;
 };
 
 const nextStep = () => {
