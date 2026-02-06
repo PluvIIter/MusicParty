@@ -78,7 +78,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     const connect = () => {
         const authHeaders = {
-            'user-name': localStorage.getItem(STORAGE_KEYS.USERNAME) || 'Guest',
+            'user-name': localStorage.getItem(STORAGE_KEYS.USERNAME) || '游客',
             'user-token': userStore.userToken,
             'room-password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || ''
         };
@@ -88,8 +88,12 @@ export const usePlayerStore = defineStore('player', () => {
 
         // 补充 UserMe 的特殊处理 (因为它需要用到 renameUser，如果放在 socketHandler 会导致循环依赖)
         subscriptions[WS_DEST.USER_ME] = (me) => {
-            const needsSync = userStore.initUser(me.sessionId, me.name);
-            if (needsSync) renameUser(userStore.currentUser.name);
+            // me: { token, sessionId, name, isGuest }
+            userStore.initUser(me.sessionId, me.name, me.isGuest);
+        };
+
+        subscriptions[WS_DEST.USER_ME_UPDATE] = (me) => {
+            userStore.initUser(me.sessionId, me.name, me.isGuest);
         };
 
         const callbacks = createSocketCallbacks();
@@ -114,7 +118,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     const renameUser = (newName) => {
         socketService.send(WS_DEST.USER_RENAME, { newName });
-        userStore.saveName(newName);
+        // userStore.saveName(newName) removed; relying on backend sync
     };
 
     const sendLike = () => {

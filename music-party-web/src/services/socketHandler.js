@@ -32,9 +32,14 @@ function handleGameEvent(event) {
         return;
     }
 
-    if (event.type === 'ERROR' && event.message && event.message.includes('taken')) {
-        error('该名称已被占用，请更换。');
+    if (event.action === 'RENAME_FAILED' || (event.type === 'ERROR' && event.message && (event.message.includes('taken') || event.message.includes('占用')))) {
+        error(event.message || '该名称已被占用，请更换。');
         userStore.showNameModal = true;
+        return;
+    }
+
+    // 过滤掉用户进入/离开的弹窗通知，避免刷屏
+    if (event.action === 'USER_JOIN' || event.action === 'USER_LEAVE') {
         return;
     }
 
@@ -107,6 +112,7 @@ export const createSocketSubscriptions = () => {
 
         // 4. 事件通知 (Toast)
         [WS_DEST.TOPIC_EVENTS]: handleGameEvent,
+        [WS_DEST.USER_EVENTS]: handleGameEvent,
 
         // 5. 聊天相关
         [WS_DEST.TOPIC_CHAT]: (msg) => chatStore.addMessage(msg),

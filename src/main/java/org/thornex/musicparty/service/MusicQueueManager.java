@@ -217,7 +217,7 @@ public class MusicQueueManager {
         }
         Music randomSong = playHistory.get(new Random().nextInt(playHistory.size()));
 
-        UserSummary systemUser = new UserSummary("SYSTEM", "SYSTEM", "AutoDJ");
+        UserSummary systemUser = new UserSummary("SYSTEM", "SYSTEM", "AutoDJ", false);
 
         // 注意：历史记录出来的歌需要重新判断状态
         return new MusicQueueItem(

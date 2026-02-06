@@ -7,6 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.dto.UserSummary;
+import org.thornex.musicparty.enums.PlayerAction;
+import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.event.UserCountChangeEvent;
 
 import java.util.List;
@@ -14,6 +16,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
@@ -27,7 +33,12 @@ public class UserService {
 
     private final ApplicationEventPublisher eventPublisher;
 
+    // 延迟任务调度器，用于处理断连抖动
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final Map<String, ScheduledFuture<?>> pendingLeaveEvents = new ConcurrentHashMap<>();
+
     private static final long USER_EXPIRATION_MS = 1 * 60 * 60 * 1000L;
+    private static final long LEAVE_DELAY_SEC = 10; // 10秒延迟判定真正离开
 
     public UserService(ApplicationEventPublisher eventPublisher) {
         this.eventPublisher = eventPublisher;
@@ -46,39 +57,40 @@ public class UserService {
         // 1. 尝试找回老用户
         if (StringUtils.hasText(tokenFront) && usersByToken.containsKey(tokenFront)) {
             user = usersByToken.get(tokenFront);
-            log.info("User Reconnected: {} (Token: {}) -> New Session: {}", user.getName(), user.getToken(), sessionId);
 
-            // 更新 SessionID
-            // 如果旧Session还在索引里，先移除（防止幽灵连接）
+            // 🟢 检查是否有待执行的“离开”任务，如果有，说明是快速重连，直接取消
+            ScheduledFuture<?> pendingLeave = pendingLeaveEvents.remove(user.getToken());
+            if (pendingLeave != null) {
+                pendingLeave.cancel(false);
+                log.info("User {} reconnected quickly, suppressed leave/join logs.", user.getName());
+            } else {
+                // 如果没有待执行任务，且用户之前是离线状态，且不是游客，则发布加入日志
+                if (user.getSessionId() == null && !user.isGuest()) {
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getToken(), null));
+                }
+            }
+
+            log.info("User Reconnected: {} (Token: {}) -> New Session: {}", user.getName(), user.getToken(), sessionId);
+            // ... (保持原有逻辑)
             if (user.getSessionId() != null) {
                 sessionToToken.remove(user.getSessionId());
             }
             user.setSessionId(sessionId);
-
-            // 如果前端传了新名字且不为空，顺便更新一下（可选）
-            // 这里我们选择保持后端存储的名字为主，防止被覆盖
         }
         // 2. 新用户注册
         else {
-            // 如果前端没传 Token，或者 Token 无效，生成新的
             String newToken = StringUtils.hasText(tokenFront) ? tokenFront : UUID.randomUUID().toString();
-            // 确保名字不重复的初始逻辑比较复杂，这里先生成默认名，稍后由 rename 处理
-            String initialName = StringUtils.hasText(nameFront) ? nameFront : "User-" + sessionId.substring(0, 4);
-
-            // 🟢 强制去重：如果初始名字被占用了，加随机后缀
+            String initialName = StringUtils.hasText(nameFront) ? nameFront : "游客";
             initialName = deduplicateName(initialName);
 
             user = new User(newToken, sessionId, initialName);
             usersByToken.put(newToken, user);
             log.info("New User Registered: {} (Token: {})", initialName, newToken);
+            // 注意：新注册的游客不发加入日志，只有改名后才发
         }
 
         user.setLastActiveTime(System.currentTimeMillis());
-
-        // 建立索引
         sessionToToken.put(sessionId, user.getToken());
-
-        // 发布用户数量变更事件
         eventPublisher.publishEvent(new UserCountChangeEvent(this, getOnlineUserSummaries().size()));
         return user;
     }
@@ -89,13 +101,30 @@ public class UserService {
 
         User user = usersByToken.get(token);
         if (user != null) {
-            // 注意：我们不删除 userByToken，因为用户可能只是刷新页面
-            // 可以做一个定时清理任务（比如 1小时不连才删），或者永久保留直到重启
-            user.setSessionId(null); // 标记离线
-            user.setLastActiveTime(System.currentTimeMillis());
-            log.info("User Offline: {}", user.getName());
-            eventPublisher.publishEvent(new UserCountChangeEvent(this, getOnlineUserSummaries().size()));
-            return Optional.of(user);
+            // 🟢 关键修复：多标签页支持
+            // 只有当断开的 Session ID 等于用户当前的主 Session ID 时，才认为用户真的掉线了
+            // 如果不等，说明用户已经连接了新的 Session (比如打开了新标签页，关闭了旧标签页)，此时忽略旧连接的断开
+            if (sessionId.equals(user.getSessionId())) {
+                user.setSessionId(null); // 标记离线
+                user.setLastActiveTime(System.currentTimeMillis());
+                log.info("User Offline (Pending Confirmation): {}", user.getName());
+
+                // 延迟发送离开日志
+                if (!user.isGuest()) {
+                    String userToken = user.getToken();
+                    ScheduledFuture<?> future = scheduler.schedule(() -> {
+                        pendingLeaveEvents.remove(userToken);
+                        log.info("User Leave Confirmed: {}", user.getName());
+                        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_LEAVE, userToken, null));
+                    }, LEAVE_DELAY_SEC, TimeUnit.SECONDS);
+                    pendingLeaveEvents.put(userToken, future);
+                }
+
+                eventPublisher.publishEvent(new UserCountChangeEvent(this, getOnlineUserSummaries().size()));
+                return Optional.of(user);
+            } else {
+                log.debug("Ignored disconnect for stale session {} (Current: {})", sessionId, user.getSessionId());
+            }
         }
         return Optional.empty();
     }
@@ -119,6 +148,12 @@ public class UserService {
 
             if (finalName.isEmpty()) return false;
 
+            // 禁止伪装成 游客
+            if (finalName.toLowerCase().startsWith("guest") || finalName.startsWith("游客")) {
+                log.warn("Rename failed: Cannot use reserved name '{}'", finalName);
+                return false;
+            }
+
             // 检查是否重名 (排除自己)
             boolean exists = usersByToken.values().stream()
                     .anyMatch(u -> u.getName().equalsIgnoreCase(finalName) && !u.getToken().equals(user.getToken()));
@@ -128,8 +163,23 @@ public class UserService {
                 return false;
             }
 
-            log.info("User Renamed: '{}' -> '{}'", user.getName(), finalName);
+            String oldName = user.getName();
+            boolean wasGuest = user.isGuest();
+
+            log.info("User Renamed: '{}' -> '{}'", oldName, finalName);
             user.setName(finalName);
+            user.setGuest(false); // 改名成功，移除游客身份
+
+            // 1. 如果是从游客变成正式用户 -> 发布加入事件
+            if (wasGuest) {
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getToken(), null));
+            }
+            // 2. 如果是正式用户改名 -> 发布系统通知
+            else if (!oldName.equals(finalName)) {
+                String renameMsg = oldName + " 已更名为 " + finalName;
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, null, "SYSTEM", renameMsg));
+            }
+
             return true;
         }).orElse(false);
     }
@@ -159,7 +209,7 @@ public class UserService {
         return usersByToken.values().stream()
                 // 只返回在线用户 (sessionId != null)
                 .filter(u -> u.getSessionId() != null)
-                .map(user -> new UserSummary(user.getToken(), user.getSessionId(), user.getName()))
+                .map(user -> new UserSummary(user.getToken(), user.getSessionId(), user.getName(), user.isGuest()))
                 .toList();
     }
 

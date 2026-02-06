@@ -213,6 +213,9 @@ public class MusicPlayerService {
         isLoading.set(false);
         broadcastFullPlayerState();
         broadcastQueueUpdate();
+
+        // 发布开始播放事件 (用于聊天栏展示)
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().token(), music.name()));
     }
 
     public PlayerState getCurrentPlayerState() {
@@ -256,7 +259,7 @@ public class MusicPlayerService {
                                 service.prefetchMusic(music.id());
                             }
 
-                            MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName()), initialStatus);
+                            MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
 
                             if (newItem != null) {
                                 log.info("{} enqueued: {}", enqueuer.getName(), music.name());
@@ -312,7 +315,7 @@ public class MusicPlayerService {
                         if ("bilibili".equals(request.platform())) {
                             service.prefetchMusic(music.id());
                         }
-                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName()), initialStatus);
+                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
                         if (newItem != null) {
                             count++;
                         }

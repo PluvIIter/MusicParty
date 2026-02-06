@@ -18,6 +18,8 @@
           class="w-full bg-medical-50 border border-medical-200 p-3 outline-none focus:border-accent font-bold mb-4 text-medical-900 placeholder-medical-300"
           autofocus
       />
+      
+      <div v-if="errorMsg" class="text-xs text-red-500 font-bold mb-4 animate-pulse">{{ errorMsg }}</div>
 
       <div class="flex gap-2">
         <button @click="userStore.showNameModal = false" class="flex-1 py-3 text-xs font-bold text-medical-400 hover:bg-medical-50">
@@ -32,17 +34,27 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { useUserStore } from '../stores/user';
 import { usePlayerStore } from '../stores/player';
 
 const userStore = useUserStore();
 const playerStore = usePlayerStore();
 const inputName = ref('');
+const errorMsg = ref('');
+
+watch(inputName, () => errorMsg.value = '');
 
 const confirm = () => {
-  if(!inputName.value.trim()) return;
-  // 调用 renameUser，它内部会调用 userStore.saveName，从而关闭弹窗
-  playerStore.renameUser(inputName.value);
+  const name = inputName.value.trim();
+  if(!name) return;
+
+  if (name.toLowerCase().startsWith('guest') || name.startsWith('游客')) {
+    errorMsg.value = '不能使用“游客”作为正式名字';
+    return;
+  }
+  
+  // 调用 renameUser，等待后端 socket 确认后关闭
+  playerStore.renameUser(name);
 };
 </script>

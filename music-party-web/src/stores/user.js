@@ -18,7 +18,7 @@ const userToken = ref(storedToken);
 
 const storageName = localStorage.getItem(STORAGE_KEYS.USERNAME);
 const currentUser = ref({
-    name: storageName || 'Guest',
+    name: storageName || '游客',
     sessionId: ''
 });
 
@@ -30,7 +30,7 @@ export const useUserStore = defineStore('user', () => {
     // 启动时：严格从 LocalStorage 读取，默认值只在这里设定一次
     const storageName = localStorage.getItem('mp_username');
     const currentUser = ref({
-        name: storageName || 'Guest',
+        name: storageName || '游客',
         sessionId: ''
     });
 
@@ -59,21 +59,45 @@ export const useUserStore = defineStore('user', () => {
     /**
      * 2. 初始化用户身份 (来自 /app/user/me)
      * 逻辑：对比服务器认为的名字 (serverName) 和我本地存储的名字
-     * 返回：true 表示需要强制同步（改名），false 表示一致
+     * serverIsGuest: 后端返回的当前是否为游客状态
      */
-    const initUser = (sessionId, serverName) => {
+    const initUser = (sessionId, serverName, serverIsGuest) => {
         currentUser.value.sessionId = sessionId;
 
-        // 如果后端返回的名字和本地不同
-        // 情况A: 我是 Guest，后端给我分配了 Guest_7 -> 我应该更新显示，但保持 Guest 身份
-        // 情况B: 我是 ThorNex，后端给我分配了 ThorNex_1 (去重) -> 我应该更新显示，保持 非Guest 身份
-        if (serverName && serverName !== currentUser.value.name) {
-            console.log(`Syncing name from server: ${serverName}`);
+        // 1. 同步名字
+        if (serverName) {
             currentUser.value.name = serverName;
-            if (!isGuest.value) {
-                localStorage.setItem(STORAGE_KEYS.USERNAME, serverName);            }
         }
-        return false; // 不需要再发 rename 了，后端已经处理好了
+
+        // 2. 同步身份状态 (以服务端为准)
+        if (serverIsGuest !== undefined) {
+            // 状态变更检测: Guest -> User (转正)
+            if (isGuest.value && !serverIsGuest) {
+                console.log("Identity upgraded to User");
+                isGuest.value = false;
+                localStorage.setItem(STORAGE_KEYS.USERNAME, serverName);
+                showNameModal.value = false; // 成功改名后自动关闭弹窗
+
+                // 执行待办回调 (如打开搜索框)
+                if (onNameSetCallback.value) {
+                    onNameSetCallback.value();
+                    onNameSetCallback.value = null;
+                }
+            }
+            // 状态变更检测: User -> Guest (降级/重置)
+            else if (!isGuest.value && serverIsGuest) {
+                console.log("Identity degraded to Guest");
+                isGuest.value = true;
+                localStorage.removeItem(STORAGE_KEYS.USERNAME);
+            }
+        }
+
+        // 3. 如果是正式用户，确保本地存储名字与服务端一致 (处理去重后缀)
+        if (!isGuest.value && serverName) {
+            localStorage.setItem(STORAGE_KEYS.USERNAME, serverName);
+        }
+
+        return false;
     };
 
     const setOnlineUsers = (users) => {
@@ -85,19 +109,9 @@ export const useUserStore = defineStore('user', () => {
         localStorage.setItem(STORAGE_KEYS.BINDINGS, JSON.stringify(bindings.value));
     };
 
-    // 只有这个方法有权修改 LocalStorage
+    // 废弃: 不再直接修改本地状态，改为等待 initUser 的后端回调
     const saveName = (newName) => {
-        if(!newName) return;
-        currentUser.value.name = newName;
-        localStorage.setItem(STORAGE_KEYS.USERNAME, newName);
-        isGuest.value = false;
-        // 保存成功后，自动关闭弹窗
-        showNameModal.value = false;
-
-        if (onNameSetCallback.value) {
-            onNameSetCallback.value();
-            onNameSetCallback.value = null;
-        }
+        // Logic moved to initUser response handling
     }
 
     const setPostNameAction = (fn) => {

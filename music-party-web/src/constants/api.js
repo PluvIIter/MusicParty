@@ -24,7 +24,9 @@ export const WS_DEST = {
 
     // 个人频道
     USER_ME: '/app/user/me',
+    USER_ME_UPDATE: '/user/queue/me',
     APP_CHAT_HISTORY: '/app/chat/history',
     USER_STATE: '/user/queue/player/state',
-    USER_CHAT_HISTORY: '/user/queue/chat/history'
+    USER_CHAT_HISTORY: '/user/queue/chat/history',
+    USER_EVENTS: '/user/queue/events'
 };
