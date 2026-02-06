@@ -21,6 +21,13 @@ public enum PlayerAction {
     // 交互
     LIKE,
 
+    // 用户事件
+    USER_JOIN,
+    USER_LEAVE,
+
+    // 播放事件扩展
+    PLAY_START,
+
     // 系统级
     RESET,
     ERROR_LOAD

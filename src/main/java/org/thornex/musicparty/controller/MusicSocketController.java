@@ -39,42 +39,50 @@ public class MusicSocketController {
 
     @MessageMapping("/enqueue")
     public void enqueue(EnqueueRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
         musicPlayerService.enqueue(request, sessionId);
     }
 
     @MessageMapping("/enqueue/playlist")
     public void enqueuePlaylist(EnqueuePlaylistRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
         musicPlayerService.enqueuePlaylist(request, sessionId);
     }
 
     @MessageMapping("/control/next")
     public void nextSong(@Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
         musicPlayerService.skipToNext(sessionId);
     }
 
     @MessageMapping("/control/toggle-shuffle")
     public void toggleShuffle(@Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
         musicPlayerService.toggleShuffle(sessionId);
     }
 
     @MessageMapping("/control/toggle-pause")
     public void togglePause(@Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
         musicPlayerService.togglePause(sessionId);
     }
 
     @MessageMapping("/queue/top")
     public void topSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
         musicPlayerService.topSong(request.queueId(), sessionId);
     }
 
     @MessageMapping("/queue/remove")
     public void removeSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
         musicPlayerService.removeSongFromQueue(request.queueId(), sessionId);
     }
 
     // 点赞接口
     @MessageMapping("/control/like")
     public void likeSong(@Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
         musicPlayerService.likeSong(sessionId);
     }
 
@@ -82,6 +90,17 @@ public class MusicSocketController {
     public void rename(RenameRequest request, @Header("simpSessionId") String sessionId) {
         if (userService.renameUser(sessionId, request.newName())) {
             musicPlayerService.broadcastOnlineUsers();
+            // PUSH updated user info to the user
+            userService.getUser(sessionId).ifPresent(user -> {
+                UserSummary summary = new UserSummary(user.getToken(), user.getSessionId(), user.getName(), user.isGuest());
+                messagingTemplate.convertAndSendToUser(sessionId, "/queue/me", summary, createSessionHeaders(sessionId));
+            });
+        } else {
+            // RENAME_FAILED
+            userService.getUser(sessionId).ifPresent(user -> {
+                PlayerEvent errorEvent = new PlayerEvent("ERROR", "RENAME_FAILED", user.getToken(), "该名称已被占用或包含非法字符，请更换。");
+                messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
+            });
         }
     }
 
@@ -103,13 +122,18 @@ public class MusicSocketController {
     @SubscribeMapping("/user/me")
     public UserSummary getMyUserInfo(@Header("simpSessionId") String sessionId) {
         return userService.getUser(sessionId)
-                .map(u -> new UserSummary(u.getToken(), u.getSessionId(), u.getName()))
-                .orElse(new UserSummary(sessionId, sessionId, "Unknown"));
+                .map(u -> new UserSummary(u.getToken(), u.getSessionId(), u.getName(), u.isGuest()))
+                .orElse(new UserSummary(sessionId, sessionId, "Unknown", true));
+    }
+
+    private boolean isGuest(String sessionId) {
+        return userService.getUser(sessionId).map(User::isGuest).orElse(true);
     }
 
     // 聊天消息处理
     @MessageMapping("/chat")
     public void handleChat(ChatRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
         userService.getUser(sessionId).ifPresent(user -> {
             if (request.content() == null || request.content().trim().isEmpty()) return;
             if (request.content().length() > 200) return;

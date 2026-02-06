@@ -88,11 +88,19 @@ public class ChatService {
                     .orElse("Unknown");
         }
 
-        String content = generateSystemMessageContent(event,userName);
-        MessageType type = event.getAction() == PlayerAction.LIKE ? MessageType.LIKE : MessageType.SYSTEM;
+        String content = generateSystemMessageContent(event, userName);
+        MessageType type;
 
-        String msgUserId = event.getAction() == PlayerAction.LIKE ? event.getUserId() : "SYSTEM";
-        String msgUserName = event.getAction() == PlayerAction.LIKE ? userName : "SYSTEM";
+        if (event.getAction() == PlayerAction.LIKE) {
+            type = MessageType.LIKE;
+        } else if (event.getAction() == PlayerAction.PLAY_START) {
+            type = MessageType.PLAY_START;
+        } else {
+            type = MessageType.SYSTEM;
+        }
+
+        String msgUserId = (event.getAction() == PlayerAction.LIKE || event.getAction() == PlayerAction.PLAY_START) ? event.getUserId() : "SYSTEM";
+        String msgUserName = (event.getAction() == PlayerAction.LIKE || event.getAction() == PlayerAction.PLAY_START) ? userName : "SYSTEM";
 
         ChatMessage sysMsg = new ChatMessage(
                 UUID.randomUUID().toString(),
@@ -115,6 +123,9 @@ public class ChatService {
         String payload = event.getPayload() == null ? "" : event.getPayload();
 
         return switch (event.getAction()) {
+            case PLAY_START -> "开始播放来自于 " + userName + " 的 " + payload;
+            case USER_JOIN -> userName + " 加入了派对";
+            case USER_LEAVE -> userName + " 离开了派对";
             case PLAY -> userName + " 恢复了播放";
             case PAUSE -> userName + " 暂停了播放";
             case SKIP -> userName + " 切到了下一首";

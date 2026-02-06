@@ -129,6 +129,17 @@
               </div>
             </div>
 
+            <!-- 情况D: 开始播放 (PLAY_START) -->
+            <div
+                v-else-if="item.msg.type === 'PLAY_START'"
+                class="flex justify-center my-2"
+            >
+               <div class="bg-medical-100/80 border border-medical-300 text-medical-600 px-3 py-1 rounded-md text-[10px] font-mono flex items-center gap-2 shadow-sm">
+                 <span class="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
+                 <span>{{ item.msg.content }}</span>
+               </div>
+            </div>
+
           </div>
         </div>
 
@@ -304,19 +315,19 @@ resetPosition(); // 初始化时执行一次
 // === 5. 消息处理与展示逻辑 ===
 const isSelf = (msg) => msg.userId === userStore.userToken;
 
-const formatTime = (ts) => dayjs(ts).format('HH:mm');
+const formatTime = (ts) => dayjs(ts).format('MM-DD HH:mm');
 
 // 核心：过滤并计算时间戳显示
 const processedMessages = computed(() => {
   // 1. 根据 Tab 过滤
   const filtered = chatStore.messages.filter(msg => {
-    // CHAT Tab: 聊天 + 点赞
+    // CHAT Tab: 聊天 + 点赞 + 开始播放
     if (activeTab.value === 'CHAT') {
-      return msg.type === 'CHAT' || msg.type === 'LIKE';
+      return msg.type === 'CHAT' || msg.type === 'LIKE' || msg.type === 'PLAY_START';
     }
-    // SYSTEM Tab: 系统 + 点赞
+    // SYSTEM Tab: 系统 + 点赞 + 开始播放
     if (activeTab.value === 'SYSTEM') {
-      return msg.type === 'SYSTEM' || msg.type === 'LIKE';
+      return msg.type === 'SYSTEM' || msg.type === 'LIKE' || msg.type === 'PLAY_START';
     }
     return false;
   });
