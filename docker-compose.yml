@@ -32,6 +32,7 @@ services:
       # [平台凭证]
       - BILIBILI_SESSDATA=""         # B站 SESSDATA
       - NETEASE_COOKIE=""            # 网易云 Cookie
+      - NETEASE_QUALITY=exhigh       # 网易云音质 (standard, higher, exhigh, lossless, hires)
 
       # [性能/策略配置]
       - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
