@@ -98,7 +98,7 @@ public class MusicSocketController {
         } else {
             // RENAME_FAILED
             userService.getUser(sessionId).ifPresent(user -> {
-                PlayerEvent errorEvent = new PlayerEvent("ERROR", "RENAME_FAILED", user.getToken(), "该名称已被占用或包含非法字符，请更换。");
+                PlayerEvent errorEvent = new PlayerEvent("ERROR", "RENAME_FAILED", user.getToken(), "该名称已被占用或包含非法字符，请更换。", null);
                 messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
             });
         }

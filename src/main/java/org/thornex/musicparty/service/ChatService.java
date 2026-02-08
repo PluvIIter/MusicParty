@@ -11,6 +11,7 @@ import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.service.command.ChatCommand;
+import org.thornex.musicparty.util.MessageFormatter;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -170,7 +171,7 @@ public class ChatService {
                     .orElse("Unknown");
         }
 
-        String content = generateSystemMessageContent(event, userName);
+        String content = MessageFormatter.format(event, userName);
         MessageType type;
 
         if (event.getAction() == PlayerAction.LIKE) {
@@ -198,28 +199,5 @@ public class ChatService {
 
         // 2. 广播到聊天频道
         messagingTemplate.convertAndSend("/topic/chat", sysMsg);
-    }
-
-    // 辅助：生成友好的系统消息文案
-    private String generateSystemMessageContent(SystemMessageEvent event, String userName) {
-        String payload = event.getPayload() == null ? "" : event.getPayload();
-
-        return switch (event.getAction()) {
-            case PLAY_START -> "开始播放来自于 " + userName + " 的 " + payload;
-            case USER_JOIN -> userName + " 加入了派对";
-            case USER_LEAVE -> userName + " 离开了派对";
-            case PLAY -> userName + " 恢复了播放";
-            case PAUSE -> userName + " 暂停了播放";
-            case SKIP -> userName + " 切到了下一首";
-            case ADD -> userName + " 添加了: " + payload;
-            case REMOVE -> userName + " 移除了: " + payload;
-            case TOP -> userName + " 置顶了: " + payload;
-            case LIKE -> userName + " 觉得 " + payload + " 很赞";
-            case IMPORT_PLAYLIST -> userName + " 导入了歌单 (" + payload + "首)";
-            case SHUFFLE_ON -> userName + " 开启了随机播放";
-            case SHUFFLE_OFF -> userName + " 关闭了随机播放";
-            case RESET -> "系统已被重置";
-            default -> userName + " 执行操作: " + event.getAction();
-        };
     }
 }

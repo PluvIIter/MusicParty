@@ -269,7 +269,7 @@ public class MusicPlayerService {
         if (old != locked) {
             log.info("{} lock set to: {}", desc, locked);
             broadcastFullPlayerState();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.RESET, "SYSTEM",
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
                     locked ? "管理员锁定了" + desc : "管理员解锁了" + desc));
         }
     }
@@ -279,7 +279,7 @@ public class MusicPlayerService {
         isSkipLocked.set(locked);
         isShuffleLocked.set(locked);
         broadcastFullPlayerState();
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.RESET, "SYSTEM",
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
                 locked ? "管理员锁定了所有控制" : "管理员解锁了所有控制"));
     }
 

@@ -30,5 +30,6 @@ public enum PlayerAction {
 
     // 系统级
     RESET,
-    ERROR_LOAD
+    ERROR_LOAD,
+    SYSTEM_MESSAGE
 }
