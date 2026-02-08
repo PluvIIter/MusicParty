@@ -72,20 +72,27 @@ docker run -d \
 
 ## 环境变量说明
 
-| 变量名                     | 必填 | 说明                                                                |
-|:------------------------|:---|:------------------------------------------------------------------|
-| `APP_AUTHOR_NAME`       | 否  | 页面显示的作者名字，地点在左上角标题后面。默认为 `ThorNex`。                                |
-| `APP_BACK_WORDS`        | 否  | 中间专辑封面后方的装饰性背景字，强制大写。默认为 `MUSIC PARTY`。                             |
-| `ADMIN_PASSWORD`        | 是  | 管理员密码，用于在搜索框输入指令控制系统。                                             |
-| `NETEASE_API_URL`       | 是  | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。 |
-| `BASE_URL`              | 否  | 服务的域名（带协议）。用户获取直播流链接时，拼接在前面。默认为 `http://localhost:8848`。          |
-| `BILIBILI_SESSDATA`     | 否  | B站账号的 SESSDATA。配置后可支持高音质解析，减少风控。                                  |
-| `NETEASE_COOKIE`        | 否  | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。                                |
-| `QUEUE_MAX_SIZE`        | 否  | 播放队列最大长度，默认 `1000`。                                               |
-| `QUEUE_HISTORY_SIZE`    | 否  | 播放历史记录保留数量，默认 `50`。当播放列表里没有音乐时，会从历史记录随机抽选。                        |
-| `PLAYLIST_IMPORT_LIMIT` | 否  | 导入歌单时的最大歌曲数限制，默认 `100`。                                           |
-| `CHAT_HISTORY_LIMIT`    | 否  | 聊天历史记录保留数量，默认 `1000`。                                             |
-| `CACHE_MAX_SIZE`        | 否  | 本地音乐缓存上限，默认 `1GB`。支持格式如 `512MB`, `2GB`。                           |
+| 变量名                       | 必填 | 说明                                                                |
+|:--------------------------|:---|:------------------------------------------------------------------|
+| `APP_AUTHOR_NAME`         | 否  | 页面显示的作者名字，地点在左上角标题后面。默认为 `ThorNex`。                               |
+| `APP_BACK_WORDS`          | 否  | 中间专辑封面后方的装饰性背景字，强制大写。默认为 `MUSIC PARTY`。                           |
+| `ADMIN_PASSWORD`          | 是  | 管理员密码，用于在搜索框输入指令控制系统。                                             |
+| `NETEASE_API_URL`         | 是  | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。 |
+| `BASE_URL`                | 否  | 服务的域名（带协议）。用户获取直播流链接时，拼接在前面。默认为 `http://localhost:8848`。          |
+| `BILIBILI_SESSDATA`       | 否  | B站账号的 SESSDATA。配置后可支持高音质解析，减少风控。                                  |
+| `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。                                |
+| `QUEUE_MAX_SIZE`          | 否  | 播放队列最大长度，默认 `1000`。                                               |
+| `QUEUE_HISTORY_SIZE`      | 否  | 播放历史记录保留数量，默认 `50`。当播放列表里没有音乐时，会从历史记录随机抽选。                        |
+| `QUEUE_MAX_USER_SONGS`    | 否  | 单个用户在队列中允许的最大点歌数量，默认 `100`。                                       |
+| `PLAYLIST_IMPORT_LIMIT`   | 否  | 导入歌单时的最大歌曲数限制，默认 `100`。                                           |
+| `CHAT_HISTORY_LIMIT`      | 否  | 聊天历史记录保留数量，默认 `1000`。                                             |
+| `CHAT_MIN_INTERVAL`       | 否  | 聊天发言最小间隔 (毫秒)，默认 `1000`。                                          |
+| `CHAT_MAX_LENGTH`         | 否  | 单条聊天消息最大长度 (字符)，默认 `200`。                                         |
+| `CACHE_MAX_SIZE`          | 否  | 本地音乐缓存上限，默认 `1GB`。支持格式如 `512MB`, `2GB`。                           |
+| `AUTH_RATE_LIMIT_ENABLED` | 否  | 是否开启密码验证频率限制，默认 `true`。                                           |
+| `AUTH_MAX_ATTEMPTS`       | 否  | 密码验证最大尝试次数，默认 `5`。                                                |
+| `AUTH_WINDOW_SECONDS`     | 否  | 密码验证统计时间窗口 (秒)，默认 `60`。                                           |
+| `AUTH_BLOCK_DURATION`     | 否  | 超过尝试次数后的封锁时长 (秒)，默认 `300`。                                        |
 
 ---
 
@@ -109,7 +116,7 @@ docker run -d \
 1. 确保已经使用`//STREAM ON`启用了直播流。
 2. 在聊天窗口中输入`//stream`
 3. 切换到系统日志窗口，即可看到自己的直播流链接。
-### 注意，直播流使用FFmpeg，会占用更多性能，且有大量流量消耗。
+#### 注意，直播流使用FFmpeg，会占用更多性能，且有大量流量消耗。
 
 ---
 

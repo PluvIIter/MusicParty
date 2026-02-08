@@ -20,11 +20,13 @@ public class AppProperties {
     private PlayerConfig player = new PlayerConfig();
     private ChatConfig chat = new ChatConfig();
     private CacheConfig cache = new CacheConfig();
+    private AuthConfig auth = new AuthConfig();
 
     @Data
     public static class QueueConfig {
         private int maxSize = 1000;
         private int historySize = 50;
+        private int maxUserSongs = 100;
     }
 
     @Data
@@ -35,11 +37,21 @@ public class AppProperties {
     @Data
     public static class ChatConfig {
         private int maxHistorySize = 1000;
+        private long minIntervalMs = 1000;
+        private int maxMessageLength = 200;
     }
 
     @Data
     public static class CacheConfig {
         private org.springframework.util.unit.DataSize maxSize = org.springframework.util.unit.DataSize.ofGigabytes(1);
+    }
+
+    @Data
+    public static class AuthConfig {
+        private boolean rateLimitEnabled = true;
+        private int maxAttempts = 5;
+        private int windowSeconds = 60;
+        private int blockDurationSeconds = 300;
     }
 
     @Data

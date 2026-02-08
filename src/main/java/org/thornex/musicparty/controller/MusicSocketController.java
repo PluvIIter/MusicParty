@@ -137,7 +137,7 @@ public class MusicSocketController {
         
         // 1. Check content validity
         if (request.content() == null || request.content().trim().isEmpty()) return;
-        if (request.content().length() > 200) return;
+        if (!chatService.isMessageLengthValid(request.content())) return;
 
         // 2. Try process as command
         if (chatService.processIncomingMessage(sessionId, request.content().trim())) {
@@ -145,6 +145,9 @@ public class MusicSocketController {
         }
 
         userService.getUser(sessionId).ifPresent(user -> {
+            // 3. Rate Limit Check
+            if (!chatService.canUserSendMessage(user.getToken())) return;
+
             ChatMessage message = new ChatMessage(
                     java.util.UUID.randomUUID().toString(),
                     user.getToken(),

@@ -2,11 +2,14 @@
 
 package org.thornex.musicparty.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.thornex.musicparty.config.AppProperties;
 
+import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 @RestController
@@ -19,10 +22,26 @@ public class AuthController {
     // "xxx" 表示已初始化，且有密码
     private final AtomicReference<String> roomPassword = new AtomicReference<>(null);
     private final String adminPassword;
+    private final AppProperties.AuthConfig authConfig;
+
+    // IP限流记录
+    private final ConcurrentHashMap<String, FailedAttempt> ipAttempts = new ConcurrentHashMap<>();
+
+    private static class FailedAttempt {
+        int count;
+        Instant firstAttemptTime;
+        Instant blockedUntil;
+
+        FailedAttempt() {
+            this.count = 1;
+            this.firstAttemptTime = Instant.now();
+        }
+    }
 
     public AuthController(AppProperties appProperties) {
         // 从配置中获取管理员密码
         this.adminPassword = appProperties.getAdminPassword();
+        this.authConfig = appProperties.getAuth();
     }
 
     public void resetRoomPassword() {
@@ -77,7 +96,14 @@ public class AuthController {
      * 验证密码
      */
     @PostMapping("/verify")
-    public ResponseEntity<?> verifyPassword(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> verifyPassword(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        String clientIp = getClientIp(request);
+
+        // 检查限流
+        if (authConfig.isRateLimitEnabled() && isBlocked(clientIp)) {
+            return ResponseEntity.status(429).body(Map.of("valid", false, "message", "尝试次数过多，请稍后再试"));
+        }
+
         String inputPassword = body.getOrDefault("password", "");
         String currentPassword = roomPassword.get();
 
@@ -93,15 +119,71 @@ public class AuthController {
 
         // 3. 如果输入的是管理员密码，直接通过 (万能钥匙)
         if (adminPassword != null && adminPassword.equals(inputPassword)) {
+            clearAttempts(clientIp);
             return ResponseEntity.ok(Map.of("valid", true));
         }
 
         // 3. 比对密码
         if (currentPassword.equals(inputPassword)) {
+            clearAttempts(clientIp);
             return ResponseEntity.ok(Map.of("valid", true));
         } else {
+            recordFailure(clientIp);
             return ResponseEntity.status(401).body(Map.of("valid", false));
         }
+    }
+
+    private void recordFailure(String ip) {
+        if (!authConfig.isRateLimitEnabled()) return;
+
+        ipAttempts.compute(ip, (k, attempt) -> {
+            Instant now = Instant.now();
+            if (attempt == null) {
+                return new FailedAttempt();
+            }
+
+            // 检查窗口是否已过，如果过了，重置
+            if (now.isAfter(attempt.firstAttemptTime.plusSeconds(authConfig.getWindowSeconds()))) {
+                return new FailedAttempt();
+            }
+
+            // 增加计数
+            attempt.count++;
+            
+            // 检查是否达到封锁阈值
+            if (attempt.count >= authConfig.getMaxAttempts()) {
+                attempt.blockedUntil = now.plusSeconds(authConfig.getBlockDurationSeconds());
+            }
+            return attempt;
+        });
+    }
+
+    private void clearAttempts(String ip) {
+        ipAttempts.remove(ip);
+    }
+
+    private boolean isBlocked(String ip) {
+        FailedAttempt attempt = ipAttempts.get(ip);
+        if (attempt == null) return false;
+        
+        if (attempt.blockedUntil != null) {
+            if (Instant.now().isBefore(attempt.blockedUntil)) {
+                return true;
+            } else {
+                // 封锁时间已过，移除记录
+                ipAttempts.remove(ip);
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String xfHeader = request.getHeader("X-Forwarded-For");
+        if (xfHeader == null) {
+            return request.getRemoteAddr();
+        }
+        return xfHeader.split(",")[0];
     }
 
     public String getRawPassword() {
