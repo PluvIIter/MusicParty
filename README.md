@@ -65,7 +65,7 @@ docker run -d \
   -e CACHE_MAX_SIZE=1GB \
   -v ./music_party:/app \
   --restart unless-stopped \
-  thornex/musicparty:latest
+  thornex/music-party:latest
 ```
 
 ---
