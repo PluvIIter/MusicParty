@@ -107,6 +107,23 @@ public class ChatService {
         return page;
     }
 
+    /**
+     * 获取全部聊天记录用于持久化
+     */
+    public List<ChatMessage> getHistoryFull() {
+        return new ArrayList<>(history);
+    }
+
+    /**
+     * 恢复聊天记录
+     */
+    public void restore(List<ChatMessage> loadedHistory) {
+        history.clear();
+        if (loadedHistory != null) {
+            history.addAll(loadedHistory);
+        }
+    }
+
 
     public void clearHistory() {
         history.clear();

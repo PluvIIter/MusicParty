@@ -55,7 +55,9 @@ services:
       - music-net
     volumes:
       # 挂载音频缓存目录，防止重启后 B 站歌曲重新下载
-      - ./cached_media:/app/cached_media
+      - ./music_party/cached_media:/app/cached_media
+      # 挂载数据目录，用于持久化播放列表和历史记录
+      - ./music_party/data:/app/data
 
 networks:
   music-net:
