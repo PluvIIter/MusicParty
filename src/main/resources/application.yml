@@ -14,6 +14,8 @@ app:
   music-api:
     admin-password: ${ADMIN_PASSWORD:admin123}
     base-url: ${BASE_URL:http://localhost:8080}
+    author-name: ${APP_AUTHOR_NAME:ThorNex}
+    back-words: ${APP_BACK_WORDS:THORNEX}
     netease:
       # The base URL of your deployed NeteaseCloudMusicApi instance
       base-url: ${NETEASE_API_URL:http://netease-api:3000}

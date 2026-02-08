@@ -1,6 +1,7 @@
 package org.thornex.musicparty.controller;
 
 import org.springframework.web.bind.annotation.*;
+import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
@@ -12,16 +13,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-
 @RestController
 @RequestMapping("/api")
 public class ApiController {
 
     private final Map<String, IMusicApiService> apiServiceMap;
+    private final AppProperties appProperties;
 
-    public ApiController(List<IMusicApiService> apiServices) {
+    public ApiController(List<IMusicApiService> apiServices, AppProperties appProperties) {
         this.apiServiceMap = apiServices.stream()
                 .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
+        this.appProperties = appProperties;
+    }
+
+    @GetMapping("/config")
+    public Map<String, String> getConfig() {
+        return Map.of(
+                "authorName", appProperties.getAuthorName(),
+                "backWords", appProperties.getBackWords()
+        );
     }
 
     private IMusicApiService getService(String platform) {

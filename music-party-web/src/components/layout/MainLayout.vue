@@ -1,6 +1,6 @@
 <!-- src/components/layout/MainLayout.vue -->
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { Search, Users, ListMusic, X, Minimize2, Maximize2, Volume2, Activity } from 'lucide-vue-next';
 import UserList from '../UserList.vue';
 import QueueList from '../QueueList.vue';
@@ -14,7 +14,9 @@ const userStore = useUserStore();
 const uiStore = useUiStore();
 const playerStore = usePlayerStore();
 
-const authorName = import.meta.env.VITE_APP_AUTHOR_NAME || 'ThorNex';
+onMounted(() => {
+  uiStore.fetchConfig();
+});
 
 const mobileQueueOpen = ref(false);
 const mobileUserOpen = ref(false);
@@ -42,7 +44,7 @@ const handleSearchClick = () => {
         <div class="w-2.5 h-2.5 md:w-3 md:h-3 bg-accent flex-shrink-0"></div>
         <div class="flex items-baseline gap-1">
           <span class="font-black text-base md:text-xl tracking-tighter text-medical-900 whitespace-nowrap">MUSIC PARTY</span>
-          <span class="text-medical-300 font-mono font-normal text-[10px] md:text-xs whitespace-nowrap">by {{ authorName }}</span>
+          <span class="text-medical-300 font-mono font-normal text-[10px] md:text-xs whitespace-nowrap">by {{ uiStore.authorName }}</span>
         </div>
       </div>
 

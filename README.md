@@ -26,20 +26,26 @@
 
 ## Docker 部署（推荐）
 
-### 1. 一键部署
+本项目支持全自动化的 Docker 部署，建议直接拉取构建好的镜像。
 
-使用docker-compose一键部署网易云api+本应用：
+### 1. 使用 Docker Compose 一键启动 (最简方案)
+
+下载项目自带的 `docker-compose.yml` 并根据需要修改其中的环境变量。
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/ThorNex/MusicParty/main/docker-compose.prod.yml > docker-compose.yml
-# 编辑配置 (填入你的 Cookie 等)
-# 启动
+# 下载配置
+curl -sSL https://raw.githubusercontent.com/pluviiter/MusicParty/main/docker-compose.yml > docker-compose.yml
+
+# 修改配置（填写密码、Cookie 等）
+vi docker-compose.yml
+
+# 启动服务
 docker-compose up -d
 ```
 
-### 2. 使用 Docker Run 单独启动
+### 2. 使用 Docker Run 启动
 
-如果你已有现成的网易云 API 服务，可以直接使用以下命令：
+如果你已有现成的网易云 API 服务，可以使用以下命令部署主应用：
 
 ```bash
 docker run -d \
@@ -47,11 +53,19 @@ docker run -d \
   -p 8848:8080 \
   -e ADMIN_PASSWORD=admin123 \
   -e NETEASE_API_URL=http://your-api-ip:3000 \
-  -e NETEASE_COOKIE="你的网易云Cookie" \
-  -e BILIBILI_SESSDATA="你的B站SESSDATA" \
+  -e BASE_URL=http://localhost:8848 \
+  -e APP_AUTHOR_NAME="ThorNex" \
+  -e APP_BACK_WORDS="MUSIC PARTY" \
+  -e NETEASE_COOKIE="" \
+  -e BILIBILI_SESSDATA="" \
+  -e QUEUE_MAX_SIZE=1000 \
+  -e QUEUE_HISTORY_SIZE=50 \
+  -e PLAYLIST_IMPORT_LIMIT=100 \
+  -e CHAT_HISTORY_LIMIT=1000 \
+  -e CACHE_MAX_SIZE=1GB \
   -v ./cached_media:/app/cached_media \
   --restart unless-stopped \
-  thornex/music-party:latest
+  thornex/musicparty:latest
 ```
 
 ---
@@ -60,12 +74,12 @@ docker run -d \
 
 | 变量名                     | 必填 | 说明                                                                |
 |:------------------------|:---|:------------------------------------------------------------------|
-| `APP_AUTHOR_NAME`       | 否  | 页面显示的作者名字，地点在左上角标题后面，以by XXX的形式。                                  |
-| `APP_BACK_WORDS`        | 否  | 中间专辑封面后方的装饰性背景字，强制大写。                                             |
+| `APP_AUTHOR_NAME`       | 否  | 页面显示的作者名字，地点在左上角标题后面。默认为 `ThorNex`。                                |
+| `APP_BACK_WORDS`        | 否  | 中间专辑封面后方的装饰性背景字，强制大写。默认为 `MUSIC PARTY`。                             |
 | `ADMIN_PASSWORD`        | 是  | 管理员密码，用于在搜索框输入指令控制系统。                                             |
 | `NETEASE_API_URL`       | 是  | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。 |
-| `BASE_URL`              | 否  | 服务的域名。用户获取直播流链接时，拼接在前面。                                           |
-| `BILIBILI_SESSDATA`     | 否  | B站账号的 SESSDATA。不填会导致搜索结果受限、无法解析 1080P/Hi-Res 音频流，且极易触发风控。         |
+| `BASE_URL`              | 否  | 服务的域名（带协议）。用户获取直播流链接时，拼接在前面。默认为 `http://localhost:8848`。          |
+| `BILIBILI_SESSDATA`     | 否  | B站账号的 SESSDATA。配置后可支持高音质解析，减少风控。                                  |
 | `NETEASE_COOKIE`        | 否  | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。                                |
 | `QUEUE_MAX_SIZE`        | 否  | 播放队列最大长度，默认 `1000`。                                               |
 | `QUEUE_HISTORY_SIZE`    | 否  | 播放历史记录保留数量，默认 `50`。当播放列表里没有音乐时，会从历史记录随机抽选。                        |
@@ -126,7 +140,7 @@ docker run -d \
 
 ### 完整构建
 
-后端采用 Maven 打包，前端静态资源会被 WebFlux 托管（需自行配置资源拷贝或反向代理）。建议直接使用 Docker 构建整个镜像。
+建议直接使用 Docker 镜像进行生产环境运行。构建镜像请参考根目录下的 `Dockerfile`。
 
 ---
 
