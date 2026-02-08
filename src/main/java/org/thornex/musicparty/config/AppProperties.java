@@ -11,6 +11,8 @@ public class AppProperties {
     private BilibiliApiConfig bilibili;
     private String adminPassword;
     private String baseUrl;
+    private String authorName = "ThorNex";
+    private String backWords = "THORNEX";
     private String ffmpegPath = "ffmpeg"; // 默认使用环境变量中的 ffmpeg
 
     // 新增配置项

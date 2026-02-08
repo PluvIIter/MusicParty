@@ -12,30 +12,41 @@ services:
 
   # 2. Music Party 主应用
   music-party:
-    build: .
+    image: thornex/musicparty:latest
     container_name: music-party-app
+    restart: always
     ports:
       - "8848:8080" 
     environment:
+      # [必填] 管理员密码，用于在搜索框输入指令控制系统
       - ADMIN_PASSWORD=admin123
+      
+      # [必填] 网易云 API 地址，指向上面的容器名
       - NETEASE_API_URL=http://netease-api:3000
-      - BASE_URL=http://localhost:8848
       
-      # 填入你的 B站 SESSDATA 
-      - BILIBILI_SESSDATA=""
+      # [基础配置]
+      - BASE_URL=http://localhost:8848    #你的基础url，用于直播流链接的拼接
+      - APP_AUTHOR_NAME=ThorNex      # 页面左上角显示的作者名
+      - APP_BACK_WORDS=MUSIC PARTY    # 中间背景装饰文字
       
-      # 填入你的网易云 Cookie 
-      - NETEASE_COOKIE=""
+      # [平台凭证]
+      - BILIBILI_SESSDATA=""         # B站 SESSDATA
+      - NETEASE_COOKIE=""            # 网易云 Cookie
 
-      # 队列与限制配置
+      # [性能/策略配置]
       - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
       - QUEUE_HISTORY_SIZE=50        # 历史记录保留数量
-      - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数
+      - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数限制
       - CHAT_HISTORY_LIMIT=1000      # 聊天历史记录保留数量
-      - CACHE_MAX_SIZE=1GB           # 本地音乐缓存上限 (e.g. 512MB, 2GB)
+      - CACHE_MAX_SIZE=1GB           # 本地音乐缓存上限 (例如 512MB, 1GB, 2GB)
     depends_on:
       - netease-api
     networks:
       - music-net
     volumes:
+      # 挂载音频缓存目录，防止重启后 B 站歌曲重新下载
       - ./cached_media:/app/cached_media
+
+networks:
+  music-net:
+    driver: bridge
