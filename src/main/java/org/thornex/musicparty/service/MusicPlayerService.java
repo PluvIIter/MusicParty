@@ -255,6 +255,16 @@ public class MusicPlayerService {
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
 
+        // Check user song limit
+        long userSongCount = queueManager.getQueueSnapshot().stream()
+                .filter(item -> item.enqueuedBy().token().equals(enqueuer.getToken()))
+                .count();
+
+        if (userSongCount >= appProperties.getQueue().getMaxUserSongs()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: 您的点歌数量已达上限 (" + appProperties.getQueue().getMaxUserSongs() + "首)"));
+            return;
+        }
+
         IMusicApiService service = getApiService(request.platform());
         service.getPlayableMusic(request.musicId())
                 .subscribe(playableMusic -> {
@@ -311,8 +321,23 @@ public class MusicPlayerService {
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
 
+        // Check user song limit
+        long currentCount = queueManager.getQueueSnapshot().stream()
+                .filter(item -> item.enqueuedBy().token().equals(enqueuer.getToken()))
+                .count();
+        int maxUserSongs = appProperties.getQueue().getMaxUserSongs();
+
+        if (currentCount >= maxUserSongs) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: 您的点歌数量已达上限"));
+            return;
+        }
+
+        // Calculate remaining quota
+        int remainingQuota = (int) (maxUserSongs - currentCount);
+        int importLimit = Math.min(appProperties.getPlayer().getMaxPlaylistImportSize(), remainingQuota);
+
         IMusicApiService service = getApiService(request.platform());
-        service.getPlaylistMusics(request.playlistId(), 0, appProperties.getPlayer().getMaxPlaylistImportSize())
+        service.getPlaylistMusics(request.playlistId(), 0, importLimit)
                 .subscribe(musics -> {
                     int count = 0;
                     QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;

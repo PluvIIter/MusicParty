@@ -27,9 +27,18 @@ app:
     queue:
       max-size: ${QUEUE_MAX_SIZE:1000}
       history-size: ${QUEUE_HISTORY_SIZE:50}
+      max-user-songs: ${QUEUE_MAX_USER_SONGS:100}
     player:
       max-playlist-import-size: ${PLAYLIST_IMPORT_LIMIT:100}
     chat:
       max-history-size: ${CHAT_HISTORY_LIMIT:1000}
+      min-interval-ms: ${CHAT_MIN_INTERVAL:1000}
+      max-message-length: ${CHAT_MAX_LENGTH:200}
     cache:
       max-size: ${CACHE_MAX_SIZE:1GB}
+    auth:
+      rate-limit:
+        enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
+        max-attempts: ${AUTH_MAX_ATTEMPTS:5}
+        window-seconds: ${AUTH_WINDOW_SECONDS:60}
+        block-duration-seconds: ${AUTH_BLOCK_DURATION:300}

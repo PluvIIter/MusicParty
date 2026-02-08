@@ -39,6 +39,16 @@ services:
       - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数限制
       - CHAT_HISTORY_LIMIT=1000      # 聊天历史记录保留数量
       - CACHE_MAX_SIZE=1GB           # 本地音乐缓存上限 (例如 512MB, 1GB, 2GB)
+
+      # [防滥用配置]
+      - QUEUE_MAX_USER_SONGS=100     # 单用户最大点歌数
+      - CHAT_MIN_INTERVAL=1000       # 聊天间隔 (毫秒)
+      - CHAT_MAX_LENGTH=200          # 聊天最大长度
+      - AUTH_RATE_LIMIT_ENABLED=true # 是否开启密码限流
+      - AUTH_MAX_ATTEMPTS=5          # 密码最大尝试次数
+      - AUTH_WINDOW_SECONDS=60       # 密码尝试窗口 (秒)
+      - AUTH_BLOCK_DURATION=300      # 密码封锁时间 (秒)
+
     depends_on:
       - netease-api
     networks:

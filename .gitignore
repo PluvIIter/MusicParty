@@ -35,3 +35,4 @@ build/
 /cookie.txt
 /GEMINI.md
 /.gemini/.env
+/scripts/publish-image.ps1

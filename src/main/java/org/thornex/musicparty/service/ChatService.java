@@ -27,12 +27,36 @@ public class ChatService {
     private final AppProperties appProperties;
     
     private final Map<String, ChatCommand> commandMap;
+    private final Map<String, Long> lastMessageTime = new java.util.concurrent.ConcurrentHashMap<>();
 
     public ChatService(SimpMessagingTemplate messagingTemplate, UserService userService, AppProperties appProperties, List<ChatCommand> commands) {
         this.messagingTemplate = messagingTemplate;
         this.userService = userService;
         this.appProperties = appProperties;
         this.commandMap = commands.stream().collect(Collectors.toMap(ChatCommand::getCommand, Function.identity()));
+    }
+
+    /**
+     * 检查是否允许发送消息（频率限制）
+     */
+    public boolean canUserSendMessage(String userToken) {
+        long now = System.currentTimeMillis();
+        long last = lastMessageTime.getOrDefault(userToken, 0L);
+        long minInterval = appProperties.getChat().getMinIntervalMs();
+
+        if (now - last < minInterval) {
+            return false;
+        }
+
+        lastMessageTime.put(userToken, now);
+        return true;
+    }
+
+    /**
+     * 检查消息长度
+     */
+    public boolean isMessageLengthValid(String content) {
+        return content != null && content.length() <= appProperties.getChat().getMaxMessageLength();
     }
 
     /**
