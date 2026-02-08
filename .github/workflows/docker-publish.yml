@@ -12,7 +12,7 @@ env:
   REGISTRY: docker.io
   # 镜像名称，默认为 <github-user>/<repo-name>
   # 如果您的 Docker Hub 用户名与 GitHub 用户名不同，请在此处直接指定: e.g., my-docker-user/music-party
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: thornex/music-party
 
 jobs:
   build-and-push:
