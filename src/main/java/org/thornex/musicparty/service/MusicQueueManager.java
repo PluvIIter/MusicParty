@@ -190,6 +190,32 @@ public class MusicQueueManager {
         return new ArrayList<>(queue);
     }
 
+    public List<Music> getHistorySnapshot() {
+        synchronized (playHistory) {
+            return new ArrayList<>(playHistory);
+        }
+    }
+
+    /**
+     * 从持久化存储恢复队列和历史记录
+     */
+    public synchronized void restore(List<MusicQueueItem> loadedQueue, List<Music> loadedHistory) {
+        // Clear current
+        queue.clear();
+        playHistory.clear();
+        lastPlayedUserToken.set("");
+
+        // Restore Queue
+        if (loadedQueue != null) {
+            queue.addAll(loadedQueue);
+        }
+
+        // Restore History
+        if (loadedHistory != null) {
+            playHistory.addAll(loadedHistory);
+        }
+    }
+
     // --- Private Helper Methods ---
 
     private boolean isMusicInQueue(String musicId) {

@@ -63,7 +63,7 @@ docker run -d \
   -e PLAYLIST_IMPORT_LIMIT=100 \
   -e CHAT_HISTORY_LIMIT=1000 \
   -e CACHE_MAX_SIZE=1GB \
-  -v ./cached_media:/app/cached_media \
+  -v ./music_party:/app \
   --restart unless-stopped \
   thornex/musicparty:latest
 ```
