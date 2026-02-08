@@ -12,7 +12,7 @@ services:
 
   # 2. Music Party 主应用
   music-party:
-    image: thornex/musicparty:latest
+    image: thornex/music-party:latest
     container_name: music-party-app
     restart: always
     ports:
