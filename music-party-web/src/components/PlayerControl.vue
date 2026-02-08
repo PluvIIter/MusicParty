@@ -82,7 +82,7 @@
         <button
             id="tutorial-random-mobile"
             @click="player.toggleShuffle"
-            :disabled="!player.connected"
+            :disabled="!player.connected || player.isShuffleLocked"
             class="p-2 border rounded-sm disabled:opacity-50 transition-colors"
             :class="player.isShuffle
                 ? 'bg-accent text-white border-accent'
@@ -93,11 +93,14 @@
         <button id="tutorial-download-mobile" @click="downloadCurrentMusic" class="p-2 bg-medical-50 border border-medical-200 rounded-sm text-medical-500 active:bg-medical-200">
           <Download class="w-4 h-4" />
         </button>
-         <button id="tutorial-pause-mobile" @click="player.togglePause" class="p-2 bg-medical-100 rounded-sm">
-             <Play v-if="player.isPaused" class="w-4 h-4" />
-             <Pause v-else class="w-4 h-4" />
+         <button id="tutorial-pause-mobile" @click="player.togglePause" :disabled="player.isPauseLocked && !player.isPaused" class="p-2 bg-medical-100 rounded-sm disabled:opacity-50">
+             <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-medical-400" />
+             <template v-else>
+                 <Play v-if="player.isPaused" class="w-4 h-4" />
+                 <Pause v-else class="w-4 h-4" />
+             </template>
          </button>
-         <button @click="player.playNext" class="p-2 bg-medical-100 rounded-sm">
+         <button @click="player.playNext" :disabled="player.isSkipLocked" class="p-2 bg-medical-100 rounded-sm disabled:opacity-50">
              <SkipForward class="w-4 h-4" />
          </button>
       </div>
@@ -108,7 +111,7 @@
       
       <!-- 播放控制 -->
       <div class="flex items-center gap-4 border-r border-medical-200 pr-6">
-        <button id="tutorial-random" @click="player.toggleShuffle" :class="player.isShuffle ? 'text-accent' : 'text-medical-400'" title="Shuffle">
+        <button id="tutorial-random" @click="player.toggleShuffle" :disabled="player.isShuffleLocked" :class="[player.isShuffle ? 'text-accent' : 'text-medical-400', player.isShuffleLocked ? 'opacity-50 cursor-not-allowed' : '']" title="Shuffle">
             <Shuffle class="w-5 h-5" />
         </button>
 
@@ -120,13 +123,17 @@
         <button 
             id="tutorial-pause"
             @click="player.togglePause" 
-            class="w-10 h-10 bg-medical-900 text-white flex items-center justify-center hover:bg-accent transition-colors chamfer-tl"
+            :disabled="player.isPauseLocked && !player.isPaused"
+            class="w-10 h-10 bg-medical-900 text-white flex items-center justify-center hover:bg-accent transition-colors chamfer-tl disabled:opacity-50 disabled:hover:bg-medical-900 disabled:cursor-not-allowed"
         >
-            <Play v-if="player.isPaused" class="w-4 h-4 fill-current" />
-            <Pause v-else class="w-4 h-4 fill-current" />
+            <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-white" />
+            <template v-else>
+                <Play v-if="player.isPaused" class="w-4 h-4 fill-current" />
+                <Pause v-else class="w-4 h-4 fill-current" />
+            </template>
         </button>
 
-        <button @click="player.playNext" class="text-medical-800 hover:text-accent transition-colors" title="Next">
+        <button @click="player.playNext" :disabled="player.isSkipLocked" class="text-medical-800 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Next">
             <SkipForward class="w-6 h-6 fill-current" />
         </button>
       </div>
@@ -171,7 +178,7 @@ import { ref, computed, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
 import { formatDuration } from '../utils/format';
-import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink, Zap } from 'lucide-vue-next';
+import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink, Zap, Lock } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { useToast } from '../composables/useToast';
 

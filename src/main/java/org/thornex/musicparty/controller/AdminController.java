@@ -13,6 +13,7 @@ import org.thornex.musicparty.service.api.BilibiliMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -63,6 +64,40 @@ public class AdminController {
                 } else {
                     return ResponseEntity.badRequest().body(Map.of("message", "Invalid stream command"));
                 }
+
+            case "//LOCK":
+                if (parts.length < 2) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Usage: //LOCK <TYPE> <ON/OFF>. TYPE: PAUSE, SKIP, SHUFFLE, ALL"));
+                }
+                String[] lockParts = parts[1].split("\\s+");
+                if (lockParts.length < 2) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Missing ON/OFF. Usage: //LOCK <TYPE> <ON/OFF>"));
+                }
+                String type = lockParts[0].toUpperCase();
+                String state = lockParts[1].toUpperCase();
+                boolean locked = "ON".equals(state);
+
+                if ("ALL".equals(type)) {
+                    musicPlayerService.setAllLocks(locked);
+                    return ResponseEntity.ok(Map.of("message", "ALL LOCKS SET TO " + locked));
+                } else if (Set.of("PAUSE", "SKIP", "SHUFFLE").contains(type)) {
+                    musicPlayerService.setLock(type, locked);
+                    return ResponseEntity.ok(Map.of("message", type + " LOCK SET TO " + locked));
+                } else {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Invalid lock type: " + type));
+                }
+
+            case "//PAUSE":
+                musicPlayerService.togglePause("SYSTEM");
+                return ResponseEntity.ok(Map.of("message", "TOGGLE PAUSE (SYSTEM OVERRIDE)"));
+
+            case "//SKIP":
+                musicPlayerService.skipToNext("SYSTEM");
+                return ResponseEntity.ok(Map.of("message", "SKIP TO NEXT (SYSTEM OVERRIDE)"));
+
+            case "//SHUFFLE":
+                musicPlayerService.toggleShuffle("SYSTEM");
+                return ResponseEntity.ok(Map.of("message", "TOGGLE SHUFFLE (SYSTEM OVERRIDE)"));
 
             case "//RESET":
                 musicPlayerService.resetSystem();

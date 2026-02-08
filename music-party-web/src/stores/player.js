@@ -15,6 +15,9 @@ export const usePlayerStore = defineStore('player', () => {
     const queue = ref([]);
     const isPaused = ref(false);
     const isShuffle = ref(false);
+    const isPauseLocked = ref(false);
+    const isSkipLocked = ref(false);
+    const isShuffleLocked = ref(false);
     const lyricText = ref('');
     const connected = ref(false);
     const isLoading = ref(false);
@@ -65,6 +68,9 @@ export const usePlayerStore = defineStore('player', () => {
         queue.value = state.queue;
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
+        isPauseLocked.value = state.isPauseLocked || false;
+        isSkipLocked.value = state.isSkipLocked || false;
+        isShuffleLocked.value = state.isShuffleLocked || false;
         isLoading.value = state.isLoading || false;
         streamListenerCount.value = state.streamListenerCount || 0;
 
@@ -154,7 +160,7 @@ export const usePlayerStore = defineStore('player', () => {
     });
 
     return {
-        nowPlaying, queue, isPaused, isShuffle, connected, isLoading, lyricText,
+        nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText,
         localProgress, isBuffering, isErrorState, streamListenerCount,
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
