@@ -8,6 +8,9 @@ public record PlayerState(
         boolean isShuffle,
         List<UserSummary> onlineUsers,
         boolean isPaused,
+        boolean isPauseLocked,
+        boolean isSkipLocked,
+        boolean isShuffleLocked,
         boolean isLoading,
         int streamListenerCount
 ) {}

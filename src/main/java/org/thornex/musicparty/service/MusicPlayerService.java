@@ -53,6 +53,9 @@ public class MusicPlayerService {
 
     private final AtomicBoolean isShuffle = new AtomicBoolean(false);
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
+    private final AtomicBoolean isPauseLocked = new AtomicBoolean(false);
+    private final AtomicBoolean isSkipLocked = new AtomicBoolean(false);
+    private final AtomicBoolean isShuffleLocked = new AtomicBoolean(false);
     private final AtomicBoolean isLoading = new AtomicBoolean(false);
     private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
 
@@ -244,10 +247,40 @@ public class MusicPlayerService {
                 isShuffle.get(),
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
-                // 移除了多余的时间字段
+                isPauseLocked.get(),
+                isSkipLocked.get(),
+                isShuffleLocked.get(),
                 isLoading.get(),
                 liveStreamService.getStreamListenerCount()
         );
+    }
+
+    public void setLock(String type, boolean locked) {
+        AtomicBoolean targetLock;
+        String desc;
+        switch (type.toUpperCase()) {
+            case "PAUSE" -> { targetLock = isPauseLocked; desc = "暂停"; }
+            case "SKIP" -> { targetLock = isSkipLocked; desc = "切歌"; }
+            case "SHUFFLE" -> { targetLock = isShuffleLocked; desc = "随机播放"; }
+            default -> throw new IllegalArgumentException("Unknown lock type");
+        }
+
+        boolean old = targetLock.getAndSet(locked);
+        if (old != locked) {
+            log.info("{} lock set to: {}", desc, locked);
+            broadcastFullPlayerState();
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.RESET, "SYSTEM",
+                    locked ? "管理员锁定了" + desc : "管理员解锁了" + desc));
+        }
+    }
+
+    public void setAllLocks(boolean locked) {
+        isPauseLocked.set(locked);
+        isSkipLocked.set(locked);
+        isShuffleLocked.set(locked);
+        broadcastFullPlayerState();
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.RESET, "SYSTEM",
+                locked ? "管理员锁定了所有控制" : "管理员解锁了所有控制"));
     }
 
     public void enqueue(EnqueueRequest request, String sessionId) {
@@ -384,6 +417,10 @@ public class MusicPlayerService {
 
     public void skipToNext(String sessionId) {
         if (isRateLimited(sessionId)) return;
+        if (isSkipLocked.get() && !"SYSTEM".equals(sessionId)) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, getUserToken(sessionId), "切歌功能已被锁定"));
+            return;
+        }
 
         // 切歌时版本号自增，废弃之前的任何 pending 请求
         playHeadVersion.incrementAndGet();
@@ -405,6 +442,15 @@ public class MusicPlayerService {
         }
         if (isRateLimited(sessionId)) return;
 
+        // 锁定检查：如果是系统操作，放行。如果是用户操作，检查锁。
+        // 规则：如果不控制播放权限（允许从暂停->播放），则只有当当前是播放状态(即试图暂停)且锁定时才拦截。
+        if (!"SYSTEM".equals(sessionId)) {
+            if (isPauseLocked.get() && !isPaused.get()) {
+                // eventPublisher.publishEvent(...);
+                return;
+            }
+        }
+
         // 核心：在切换状态的一瞬间，更新 Anchor
         // 1. 先计算出当前的进度
         long currentPos = calculateCurrentPosition();
@@ -424,6 +470,7 @@ public class MusicPlayerService {
 
     public void toggleShuffle(String sessionId) {
         if (isRateLimited(sessionId)) return;
+        if (isShuffleLocked.get() && !"SYSTEM".equals(sessionId)) return;
 
         // 使用标准的 CAS 循环来原子性地翻转布尔值
         boolean current;
