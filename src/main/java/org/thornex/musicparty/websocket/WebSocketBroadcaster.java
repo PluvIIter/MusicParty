@@ -5,15 +5,19 @@ import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.thornex.musicparty.dto.PlayerEvent;
+import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.event.PlayerStateEvent;
 import org.thornex.musicparty.event.QueueUpdateEvent;
 import org.thornex.musicparty.event.SystemMessageEvent;
+import org.thornex.musicparty.service.UserService;
+import org.thornex.musicparty.util.MessageFormatter;
 
 @Component
 @RequiredArgsConstructor
 public class WebSocketBroadcaster {
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final UserService userService;
 
     /**
      * 监听播放器完整状态变更事件
@@ -40,6 +44,15 @@ public class WebSocketBroadcaster {
         String actionCode = event.getAction() != null ? event.getAction().name() : "";
         String type = event.getLevel().name();
 
+        String userName = "SYSTEM";
+        if (!"SYSTEM".equals(event.getUserId())) {
+            userName = userService.getUserByToken(event.getUserId())
+                    .map(User::getName)
+                    .orElse("Unknown");
+        }
+
+        String formattedMessage = MessageFormatter.format(event, userName);
+
         // 特殊处理密码修改的广播
         if ("PASSWORD_CHANGED".equals(event.getPayload())) {
             actionCode = "PASSWORD_CHANGED";
@@ -50,6 +63,7 @@ public class WebSocketBroadcaster {
                 type,
                 actionCode,
                 event.getUserId(),
+                formattedMessage,
                 event.getPayload()
         );
         messagingTemplate.convertAndSend("/topic/player/events", playerEvent);

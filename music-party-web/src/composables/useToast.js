@@ -1,26 +1,18 @@
-import { ref } from 'vue';
-
-// 全局单例 ref，用于持有 Toast 组件的实例
-const toastRef = ref(null);
+import { useToastStore } from '../stores/toast';
 
 export function useToast() {
-    // 1. 注册组件实例 (在 App.vue 中调用)
+    const store = useToastStore();
+
+    // 保持 API 兼容性
+    // register 不再需要，因为 store 是全局的
     const register = (instance) => {
-        toastRef.value = instance;
+        console.warn('useToast: register() is deprecated. ToastNotification uses Pinia store now.');
     };
 
-    // 2. 核心方法：显示提示
-    const show = ({ title, message, type = 'success', duration = 1500 }) => {
-        if (toastRef.value) {
-            toastRef.value.add({ title, message, type, duration });
-        } else {
-            console.warn('Toast component not registered!');
-        }
-    };
-
-    const success = (message) => show({ title: 'SUCCESS', message, type: 'success' });
-    const error = (message) => show({ title: 'ERROR', message, type: 'error' });
-    const info = (message) => show({ title: 'INFO', message, type: 'info' });
+    const show = (options) => store.add(options);
+    const success = (message) => store.success(message);
+    const error = (message) => store.error(message);
+    const info = (message) => store.info(message);
 
     return {
         register,
