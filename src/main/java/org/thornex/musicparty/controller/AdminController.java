@@ -66,15 +66,14 @@ public class AdminController {
                 }
 
             case "//LOCK":
-                if (parts.length < 2) {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Usage: //LOCK <TYPE> <ON/OFF>. TYPE: PAUSE, SKIP, SHUFFLE, ALL"));
-                }
-                String[] lockParts = parts[1].split("\\s+");
-                if (lockParts.length < 2) {
+                if (parts.length < 3) {
+                    if (parts.length < 2) {
+                        return ResponseEntity.badRequest().body(Map.of("message", "Usage: //LOCK <TYPE> <ON/OFF>. TYPE: PAUSE, SKIP, SHUFFLE, ALL"));
+                    }
                     return ResponseEntity.badRequest().body(Map.of("message", "Missing ON/OFF. Usage: //LOCK <TYPE> <ON/OFF>"));
                 }
-                String type = lockParts[0].toUpperCase();
-                String state = lockParts[1].toUpperCase();
+                String type = parts[1].toUpperCase();
+                String state = parts[2].toUpperCase();
                 boolean locked = "ON".equals(state);
 
                 if ("ALL".equals(type)) {
