@@ -1,0 +1,42 @@
+services:
+  # 1. 网易云音乐 API 服务
+  netease-api:
+    image: moefurina/ncm-api:latest
+    container_name: music-party-netease
+    restart: always
+    environment:
+      - PORT=3000
+      - HTTPS=true
+    networks:
+      - music-net
+
+  # 2. Music Party 主应用 (使用远程镜像)
+  music-party:
+    # 替换下面的 'your-username' 为你实际的 Docker Hub 用户名
+    image: your-username/music-party:latest
+    container_name: music-party-app
+    restart: always
+    ports:
+      - "8848:8080"
+    environment:
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - NETEASE_API_URL=${NETEASE_API_URL}
+      - BASE_URL=${BASE_URL}
+      - BILIBILI_SESSDATA=${BILIBILI_SESSDATA}
+      - NETEASE_COOKIE=${NETEASE_COOKIE}
+      - QUEUE_MAX_SIZE=${QUEUE_MAX_SIZE}
+      - QUEUE_HISTORY_SIZE=${QUEUE_HISTORY_SIZE}
+      - PLAYLIST_IMPORT_LIMIT=${PLAYLIST_IMPORT_LIMIT}
+      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT}
+      - CACHE_MAX_SIZE=${CACHE_MAX_SIZE}
+    depends_on:
+      - netease-api
+    networks:
+      - music-net
+    volumes:
+      # 映射数据目录，持久化缓存
+      - ./cached_media:/app/cached_media
+
+networks:
+  music-net:
+    driver: bridge

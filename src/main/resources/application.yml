@@ -12,13 +12,12 @@ logging:
 # Custom application properties
 app:
   music-api:
-    admin-password: ganyh1998
+    admin-password: ${ADMIN_PASSWORD:admin123}
     base-url: ${BASE_URL:http://localhost:8080}
     netease:
       # The base URL of your deployed NeteaseCloudMusicApi instance
-      base-url: ${NETEASE_API_URL:http://localhost:3000}
-      cookie:
-        ${NETEASE_COOKIE:}
+      base-url: ${NETEASE_API_URL:http://netease-api:3000}
+      cookie: ${NETEASE_COOKIE:}
     bilibili:
       # Bilibili API base URL, it's public
       base-url: "https://api.bilibili.com"
