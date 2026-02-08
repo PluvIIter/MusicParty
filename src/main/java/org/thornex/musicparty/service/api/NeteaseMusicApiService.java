@@ -26,6 +26,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private final WebClient webClient;
     private final String baseUrl;
     private final String initialCookieFromConfig;
+    private final String quality;
     private volatile String currentCookie;
     private static final String PLATFORM = "netease";
 
@@ -33,13 +34,14 @@ public class NeteaseMusicApiService implements IMusicApiService {
         this.webClient = webClient;
         this.baseUrl = appProperties.getNetease().getBaseUrl();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
+        this.quality = appProperties.getNetease().getQuality();
         // 初始化时先使用配置文件的内容
         this.currentCookie = initialCookieFromConfig;
     }
 
     @PostConstruct
     public void initialize() {
-        log.info("Initializing NeteaseCloudMusic API client...");
+        log.info("Initializing NeteaseCloudMusic API client with quality: {}...", quality);
         if (!StringUtils.hasText(currentCookie) || "YOUR_NETEASE_COOKIE_STRING_HERE".equals(currentCookie)) {
             log.info("Netease Cookie is empty. Service running in passive mode (waiting for config).");
         } else {
@@ -135,7 +137,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
         ensureConfigured();
         Mono<Music> musicDetailsMono = getMusicDetails(musicId);
         Mono<String> musicUrlMono = webClient.get()
-                .uri(baseUrl + "/song/url/v1?id={musicId}&level=lossless&cookie={cookie}", musicId, getCookie())
+                .uri(baseUrl + "/song/url/v1?id={musicId}&level={quality}&cookie={cookie}", musicId, quality, getCookie())
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL", response))
                 .bodyToMono(JsonNode.class)
