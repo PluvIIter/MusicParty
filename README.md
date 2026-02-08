@@ -24,85 +24,35 @@
 *   **智能队列**：实现“公平随机”算法，防止单人霸榜。
 *   **直播音频流**：可以开启直播音频流，使用一个简单的链接来实时收听，用于类似于vrChat等类似场景。
 
-## Docker 一键部署（推荐）
+## Docker 部署（推荐）
 
-本项目包含完整的 `docker-compose.yml`，这是最快的启动方式。
+### 1. 一键部署
 
-### 1. 准备配置文件
-创建一个目录（例如 `music-party`），并在其中创建 `docker-compose.yml` 文件，填入以下内容：
-
-```yaml
-services:
-  # 1. 网易云音乐 API 服务 (依赖项)
-  netease-api:
-    image: moefurina/ncm-api:latest
-    container_name: music-party-netease
-    restart: always
-    environment:
-      - PORT=3000
-      - HTTPS=true
-    networks:
-      - music-net
-    volumes:
-      - ./logs/ncm:/app/logs
-
-  # 2. Music Party 主应用
-  music-party:
-    build:
-      context: .
-      args:
-        # 作者名称，反应在左上角标题后面
-        - APP_AUTHOR_NAME=ThorNex
-        # 背景文字，反应在中间可视化后面的装饰性背景字（回强制大写）
-        - APP_BACK_WORDS=MUSIC PARTY
-    container_name: music-party-app
-    restart: always
-    ports:
-      - "8848:8080"  # 宿主机端口:容器端口
-    environment:
-      # 管理员密码 (用于执行 //RESET 等指令)
-      - ADMIN_PASSWORD=admin123
-      
-      # 网易云 API 地址 (指向上面的容器)
-      - NETEASE_API_URL=http://netease-api:3000
-
-      # 服务域名，用于直播流链接的拼接
-      - BASE_URL=http://localhost:8848
-
-      # 需要对应平台的凭证才能使用曲库
-      # B站 SESSDATA 
-      - BILIBILI_SESSDATA="your_bilibili_sessdata_here"
-      
-      # 网易云 Cookie 
-      - NETEASE_COOKIE="your_netease_cookie_here"
-
-      # 队列与限制配置 (可选)
-      - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
-      - QUEUE_HISTORY_SIZE=50        # 历史记录保留数量
-      - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数
-      - CHAT_HISTORY_LIMIT=1000      # 聊天历史记录保留数量
-      - CACHE_MAX_SIZE=1GB           # 本地音乐缓存上限
-    depends_on:
-      - netease-api
-    networks:
-      - music-net
-    volumes:
-      # 挂载 B 站音频缓存目录 (防止重启后重新下载)
-      - ./cached_media:/app/cached_media
-
-networks:
-  music-net:
-    driver: bridge
-```
-
-### 2. 启动服务
-在目录下运行：
+使用docker-compose一键部署网易云api+本应用：
 
 ```bash
+curl -sSL https://raw.githubusercontent.com/ThorNex/MusicParty/main/docker-compose.prod.yml > docker-compose.yml
+# 编辑配置 (填入你的 Cookie 等)
+# 启动
 docker-compose up -d
 ```
 
-启动后，访问 `http://localhost:8848` 即可进入应用。公网部署请使用IP/域名。
+### 2. 使用 Docker Run 单独启动
+
+如果你已有现成的网易云 API 服务，可以直接使用以下命令：
+
+```bash
+docker run -d \
+  --name music-party \
+  -p 8848:8080 \
+  -e ADMIN_PASSWORD=admin123 \
+  -e NETEASE_API_URL=http://your-api-ip:3000 \
+  -e NETEASE_COOKIE="你的网易云Cookie" \
+  -e BILIBILI_SESSDATA="你的B站SESSDATA" \
+  -v ./cached_media:/app/cached_media \
+  --restart unless-stopped \
+  thornex/music-party:latest
+```
 
 ---
 
