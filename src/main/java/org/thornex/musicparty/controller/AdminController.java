@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.AdminCommandRequest;
+import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.api.BilibiliMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
@@ -20,14 +21,16 @@ import java.util.Set;
 public class AdminController {
 
     private final MusicPlayerService musicPlayerService;
+    private final ChatService chatService;
     private final String adminPassword;
     private final AuthController authController;
     private final NeteaseMusicApiService neteaseMusicApiService;
     private final BilibiliMusicApiService bilibiliMusicApiService;
     private final org.thornex.musicparty.service.stream.LiveStreamService liveStreamService;
 
-    public AdminController(MusicPlayerService musicPlayerService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService, org.thornex.musicparty.service.stream.LiveStreamService liveStreamService) {
+    public AdminController(MusicPlayerService musicPlayerService, ChatService chatService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService, org.thornex.musicparty.service.stream.LiveStreamService liveStreamService) {
         this.musicPlayerService = musicPlayerService;
+        this.chatService = chatService;
         this.adminPassword = appProperties.getAdminPassword();
         this.authController = authController;
         this.neteaseMusicApiService = neteaseMusicApiService;
@@ -103,8 +106,15 @@ public class AdminController {
                 return ResponseEntity.ok(Map.of("message", "SYSTEM PURGED"));
 
             case "//CLEAR":
-                musicPlayerService.clearQueue();
-                return ResponseEntity.ok(Map.of("message", "QUEUE CLEARED"));
+                if (parts.length < 2 || "QUEUE".equalsIgnoreCase(parts[1])) {
+                    musicPlayerService.clearQueue();
+                    return ResponseEntity.ok(Map.of("message", "QUEUE CLEARED"));
+                } else if ("CHAT".equalsIgnoreCase(parts[1])) {
+                    chatService.clearHistoryAndNotify();
+                    return ResponseEntity.ok(Map.of("message", "CHAT HISTORY CLEARED"));
+                } else {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Usage: //CLEAR <QUEUE/CHAT>"));
+                }
 
             case "//PASS":
                 if (parts.length < 2) {
