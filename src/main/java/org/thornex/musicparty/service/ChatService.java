@@ -129,6 +129,24 @@ public class ChatService {
         history.clear();
     }
 
+    public void clearHistoryAndNotify() {
+        clearHistory();
+        broadcastSystemMessage("聊天记录已由管理员清空");
+    }
+
+    private void broadcastSystemMessage(String content) {
+        ChatMessage sysMsg = new ChatMessage(
+                UUID.randomUUID().toString(),
+                "SYSTEM",
+                "SYSTEM",
+                content,
+                System.currentTimeMillis(),
+                MessageType.SYSTEM
+        );
+        addMessage(sysMsg);
+        messagingTemplate.convertAndSend("/topic/chat", sysMsg);
+    }
+
     /**
      * 监听系统事件，自动生成系统消息
      * 这里实现了将“操作日志”写入“系统聊天Tab”的需求
