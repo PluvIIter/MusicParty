@@ -61,7 +61,7 @@
               <div class="text-xs text-medical-500 mb-2 text-center font-sans">绑定用户以获取用户歌单</div>
               <div class="flex gap-1">
                 <input v-model="searchUserKeyword" @keyup.enter="searchUser" placeholder="搜索用户名" class="flex-1 min-w-0 bg-white border border-medical-200 p-1 text-sm outline-none focus:border-accent font-sans" />
-                <button @click="searchUser" class="bg-medical-200 hover:bg-medical-300 p-1"><Search class="w-4 h-4 text-medical-600"/></button>
+                <button @click="searchUser" class="bg-accent hover:bg-accent-hover p-1 transition-colors"><Search class="w-4 h-4 text-white"/></button>
               </div>
               <!-- 搜索结果列表 -->
               <div v-if="userSearchResults.length > 0" class="mt-2 max-h-40 overflow-y-auto space-y-1 border-t border-medical-200 pt-2">
