@@ -20,6 +20,7 @@
         leave-active-class="transition-all duration-200 ease-in"
         leave-from-class="opacity-100 scale-100"
         leave-to-class="opacity-0 scale-95"
+        @after-enter="() => scrollToBottom(true)"
     >
       <div
           v-if="chatStore.isOpen"
@@ -359,6 +360,13 @@ const scrollToBottom = async (force = false) => {
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
     if (isAtBottom || force) {
       el.scrollTop = el.scrollHeight;
+
+      // 如果是强制滚动（如打开窗口），在下一帧再次检查，防止因动画或布局导致的计算偏差
+      if (force) {
+        requestAnimationFrame(() => {
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      }
     }
   }
 };
