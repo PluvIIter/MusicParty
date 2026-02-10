@@ -113,9 +113,8 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const tryReconnect = () => {
-        if (!connected.value) {
-            socketService.forceReconnect();
-        }
+        // 即使 connected 为 true，也让 socketService 检查是否为“僵尸连接”
+        socketService.forceReconnect();
     };
 
     // --- 指令发送 ---

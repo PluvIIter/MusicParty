@@ -193,6 +193,12 @@ export function useAudio(audioRef, playerStore) {
 
             // 3. 强行同步逻辑 (纠偏)
             if (audioRef.value && !isBuffering.value && !isErrorState.value) {
+                // [新增] 检查是否被系统意外暂停 (常见于移动端后台)
+                if (!playerStore.isPaused && audioRef.value.paused && !isBuffering.value) {
+                    console.warn('[Audio] Detected unexpected pause, attempting resume...');
+                    safePlay();
+                }
+
                 // 如果是暂停状态，强制对齐
                 if (playerStore.isPaused) {
                     // 避免重复赋值导致杂音
