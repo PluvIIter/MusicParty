@@ -54,23 +54,68 @@ public class MusicQueueManager {
     /**
      * 将指定歌曲置顶
      */
-    public synchronized boolean top(String queueId) {
+    public synchronized boolean top(String queueId, boolean isShuffle) {
         Optional<MusicQueueItem> itemOpt = findByQueueId(queueId);
         if (itemOpt.isEmpty()) {
             return false;
         }
 
         MusicQueueItem item = itemOpt.get();
-        if (queue.remove(item)) {
-            // 创建一个新的置顶项，ID 加上 TOP- 前缀
-            MusicQueueItem toppedItem = new MusicQueueItem(
-                    "TOP-" + item.queueId(),
-                    item.music(),
-                    item.enqueuedBy(),
-                    item.status()
-            );
-            queue.addFirst(toppedItem);
-            return true;
+
+        // 1. 如果已经是全局置顶 (TOP-)，不做操作
+        if (item.queueId().startsWith("TOP-")) {
+            return false;
+        }
+
+        // 2. 如果是个人置顶 (USERTOP-) -> 升级为全局置顶 (TOP-)
+        // 无论当前是否随机模式，二次置顶都视为升级
+        if (item.queueId().startsWith("USERTOP-")) {
+            if (queue.remove(item)) {
+                // 去掉 USERTOP- (8 chars), 加上 TOP-
+                String originalId = item.queueId().substring(8);
+                MusicQueueItem newItem = new MusicQueueItem(
+                        "TOP-" + originalId,
+                        item.music(),
+                        item.enqueuedBy(),
+                        item.status()
+                );
+                queue.addFirst(newItem);
+                return true;
+            }
+            return false;
+        }
+
+        // 3. 如果是普通歌曲
+        if (isShuffle) {
+            // 随机模式下 -> 变为个人置顶 (USERTOP-)
+            // 为了保持物理顺序不变（以便切换回顺序模式时不乱），我们需要原地替换
+            // 由于 ConcurrentLinkedDeque 不支持原地替换，我们用重建队列的方式
+            List<MusicQueueItem> snapshot = new ArrayList<>(queue);
+            int index = snapshot.indexOf(item);
+            if (index != -1) {
+                MusicQueueItem newItem = new MusicQueueItem(
+                        "USERTOP-" + item.queueId(),
+                        item.music(),
+                        item.enqueuedBy(),
+                        item.status()
+                );
+                snapshot.set(index, newItem);
+                queue.clear();
+                queue.addAll(snapshot);
+                return true;
+            }
+        } else {
+            // 顺序模式下 -> 直接变为全局置顶 (TOP-)
+            if (queue.remove(item)) {
+                MusicQueueItem newItem = new MusicQueueItem(
+                        "TOP-" + item.queueId(),
+                        item.music(),
+                        item.enqueuedBy(),
+                        item.status()
+                );
+                queue.addFirst(newItem);
+                return true;
+            }
         }
         return false;
     }
@@ -79,10 +124,10 @@ public class MusicQueueManager {
      * 从队列中移除一首歌曲
      */
     public synchronized Optional<MusicQueueItem> remove(String queueId) {
-        // 统一处理 TOP- 前缀
-        final String finalQueueId = queueId.startsWith("TOP-") ? queueId.substring(4) : queueId;
+        // 统一处理前缀
+        String idToFind = stripPrefix(queueId);
 
-        Optional<MusicQueueItem> itemOpt = findByQueueId(finalQueueId);
+        Optional<MusicQueueItem> itemOpt = findByQueueId(idToFind);
         itemOpt.ifPresent(queue::remove);
         return itemOpt;
     }
@@ -100,7 +145,7 @@ public class MusicQueueManager {
 
         List<MusicQueueItem> candidates = new ArrayList<>(queue);
 
-        // 1. 优先处理置顶项
+        // 1. 优先处理全局置顶项 (TOP-)
         Optional<MusicQueueItem> topItem = candidates.stream()
                 .filter(item -> item.queueId().startsWith("TOP-") && isReadyOrFailed(statusMap, item))
                 .findFirst();
@@ -111,7 +156,8 @@ public class MusicQueueManager {
             return topItem.get();
         }
 
-        // 2. 移除置顶项和下载中的项，进行常规调度
+        // 2. 移除全局置顶项，进行常规调度
+        // 注意：USERTOP- 项在常规调度中处理
         List<MusicQueueItem> availableItems = candidates.stream()
                 .filter(item -> !item.queueId().startsWith("TOP-") && isReadyOrFailed(statusMap, item))
                 .toList();
@@ -124,7 +170,7 @@ public class MusicQueueManager {
         if (isShuffle) {
             chosenItem = pollNextFairShuffle(availableItems, onlineUserTokens);
         } else {
-            chosenItem = availableItems.get(0); // 顺序播放
+            chosenItem = availableItems.get(0); // 顺序播放，直接取第一个 (包含 USERTOP- 项，按物理顺序)
         }
 
         queue.remove(chosenItem);
@@ -133,7 +179,7 @@ public class MusicQueueManager {
     }
 
     /**
-     * "公平"随机播放算法：严格轮询 (Strict Round-Robin) + 在线优先
+     * "公平"随机播放算法：严格轮询 (Strict Round-Robin) + 在线优先 + 个人置顶优先
      */
     private MusicQueueItem pollNextFairShuffle(List<MusicQueueItem> availableItems, Set<String> onlineUserTokens) {
         // 1. 按用户分组
@@ -153,12 +199,10 @@ public class MusicQueueManager {
         if (!onlineCandidates.isEmpty()) {
             targetUserTokens = onlineCandidates;
         } else {
-            // 如果没有在线用户有点歌，则使用所有有歌的用户（即离线用户）
             targetUserTokens = allUserTokens;
         }
 
         // 3. 严格轮询逻辑
-        // 对用户列表进行排序，确保顺序固定 (A -> B -> C -> A)
         Collections.sort(targetUserTokens);
 
         String lastToken = lastPlayedUserToken.get();
@@ -168,19 +212,39 @@ public class MusicQueueManager {
             int currentIndex = targetUserTokens.indexOf(lastToken);
             nextIndex = (currentIndex + 1) % targetUserTokens.size();
         } else {
-            // 如果上一个播放的用户不在当前列表中（离开了，或没歌了），
-            // 为了平滑过渡，可以尝试寻找比 lastToken 大的第一个用户，或者直接从头开始。
-            // 简单起见，从头开始。
             nextIndex = 0;
         }
 
         String selectedUserToken = targetUserTokens.get(nextIndex);
         List<MusicQueueItem> userSongs = userSongsMap.get(selectedUserToken);
 
-        // 4. 用户内部随机 (Intra-User Shuffle)
-        // 选中该用户后，从他的歌单里随机挑一首
+        // 4. 检查是否有个人置顶 (USERTOP-)
+        Optional<MusicQueueItem> userTop = userSongs.stream()
+                .filter(i -> i.queueId().startsWith("USERTOP-"))
+                .findFirst();
+
+        if (userTop.isPresent()) {
+            return userTop.get();
+        }
+
+        // 5. 用户内部随机
         Collections.shuffle(userSongs);
         return userSongs.get(0);
+    }
+    
+    // ... (rest of methods)
+
+    private Optional<MusicQueueItem> findByQueueId(String queueId) {
+        final String finalId = stripPrefix(queueId);
+        return queue.stream()
+                .filter(item -> stripPrefix(item.queueId()).equals(finalId))
+                .findFirst();
+    }
+    
+    private String stripPrefix(String queueId) {
+        if (queueId.startsWith("TOP-")) return queueId.substring(4);
+        if (queueId.startsWith("USERTOP-")) return queueId.substring(8);
+        return queueId;
     }
 
     /**
@@ -240,17 +304,8 @@ public class MusicQueueManager {
         }
     }
 
-    // --- Private Helper Methods ---
-
     private boolean isMusicInQueue(String musicId) {
         return queue.stream().anyMatch(item -> item.music().id().equals(musicId));
-    }
-
-    private Optional<MusicQueueItem> findByQueueId(String queueId) {
-        final String finalId = queueId.startsWith("TOP-") ? queueId.substring(4) : queueId;
-        return queue.stream()
-                .filter(item -> item.queueId().replace("TOP-", "").equals(finalId))
-                .findFirst();
     }
 
     private boolean isReadyOrFailed(Map<String, QueueItemStatus> statusMap, MusicQueueItem item) {

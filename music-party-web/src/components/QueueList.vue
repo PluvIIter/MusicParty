@@ -117,7 +117,17 @@ const userGroups = computed(() => {
     groupsMap.get(token).items.push(item);
   });
 
-  return Array.from(groupsMap.values());
+  // 对每个组内的歌曲进行排序：个人置顶 (USERTOP-) 放在最前面
+  return Array.from(groupsMap.values()).map(group => ({
+    ...group,
+    items: [...group.items].sort((a, b) => {
+      const aIsUserTop = a.queueId.startsWith('USERTOP-');
+      const bIsUserTop = b.queueId.startsWith('USERTOP-');
+      if (aIsUserTop && !bIsUserTop) return -1;
+      if (!aIsUserTop && bIsUserTop) return 1;
+      return 0; // 保持原有相对顺序
+    })
+  }));
 });
 
 const expandedUsers = ref({});
