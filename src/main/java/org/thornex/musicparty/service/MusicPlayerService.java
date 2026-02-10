@@ -33,7 +33,7 @@ public class MusicPlayerService {
     private final Map<String, IMusicApiService> apiServiceMap;
     private final UserService userService;
     private final LocalCacheService localCacheService;
-    private final ChatService chatService;
+    // ChatService dependency removed to break circular reference
     private final LiveStreamService liveStreamService;
 
     // --- Refactored Dependencies ---
@@ -71,7 +71,7 @@ public class MusicPlayerService {
 
     public MusicPlayerService(List<IMusicApiService> apiServices, UserService userService,
                               LocalCacheService localCacheService,
-                              ChatService chatService, LiveStreamService liveStreamService,
+                              LiveStreamService liveStreamService,
                               MusicQueueManager queueManager,
                               ApplicationEventPublisher eventPublisher,
                               AppProperties appProperties) {
@@ -79,7 +79,6 @@ public class MusicPlayerService {
                 .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
         this.localCacheService = localCacheService;
-        this.chatService = chatService;
         this.liveStreamService = liveStreamService;
         this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
@@ -505,7 +504,6 @@ public class MusicPlayerService {
         queueManager.clearAll();
         isPaused.set(false);
         isShuffle.set(false);
-        chatService.clearHistory();
         isLoading.set(false);
 
         broadcastFullPlayerState();
