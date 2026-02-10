@@ -210,7 +210,7 @@ public class MusicQueueManager {
 
         List<String> targetUserTokens;
         if (!onlineCandidates.isEmpty()) {
-            targetUserTokens = onlineCandidates;
+            targetUserTokens = new ArrayList<>(onlineCandidates);
         } else {
             targetUserTokens = allUserTokens;
         }
