@@ -121,6 +121,19 @@ public class MusicQueueManager {
     }
 
     /**
+     * 从队列中移除指定用户的所有点歌
+     * @return 移除的数量
+     */
+    public synchronized int removeByUser(String userToken) {
+        List<MusicQueueItem> toRemove = queue.stream()
+                .filter(item -> item.enqueuedBy().token().equals(userToken))
+                .toList();
+        
+        toRemove.forEach(queue::remove);
+        return toRemove.size();
+    }
+
+    /**
      * 从队列中移除一首歌曲
      */
     public synchronized Optional<MusicQueueItem> remove(String queueId) {

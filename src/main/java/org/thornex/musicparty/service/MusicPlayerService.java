@@ -618,7 +618,7 @@ public class MusicPlayerService {
 
     // --- Broadcasting and Helper Methods ---
 
-    private void broadcastQueueUpdate() {
+    public void broadcastQueueUpdate() {
         eventPublisher.publishEvent(new QueueUpdateEvent(this, getQueueWithUpdatedStatus()));
     }
 
