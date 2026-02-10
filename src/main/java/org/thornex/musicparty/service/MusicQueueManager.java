@@ -90,9 +90,10 @@ public class MusicQueueManager {
     /**
      * 从队列中取出下一首可播放的歌曲
      * @param isShuffle 是否启用随机模式
+     * @param onlineUserTokens 在线用户的 Token 集合 (用于优先调度)
      * @return 下一首歌曲，如果队列为空则返回 null
      */
-    public synchronized MusicQueueItem pollNext(boolean isShuffle, Map<String, QueueItemStatus> statusMap) {
+    public synchronized MusicQueueItem pollNext(boolean isShuffle, Map<String, QueueItemStatus> statusMap, Set<String> onlineUserTokens) {
         if (queue.isEmpty()) {
             return pollFromHistory(); // 队列为空时，尝试从历史记录播放
         }
@@ -121,7 +122,7 @@ public class MusicQueueManager {
 
         MusicQueueItem chosenItem;
         if (isShuffle) {
-            chosenItem = pollNextFairShuffle(availableItems);
+            chosenItem = pollNextFairShuffle(availableItems, onlineUserTokens);
         } else {
             chosenItem = availableItems.get(0); // 顺序播放
         }
@@ -132,31 +133,54 @@ public class MusicQueueManager {
     }
 
     /**
-     * "公平"随机播放算法
+     * "公平"随机播放算法：严格轮询 (Strict Round-Robin) + 在线优先
      */
-    private MusicQueueItem pollNextFairShuffle(List<MusicQueueItem> availableItems) {
+    private MusicQueueItem pollNextFairShuffle(List<MusicQueueItem> availableItems, Set<String> onlineUserTokens) {
+        // 1. 按用户分组
         Map<String, List<MusicQueueItem>> userSongsMap = new HashMap<>();
         for (MusicQueueItem item : availableItems) {
             userSongsMap.computeIfAbsent(item.enqueuedBy().token(), k -> new ArrayList<>()).add(item);
         }
 
-        List<String> userTokens = new ArrayList<>(userSongsMap.keySet());
-        Collections.shuffle(userTokens);
+        List<String> allUserTokens = new ArrayList<>(userSongsMap.keySet());
+        
+        // 2. 筛选目标用户池：优先在线用户
+        List<String> onlineCandidates = allUserTokens.stream()
+                .filter(onlineUserTokens::contains)
+                .toList();
+
+        List<String> targetUserTokens;
+        if (!onlineCandidates.isEmpty()) {
+            targetUserTokens = onlineCandidates;
+        } else {
+            // 如果没有在线用户有点歌，则使用所有有歌的用户（即离线用户）
+            targetUserTokens = allUserTokens;
+        }
+
+        // 3. 严格轮询逻辑
+        // 对用户列表进行排序，确保顺序固定 (A -> B -> C -> A)
+        Collections.sort(targetUserTokens);
 
         String lastToken = lastPlayedUserToken.get();
-        if (userTokens.size() > 1 && userTokens.contains(lastToken)) {
-            userTokens.remove(lastToken);
-            userTokens.add(lastToken);
+        int nextIndex = 0;
+
+        if (targetUserTokens.contains(lastToken)) {
+            int currentIndex = targetUserTokens.indexOf(lastToken);
+            nextIndex = (currentIndex + 1) % targetUserTokens.size();
+        } else {
+            // 如果上一个播放的用户不在当前列表中（离开了，或没歌了），
+            // 为了平滑过渡，可以尝试寻找比 lastToken 大的第一个用户，或者直接从头开始。
+            // 简单起见，从头开始。
+            nextIndex = 0;
         }
 
-        for (String userToken : userTokens) {
-            List<MusicQueueItem> userSongs = userSongsMap.get(userToken);
-            if (!userSongs.isEmpty()) {
-                Collections.shuffle(userSongs);
-                return userSongs.get(0);
-            }
-        }
-        return availableItems.get(new Random().nextInt(availableItems.size()));
+        String selectedUserToken = targetUserTokens.get(nextIndex);
+        List<MusicQueueItem> userSongs = userSongsMap.get(selectedUserToken);
+
+        // 4. 用户内部随机 (Intra-User Shuffle)
+        // 选中该用户后，从他的歌单里随机挑一首
+        Collections.shuffle(userSongs);
+        return userSongs.get(0);
     }
 
     /**

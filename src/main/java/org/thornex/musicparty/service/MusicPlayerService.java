@@ -138,7 +138,12 @@ public class MusicPlayerService {
         }
 
         Map<String, QueueItemStatus> statusMap = buildStatusMap();
-        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), statusMap);
+
+        Set<String> onlineUserTokens = userService.getOnlineUserSummaries().stream()
+                .map(UserSummary::token)
+                .collect(Collectors.toSet());
+
+        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), statusMap, onlineUserTokens);
 
         if (nextItem == null) {
             if (isLoading.get()) {
