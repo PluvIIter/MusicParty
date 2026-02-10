@@ -74,7 +74,7 @@ const handleSearchClick = () => {
         </button>
 
         <!-- 搜索按钮 -->
-        <button id="tutorial-search" @click="handleSearchClick" class="flex items-center justify-center w-9 h-9 md:w-auto md:h-9 md:px-4 border border-medical-200 bg-medical-50 hover:bg-medical-100 font-bold text-sm text-medical-600 transition-all rounded-sm gap-2">
+        <button id="tutorial-search" @click="handleSearchClick" class="flex items-center justify-center w-9 h-9 md:w-auto md:h-9 md:px-4 border border-accent bg-accent hover:bg-accent-hover font-bold text-sm text-white transition-all rounded-sm gap-2">
           <Search class="w-4 h-4" />
           <span class="hidden md:inline">SEARCH</span>
         </button>
