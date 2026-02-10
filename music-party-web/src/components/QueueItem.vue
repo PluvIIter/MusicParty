@@ -35,7 +35,8 @@
     </div>
 
     <!-- 标记置顶的歌曲 -->
-    <div v-if="item.queueId.startsWith('TOP-')" class="absolute top-0 right-0 w-2 h-2 bg-accent"></div>
+    <div v-if="item.queueId.startsWith('TOP-')" class="absolute top-0 right-0 w-2 h-2 bg-accent" title="全局置顶"></div>
+    <div v-else-if="item.queueId.startsWith('USERTOP-')" class="absolute top-0 right-0 w-2 h-2 bg-blue-500" title="个人置顶"></div>
   </div>
 </template>
 

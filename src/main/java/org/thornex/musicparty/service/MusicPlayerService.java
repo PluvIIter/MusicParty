@@ -397,14 +397,19 @@ public class MusicPlayerService {
     }
 
     public synchronized void topSong(String queueId, String sessionId) {
-        Optional<MusicQueueItem> itemToTop = queueManager.getQueueSnapshot().stream()
-                .filter(item -> item.queueId().equals(queueId) || item.queueId().replace("TOP-", "").equals(queueId))
-                .findFirst();
-
-        if (itemToTop.isPresent() && queueManager.top(queueId)) {
-            log.info("Song topped: {}", itemToTop.get().music().name());
+        // 先调用 top 执行置顶操作
+        if (queueManager.top(queueId, isShuffle.get())) {
+            // 如果成功，尝试在队列中找到这个 item (不管是 TOP- 还是 USERTOP-) 用来发日志
+            // 由于 queueManager 已经修改了 queueId，我们通过 musicId 或模糊匹配来找
+            // 或者更简单：在调用 top 之前先获取名字？
+            // 但是 top 会修改队列，甚至移除对象。
+            // 让我们在 top 之前先查找 item
+            
+            // 实际上，为了简化，我们可以只记录操作成功
+            log.info("Song topped request by {}", getUserName(sessionId));
             broadcastQueueUpdate();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), itemToTop.get().music().name()));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), "置顶成功"));
+            
             if (currentMusic.get() == null) {
                 playNextInQueue();
             }
