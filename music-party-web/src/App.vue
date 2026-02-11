@@ -82,6 +82,11 @@ useEventListener(document, 'visibilitychange', () => {
   if (document.visibilityState === 'hidden' && hasStarted.value && !player.isPaused && uiStore.autoLiteMode) {
     uiStore.isLiteMode = true;
   }
+  
+  // 从后台切回前台时，主动触发一次重连检查
+  if (document.visibilityState === 'visible' && hasStarted.value) {
+    player.tryReconnect();
+  }
 });
 
 const handleSearchClick = () => {
