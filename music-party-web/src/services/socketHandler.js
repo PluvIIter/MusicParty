@@ -108,7 +108,7 @@ export const createSocketCallbacks = () => {
     return {
         // 连接成功
         onConnect: () => {
-            playerStore.connected = true;
+            playerStore.setConnected(true);
             // 发起同步
             setTimeout(() => {
                 socketService.send(WS_DEST.RESYNC);
@@ -121,7 +121,7 @@ export const createSocketCallbacks = () => {
 
         // 连接断开 (含异常断开)
         onDisconnect: () => {
-            playerStore.connected = false;
+            playerStore.setConnected(false);
         },
 
         // STOMP 协议层错误 (如密码错误、Token失效、服务器内部错误等)
