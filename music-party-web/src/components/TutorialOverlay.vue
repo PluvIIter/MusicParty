@@ -99,14 +99,14 @@ const steps = [
     content: '注意：暂停/播放是全局生效的，会影响所有在线听众，请谨慎操作。'
   },
   {
-    targetId: 'tutorial-random',
-    mobileTargetId: 'tutorial-random-mobile',
-    content: '随机播放模式采用“公平随机”算法，确保每个人点的歌都有均等的机会被播放。'
-  },
-  {
     targetId: 'tutorial-download',
     mobileTargetId: 'tutorial-download-mobile',
     content: '听到喜欢的歌？点击这里可以直接下载当前播放的音频文件。'
+  },
+  {
+    targetId: 'tutorial-random',
+    mobileTargetId: 'tutorial-random-mobile',
+    content: '随机播放模式采用“公平随机”算法，确保每个人点的歌都有均等的机会被播放。'
   },
   {
     targetId: 'tutorial-chat',

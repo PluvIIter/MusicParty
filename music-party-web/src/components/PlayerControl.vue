@@ -79,6 +79,9 @@
       
       <!-- 移动端简易控制 -->
       <div class="flex md:hidden justify-end gap-3 mt-2">
+        <button id="tutorial-download-mobile" @click="downloadCurrentMusic" class="p-2 bg-medical-50 border border-medical-200 rounded-sm text-medical-500 active:bg-medical-200">
+          <Download class="w-4 h-4" />
+        </button>
         <button
             id="tutorial-random-mobile"
             @click="player.toggleShuffle"
@@ -89,9 +92,6 @@
                 : 'bg-medical-50 border-medical-200 text-medical-500'"
         >
           <Shuffle class="w-4 h-4" />
-        </button>
-        <button id="tutorial-download-mobile" @click="downloadCurrentMusic" class="p-2 bg-medical-50 border border-medical-200 rounded-sm text-medical-500 active:bg-medical-200">
-          <Download class="w-4 h-4" />
         </button>
          <button id="tutorial-pause-mobile" @click="player.togglePause" :disabled="player.isPauseLocked && !player.isPaused" class="p-2 bg-medical-100 rounded-sm disabled:opacity-50">
              <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-medical-400" />
@@ -111,13 +111,13 @@
       
       <!-- 播放控制 -->
       <div class="flex items-center gap-4 border-r border-medical-200 pr-6">
-        <button id="tutorial-random" @click="player.toggleShuffle" :disabled="player.isShuffleLocked" :class="[player.isShuffle ? 'text-accent' : 'text-medical-400', player.isShuffleLocked ? 'opacity-50 cursor-not-allowed' : '']" title="Shuffle">
-            <Shuffle class="w-5 h-5" />
-        </button>
-
         <!-- 新增：下载按钮 (放在 Shuffle 旁边或者 Next 后面) -->
         <button id="tutorial-download" @click="downloadCurrentMusic" class="text-medical-400 hover:text-accent transition-colors" title="Download">
           <Download class="w-5 h-5" />
+        </button>
+
+        <button id="tutorial-random" @click="player.toggleShuffle" :disabled="player.isShuffleLocked" :class="[player.isShuffle ? 'text-accent' : 'text-medical-400', player.isShuffleLocked ? 'opacity-50 cursor-not-allowed' : '']" title="Shuffle">
+            <Shuffle class="w-5 h-5" />
         </button>
         
         <button 
