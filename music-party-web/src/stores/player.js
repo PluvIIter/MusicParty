@@ -20,26 +20,6 @@ export const usePlayerStore = defineStore('player', () => {
     const isShuffleLocked = ref(false);
     const lyricText = ref('');
     const connected = ref(false);
-    let disconnectTimer = null;
-
-    const setConnected = (val) => {
-        if (val) {
-            // 连接成功：立即设为 true 并清除断开计时器
-            if (disconnectTimer) {
-                clearTimeout(disconnectTimer);
-                disconnectTimer = null;
-            }
-            connected.value = true;
-        } else {
-            // 连接断开：延迟 2s 再设为 false，给重连留出宽限期
-            if (!disconnectTimer) {
-                disconnectTimer = setTimeout(() => {
-                    connected.value = false;
-                    disconnectTimer = null;
-                }, 2000);
-            }
-        }
-    };
     const isLoading = ref(false);
     const streamListenerCount = ref(0);
     const lastControlTime = ref(0);
@@ -179,7 +159,7 @@ export const usePlayerStore = defineStore('player', () => {
     });
 
     return {
-        nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, setConnected, isLoading, lyricText,
+        nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText,
         localProgress, isBuffering, isErrorState, streamListenerCount,
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
