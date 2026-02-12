@@ -6,15 +6,16 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.enums.QueueItemStatus;
+import org.thornex.musicparty.enums.TopResult;
 import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
-import org.thornex.musicparty.config.AppProperties;
 
 import java.time.Duration;
 import java.util.*;
@@ -138,9 +139,7 @@ public class MusicPlayerService {
 
         Map<String, QueueItemStatus> statusMap = buildStatusMap();
 
-        Set<String> onlineUserTokens = userService.getOnlineUserSummaries().stream()
-                .map(UserSummary::token)
-                .collect(Collectors.toSet());
+        Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
 
         MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), statusMap, onlineUserTokens);
 
@@ -397,17 +396,16 @@ public class MusicPlayerService {
 
     public synchronized void topSong(String queueId, String sessionId) {
         // 先调用 top 执行置顶操作
-        if (queueManager.top(queueId, isShuffle.get())) {
-            // 如果成功，尝试在队列中找到这个 item (不管是 TOP- 还是 USERTOP-) 用来发日志
-            // 由于 queueManager 已经修改了 queueId，我们通过 musicId 或模糊匹配来找
-            // 或者更简单：在调用 top 之前先获取名字？
-            // 但是 top 会修改队列，甚至移除对象。
-            // 让我们在 top 之前先查找 item
-            
-            // 实际上，为了简化，我们可以只记录操作成功
-            log.info("Song topped request by {}", getUserName(sessionId));
+        TopResult result = queueManager.top(queueId, isShuffle.get());
+        
+        if (result != TopResult.NONE) {
+            log.info("Song topped ({}) request by {}", result, getUserName(sessionId));
             broadcastQueueUpdate();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), "置顶成功"));
+
+            // 只有全局置顶才发送系统消息广播
+            if (result == TopResult.GLOBAL) {
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), "置顶成功"));
+            }
             
             if (currentMusic.get() == null) {
                 playNextInQueue();
