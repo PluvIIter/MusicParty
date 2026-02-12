@@ -11,15 +11,9 @@ import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.event.UserCountChangeEvent;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -211,6 +205,16 @@ public class UserService {
                 .filter(u -> u.getSessionId() != null)
                 .map(user -> new UserSummary(user.getToken(), user.getSessionId(), user.getName(), user.isGuest()))
                 .toList();
+    }
+
+    /**
+     * 获取最近活跃的用户 Token (包括当前在线和正在等待断连确认的用户)
+     */
+    public Set<String> getRecentlyActiveUserTokens() {
+        return usersByToken.values().stream()
+                .filter(u -> u.getSessionId() != null || pendingLeaveEvents.containsKey(u.getToken()))
+                .map(User::getToken)
+                .collect(Collectors.toSet());
     }
 
     @Scheduled(fixedRate = 3600000)

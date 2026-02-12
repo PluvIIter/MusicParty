@@ -1,12 +1,13 @@
 package org.thornex.musicparty.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
-import lombok.RequiredArgsConstructor;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.MusicQueueItem;
 import org.thornex.musicparty.dto.UserSummary;
 import org.thornex.musicparty.enums.QueueItemStatus;
+import org.thornex.musicparty.enums.TopResult;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -54,17 +55,17 @@ public class MusicQueueManager {
     /**
      * 将指定歌曲置顶
      */
-    public synchronized boolean top(String queueId, boolean isShuffle) {
+    public synchronized TopResult top(String queueId, boolean isShuffle) {
         Optional<MusicQueueItem> itemOpt = findByQueueId(queueId);
         if (itemOpt.isEmpty()) {
-            return false;
+            return TopResult.NONE;
         }
 
         MusicQueueItem item = itemOpt.get();
 
         // 1. 如果已经是全局置顶 (TOP-)，不做操作
         if (item.queueId().startsWith("TOP-")) {
-            return false;
+            return TopResult.NONE;
         }
 
         // 2. 如果是个人置顶 (USERTOP-) -> 升级为全局置顶 (TOP-)
@@ -80,9 +81,9 @@ public class MusicQueueManager {
                         item.status()
                 );
                 queue.addFirst(newItem);
-                return true;
+                return TopResult.GLOBAL;
             }
-            return false;
+            return TopResult.NONE;
         }
 
         // 3. 如果是普通歌曲
@@ -102,7 +103,7 @@ public class MusicQueueManager {
                 snapshot.set(index, newItem);
                 queue.clear();
                 queue.addAll(snapshot);
-                return true;
+                return TopResult.PERSONAL;
             }
         } else {
             // 顺序模式下 -> 直接变为全局置顶 (TOP-)
@@ -114,10 +115,10 @@ public class MusicQueueManager {
                         item.status()
                 );
                 queue.addFirst(newItem);
-                return true;
+                return TopResult.GLOBAL;
             }
         }
-        return false;
+        return TopResult.NONE;
     }
 
     /**
@@ -165,7 +166,6 @@ public class MusicQueueManager {
 
         if (topItem.isPresent()) {
             queue.remove(topItem.get());
-            lastPlayedUserToken.set(topItem.get().enqueuedBy().token());
             return topItem.get();
         }
 
@@ -225,7 +225,14 @@ public class MusicQueueManager {
             int currentIndex = targetUserTokens.indexOf(lastToken);
             nextIndex = (currentIndex + 1) % targetUserTokens.size();
         } else {
+            // 寻找 Token 排序中紧随其后的用户，而非直接重置为 0
             nextIndex = 0;
+            for (int i = 0; i < targetUserTokens.size(); i++) {
+                if (targetUserTokens.get(i).compareTo(lastToken) > 0) {
+                    nextIndex = i;
+                    break;
+                }
+            }
         }
 
         String selectedUserToken = targetUserTokens.get(nextIndex);
