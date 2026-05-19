@@ -57,7 +57,7 @@ jobs:
   # 2. 构建 Windows 便携式 EXE
   build-windows-exe:
     runs-on: windows-latest
-    # 严格限制：只有在触发事件是推送 Tag 时才运行
+    # 仅在推送 Tag 时执行 EXE 发布
     if: github.ref_type == 'tag'
     defaults:
       run:
@@ -65,6 +65,12 @@ jobs:
     steps:
       - name: Checkout MusicParty
         uses: actions/checkout@v4
+
+      - name: Checkout Netease API Enhanced
+        uses: actions/checkout@v4
+        with:
+          repository: NeteaseCloudMusicApiEnhanced/api-enhanced
+          path: netease-api-enhanced
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -105,9 +111,7 @@ jobs:
 
       - name: Build Netease API EXE
         run: |
-          if (Test-Path "netease-api-build") { cmd.exe /c rmdir /s /q netease-api-build }
-          git clone --depth 1 https://github.com/Binaryify/NeteaseCloudMusicApi.git netease-api-build
-          cd netease-api-build
+          cd netease-api-enhanced
           npm install
           npx pkg . -t node18-win-x64 -o ../launcher/bin/netease-api.exe
 
