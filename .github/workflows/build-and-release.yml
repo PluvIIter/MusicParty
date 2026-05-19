@@ -125,16 +125,19 @@ jobs:
 
       - name: Prepare Assets
         run: |
-          if (!(Test-Path "launcher/bin")) { New-Item -ItemType Directory "launcher/bin" }
+          if (-not (Test-Path "launcher/bin")) { 
+            New-Item -ItemType Directory "launcher/bin" 
+          }
           
           # 1. 拷贝 Java 后端 (排除 original JAR)
           echo "Copying Server JAR..."
-          $jarFile = Get-ChildItem "target/music-party-*.jar" | Where-Object { $_.Name -notmatch "original" } | Select-Object -First 1
+          $jarFile = Get-ChildItem "target/*.jar" | Where-Object { $_.Name -like "MusicParty*" -and $_.Name -notmatch "original" } | Select-Object -First 1
           if ($jarFile) {
             Copy-Item $jarFile.FullName "launcher/bin/server.jar"
             echo "Copied $($jarFile.Name) to server.jar"
           } else {
             echo "ERROR: Server JAR not found in target/"
+            ls target/
             exit 1
           }
           
