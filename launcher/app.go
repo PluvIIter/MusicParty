@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"io/fs"
 	"launcher/pkg/config"
 	"launcher/pkg/process"
 	"os"
@@ -13,7 +14,7 @@ import (
 	wails_runtime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-//go:embed bin/*
+//go:embed all:bin
 var embeddedBin embed.FS
 
 type App struct {
@@ -45,22 +46,41 @@ func (a *App) startup(ctx context.Context) {
 
 func (a *App) extractAssets() {
 	home, _ := os.UserHomeDir()
-	binDir := filepath.Join(home, ".musicparty", "bin")
-	os.MkdirAll(binDir, 0755)
+	baseDir := filepath.Join(home, ".musicparty")
 
-	// 提取嵌入的二进制文件 (server.jar, netease-api.exe, ffmpeg.exe)
-	entries, _ := embeddedBin.ReadDir("bin")
-	for _, entry := range entries {
-		path := filepath.Join("bin", entry.Name())
-		data, _ := embeddedBin.ReadFile(path)
-		dest := filepath.Join(binDir, entry.Name())
-		
-		// 只有不存在或大小不一致时才覆盖，加快启动
-		info, err := os.Stat(dest)
-		if err != nil || info.Size() != int64(len(data)) {
-			os.WriteFile(dest, data, 0755)
-			fmt.Printf("Extracted %s to %s\n", entry.Name(), dest)
+	// 递归提取嵌入的 bin 目录及其所有内容
+	err := fs.WalkDir(embeddedBin, "bin", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+
+		dest := filepath.Join(baseDir, path)
+
+		if d.IsDir() {
+			return os.MkdirAll(dest, 0755)
+		}
+
+		// 读取文件内容
+		data, err := embeddedBin.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		// 只有不存在或大小不一致时才写入
+		info, err := os.Stat(dest)
+		if err == nil && info.Size() == int64(len(data)) {
+			return nil
+		}
+
+		err = os.WriteFile(dest, data, 0755)
+		if err == nil {
+			fmt.Printf("Extracted %s\n", path)
+		}
+		return err
+	})
+
+	if err != nil {
+		fmt.Printf("Error extracting assets: %v\n", err)
 	}
 }
 

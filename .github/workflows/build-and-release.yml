@@ -126,17 +126,36 @@ jobs:
       - name: Prepare Assets
         run: |
           if (!(Test-Path "launcher/bin")) { New-Item -ItemType Directory "launcher/bin" }
+          
+          # 1. 拷贝 Java 后端
           Copy-Item "target/music-party-*.jar" "launcher/bin/server.jar"
+          
+          # 2. 下载并准备轻量级 JRE (Temurin 21)
+          echo "Downloading JRE..."
+          $jreUrl = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.3%2B9/OpenJDK21U-jre_x64_windows_hotspot_21.0.3_9.zip"
+          Invoke-WebRequest -Uri $jreUrl -OutFile jre.zip
+          Expand-Archive jre.zip -DestinationPath temp_jre
+          $jreFolder = Get-ChildItem temp_jre | Select-Object -First 1
+          Move-Item "$($jreFolder.FullName)" "launcher/bin/jre"
+          Remove-Item jre.zip, temp_jre -Recurse -Force
+
+          # 3. 下载并准备 FFmpeg
+          echo "Downloading FFmpeg..."
+          $ffmpegUrl = "https://github.com/GyanD/codexffmpeg/releases/download/7.0.1/ffmpeg-7.0.1-essentials_build.zip"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath temp_ffmpeg
+          $ffExe = Get-ChildItem -Path temp_ffmpeg -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+          Copy-Item $ffExe.FullName "launcher/bin/ffmpeg.exe"
+          Remove-Item ffmpeg.zip, temp_ffmpeg -Recurse -Force
 
       - name: Build Wails Launcher
         run: |
           cd launcher
           go mod tidy
-          # Wails will handle npm install and build for the frontend automatically
           wails build -platform windows/amd64
 
       - name: Create Release and Upload Asset
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: launcher/build/bin/MusicParty.exe
         env:
