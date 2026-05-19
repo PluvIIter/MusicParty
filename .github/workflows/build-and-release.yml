@@ -1,0 +1,124 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ 'v*.*.*' ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: thornex/music-party
+
+jobs:
+  # 1. 构建 Docker 镜像 (Linux)
+  build-and-push-docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 2. 构建 Windows 便携式 EXE
+  build-windows-exe:
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout MusicParty
+        uses: actions/checkout@v4
+
+      - name: Checkout Netease API
+        uses: actions/checkout@v4
+        with:
+          repository: Binaryify/NeteaseCloudMusicApi
+          path: netease-api-src
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build Frontend
+        run: |
+          cd music-party-web
+          npm install
+          npm run build
+
+      - name: Build Java Backend
+        run: |
+          cp -r music-party-web/dist/* src/main/resources/static/
+          mvn clean package -DskipTests
+
+      - name: Build Netease API EXE
+        run: |
+          cd netease-api-src
+          npm install
+          npx pkg . -t node18-win-x64 -o ../launcher/bin/netease-api.exe
+
+      - name: Prepare Assets
+        run: |
+          mkdir -p launcher/bin
+          cp target/music-party-*.jar launcher/bin/server.jar
+          # 可以在此处通过 curl 下载便携版 ffmpeg.exe 放入 launcher/bin
+
+      - name: Build Wails Launcher
+        run: |
+          cd launcher
+          npm install --prefix frontend
+          wails build -platform windows/amd64
+
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: launcher/build/bin/MusicParty.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -397,6 +397,13 @@ const handleScroll = (e) => {
 const send = () => {
   const text = inputContent.value.trim();
   if (!text) return;
+
+  if (userStore.isGuest) {
+    error('请先设置名字后再参与聊天');
+    userStore.showNameModal = true;
+    return;
+  }
+
   playerStore.sendChatMessage(text);
   inputContent.value = '';
   // 发送后强制滚到底部
