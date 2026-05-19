@@ -57,8 +57,8 @@ jobs:
   # 2. 构建 Windows 便携式 EXE
   build-windows-exe:
     runs-on: windows-latest
-    # 仅在推送 Tag 时执行 EXE 发布，或通过 workflow_dispatch 手动触发
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    # 严格限制：只有在触发事件是推送 Tag 时才运行
+    if: github.ref_type == 'tag'
     steps:
       - name: Checkout MusicParty
         uses: actions/checkout@v4
@@ -93,6 +93,10 @@ jobs:
           cache: true
           cache-dependency-path: launcher/go.mod
 
+      - name: Clone Netease API
+        run: |
+          git clone --depth 1 https://github.com/Binaryify/NeteaseCloudMusicApi.git netease-api-src
+
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
@@ -104,21 +108,22 @@ jobs:
 
       - name: Build Java Backend
         run: |
-          if (Test-Path "src/main/resources/static") { rm -r src/main/resources/static }
-          mkdir -p src/main/resources/static
-          cp -r music-party-web/dist/* src/main/resources/static/
+          if (Test-Path "src/main/resources/static") { Remove-Item -Recurse -Force "src/main/resources/static" }
+          New-Item -ItemType Directory -Force "src/main/resources/static"
+          Copy-Item -Recurse "music-party-web/dist/*" "src/main/resources/static/"
           mvn clean package -DskipTests
 
       - name: Build Netease API EXE
         run: |
           cd netease-api-src
+          dir # 打印文件列表以便调试
           npm install
           npx pkg . -t node18-win-x64 -o ../launcher/bin/netease-api.exe
 
       - name: Prepare Assets
         run: |
-          if (!(Test-Path "launcher/bin")) { mkdir launcher/bin }
-          cp target/music-party-*.jar launcher/bin/server.jar
+          if (!(Test-Path "launcher/bin")) { New-Item -ItemType Directory "launcher/bin" }
+          Copy-Item "target/music-party-*.jar" "launcher/bin/server.jar"
 
       - name: Build Wails Launcher
         run: |
