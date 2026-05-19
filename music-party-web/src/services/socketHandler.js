@@ -3,6 +3,8 @@ import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
 import { useToast } from '../composables/useToast';
 import { useAdminStore } from '../stores/admin';
+import { WS_DEST } from '../constants/api';
+import socketService from './socket';
 
 /**
  * 处理游戏/播放器事件通知 (Toast)
