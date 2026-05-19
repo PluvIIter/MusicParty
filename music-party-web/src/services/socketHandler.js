@@ -2,8 +2,7 @@ import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
 import { useToast } from '../composables/useToast';
-import {socketService} from "./socket.js";
-import {WS_DEST} from "../constants/api.js";
+import { useAdminStore } from '../stores/admin';
 
 /**
  * 处理游戏/播放器事件通知 (Toast)
@@ -12,6 +11,7 @@ import {WS_DEST} from "../constants/api.js";
 function handleGameEvent(event) {
     const userStore = useUserStore();
     const chatStore = useChatStore();
+    const adminStore = useAdminStore();
     const { show, error } = useToast(); // This now uses the Pinia store wrapper
     const userName = event.userId === 'SYSTEM' ? '系统' : userStore.resolveName(event.userId);
 
@@ -19,6 +19,12 @@ function handleGameEvent(event) {
     if (event.action === 'LIKE') {
         window.dispatchEvent(new CustomEvent('player:like', { detail: { userId: event.userId } }));
     }
+
+    if (event.action === 'ADMIN_TRIGGER') {
+        adminStore.showAuthModal = true;
+        return;
+    }
+
 
     if (event.action === 'RESET') {
         chatStore.messages = []; // 清空聊天

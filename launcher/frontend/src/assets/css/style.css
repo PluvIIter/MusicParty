@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-medical-50 text-medical-900 font-sans overflow-hidden select-none;
+  }
+}
+
+.chamfer-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%);
+}
+
+.terminal-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.terminal-scroll::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.05);
+}
+.terminal-scroll::-webkit-scrollbar-thumb {
+  @apply bg-medical-200 rounded-full;
+}

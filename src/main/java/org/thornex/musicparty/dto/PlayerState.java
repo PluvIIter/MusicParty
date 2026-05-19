@@ -12,5 +12,6 @@ public record PlayerState(
         boolean isSkipLocked,
         boolean isShuffleLocked,
         boolean isLoading,
-        int streamListenerCount
+        int streamListenerCount,
+        boolean isStreamEnabled
 ) {}

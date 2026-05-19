@@ -66,6 +66,7 @@ public class ChatService {
      */
     public boolean processIncomingMessage(String sessionId, String content) {
         if (content.startsWith("//")) {
+            log.info("Processing command from session {}: {}", sessionId, content);
             String fullCmd = content.substring(2).trim();
             String[] parts = fullCmd.split("\\s+", 2);
             String cmdKey = parts[0].toLowerCase();
@@ -73,8 +74,14 @@ public class ChatService {
 
             ChatCommand handler = commandMap.get(cmdKey);
             if (handler != null) {
-                userService.getUser(sessionId).ifPresent(user -> handler.execute(args, user));
+                log.info("Executing command handler: {}", cmdKey);
+                userService.getUser(sessionId).ifPresentOrElse(
+                    user -> handler.execute(args, user),
+                    () -> log.warn("User not found for session {}", sessionId)
+                );
                 return true; // 拦截消息
+            } else {
+                log.warn("Unknown command: {}", cmdKey);
             }
         }
         return false; // 普通消息，继续处理

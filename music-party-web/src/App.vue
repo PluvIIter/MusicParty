@@ -41,6 +41,8 @@
     <NamePromptModal />
     <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode" />
     <TutorialOverlay v-if="hasStarted && !uiStore.isLiteMode" />
+    <AdminAuthModal />
+    <AdminDashboard />
   </div>
 </template>
 
@@ -50,6 +52,7 @@ import { useEventListener } from '@vueuse/core';
 import { usePlayerStore } from './stores/player';
 import { useUserStore } from './stores/user';
 import { useUiStore } from './stores/ui';
+import { useAdminStore } from './stores/admin';
 import { useToast } from './composables/useToast';
 
 // Components
@@ -63,10 +66,13 @@ import NamePromptModal from './components/NamePromptModal.vue';
 import ChatOverlay from './components/ChatOverlay.vue';
 import ToastNotification from './components/ToastNotification.vue';
 import TutorialOverlay from './components/TutorialOverlay.vue';
+import AdminAuthModal from './components/AdminAuthModal.vue';
+import AdminDashboard from './components/AdminDashboard.vue';
 
 const player = usePlayerStore();
 const userStore = useUserStore();
 const uiStore = useUiStore();
+const adminStore = useAdminStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
 const toastInstance = ref(null);

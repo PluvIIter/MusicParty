@@ -254,7 +254,8 @@ public class MusicPlayerService {
                 isSkipLocked.get(),
                 isShuffleLocked.get(),
                 isLoading.get(),
-                liveStreamService.getStreamListenerCount()
+                liveStreamService.getStreamListenerCount(),
+                liveStreamService.isEnabled()
         );
     }
 
