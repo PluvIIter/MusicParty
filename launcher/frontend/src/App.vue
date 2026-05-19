@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, reactive } from 'vue';
-import { LoadConfig, SaveConfig, StartServices, StopServices } from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime';
+import { LoadConfig, SaveConfig, StartServices, StopServices } from './wailsjs/go/main/App';
+import { EventsOn } from './wailsjs/runtime';
 
 const config = reactive({
   serverIp: '0.0.0.0',
