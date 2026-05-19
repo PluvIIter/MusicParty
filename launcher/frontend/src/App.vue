@@ -85,20 +85,20 @@ const scrollToBottom = () => {
   }, 50);
 };
 
-const handleStart = async () => {
-  await SaveConfig(JSON.parse(JSON.stringify(config)));
-  isRunning.value = true;
-  isJavaReady.value = false;
-  isApiReady.value = false;
-  logs.value = [];
-  await StartServices();
-};
-
-const handleStop = async () => {
-  await StopServices();
-  isRunning.value = false;
-  isJavaReady.value = false;
-  isApiReady.value = false;
+const toggleServices = async () => {
+  if (isRunning.value) {
+    await StopServices();
+    isRunning.value = false;
+    isJavaReady.value = false;
+    isApiReady.value = false;
+  } else {
+    await SaveConfig(JSON.parse(JSON.stringify(config)));
+    isRunning.value = true;
+    isJavaReady.value = false;
+    isApiReady.value = false;
+    logs.value = [];
+    await StartServices();
+  }
 };
 
 const copyLogs = () => {
@@ -113,27 +113,31 @@ const openWeb = () => {
 
 <template>
   <div class="h-screen flex flex-col p-6 space-y-4 bg-medical-50 text-medical-900 overflow-hidden font-sans">
-    <!-- Header -->
+    <!-- 头部 -->
     <div class="flex justify-between items-end border-b-2 border-medical-900 pb-4">
       <div>
-        <h1 class="text-3xl font-black tracking-tighter">MUSIC PARTY</h1>
-        <p class="text-[10px] font-mono text-medical-400 mt-1 uppercase tracking-widest">> DEPLOYMENT TERMINAL v1.2</p>
+        <h1 class="text-3xl font-black tracking-tighter">MusicParty</h1>
+        <p class="text-[10px] font-mono text-medical-400 mt-1 uppercase tracking-widest">> 启动器 v1.2</p>
       </div>
       <div class="flex items-center gap-6">
-        <div class="flex flex-col items-end">
-          <span class="text-[9px] font-bold text-medical-400 uppercase">系统总览 / SYSTEM OVERVIEW</span>
+        <div v-if="isJavaReady" class="animate-in fade-in zoom-in duration-300">
+           <button @click="openWeb" class="px-6 py-2 bg-accent text-white font-black text-xs chamfer-br shadow-lg hover:bg-black transition-all flex items-center gap-2">
+             <span>打开网页</span>
+           </button>
+        </div>
+        <div v-else class="flex flex-col items-end">
           <span :class="isRunning ? 'text-green-600' : 'text-red-600'" class="text-xs font-black font-mono">
-            {{ isRunning ? '● 在线 / ONLINE' : '○ 离线 / OFFLINE' }}
+            {{ isRunning ? '● 在线' : '○ 离线' }}
           </span>
         </div>
       </div>
     </div>
 
-    <!-- Main Content -->
+    <!-- 主体内容 -->
     <div class="flex-1 min-h-0 flex gap-6">
-      <!-- Left: Settings -->
+      <!-- 左侧：设置 -->
       <div class="w-96 flex flex-col gap-4">
-        <!-- Tabs -->
+        <!-- 标签页 -->
         <div class="flex border-b border-medical-200">
           <button 
             v-for="tab in ['basic', 'api', 'advanced']" 
@@ -147,76 +151,76 @@ const openWeb = () => {
         </div>
 
         <div class="flex-1 overflow-y-auto pr-2 space-y-4 custom-scroll">
-          <!-- Basic Settings -->
+          <!-- 基础设置 -->
           <div v-if="activeTab === 'basic'" class="space-y-4">
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">局域网绑定地址 / BIND HOST</label>
+                <label class="text-[10px] font-bold text-medical-500 uppercase">局域网绑定地址</label>
                 <p class="text-[9px] text-medical-400">保持 0.0.0.0 以允许所有设备访问</p>
                 <input v-model="config.serverIp" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
               </div>
               <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">服务端口 / SERVER PORT</label>
+                <label class="text-[10px] font-bold text-medical-500 uppercase">服务端口</label>
                 <input v-model="config.serverPort" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
               </div>
               <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">管理员控制台密码 / ADMIN PASS</label>
+                <label class="text-[10px] font-bold text-medical-500 uppercase">管理员控制台密码</label>
                 <input v-model="config.adminPassword" type="text" placeholder="留空则默认为 admin123" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900" />
               </div>
             </div>
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">站点作者名称 / AUTHOR NAME</label>
+                <label class="text-[10px] font-bold text-medical-500 uppercase">作者名称</label>
                 <input v-model="config.authorName" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900" />
               </div>
               <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">背景装饰文字 / BACK WORDS</label>
+                <label class="text-[10px] font-bold text-medical-500 uppercase">装饰文字</label>
                 <input v-model="config.backWords" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900" />
               </div>
             </div>
           </div>
 
-          <!-- API Settings -->
+          <!-- 接口设置 -->
           <div v-if="activeTab === 'api'" class="space-y-4">
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">网易云账号 COOKIE</label>
+                <label class="text-[10px] font-bold text-medical-500 uppercase">网易云账号 Cookie</label>
                 <textarea v-model="config.neteaseCookie" placeholder="用于获取高清音质和私人歌单" rows="4" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900 resize-none"></textarea>
               </div>
               <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">解析音质上限 / QUALITY</label>
+                <label class="text-[10px] font-bold text-medical-500 uppercase">解析音质上限</label>
                 <select v-model="config.neteaseQuality" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
-                  <option value="standard">标准 (Standard)</option>
-                  <option value="higher">较高 (Higher)</option>
-                  <option value="exhigh">极高 (Exhigh)</option>
-                  <option value="lossless">无损 (Lossless)</option>
-                  <option value="hires">Hi-Res</option>
+                  <option value="standard">标准</option>
+                  <option value="higher">较高</option>
+                  <option value="exhigh">极高</option>
+                  <option value="lossless">无损</option>
+                  <option value="hires">高解析度</option>
                 </select>
               </div>
             </div>
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">Bilibili SESSDATA</label>
+                <label class="text-[10px] font-bold text-medical-500 uppercase">B站 sessData</label>
                 <input v-model="config.biliSessData" placeholder="用于解析B站音频流" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
               </div>
             </div>
           </div>
 
-          <!-- Advanced Settings -->
+          <!-- 高级设置 -->
           <div v-if="activeTab === 'advanced'" class="space-y-4">
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-3">
-              <h3 class="text-[10px] font-black border-b border-medical-100 pb-1 mb-2">播放队列控制 / QUEUE CONTROL</h3>
+              <h3 class="text-[10px] font-black border-b border-medical-100 pb-1 mb-2">播放队列控制</h3>
               <div class="grid grid-cols-2 gap-3">
                 <div class="space-y-1">
-                  <label class="text-[9px] font-bold text-medical-400 uppercase">队列最大歌曲数</label>
+                  <label class="text-[9px] font-bold text-medical-400 uppercase">队列最大歌曲上限</label>
                   <input v-model.number="config.queueMaxSize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
                 <div class="space-y-1">
-                  <label class="text-[9px] font-bold text-medical-400 uppercase">历史保留歌曲数</label>
+                  <label class="text-[9px] font-bold text-medical-400 uppercase">历史记录歌曲上限</label>
                   <input v-model.number="config.queueHistorySize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
                 <div class="space-y-1">
-                  <label class="text-[9px] font-bold text-medical-400 uppercase">单人限点歌曲数</label>
+                  <label class="text-[9px] font-bold text-medical-400 uppercase">单人歌曲上限</label>
                   <input v-model.number="config.queueMaxUserSongs" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
                 <div class="space-y-1">
@@ -227,7 +231,7 @@ const openWeb = () => {
             </div>
 
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-3">
-              <h3 class="text-[10px] font-black border-b border-medical-100 pb-1 mb-2">聊天室限制 / CHAT ROOM</h3>
+              <h3 class="text-[10px] font-black border-b border-medical-100 pb-1 mb-2">聊天室限制</h3>
               <div class="grid grid-cols-2 gap-3">
                 <div class="space-y-1">
                   <label class="text-[9px] font-bold text-medical-400 uppercase">消息历史条数</label>
@@ -245,58 +249,44 @@ const openWeb = () => {
             </div>
 
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-3">
-              <h3 class="text-[10px] font-black border-b border-medical-100 pb-1 mb-2">存储与安全 / SYSTEM</h3>
+              <h3 class="text-[10px] font-black border-b border-medical-100 pb-1 mb-2">存储与安全</h3>
               <div class="space-y-1">
-                <label class="text-[9px] font-bold text-medical-400 uppercase">音乐缓存上限 (GB/MB)</label>
+                <label class="text-[9px] font-bold text-medical-400 uppercase">音乐缓存上限</label>
                 <input v-model="config.cacheMaxSize" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
               </div>
               <div class="flex items-center gap-2 pt-2">
                 <input type="checkbox" v-model="config.authRateLimitEnabled" id="rateLimit" class="w-4 h-4 accent-medical-900" />
-                <label for="rateLimit" class="text-[10px] font-bold text-medical-600">启用登录尝试频率限制</label>
+                <label for="rateLimit" class="text-[10px] font-bold text-medical-600">启用进入尝试频率限制</label>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Actions -->
-        <div class="space-y-2">
-          <div v-if="isJavaReady" class="animate-bounce">
-             <button @click="openWeb" class="w-full py-3 bg-accent text-white font-black text-sm chamfer-br shadow-lg flex items-center justify-center gap-2">
-               <span>➔ 打开网页控制台 / OPEN WEB UI</span>
-             </button>
-          </div>
-          <button 
-            v-if="!isRunning"
-            @click="handleStart"
-            class="w-full py-4 bg-medical-900 text-white font-black text-xl hover:bg-black transition-all chamfer-br active:scale-95 shadow-lg shadow-medical-200"
-          >
-            启动系统 / START
-          </button>
-          <button 
-            else
-            @click="handleStop"
-            class="w-full py-4 bg-red-600 text-white font-black text-xl hover:bg-red-700 transition-all chamfer-br active:scale-95 shadow-lg shadow-red-100"
-          >
-            停止运行 / STOP
-          </button>
-        </div>
+        <!-- 操作按钮 -->
+        <button 
+          @click="toggleServices"
+          :class="isRunning ? 'bg-red-600 hover:bg-red-700 shadow-red-100' : 'bg-medical-900 hover:bg-black shadow-medical-200'"
+          class="w-full py-4 text-white font-black text-xl transition-all chamfer-br active:scale-95 shadow-lg"
+        >
+          {{ isRunning ? '停止运行' : '启动系统' }}
+        </button>
       </div>
 
-      <!-- Right: Terminal -->
+      <!-- 右侧：日志 -->
       <div class="flex-1 flex flex-col bg-medical-900 chamfer-br p-4 overflow-hidden border-2 border-medical-900 shadow-inner relative">
         <div class="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
           <div class="flex items-center gap-4">
-            <span class="text-[10px] font-mono text-white/40 uppercase tracking-widest">系统执行日志 / LOGS</span>
-            <button @click="copyLogs" class="text-[10px] font-bold text-accent hover:underline decoration-accent-500 underline-offset-4">复制日志 / COPY</button>
+            <span class="text-[10px] font-mono text-white/40 uppercase tracking-widest">系统执行日志</span>
+            <button @click="copyLogs" class="text-[10px] font-bold text-accent hover:underline decoration-accent-500 underline-offset-4">复制日志</button>
           </div>
           <div class="flex gap-4">
              <div class="flex items-center gap-1.5">
                <span class="w-1.5 h-1.5 rounded-full" :class="serviceStatuses.NETEASE_API ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-white/20'"></span>
-               <span class="text-[9px] font-mono text-white/60">API</span>
+               <span class="text-[9px] font-mono text-white/60">网易云 API</span>
              </div>
              <div class="flex items-center gap-1.5">
                <span class="w-1.5 h-1.5 rounded-full" :class="serviceStatuses.JAVA_SERVER ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-white/20'"></span>
-               <span class="text-[9px] font-mono text-white/60">SERVER</span>
+               <span class="text-[9px] font-mono text-white/60">后端服务</span>
              </div>
           </div>
         </div>
@@ -311,36 +301,29 @@ const openWeb = () => {
             }">{{ log.text }}</span>
           </div>
         </div>
-        
-        <!-- Web UI Hint Overlay -->
-        <div v-if="isJavaReady" class="absolute bottom-6 right-6 p-4 bg-accent/90 backdrop-blur-sm border border-white/20 text-white chamfer-br shadow-2xl animate-in slide-in-from-bottom-4">
-          <p class="text-[10px] font-black uppercase mb-1">系统已就绪 / SYSTEM READY</p>
-          <p class="text-xs font-mono mb-2">{{ systemUrl }}</p>
-          <button @click="openWeb" class="text-[10px] font-bold bg-white text-accent px-3 py-1 hover:bg-white/90 transition-colors uppercase">立即打开控制台 / OPEN NOW</button>
-        </div>
       </div>
     </div>
 
-    <!-- Status Bar -->
+    <!-- 状态栏 -->
     <div class="flex justify-between items-center px-4 py-2 bg-white border border-medical-200 text-[10px] font-mono shadow-sm">
       <div class="flex gap-6">
         <div class="flex items-center gap-2">
-          <span class="text-medical-400">NETEASE_API:</span>
+          <span class="text-medical-400">网易云服务:</span>
           <span :class="serviceStatuses.NETEASE_API ? 'text-green-600 font-bold' : 'text-medical-300'">
-            {{ serviceStatuses.NETEASE_API ? (isApiReady ? 'RUNNING' : 'STARTING') : 'STOPPED' }}
+            {{ serviceStatuses.NETEASE_API ? (isApiReady ? '已运行' : '启动中') : '已停止' }}
           </span>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-medical-400">JAVA_SERVER:</span>
+          <span class="text-medical-400">后端主服务:</span>
           <span :class="serviceStatuses.JAVA_SERVER ? 'text-green-600 font-bold' : 'text-medical-300'">
-            {{ serviceStatuses.JAVA_SERVER ? (isJavaReady ? 'READY' : 'STARTING') : 'STOPPED' }}
+            {{ serviceStatuses.JAVA_SERVER ? (isJavaReady ? '就绪' : '启动中') : '已停止' }}
           </span>
         </div>
       </div>
       <div class="flex items-center gap-4 text-medical-400">
-        <span>ARCH: X64</span>
-        <span>OS: WIN32</span>
-        <span class="text-medical-900 font-bold">2024.MUSIC_PARTY_TERMINAL</span>
+        <span>架构: X64</span>
+        <span>平台: Windows</span>
+        <span class="text-medical-900 font-bold">2024.音乐派对部署终端</span>
       </div>
     </div>
   </div>
