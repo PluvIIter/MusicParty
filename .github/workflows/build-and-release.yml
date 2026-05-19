@@ -105,9 +105,9 @@ jobs:
 
       - name: Build Netease API EXE
         run: |
-          if (Test-Path "netease-api-src") { Remove-Item -Recurse -Force "netease-api-src" }
-          git clone --depth 1 https://github.com/Binaryify/NeteaseCloudMusicApi.git netease-api-src
-          cd netease-api-src
+          if (Test-Path "netease-api-build") { cmd.exe /c rmdir /s /q netease-api-build }
+          git clone --depth 1 https://github.com/Binaryify/NeteaseCloudMusicApi.git netease-api-build
+          cd netease-api-build
           npm install
           npx pkg . -t node18-win-x64 -o ../launcher/bin/netease-api.exe
 
