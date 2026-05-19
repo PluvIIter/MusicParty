@@ -57,6 +57,8 @@ jobs:
   # 2. 构建 Windows 便携式 EXE
   build-windows-exe:
     runs-on: windows-latest
+    permissions:
+      contents: write
     # 仅在推送 Tag 时执行 EXE 发布
     if: github.ref_type == 'tag'
     defaults:
