@@ -59,15 +59,12 @@ jobs:
     runs-on: windows-latest
     # 严格限制：只有在触发事件是推送 Tag 时才运行
     if: github.ref_type == 'tag'
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - name: Checkout MusicParty
         uses: actions/checkout@v4
-
-      - name: Checkout Netease API
-        uses: actions/checkout@v4
-        with:
-          repository: Binaryify/NeteaseCloudMusicApi
-          path: netease-api-src
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -75,9 +72,6 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: music-party-web/package-lock.json
-
-      - name: Verify Node Version
-        run: node -v
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -92,10 +86,6 @@ jobs:
           go-version: '1.21'
           cache: true
           cache-dependency-path: launcher/go.mod
-
-      - name: Clone Netease API
-        run: |
-          git clone --depth 1 https://github.com/Binaryify/NeteaseCloudMusicApi.git netease-api-src
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
@@ -115,8 +105,9 @@ jobs:
 
       - name: Build Netease API EXE
         run: |
+          if (Test-Path "netease-api-src") { Remove-Item -Recurse -Force "netease-api-src" }
+          git clone --depth 1 https://github.com/Binaryify/NeteaseCloudMusicApi.git netease-api-src
           cd netease-api-src
-          dir # 打印文件列表以便调试
           npm install
           npx pkg . -t node18-win-x64 -o ../launcher/bin/netease-api.exe
 
