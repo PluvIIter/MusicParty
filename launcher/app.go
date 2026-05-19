@@ -84,7 +84,38 @@ func (a *App) extractAssets() {
 	}
 }
 
+func (a *App) GetServiceStatuses() map[string]bool {
+	if a.manager == nil {
+		return map[string]bool{
+			"NETEASE_API": false,
+			"JAVA_SERVER": false,
+		}
+	}
+	return a.manager.GetStatuses()
+}
+
+func (a *App) OpenBrowser(url string) {
+	var err error
+	switch runtime.GOOS {
+	case "linux":
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		err = exec.Command("open", url).Start()
+	default:
+		err = fmt.Errorf("unsupported platform")
+	}
+	if err != nil {
+		fmt.Printf("Error opening browser: %v\n", err)
+	}
+}
+
 func (a *App) StartServices() {
+	if a.manager != nil {
+		a.StopServices()
+	}
+	
 	a.manager = process.NewServiceManager()
 
 	go func() {
@@ -103,15 +134,12 @@ func (a *App) StartServices() {
 	a.manager.StartProcess("NETEASE_API", apiExe, "-p", "3000")
 
 	// 2. 启动 Java 后端
-	// 优先使用内置 JRE
 	javaExe := filepath.Join(binDir, "jre", "bin", "java.exe")
 	if _, err := os.Stat(javaExe); err != nil {
-		javaExe = "java" // Fallback to system java
+		javaExe = "java"
 	}
 	
 	jarPath := filepath.Join(binDir, "server.jar")
-	
-	// 设置 FFmpeg 路径环境变量
 	os.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	args := []string{
