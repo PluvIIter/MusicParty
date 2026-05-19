@@ -127,8 +127,16 @@ jobs:
         run: |
           if (!(Test-Path "launcher/bin")) { New-Item -ItemType Directory "launcher/bin" }
           
-          # 1. 拷贝 Java 后端
-          Copy-Item "target/music-party-*.jar" "launcher/bin/server.jar"
+          # 1. 拷贝 Java 后端 (排除 original JAR)
+          echo "Copying Server JAR..."
+          $jarFile = Get-ChildItem "target/music-party-*.jar" | Where-Object { $_.Name -notmatch "original" } | Select-Object -First 1
+          if ($jarFile) {
+            Copy-Item $jarFile.FullName "launcher/bin/server.jar"
+            echo "Copied $($jarFile.Name) to server.jar"
+          } else {
+            echo "ERROR: Server JAR not found in target/"
+            exit 1
+          }
           
           # 2. 下载并准备轻量级 JRE (Temurin 21)
           echo "Downloading JRE..."

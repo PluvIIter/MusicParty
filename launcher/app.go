@@ -42,12 +42,15 @@ func (a *App) SaveConfig(newConfig config.AppConfig) error {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.extractAssets()
+	// 在后台运行提取，防止阻塞 UI 启动
+	go a.extractAssets()
 }
 
 func (a *App) extractAssets() {
 	home, _ := os.UserHomeDir()
 	baseDir := filepath.Join(home, ".musicparty")
+
+	a.logToTerminal("[SYSTEM] Preparing environment assets...")
 
 	// 递归提取嵌入的 bin 目录及其所有内容
 	err := fs.WalkDir(embeddedBin, "bin", func(path string, d fs.DirEntry, err error) error {
@@ -64,6 +67,7 @@ func (a *App) extractAssets() {
 		// 读取文件内容
 		data, err := embeddedBin.ReadFile(path)
 		if err != nil {
+			a.logToTerminal(fmt.Sprintf("[ERROR] Failed to read embedded %s: %v", path, err))
 			return err
 		}
 
@@ -75,13 +79,25 @@ func (a *App) extractAssets() {
 
 		err = os.WriteFile(dest, data, 0755)
 		if err == nil {
-			fmt.Printf("Extracted %s\n", path)
+			a.logToTerminal(fmt.Sprintf("[SYSTEM] Extracted %s", path))
+		} else {
+			a.logToTerminal(fmt.Sprintf("[ERROR] Failed to write %s: %v", path, err))
 		}
 		return err
 	})
 
 	if err != nil {
-		fmt.Printf("Error extracting assets: %v\n", err)
+		a.logToTerminal(fmt.Sprintf("[ERROR] Asset extraction failed: %v", err))
+	} else {
+		a.logToTerminal("[SYSTEM] Environment ready.")
+	}
+}
+
+func (a *App) logToTerminal(msg string) {
+	if a.ctx != nil {
+		wails_runtime.EventsEmit(a.ctx, "log", msg)
+	} else {
+		fmt.Println(msg)
 	}
 }
 
