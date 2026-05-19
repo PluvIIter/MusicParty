@@ -130,7 +130,7 @@ jobs:
         run: |
           cd launcher
           go mod tidy
-          npm install --prefix frontend
+          # Wails will handle npm install and build for the frontend automatically
           wails build -platform windows/amd64
 
       - name: Create Release and Upload Asset
