@@ -28,6 +28,16 @@ func NewApp() *App {
 	}
 }
 
+func (a *App) LoadConfig() *config.AppConfig {
+	a.cfg = config.LoadConfig()
+	return a.cfg
+}
+
+func (a *App) SaveConfig(newConfig config.AppConfig) error {
+	a.cfg = &newConfig
+	return a.cfg.Save()
+}
+
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.extractAssets()
