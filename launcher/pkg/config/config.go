@@ -60,8 +60,8 @@ func LoadConfig() *AppConfig {
 	if err != nil {
 		return &AppConfig{
 			ServerIP:      "0.0.0.0",
-			ServerPort:    "8848",
-			AdminPassword: "admin",
+			ServerPort:    "8080",
+			AdminPassword: "",
 			AuthorName:    "ThorNex",
 			BackWords:     "THORNEX",
 			NeteaseQuality: "exhigh",
