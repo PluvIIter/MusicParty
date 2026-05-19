@@ -63,14 +63,19 @@ jobs:
       run:
         shell: pwsh
     steps:
+      # A. 检出主仓库 (强制清理)
       - name: Checkout MusicParty
         uses: actions/checkout@v4
+        with:
+          clean: true
 
+      # B. 检出正确的 Netease API 仓库到独立路径
       - name: Checkout Netease API Enhanced
         uses: actions/checkout@v4
         with:
           repository: NeteaseCloudMusicApiEnhanced/api-enhanced
-          path: netease-api-enhanced
+          path: external-api-source
+          clean: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -109,9 +114,10 @@ jobs:
           Copy-Item -Recurse "music-party-web/dist/*" "src/main/resources/static/"
           mvn clean package -DskipTests
 
+      # C. 编译 API EXE (使用官方 working-directory 隔离环境)
       - name: Build Netease API EXE
+        working-directory: ./external-api-source
         run: |
-          cd netease-api-enhanced
           npm install
           npx pkg . -t node18-win-x64 -o ../launcher/bin/netease-api.exe
 
