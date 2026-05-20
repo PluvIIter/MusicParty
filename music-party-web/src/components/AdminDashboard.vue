@@ -19,7 +19,6 @@
             <p class="text-[10px] font-mono text-medical-400 mt-1 uppercase tracking-[0.2em]">> SYSTEM CONTROL INTERFACE v2.5</p>
           </div>
           <div class="flex items-center gap-4">
-            <button @click="adminStore.logout" class="text-xs font-bold text-red-500 hover:underline uppercase font-mono">Terminate Session</button>
             <button @click="adminStore.showDashboard = false" class="p-2 bg-medical-100 hover:bg-medical-200 text-medical-900 transition-colors">
               <X class="w-6 h-6" />
             </button>
@@ -101,6 +100,13 @@
                    <div v-for="plat in platforms" :key="plat.id" class="space-y-2">
                     <div class="flex justify-between items-center">
                       <span class="text-[10px] font-bold text-medical-600 font-mono">{{ plat.name }} // {{ plat.tokenName }}</span>
+                      <button 
+                        @click="togglePlatform(plat.id)"
+                        class="w-8 h-4 rounded-full relative transition-colors"
+                        :class="playerStore.config[`${plat.id}Enabled`] ? 'bg-accent' : 'bg-medical-300'"
+                      >
+                        <div class="absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all" :class="playerStore.config[`${plat.id}Enabled`] ? 'left-4.5' : 'left-0.5'"></div>
+                      </button>
                     </div>
                     <div class="flex gap-2">
                       <input 
@@ -142,12 +148,12 @@
                         <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all" :class="playerStore.streamActive ? 'left-5.5' : 'left-0.5'"></div>
                       </button>
                     </div>
-                    <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col gap-1">
+                    <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col gap-2">
                       <span class="text-[9px] font-bold text-medical-400 uppercase font-mono text-center">Clean_Action</span>
-                      <div class="flex gap-1 justify-center">
-                        <button @click="clearData('QUEUE')" class="p-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">Q</button>
-                        <button @click="clearData('OFFLINE')" class="p-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">O</button>
-                        <button @click="clearData('CHAT')" class="p-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">C</button>
+                      <div class="flex flex-col gap-1 w-full">
+                        <button @click="clearData('QUEUE')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all uppercase">Queue</button>
+                        <button @click="clearData('OFFLINE')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all uppercase">Offline</button>
+                        <button @click="clearData('CHAT')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all uppercase">Chat</button>
                       </div>
                     </div>
                   </div>
@@ -167,21 +173,7 @@
                       <input v-model.number="configProxy[val.field]" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none focus:border-accent" />
                     </div>
                   </div>
-                  <!-- Platform Toggles in Params -->
-                  <div class="flex gap-4 pt-2 border-t border-medical-100">
-                    <div class="flex items-center gap-2">
-                      <span class="text-[9px] font-bold text-medical-400 font-mono">NETEASE:</span>
-                      <button @click="configProxy.neteaseEnabled = !configProxy.neteaseEnabled" class="w-8 h-4 rounded-full relative transition-colors" :class="configProxy.neteaseEnabled ? 'bg-accent' : 'bg-medical-300'">
-                        <div class="absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all" :class="configProxy.neteaseEnabled ? 'left-4.5' : 'left-0.5'"></div>
-                      </button>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span class="text-[9px] font-bold text-medical-400 font-mono">BILIBILI:</span>
-                      <button @click="configProxy.bilibiliEnabled = !configProxy.bilibiliEnabled" class="w-8 h-4 rounded-full relative transition-colors" :class="configProxy.bilibiliEnabled ? 'bg-accent' : 'bg-medical-300'">
-                        <div class="absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all" :class="configProxy.bilibiliEnabled ? 'left-4.5' : 'left-0.5'"></div>
-                      </button>
-                    </div>
-                  </div>
+                  
                   <button @click="saveSystemConfig" class="w-full bg-medical-900 text-white py-2 text-xs font-bold hover:bg-accent transition-colors flex items-center justify-center gap-2">
                     <Save class="w-4 h-4" /> COMMIT_CHANGES
                   </button>
@@ -319,6 +311,17 @@ const updateCookie = async (platform, value) => {
     success(`${platform.toUpperCase()}_CREDENTIALS_UPDATED`);
   } catch (e) {
     error('CONFIG_UPDATE_FAILED');
+  }
+};
+
+const togglePlatform = async (platformId) => {
+  const current = playerStore.config[`${platformId}Enabled`];
+  const update = { [`${platformId}Enabled`]: !current };
+  try {
+    await adminApi.updateConfig(adminStore.adminPassword, update);
+    success(`${platformId.toUpperCase()}_STATUS_UPDATED`);
+  } catch (e) {
+    error('PLATFORM_TOGGLE_FAILED');
   }
 };
 

@@ -181,7 +181,8 @@ export const usePlayerStore = defineStore('player', () => {
     });
 
     return {
-        nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText,
+        nowPlaying, queue, isPaused, isShuffle, isFairShuffle, allowOfflineShuffle, config,
+        isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText,
         localProgress, isBuffering, isErrorState, streamListenerCount, streamActive,
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,

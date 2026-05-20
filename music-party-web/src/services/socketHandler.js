@@ -3,6 +3,7 @@ import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
 import { useToast } from '../composables/useToast';
 import { useAdminStore } from '../stores/admin';
+import { adminApi } from '../api/admin';
 import { WS_DEST } from '../constants/api';
 import { socketService } from './socket';
 
@@ -23,7 +24,20 @@ function handleGameEvent(event) {
     }
 
     if (event.action === 'ADMIN_TRIGGER') {
-        adminStore.showAuthModal = true;
+        if (adminStore.adminPassword) {
+            // Attempt auto-login
+            adminApi.verify(adminStore.adminPassword)
+                .then(() => {
+                    adminStore.isVerified = true;
+                    adminStore.showDashboard = true;
+                })
+                .catch(() => {
+                    adminStore.logout();
+                    adminStore.showAuthModal = true;
+                });
+        } else {
+            adminStore.showAuthModal = true;
+        }
         return;
     }
 
