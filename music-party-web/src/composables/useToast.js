@@ -13,12 +13,14 @@ export function useToast() {
     const success = (message) => store.success(message);
     const error = (message) => store.error(message);
     const info = (message) => store.info(message);
+    const warning = (message) => store.warning(message);
 
     return {
         register,
         show,
         success,
         error,
-        info
+        info,
+        warning
     };
 }
