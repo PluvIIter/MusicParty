@@ -398,6 +398,13 @@ const send = () => {
   const text = inputContent.value.trim();
   if (!text) return;
 
+  if (text === '//alive') {
+    uiStore.toggleKeepAlive();
+    success(`Keep-Alive ${uiStore.keepAliveEnabled ? 'ENABLED' : 'DISABLED'}. Please refresh to apply.`);
+    inputContent.value = '';
+    return;
+  }
+
   if (userStore.isGuest) {
     error('请先设置名字后再参与聊天');
     userStore.showNameModal = true;
