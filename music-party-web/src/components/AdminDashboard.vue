@@ -240,8 +240,8 @@ watch(() => playerStore.config, (newVal) => {
 
 const saveSystemConfig = async () => {
   try {
-    const res = await adminApi.updateConfig(adminStore.adminPassword, configProxy.value);
-    success(res.message);
+    const data = await adminApi.updateConfig(adminStore.adminPassword, configProxy.value);
+    success(data.message);
   } catch (e) {
     error('配置同步失败');
   }
@@ -260,8 +260,8 @@ const platforms = ref([
 
 const execPlayerAction = async (action) => {
   try {
-    const res = await adminApi.playerAction(adminStore.adminPassword, action);
-    success(res.message);
+    const data = await adminApi.playerAction(adminStore.adminPassword, action);
+    success(data.message);
   } catch (e) {
     error('指令执行失败');
   }
@@ -269,8 +269,8 @@ const execPlayerAction = async (action) => {
 
 const toggleLock = async (type, locked) => {
   try {
-    const res = await adminApi.setLock(adminStore.adminPassword, type, locked);
-    success(res.message);
+    const data = await adminApi.setLock(adminStore.adminPassword, type, locked);
+    success(data.message);
   } catch (e) {
     error('锁定同步失败');
   }
@@ -278,8 +278,8 @@ const toggleLock = async (type, locked) => {
 
 const updateRoomPassword = async () => {
   try {
-    const res = await adminApi.setRoomPassword(adminStore.adminPassword, roomPassword.value);
-    success(res.message);
+    const data = await adminApi.setRoomPassword(adminStore.adminPassword, roomPassword.value);
+    success(data.message);
   } catch (e) {
     error('密码更新失败');
   }
@@ -287,8 +287,8 @@ const updateRoomPassword = async () => {
 
 const toggleStream = async () => {
   try {
-    const res = await adminApi.setStream(adminStore.adminPassword, !playerStore.streamActive);
-    success(res.message);
+    const data = await adminApi.setStream(adminStore.adminPassword, !playerStore.streamActive);
+    success(data.message);
   } catch (e) {
     error('直播流控制失败');
   }
@@ -297,8 +297,8 @@ const toggleStream = async () => {
 const clearData = async (target) => {
   if (!confirm(`确定要清空 ${target} 吗?`)) return;
   try {
-    const res = await adminApi.clearData(adminStore.adminPassword, target);
-    warning(res.message);
+    const data = await adminApi.clearData(adminStore.adminPassword, target);
+    warning(data.message);
   } catch (e) {
     error('清理操作失败');
   }
@@ -307,8 +307,8 @@ const clearData = async (target) => {
 const updateCookie = async (platform, value) => {
   if (!value) return;
   try {
-    const res = await adminApi.setCookie(adminStore.adminPassword, platform, value);
-    success(res.message);
+    const data = await adminApi.setCookie(adminStore.adminPassword, platform, value);
+    success(data.message);
   } catch (e) {
     error('凭据更新失败');
   }
@@ -318,8 +318,8 @@ const togglePlatform = async (platformId) => {
   const current = playerStore.config[`${platformId}Enabled`];
   const update = { [`${platformId}Enabled`]: !current };
   try {
-    const res = await adminApi.updateConfig(adminStore.adminPassword, update);
-    success(res.message);
+    const data = await adminApi.updateConfig(adminStore.adminPassword, update);
+    success(data.message);
   } catch (e) {
     error('平台状态切换失败');
   }
@@ -328,8 +328,8 @@ const togglePlatform = async (platformId) => {
 const handleReset = async () => {
   if (!confirm('!!! 警告 !!! \n这将重置整个系统。 \n你确定要继续吗？')) return;
   try {
-    const res = await adminApi.resetSystem(adminStore.adminPassword);
-    warning(res.message);
+    const data = await adminApi.resetSystem(adminStore.adminPassword);
+    warning(data.message);
   } catch (e) {
     error('系统重置失败');
   }
