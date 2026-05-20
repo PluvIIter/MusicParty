@@ -65,7 +65,7 @@
                         <span class="text-[8px] text-medical-400 font-mono">ALGO_TYPE</span>
                       </div>
                       <button @click="execPlayerAction('TOGGLE_FAIR_SHUFFLE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.isFairShuffle ? 'bg-accent' : 'bg-medical-300'">
-                        <div class="absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all" :class="playerStore.isFairShuffle ? 'left-4.5' : 'left-0.5'"></div>
+                        <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.isFairShuffle ? 'translateX(16px)' : 'translateX(0)' }"></div>
                       </button>
                     </div>
                     <div class="flex items-center justify-between">
@@ -74,7 +74,7 @@
                         <span class="text-[8px] text-medical-400 font-mono">POOL_SCOPE</span>
                       </div>
                       <button @click="execPlayerAction('TOGGLE_ALLOW_OFFLINE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.allowOfflineShuffle ? 'bg-green-500' : 'bg-medical-300'">
-                        <div class="absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all" :class="playerStore.allowOfflineShuffle ? 'left-4.5' : 'left-0.5'"></div>
+                        <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.allowOfflineShuffle ? 'translateX(16px)' : 'translateX(0)' }"></div>
                       </button>
                     </div>
                   </div>
@@ -105,7 +105,7 @@
                         class="w-8 h-4 rounded-full relative transition-colors"
                         :class="playerStore.config[`${plat.id}Enabled`] ? 'bg-accent' : 'bg-medical-300'"
                       >
-                        <div class="absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all" :class="playerStore.config[`${plat.id}Enabled`] ? 'left-4.5' : 'left-0.5'"></div>
+                        <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.config[`${plat.id}Enabled`] ? 'translateX(16px)' : 'translateX(0)' }"></div>
                       </button>
                     </div>
                     <div class="flex gap-2">
@@ -145,7 +145,7 @@
                     <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col items-center gap-2">
                       <span class="text-[9px] font-bold text-medical-400 uppercase font-mono">Live_Stream</span>
                       <button @click="toggleStream" class="w-10 h-5 rounded-full relative transition-colors" :class="playerStore.streamActive ? 'bg-green-500' : 'bg-medical-300'">
-                        <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all" :class="playerStore.streamActive ? 'left-5.5' : 'left-0.5'"></div>
+                        <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.streamActive ? 'translateX(20px)' : 'translateX(0)' }"></div>
                       </button>
                     </div>
                     <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col gap-2">
@@ -240,10 +240,10 @@ watch(() => playerStore.config, (newVal) => {
 
 const saveSystemConfig = async () => {
   try {
-    await adminApi.updateConfig(adminStore.adminPassword, configProxy.value);
-    success('SYSTEM_PARAMETERS_UPDATED');
+    const res = await adminApi.updateConfig(adminStore.adminPassword, configProxy.value);
+    success(res.message);
   } catch (e) {
-    error('CONFIG_SYNC_FAILED');
+    error('配置同步失败');
   }
 };
 
@@ -260,57 +260,57 @@ const platforms = ref([
 
 const execPlayerAction = async (action) => {
   try {
-    await adminApi.playerAction(adminStore.adminPassword, action);
-    success(`PLAYER_${action}_EXECUTED`);
+    const res = await adminApi.playerAction(adminStore.adminPassword, action);
+    success(res.message);
   } catch (e) {
-    error('COMMAND_FAILED');
+    error('指令执行失败');
   }
 };
 
 const toggleLock = async (type, locked) => {
   try {
-    await adminApi.setLock(adminStore.adminPassword, type, locked);
-    success(`${type}_LOCK_STATE_MODIFIED`);
+    const res = await adminApi.setLock(adminStore.adminPassword, type, locked);
+    success(res.message);
   } catch (e) {
-    error('LOCK_SYNC_FAILED');
+    error('锁定同步失败');
   }
 };
 
 const updateRoomPassword = async () => {
   try {
-    await adminApi.setRoomPassword(adminStore.adminPassword, roomPassword.value);
-    success('ROOM_PASSWORD_SYNCHRONIZED');
+    const res = await adminApi.setRoomPassword(adminStore.adminPassword, roomPassword.value);
+    success(res.message);
   } catch (e) {
-    error('PASSWORD_UPDATE_FAILED');
+    error('密码更新失败');
   }
 };
 
 const toggleStream = async () => {
   try {
-    await adminApi.setStream(adminStore.adminPassword, !playerStore.streamActive);
-    success('STREAM_SERVICE_UPDATED');
+    const res = await adminApi.setStream(adminStore.adminPassword, !playerStore.streamActive);
+    success(res.message);
   } catch (e) {
-    error('STREAM_CONTROL_FAILED');
+    error('直播流控制失败');
   }
 };
 
 const clearData = async (target) => {
-  if (!confirm(`Are you sure you want to clear ${target}?`)) return;
+  if (!confirm(`确定要清空 ${target} 吗?`)) return;
   try {
-    await adminApi.clearData(adminStore.adminPassword, target);
-    warning(`${target}_DATA_PURGED`);
+    const res = await adminApi.clearData(adminStore.adminPassword, target);
+    warning(res.message);
   } catch (e) {
-    error('PURGE_FAILED');
+    error('清理操作失败');
   }
 };
 
 const updateCookie = async (platform, value) => {
   if (!value) return;
   try {
-    await adminApi.setCookie(adminStore.adminPassword, platform, value);
-    success(`${platform.toUpperCase()}_CREDENTIALS_UPDATED`);
+    const res = await adminApi.setCookie(adminStore.adminPassword, platform, value);
+    success(res.message);
   } catch (e) {
-    error('CONFIG_UPDATE_FAILED');
+    error('凭据更新失败');
   }
 };
 
@@ -318,20 +318,20 @@ const togglePlatform = async (platformId) => {
   const current = playerStore.config[`${platformId}Enabled`];
   const update = { [`${platformId}Enabled`]: !current };
   try {
-    await adminApi.updateConfig(adminStore.adminPassword, update);
-    success(`${platformId.toUpperCase()}_STATUS_UPDATED`);
+    const res = await adminApi.updateConfig(adminStore.adminPassword, update);
+    success(res.message);
   } catch (e) {
-    error('PLATFORM_TOGGLE_FAILED');
+    error('平台状态切换失败');
   }
 };
 
 const handleReset = async () => {
-  if (!confirm('!!! WARNING !!! \nTHIS WILL RESET THE ENTIRE SYSTEM. \nARE YOU ABSOLUTELY SURE?')) return;
+  if (!confirm('!!! 警告 !!! \n这将重置整个系统。 \n你确定要继续吗？')) return;
   try {
-    await adminApi.resetSystem(adminStore.adminPassword);
-    warning('SYSTEM_PURGED_AND_RESTARTED');
+    const res = await adminApi.resetSystem(adminStore.adminPassword);
+    warning(res.message);
   } catch (e) {
-    error('RESET_FAILED');
+    error('系统重置失败');
   }
 };
 </script>

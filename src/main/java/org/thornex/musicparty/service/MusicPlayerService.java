@@ -303,7 +303,7 @@ public class MusicPlayerService {
         broadcastFullPlayerState();
     }
 
-    public void clearOfflineSongs() {
+    public int clearOfflineSongs() {
         Set<String> onlineTokens = userService.getRecentlyActiveUserTokens();
         List<MusicQueueItem> snapshot = queueManager.getQueueSnapshot();
         int removedCount = 0;
@@ -316,6 +316,7 @@ public class MusicPlayerService {
         log.info("Cleared {} songs from offline users.", removedCount);
         broadcastQueueUpdate();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "已清理 " + removedCount + " 首离线成员的点播歌曲"));
+        return removedCount;
     }
 
     public void setLock(String type, boolean locked) {
