@@ -8,6 +8,7 @@ export const useUiStore = defineStore('ui', () => {
     const isLiteMode = ref(false);
     const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
     const autoLiteMode = ref(localStorage.getItem('mp_auto_lite_mode') !== 'false'); // 默认 true
+    const keepAliveEnabled = ref(localStorage.getItem(STORAGE_KEYS.KEEP_ALIVE) === 'true');
 
     const authorName = ref('ThorNex');
     const backWords = ref('THORNEX');
@@ -18,6 +19,11 @@ export const useUiStore = defineStore('ui', () => {
 
     const setVolume = (val) => {
         volume.value = Math.max(0, Math.min(1, val));
+    };
+
+    const toggleKeepAlive = () => {
+        keepAliveEnabled.value = !keepAliveEnabled.value;
+        localStorage.setItem(STORAGE_KEYS.KEEP_ALIVE, keepAliveEnabled.value.toString());
     };
 
     const fetchConfig = async () => {
@@ -45,6 +51,8 @@ export const useUiStore = defineStore('ui', () => {
         volume,
         setVolume,
         autoLiteMode,
+        keepAliveEnabled,
+        toggleKeepAlive,
         authorName,
         backWords,
         fetchConfig
