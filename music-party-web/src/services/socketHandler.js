@@ -41,7 +41,6 @@ function handleGameEvent(event) {
         return;
     }
 
-
     if (event.action === 'RESET') {
         chatStore.messages = []; // 清空聊天
     }
