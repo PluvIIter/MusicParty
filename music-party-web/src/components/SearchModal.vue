@@ -182,8 +182,8 @@ const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
 
 const isPlatformEnabled = (p) => {
-  if (p === 'netease') return playerStore.config.neteaseEnabled;
-  if (p === 'bilibili') return playerStore.config.bilibiliEnabled;
+  if (p === 'netease') return playerStore.config?.neteaseEnabled !== false;
+  if (p === 'bilibili') return playerStore.config?.bilibiliEnabled !== false;
   return true;
 };
 
