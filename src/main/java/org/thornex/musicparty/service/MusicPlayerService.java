@@ -53,6 +53,8 @@ public class MusicPlayerService {
 
 
     private final AtomicBoolean isShuffle = new AtomicBoolean(false);
+    private final AtomicBoolean isFairShuffle;
+    private final AtomicBoolean allowOfflineShuffle;
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
     private final AtomicBoolean isPauseLocked = new AtomicBoolean(false);
     private final AtomicBoolean isSkipLocked = new AtomicBoolean(false);
@@ -84,6 +86,8 @@ public class MusicPlayerService {
         this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
+        this.isFairShuffle = new AtomicBoolean(true);
+        this.allowOfflineShuffle = new AtomicBoolean(false);
         this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
         this.currentLikeMarkers = new CopyOnWriteArrayList<>();
     }
@@ -141,7 +145,7 @@ public class MusicPlayerService {
 
         Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
 
-        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), statusMap, onlineUserTokens);
+        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), isFairShuffle.get(), allowOfflineShuffle.get(), statusMap, onlineUserTokens);
 
         if (nextItem == null) {
             if (isLoading.get()) {
@@ -248,6 +252,8 @@ public class MusicPlayerService {
                 infoToSend,
                 getQueueWithUpdatedStatus(),
                 isShuffle.get(),
+                isFairShuffle.get(),
+                allowOfflineShuffle.get(),
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
                 isPauseLocked.get(),
@@ -255,8 +261,61 @@ public class MusicPlayerService {
                 isShuffleLocked.get(),
                 isLoading.get(),
                 liveStreamService.getStreamListenerCount(),
-                liveStreamService.isEnabled()
+                liveStreamService.isEnabled(),
+                new PlayerState.AppConfigSummary(
+                        appProperties.getQueue().getMaxSize(),
+                        appProperties.getQueue().getHistorySize(),
+                        appProperties.getQueue().getMaxUserSongs(),
+                        appProperties.getPlayer().getMaxPlaylistImportSize(),
+                        appProperties.getChat().getMaxHistorySize(),
+                        appProperties.getChat().getMinIntervalMs(),
+                        appProperties.getChat().getMaxMessageLength(),
+                        appProperties.getNetease().isEnabled(),
+                        appProperties.getBilibili().isEnabled()
+                )
         );
+    }
+
+    public void toggleFairShuffle(String sessionId) {
+        if (isRateLimited(sessionId)) return;
+        boolean current;
+        boolean newState;
+        do {
+            current = isFairShuffle.get();
+            newState = !current;
+        } while (!isFairShuffle.compareAndSet(current, newState));
+
+        log.info("Fair shuffle mode set to {} by {}", newState, getUserName(sessionId));
+        broadcastFullPlayerState();
+        broadcastQueueUpdate(); // 可能会影响前端展示
+    }
+
+    public void toggleAllowOfflineShuffle(String sessionId) {
+        if (isRateLimited(sessionId)) return;
+        boolean current;
+        boolean newState;
+        do {
+            current = allowOfflineShuffle.get();
+            newState = !current;
+        } while (!allowOfflineShuffle.compareAndSet(current, newState));
+
+        log.info("Allow offline shuffle set to {} by {}", newState, getUserName(sessionId));
+        broadcastFullPlayerState();
+    }
+
+    public void clearOfflineSongs() {
+        Set<String> onlineTokens = userService.getRecentlyActiveUserTokens();
+        List<MusicQueueItem> snapshot = queueManager.getQueueSnapshot();
+        int removedCount = 0;
+        for (MusicQueueItem item : snapshot) {
+            if (!onlineTokens.contains(item.enqueuedBy().token())) {
+                queueManager.remove(item.queueId());
+                removedCount++;
+            }
+        }
+        log.info("Cleared {} songs from offline users.", removedCount);
+        broadcastQueueUpdate();
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "已清理 " + removedCount + " 首离线成员的点播歌曲"));
     }
 
     public void setLock(String type, boolean locked) {
@@ -291,6 +350,16 @@ public class MusicPlayerService {
         Optional<User> userOpt = userService.getUser(sessionId);
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
+
+        // Check platform enabled
+        if ("netease".equalsIgnoreCase(request.platform()) && !appProperties.getNetease().isEnabled()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: 网易云音乐源已被禁用"));
+            return;
+        }
+        if ("bilibili".equalsIgnoreCase(request.platform()) && !appProperties.getBilibili().isEnabled()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: Bilibili 源已被禁用"));
+            return;
+        }
 
         // Check user song limit
         long userSongCount = queueManager.getQueueSnapshot().stream()
@@ -357,6 +426,16 @@ public class MusicPlayerService {
         Optional<User> userOpt = userService.getUser(sessionId);
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
+
+        // Check platform enabled
+        if ("netease".equalsIgnoreCase(request.platform()) && !appProperties.getNetease().isEnabled()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: 网易云音乐源已被禁用"));
+            return;
+        }
+        if ("bilibili".equalsIgnoreCase(request.platform()) && !appProperties.getBilibili().isEnabled()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: Bilibili 源已被禁用"));
+            return;
+        }
 
         // Check user song limit
         long currentCount = queueManager.getQueueSnapshot().stream()
@@ -687,6 +766,10 @@ public class MusicPlayerService {
         }
         lastControlTimestamp.set(now);
         return false;
+    }
+
+    public AppProperties getAppProperties() {
+        return appProperties;
     }
 
     private IMusicApiService getApiService(String platform) {

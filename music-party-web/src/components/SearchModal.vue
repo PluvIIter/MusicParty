@@ -18,8 +18,12 @@
           <button
               v-for="p in ['netease', 'bilibili']" :key="p"
               @click="platform = p"
+              :disabled="!isPlatformEnabled(p)"
               class="px-6 py-2 text-sm font-bold uppercase transition-all"
-              :class="platform === p ? 'bg-medical-900 text-white clip-tab' : 'bg-medical-200 text-medical-500 hover:bg-medical-300'"
+              :class="[
+                platform === p ? 'bg-medical-900 text-white clip-tab' : 'bg-medical-200 text-medical-500 hover:bg-medical-300',
+                !isPlatformEnabled(p) ? 'opacity-30 cursor-not-allowed grayscale' : ''
+              ]"
           >
             {{ p }}
           </button>
@@ -176,6 +180,12 @@ import CoverImage from './CoverImage.vue';
 const props = defineProps(['isOpen']);
 const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
+
+const isPlatformEnabled = (p) => {
+  if (p === 'netease') return playerStore.config.neteaseEnabled;
+  if (p === 'bilibili') return playerStore.config.bilibiliEnabled;
+  return true;
+};
 
 // 1. 引入搜索逻辑
 const {

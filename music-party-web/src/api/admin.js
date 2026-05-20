@@ -40,5 +40,10 @@ export const adminApi = {
     // 直播流控制
     setStream: (adminPwd, enabled) => client.post('/api/admin/room/stream', { enabled }, {
         headers: { 'X-Admin-Password': adminPwd }
+    }),
+
+    // 更新系统配置
+    updateConfig: (adminPwd, config) => client.post('/api/admin/config/update', config, {
+        headers: { 'X-Admin-Password': adminPwd }
     })
 };

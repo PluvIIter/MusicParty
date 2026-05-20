@@ -15,6 +15,8 @@ export const usePlayerStore = defineStore('player', () => {
     const queue = ref([]);
     const isPaused = ref(false);
     const isShuffle = ref(false);
+    const isFairShuffle = ref(true);
+    const allowOfflineShuffle = ref(false);
     const isPauseLocked = ref(false);
     const isSkipLocked = ref(false);
     const isShuffleLocked = ref(false);
@@ -29,6 +31,17 @@ export const usePlayerStore = defineStore('player', () => {
     const localProgress = ref(0);
     const isBuffering = ref(false);
     const isErrorState = ref(false);
+    const config = ref({
+        maxQueueSize: 1000,
+        maxHistorySize: 50,
+        maxUserSongs: 100,
+        maxPlaylistImportSize: 100,
+        maxChatHistorySize: 1000,
+        minChatIntervalMs: 1000,
+        maxChatMessageLength: 200,
+        neteaseEnabled: true,
+        bilibiliEnabled: true
+    });
 
     const userStore = useUserStore();
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
@@ -69,6 +82,8 @@ export const usePlayerStore = defineStore('player', () => {
         queue.value = state.queue;
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
+        isFairShuffle.value = state.isFairShuffle !== undefined ? state.isFairShuffle : true;
+        allowOfflineShuffle.value = state.allowOfflineShuffle || false;
         isPauseLocked.value = state.isPauseLocked || false;
         isSkipLocked.value = state.isSkipLocked || false;
         isShuffleLocked.value = state.isShuffleLocked || false;
@@ -86,6 +101,10 @@ export const usePlayerStore = defineStore('player', () => {
 
         if (state.onlineUsers) {
             userStore.setOnlineUsers(state.onlineUsers);
+        }
+
+        if (state.config) {
+            config.value = { ...state.config };
         }
     };
 
