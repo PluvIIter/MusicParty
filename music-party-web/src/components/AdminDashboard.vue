@@ -14,9 +14,9 @@
         <div class="p-4 md:p-6 bg-white border-b border-medical-200 flex justify-between items-center flex-shrink-0">
           <div>
             <h2 class="text-2xl font-black font-mono text-medical-900 flex items-center gap-3">
-              <Settings class="w-6 h-6 text-accent animate-spin-slow" /> ADMIN_TERMINAL
+              <Settings class="w-6 h-6 text-accent animate-spin-slow" /> 管理终端
             </h2>
-            <p class="text-[10px] font-mono text-medical-400 mt-1 uppercase tracking-[0.2em]">> SYSTEM CONTROL INTERFACE v2.5</p>
+            <p class="text-[10px] font-mono text-medical-400 mt-1 uppercase tracking-[0.2em]">> 系统控制接口 / SYSTEM_CONTROL_INTERFACE</p>
           </div>
           <div class="flex items-center gap-4">
             <button @click="adminStore.showDashboard = false" class="p-2 bg-medical-100 hover:bg-medical-200 text-medical-900 transition-colors">
@@ -30,14 +30,17 @@
           
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
             
-            <!-- Left Column: Playback & Environment (7 cols) -->
+            <!-- Left Column: Playback & Parameters (7 cols) -->
             <div class="lg:col-span-7 space-y-6">
               
               <!-- Section: Playback Mastery -->
-              <div class="bg-white border border-medical-200 shadow-sm overflow-hidden">
-                <div class="p-3 bg-medical-900 text-white flex items-center gap-2">
-                  <PlayCircle class="w-4 h-4" />
-                  <span class="text-xs font-bold uppercase tracking-widest font-mono">Playback_Core</span>
+              <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
+                <div class="p-3 bg-medical-900 text-white flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <PlayCircle class="w-4 h-4 text-accent" />
+                    <span class="text-xs font-bold uppercase tracking-widest font-mono">播放核心 / Playback_Core</span>
+                  </div>
+                  <span class="text-[9px] font-mono opacity-60">IDLE_STATE_MONITOR</span>
                 </div>
                 <div class="p-4 space-y-4">
                   <!-- Control Grid -->
@@ -45,33 +48,33 @@
                     <button @click="execPlayerAction('PAUSE')" class="flex flex-col items-center justify-center p-4 bg-medical-50 border border-medical-200 hover:border-accent hover:text-accent transition-all group">
                       <Pause v-if="!playerStore.isPaused" class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
                       <Play v-else class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
-                      <span class="text-[10px] font-bold font-mono">{{ playerStore.isPaused ? 'RESUME' : 'PAUSE' }}</span>
+                      <span class="text-[10px] font-bold font-mono">{{ playerStore.isPaused ? '恢复' : '暂停' }}</span>
                     </button>
                     <button @click="execPlayerAction('SKIP')" class="flex flex-col items-center justify-center p-4 bg-medical-50 border border-medical-200 hover:border-accent hover:text-accent transition-all group">
                       <SkipForward class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
-                      <span class="text-[10px] font-bold font-mono">SKIP</span>
+                      <span class="text-[10px] font-bold font-mono">切歌</span>
                     </button>
                     <button @click="execPlayerAction('SHUFFLE')" class="flex flex-col items-center justify-center p-4 bg-medical-50 border border-medical-200 hover:border-accent hover:text-accent transition-all group" :class="playerStore.isShuffle ? 'border-accent text-accent' : ''">
                       <Shuffle class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
-                      <span class="text-[10px] font-bold font-mono">SHUFFLE</span>
+                      <span class="text-[10px] font-bold font-mono">随机</span>
                     </button>
                   </div>
 
                   <!-- Shuffle Sub-Settings -->
-                  <div v-if="playerStore.isShuffle" class="grid grid-cols-2 gap-3 p-3 bg-medical-50 border border-medical-100 rounded">
+                  <div v-if="playerStore.isShuffle" class="grid grid-cols-2 gap-3 p-3 bg-medical-50 border border-medical-100 rounded-sm">
                     <div class="flex items-center justify-between">
                       <div class="flex flex-col">
-                        <span class="text-[10px] font-bold text-medical-800">{{ playerStore.isFairShuffle ? 'Fair Mode' : 'Total Mode' }}</span>
-                        <span class="text-[8px] text-medical-400 font-mono">ALGO_TYPE</span>
+                        <span class="text-[10px] font-bold text-medical-800">{{ playerStore.isFairShuffle ? '公平模式' : '全部随机' }}</span>
+                        <span class="text-[8px] text-medical-400 font-mono uppercase">算法类型</span>
                       </div>
                       <button @click="execPlayerAction('TOGGLE_FAIR_SHUFFLE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.isFairShuffle ? 'bg-accent' : 'bg-medical-300'">
                         <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.isFairShuffle ? 'translateX(16px)' : 'translateX(0)' }"></div>
                       </button>
                     </div>
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between border-l border-medical-100 pl-3">
                       <div class="flex flex-col">
-                        <span class="text-[10px] font-bold text-medical-800">{{ playerStore.allowOfflineShuffle ? 'Offline ON' : 'Offline OFF' }}</span>
-                        <span class="text-[8px] text-medical-400 font-mono">POOL_SCOPE</span>
+                        <span class="text-[10px] font-bold text-medical-800">{{ playerStore.allowOfflineShuffle ? '含离线' : '仅在线' }}</span>
+                        <span class="text-[8px] text-medical-400 font-mono uppercase">曲库范围</span>
                       </div>
                       <button @click="execPlayerAction('TOGGLE_ALLOW_OFFLINE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.allowOfflineShuffle ? 'bg-green-500' : 'bg-medical-300'">
                         <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.allowOfflineShuffle ? 'translateX(16px)' : 'translateX(0)' }"></div>
@@ -84,20 +87,78 @@
                     <button v-for="lock in locks" :key="lock.key" @click="toggleLock(lock.key, !lock.value)" class="flex items-center justify-center gap-2 py-2 px-1 border transition-all text-[9px] font-bold font-mono" :class="lock.value ? 'bg-red-50 border-red-200 text-red-500' : 'bg-white border-medical-200 text-medical-400 hover:border-accent hover:text-accent'">
                       <Lock v-if="lock.value" class="w-3 h-3" />
                       <Unlock v-else class="w-3 h-3" />
-                      {{ lock.label.split(' ')[1].toUpperCase() }}
+                      {{ lock.cnLabel }}
                     </button>
                   </div>
                 </div>
               </div>
 
-              <!-- Section: Credentials & External APIs -->
-              <div class="bg-white border border-medical-200 shadow-sm overflow-hidden">
-                <div class="p-3 bg-medical-800 text-white flex items-center gap-2">
-                  <Database class="w-4 h-4" />
-                  <span class="text-xs font-bold uppercase tracking-widest font-mono">Cloud_Credentials</span>
+              <!-- Section: System Parameters -->
+              <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
+                <div class="p-3 bg-medical-700 text-white flex items-center gap-2">
+                  <Sliders class="w-4 h-4" />
+                  <span class="text-xs font-bold uppercase tracking-widest font-mono">系统参数 / System_Parameters</span>
                 </div>
                 <div class="p-4 space-y-4">
-                   <div v-for="plat in platforms" :key="plat.id" class="space-y-2">
+                  <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+                    <div v-for="(val, key) in systemFields" :key="key" class="space-y-1">
+                      <label class="block text-[9px] font-bold text-medical-400 font-mono uppercase">{{ key }}</label>
+                      <input v-model.number="configProxy[val.field]" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-xs outline-none focus:border-accent font-mono" />
+                    </div>
+                  </div>
+                  
+                  <button @click="saveSystemConfig" class="w-full bg-medical-900 text-white py-2 text-xs font-bold hover:bg-accent transition-colors flex items-center justify-center gap-2">
+                    <Save class="w-4 h-4" /> 应用并保存所有更改
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Environment & Danger Zone (5 cols) -->
+            <div class="lg:col-span-5 space-y-6">
+              
+              <!-- Section: Room Environment -->
+              <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
+                <div class="p-3 bg-medical-800 text-white flex items-center gap-2">
+                  <Globe class="w-4 h-4" />
+                  <span class="text-xs font-bold uppercase tracking-widest font-mono">环境配置 / Environment</span>
+                </div>
+                <div class="p-4 space-y-4">
+                  <!-- Password -->
+                  <div class="space-y-2">
+                    <label class="block text-[10px] font-bold text-medical-400 uppercase font-mono">房间进入密码</label>
+                    <div class="flex gap-2">
+                      <input v-model="roomPassword" placeholder="留空则设为公开" class="flex-1 bg-medical-50 border border-medical-200 px-3 py-1.5 text-xs outline-none focus:border-accent" />
+                      <button @click="updateRoomPassword" class="bg-medical-900 text-white px-3 py-1.5 text-[10px] font-bold hover:bg-accent">设置</button>
+                    </div>
+                  </div>
+                  <!-- Toggles -->
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col items-center gap-2 rounded-sm">
+                      <span class="text-[9px] font-bold text-medical-400 uppercase font-mono">直播推流</span>
+                      <button @click="toggleStream" class="w-10 h-5 rounded-full relative transition-colors" :class="playerStore.streamActive ? 'bg-green-500' : 'bg-medical-300'">
+                        <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.streamActive ? 'translateX(20px)' : 'translateX(0)' }"></div>
+                      </button>
+                    </div>
+                    <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col gap-2 rounded-sm">
+                      <span class="text-[9px] font-bold text-medical-400 uppercase font-mono text-center">数据清理</span>
+                      <div class="flex flex-col gap-1 w-full">
+                        <button @click="clearData('QUEUE')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">清理队列</button>
+                        <button @click="clearData('CHAT')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">清理聊天</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Section: Credentials -->
+              <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
+                <div class="p-3 bg-medical-600 text-white flex items-center gap-2">
+                  <Database class="w-4 h-4" />
+                  <span class="text-xs font-bold uppercase tracking-widest font-mono">平台凭据 / Credentials</span>
+                </div>
+                <div class="p-4 space-y-4">
+                   <div v-for="plat in platforms" :key="plat.id" class="space-y-2 border-b border-medical-50 pb-3 last:border-0 last:pb-0">
                     <div class="flex justify-between items-center">
                       <span class="text-[10px] font-bold text-medical-600 font-mono">{{ plat.name }} // {{ plat.tokenName }}</span>
                       <button 
@@ -112,81 +173,22 @@
                       <input 
                         type="password"
                         v-model="plat.value" 
-                        :placeholder="'ENTER ' + plat.tokenName + '...'" 
-                        class="flex-1 bg-medical-50 border border-medical-200 px-3 py-2 text-xs outline-none focus:border-accent font-mono"
+                        :placeholder="'输入新 ' + plat.tokenName + '...'" 
+                        class="flex-1 bg-medical-50 border border-medical-200 px-3 py-2 text-[10px] outline-none focus:border-accent font-mono"
                       />
-                      <button @click="updateCookie(plat.id, plat.value)" class="bg-medical-900 text-white px-4 font-bold text-[10px] hover:bg-accent transition-colors">UPDATE</button>
+                      <button @click="updateCookie(plat.id, plat.value)" class="bg-medical-900 text-white px-3 font-bold text-[10px] hover:bg-accent transition-colors">更新</button>
                     </div>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Right Column: System Config & Danger Zone (5 cols) -->
-            <div class="lg:col-span-5 space-y-6">
-              
-              <!-- Section: Room Environment -->
-              <div class="bg-white border border-medical-200 shadow-sm overflow-hidden">
-                <div class="p-3 bg-medical-700 text-white flex items-center gap-2">
-                  <Globe class="w-4 h-4" />
-                  <span class="text-xs font-bold uppercase tracking-widest font-mono">Environment_Variable</span>
-                </div>
-                <div class="p-4 space-y-4">
-                  <!-- Password -->
-                  <div class="space-y-2">
-                    <label class="block text-[10px] font-bold text-medical-400 uppercase font-mono">Entry_Password</label>
-                    <div class="flex gap-2">
-                      <input v-model="roomPassword" placeholder="PUBLIC" class="flex-1 bg-medical-50 border border-medical-200 px-3 py-1.5 text-xs outline-none focus:border-accent" />
-                      <button @click="updateRoomPassword" class="bg-medical-900 text-white px-3 py-1.5 text-[10px] font-bold hover:bg-accent">SET</button>
-                    </div>
-                  </div>
-                  <!-- Toggles -->
-                  <div class="grid grid-cols-2 gap-3">
-                    <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col items-center gap-2">
-                      <span class="text-[9px] font-bold text-medical-400 uppercase font-mono">Live_Stream</span>
-                      <button @click="toggleStream" class="w-10 h-5 rounded-full relative transition-colors" :class="playerStore.streamActive ? 'bg-green-500' : 'bg-medical-300'">
-                        <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.streamActive ? 'translateX(20px)' : 'translateX(0)' }"></div>
-                      </button>
-                    </div>
-                    <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col gap-2">
-                      <span class="text-[9px] font-bold text-medical-400 uppercase font-mono text-center">Clean_Action</span>
-                      <div class="flex flex-col gap-1 w-full">
-                        <button @click="clearData('QUEUE')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all uppercase">Queue</button>
-                        <button @click="clearData('OFFLINE')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all uppercase">Offline</button>
-                        <button @click="clearData('CHAT')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all uppercase">Chat</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Section: System Parameters (APIs & Limits) -->
-              <div class="bg-white border border-medical-200 shadow-sm overflow-hidden">
-                <div class="p-3 bg-medical-600 text-white flex items-center gap-2">
-                  <Sliders class="w-4 h-4" />
-                  <span class="text-xs font-bold uppercase tracking-widest font-mono">System_Parameters</span>
-                </div>
-                <div class="p-4 space-y-4">
-                  <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-                    <div v-for="(val, key) in systemFields" :key="key" class="space-y-1">
-                      <label class="block text-[9px] font-bold text-medical-400 font-mono">{{ key.toUpperCase() }}</label>
-                      <input v-model.number="configProxy[val.field]" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none focus:border-accent" />
-                    </div>
-                  </div>
-                  
-                  <button @click="saveSystemConfig" class="w-full bg-medical-900 text-white py-2 text-xs font-bold hover:bg-accent transition-colors flex items-center justify-center gap-2">
-                    <Save class="w-4 h-4" /> COMMIT_CHANGES
-                  </button>
                 </div>
               </div>
 
               <!-- Danger Zone -->
               <div class="p-4 bg-red-50 border border-red-100 chamfer-br flex flex-col gap-3">
                 <h4 class="text-red-600 text-[10px] font-black flex items-center gap-2 uppercase tracking-tighter">
-                  <AlertTriangle class="w-4 h-4" /> DANGER_ZONE.SH
+                  <AlertTriangle class="w-4 h-4" /> 危险区域 / DANGER_ZONE.SH
                 </h4>
                 <button @click="handleReset" class="w-full py-2 bg-red-600 text-white font-bold text-[10px] hover:bg-red-700 transition-all uppercase tracking-widest shadow-sm">
-                  Full System Reset
+                  全系统重置 (慎用)
                 </button>
               </div>
             </div>
@@ -196,8 +198,8 @@
 
         <!-- Footer -->
         <div class="p-3 bg-medical-100 border-t border-medical-200 flex justify-between items-center text-[9px] font-mono text-medical-400">
-          <span class="flex items-center gap-1"><ShieldCheck class="w-3 h-3 text-green-500" /> SECURE_CONNECTION: AES-256-GCM</span>
-          <span>ADMIN_HASH: {{ adminStore.adminPassword.substring(0, 4).toUpperCase() }}****</span>
+          <span class="flex items-center gap-1"><ShieldCheck class="w-3 h-3 text-green-500" /> 安全连接: AES-256-GCM</span>
+          <span>管理员哈希: {{ adminStore.adminPassword.substring(0, 4).toUpperCase() }}****</span>
         </div>
       </div>
     </div>
@@ -226,12 +228,12 @@ const roomPassword = ref('');
 const configProxy = ref({ ...playerStore.config });
 
 const systemFields = {
-  queue_max: { field: 'maxQueueSize' },
-  hist_size: { field: 'maxHistorySize' },
-  user_songs: { field: 'maxUserSongs' },
-  import_lim: { field: 'maxPlaylistImportSize' },
-  chat_hist: { field: 'maxChatHistorySize' },
-  chat_rate: { field: 'minChatIntervalMs' }
+  '队列最大长度': { field: 'maxQueueSize' },
+  '历史记录容量': { field: 'maxHistorySize' },
+  '用户点歌上限': { field: 'maxUserSongs' },
+  '导入单次上限': { field: 'maxPlaylistImportSize' },
+  '聊天记录容量': { field: 'maxChatHistorySize' },
+  '发言频率限制(ms)': { field: 'minChatIntervalMs' }
 };
 
 watch(() => playerStore.config, (newVal) => {
@@ -248,14 +250,14 @@ const saveSystemConfig = async () => {
 };
 
 const locks = computed(() => [
-  { key: 'PAUSE', label: 'Lock Pause', value: playerStore.isPauseLocked },
-  { key: 'SKIP', label: 'Lock Skip', value: playerStore.isSkipLocked },
-  { key: 'SHUFFLE', label: 'Lock Shuffle', value: playerStore.isShuffleLocked },
+  { key: 'PAUSE', cnLabel: '锁定暂停', value: playerStore.isPauseLocked },
+  { key: 'SKIP', cnLabel: '锁定切歌', value: playerStore.isSkipLocked },
+  { key: 'SHUFFLE', cnLabel: '锁定随机', value: playerStore.isShuffleLocked },
 ]);
 
 const platforms = ref([
-  { id: 'netease', name: 'Netease', tokenName: 'COOKIE', value: '' },
-  { id: 'bilibili', name: 'Bilibili', tokenName: 'SESSDATA', value: '' }
+  { id: 'netease', name: '网易云音乐', tokenName: 'COOKIE', value: '' },
+  { id: 'bilibili', name: '哔哩哔哩', tokenName: 'SESSDATA', value: '' }
 ]);
 
 const execPlayerAction = async (action) => {
