@@ -51,50 +51,80 @@ public class AdminController {
     public ResponseEntity<?> setLock(@RequestHeader("X-Admin-Password") String password, @RequestBody AdminLockRequest request) {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         
-        if ("ALL".equalsIgnoreCase(request.type())) {
+        String type = request.type().toUpperCase();
+        if ("ALL".equalsIgnoreCase(type)) {
             musicPlayerService.setAllLocks(request.locked());
+            return ResponseEntity.ok(Map.of("message", (request.locked() ? "已开启全频道操作锁定" : "已解除全频道操作锁定")));
         } else {
-            musicPlayerService.setLock(request.type().toUpperCase(), request.locked());
+            musicPlayerService.setLock(type, request.locked());
+            String desc = switch (type) {
+                case "PAUSE" -> "暂停控制";
+                case "SKIP" -> "切歌控制";
+                case "SHUFFLE" -> "随机控制";
+                default -> type;
+            };
+            return ResponseEntity.ok(Map.of("message", desc + (request.locked() ? "已锁定" : "已解锁")));
         }
-        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/player/action")
     public ResponseEntity<?> playerAction(@RequestHeader("X-Admin-Password") String password, @RequestBody AdminPlayerActionRequest request) {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
-        switch (request.action().toUpperCase()) {
-            case "PAUSE" -> musicPlayerService.togglePause("SYSTEM");
-            case "SKIP" -> musicPlayerService.skipToNext("SYSTEM");
-            case "SHUFFLE" -> musicPlayerService.toggleShuffle("SYSTEM");
-            case "TOGGLE_FAIR_SHUFFLE" -> musicPlayerService.toggleFairShuffle("SYSTEM");
-            case "TOGGLE_ALLOW_OFFLINE" -> musicPlayerService.toggleAllowOfflineShuffle("SYSTEM");
-            default -> { return ResponseEntity.badRequest().build(); }
-        }
-        return ResponseEntity.ok().build();
+        String action = request.action().toUpperCase();
+        String msg = switch (action) {
+            case "PAUSE" -> {
+                musicPlayerService.togglePause("SYSTEM");
+                yield "播放状态已切换";
+            }
+            case "SKIP" -> {
+                musicPlayerService.skipToNext("SYSTEM");
+                yield "已强制跳过当前歌曲";
+            }
+            case "SHUFFLE" -> {
+                musicPlayerService.toggleShuffle("SYSTEM");
+                yield "随机播放主开关已切换";
+            }
+            case "TOGGLE_FAIR_SHUFFLE" -> {
+                musicPlayerService.toggleFairShuffle("SYSTEM");
+                yield "随机算法已切换";
+            }
+            case "TOGGLE_ALLOW_OFFLINE" -> {
+                musicPlayerService.toggleAllowOfflineShuffle("SYSTEM");
+                yield "离线成员过滤规则已更新";
+            }
+            default -> null;
+        };
+
+        if (msg == null) return ResponseEntity.badRequest().build();
+        return ResponseEntity.ok(Map.of("message", msg));
     }
 
     @PostMapping("/room/password")
     public ResponseEntity<?> setRoomPassword(@RequestHeader("X-Admin-Password") String password, @RequestBody AdminRoomPasswordRequest request) {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
-        authController.forceSetPassword(request.password() == null ? "" : request.password());
+        String newPwd = request.password() == null ? "" : request.password();
+        authController.forceSetPassword(newPwd);
         musicPlayerService.broadcastPasswordChanged();
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("message", newPwd.isEmpty() ? "房间已设为公开访问" : "房间访问密码已更新"));
     }
 
     @PostMapping("/room/clear")
     public ResponseEntity<?> clearData(@RequestHeader("X-Admin-Password") String password, @RequestBody AdminClearRequest request) {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
-        if ("CHAT".equalsIgnoreCase(request.target())) {
+        String target = request.target().toUpperCase();
+        if ("CHAT".equalsIgnoreCase(target)) {
             chatService.clearHistoryAndNotify();
-        } else if ("OFFLINE".equalsIgnoreCase(request.target())) {
-            musicPlayerService.clearOfflineSongs();
+            return ResponseEntity.ok(Map.of("message", "聊天历史记录已清空"));
+        } else if ("OFFLINE".equalsIgnoreCase(target)) {
+            int count = musicPlayerService.clearOfflineSongs();
+            return ResponseEntity.ok(Map.of("message", "已清理 " + count + " 首离线成员的点播歌曲"));
         } else {
             musicPlayerService.clearQueue();
+            return ResponseEntity.ok(Map.of("message", "播放队列已全部重置"));
         }
-        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/system/reset")
@@ -102,7 +132,7 @@ public class AdminController {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
         musicPlayerService.resetSystem();
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("message", "系统核心已完成全量重置并重启"));
     }
 
     @PostMapping("/config/cookie")
@@ -111,12 +141,13 @@ public class AdminController {
 
         if ("netease".equalsIgnoreCase(request.platform())) {
             neteaseMusicApiService.updateCookie(request.value());
+            return ResponseEntity.ok(Map.of("message", "网易云音乐凭据已更新"));
         } else if ("bilibili".equalsIgnoreCase(request.platform())) {
             bilibiliMusicApiService.updateSessdata(request.value());
+            return ResponseEntity.ok(Map.of("message", "Bilibili SessData 已更新"));
         } else {
             return ResponseEntity.badRequest().build();
         }
-        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/room/stream")
@@ -124,7 +155,7 @@ public class AdminController {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
         liveStreamService.setEnabled(request.enabled());
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("message", request.enabled() ? "直播流同步服务已启动" : "直播流同步服务已停止"));
     }
 
     @PostMapping("/config/update")
@@ -149,7 +180,7 @@ public class AdminController {
         if (request.bilibiliEnabled() != null) musicPlayerService.getAppProperties().getBilibili().setEnabled(request.bilibiliEnabled());
 
         musicPlayerService.broadcastFullPlayerState();
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("message", "各项系统运行参数已实时生效"));
     }
 
     // Keep compatibility for now or remove if sure
