@@ -47,8 +47,7 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) extractAssets() {
-	home, _ := os.UserHomeDir()
-	baseDir := filepath.Join(home, ".musicparty")
+	baseDir := config.GetBaseDir()
 
 	a.logToTerminal("[SYSTEM] Preparing environment assets...")
 
@@ -163,6 +162,7 @@ func (a *App) StartServices() {
 		"-jar", jarPath,
 		fmt.Sprintf("--server.address=%s", a.cfg.ServerIP),
 		fmt.Sprintf("--server.port=%s", a.cfg.ServerPort),
+		fmt.Sprintf("--app.music-api.base-url=%s", a.cfg.BaseURL),
 		fmt.Sprintf("--app.music-api.admin-password=%s", a.cfg.AdminPassword),
 		fmt.Sprintf("--app.music-api.author-name=%s", a.cfg.AuthorName),
 		fmt.Sprintf("--app.music-api.back-words=%s", a.cfg.BackWords),
@@ -192,8 +192,7 @@ func (a *App) StartServices() {
 }
 
 func (a *App) getBinDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".musicparty", "bin")
+	return filepath.Join(config.GetBaseDir(), "bin")
 }
 
 func (a *App) StopServices() {

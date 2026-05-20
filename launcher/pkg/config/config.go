@@ -10,6 +10,7 @@ type AppConfig struct {
 	// Server Settings
 	ServerIP   string `json:"serverIp"`
 	ServerPort string `json:"serverPort"`
+	BaseURL    string `json:"baseUrl"`
 
 	// App General
 	AdminPassword string `json:"adminPassword"`
@@ -51,9 +52,17 @@ type AppConfig struct {
 	AutoStart  bool   `json:"autoStart"`
 }
 
-func GetConfigPath() string {
+func GetBaseDir() string {
+	exePath, err := os.Executable()
+	if err == nil {
+		return filepath.Dir(exePath)
+	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".musicparty", "launcher_config.json")
+	return filepath.Join(home, ".musicparty")
+}
+
+func GetConfigPath() string {
+	return filepath.Join(GetBaseDir(), "launcher_config.json")
 }
 
 func LoadConfig() *AppConfig {
@@ -63,6 +72,7 @@ func LoadConfig() *AppConfig {
 		return &AppConfig{
 			ServerIP:      "0.0.0.0",
 			ServerPort:    "8080",
+			BaseURL:       "http://localhost:8080",
 			AdminPassword: "",
 			AuthorName:    "ThorNex",
 			BackWords:     "THORNEX",

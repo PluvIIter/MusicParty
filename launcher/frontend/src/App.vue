@@ -6,6 +6,7 @@ import { EventsOn } from './wailsjs/runtime';
 const config = reactive({
   serverIp: '0.0.0.0',
   serverPort: '8080',
+  baseUrl: 'http://localhost:8080',
   adminPassword: '',
   authorName: 'ThorNex',
   backWords: 'THORNEX',
@@ -157,13 +158,18 @@ const openWeb = () => {
           <div v-if="activeTab === 'basic'" class="space-y-4">
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">局域网绑定地址</label>
+                <label class="text-[10px] font-bold text-medical-500 uppercase">监听地址</label>
                 <p class="text-[9px] text-medical-400">保持 0.0.0.0 以允许所有设备访问</p>
                 <input v-model="config.serverIp" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
               </div>
               <div class="space-y-1">
                 <label class="text-[10px] font-bold text-medical-500 uppercase">服务端口</label>
                 <input v-model="config.serverPort" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
+              </div>
+              <div class="space-y-1">
+                <label class="text-[10px] font-bold text-medical-500 uppercase">公网访问地址 (Base URL)</label>
+                <p class="text-[9px] text-medical-400">用于生成直播流链接，如 http://1.2.3.4:8080</p>
+                <input v-model="config.baseUrl" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
               </div>
               <div class="space-y-1">
                 <label class="text-[10px] font-bold text-medical-500 uppercase">管理员控制台密码</label>
