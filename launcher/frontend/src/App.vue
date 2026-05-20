@@ -11,7 +11,9 @@ const config = reactive({
   backWords: 'THORNEX',
   neteaseCookie: '',
   neteaseQuality: 'exhigh',
+  neteaseEnabled: true,
   biliSessData: '',
+  bilibiliEnabled: true,
   queueMaxSize: 1000,
   queueHistorySize: 50,
   queueMaxUserSongs: 100,
@@ -183,24 +185,34 @@ const openWeb = () => {
           <!-- 接口设置 -->
           <div v-if="activeTab === 'api'" class="space-y-4">
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
-              <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">网易云账号 Cookie</label>
-                <textarea v-model="config.neteaseCookie" placeholder="用于获取高清音质和私人歌单" rows="4" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900 resize-none"></textarea>
+              <div class="flex items-center justify-between border-b border-medical-100 pb-2 mb-2">
+                <h3 class="text-[10px] font-black uppercase">网易云音乐 (Netease)</h3>
+                <input type="checkbox" v-model="config.neteaseEnabled" class="w-4 h-4 accent-medical-900" />
               </div>
-              <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">解析音质上限</label>
-                <select v-model="config.neteaseQuality" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
-                  <option value="standard">标准</option>
-                  <option value="higher">较高</option>
-                  <option value="exhigh">极高</option>
-                  <option value="lossless">无损</option>
-                  <option value="hires">高解析度</option>
-                </select>
+              <div class="space-y-4" :class="!config.neteaseEnabled ? 'opacity-40 grayscale pointer-events-none' : ''">
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-medical-500 uppercase">账号 Cookie</label>
+                  <textarea v-model="config.neteaseCookie" placeholder="用于获取高清音质和私人歌单" rows="3" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900 resize-none"></textarea>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-medical-500 uppercase">解析音质上限</label>
+                  <select v-model="config.neteaseQuality" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
+                    <option value="standard">标准</option>
+                    <option value="higher">较高</option>
+                    <option value="exhigh">极高</option>
+                    <option value="lossless">无损</option>
+                    <option value="hires">高解析度</option>
+                  </select>
+                </div>
               </div>
             </div>
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
-              <div class="space-y-1">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">B站 sessData</label>
+              <div class="flex items-center justify-between border-b border-medical-100 pb-2 mb-2">
+                <h3 class="text-[10px] font-black uppercase">Bilibili</h3>
+                <input type="checkbox" v-model="config.bilibiliEnabled" class="w-4 h-4 accent-medical-900" />
+              </div>
+              <div class="space-y-1" :class="!config.bilibiliEnabled ? 'opacity-40 grayscale pointer-events-none' : ''">
+                <label class="text-[10px] font-bold text-medical-500 uppercase">SessData</label>
                 <input v-model="config.biliSessData" placeholder="用于解析B站音频流" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
               </div>
             </div>
@@ -323,7 +335,7 @@ const openWeb = () => {
       <div class="flex items-center gap-4 text-medical-400">
         <span>架构: X64</span>
         <span>平台: Windows</span>
-        <span class="text-medical-900 font-bold">2024.音乐派对部署终端</span>
+        <span class="text-medical-900 font-bold">MusicParty启动器</span>
       </div>
     </div>
   </div>

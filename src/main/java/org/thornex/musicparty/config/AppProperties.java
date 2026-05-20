@@ -65,6 +65,7 @@ public class AppProperties {
     @Data
     public static class BilibiliApiConfig extends ApiConfig {
         private String sessdata;
+        private boolean enabled = true;
     }
 
     @EqualsAndHashCode(callSuper = true)
@@ -72,5 +73,6 @@ public class AppProperties {
     public static class NeteaseApiConfig extends ApiConfig {
         private String cookie;
         private String quality = "exhigh"; // 默认音质：极高 (exhigh)
+        private boolean enabled = true;
     }
 }

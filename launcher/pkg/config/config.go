@@ -19,9 +19,11 @@ type AppConfig struct {
 	// Netease
 	NeteaseCookie string `json:"neteaseCookie"`
 	NeteaseQuality string `json:"neteaseQuality"`
+	NeteaseEnabled bool `json:"neteaseEnabled"`
 
 	// Bilibili
 	BiliSessData string `json:"biliSessData"`
+	BilibiliEnabled bool `json:"bilibiliEnabled"`
 
 	// Queue Settings
 	QueueMaxSize      int `json:"queueMaxSize"`
@@ -65,6 +67,8 @@ func LoadConfig() *AppConfig {
 			AuthorName:    "ThorNex",
 			BackWords:     "THORNEX",
 			NeteaseQuality: "exhigh",
+			NeteaseEnabled: true,
+			BilibiliEnabled: true,
 			QueueMaxSize:      1000,
 			QueueHistorySize:  50,
 			QueueMaxUserSongs: 100,
