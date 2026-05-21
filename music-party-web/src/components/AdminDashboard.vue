@@ -78,7 +78,7 @@
                           <span class="text-[10px] font-bold text-medical-800">{{ playerStore.allowOfflineShuffle ? '含离线' : '仅在线' }}</span>
                           <span class="text-[8px] text-medical-400 font-mono uppercase">曲库范围</span>
                         </div>
-                        <button @click="execPlayerAction('TOGGLE_ALLOW_OFFLINE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.allowOfflineShuffle ? 'bg-green-500' : 'bg-medical-300'">
+                        <button @click="execPlayerAction('TOGGLE_ALLOW_OFFLINE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.allowOfflineShuffle ? 'bg-accent' : 'bg-medical-300'">
                           <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.allowOfflineShuffle ? 'translateX(16px)' : 'translateX(0)' }"></div>
                         </button>
                       </div>
@@ -172,7 +172,7 @@
                   <div class="grid grid-cols-2 gap-3">
                     <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col items-center gap-2 rounded-sm">
                       <span class="text-[9px] font-bold text-medical-400 uppercase font-mono">直播推流</span>
-                      <button @click="toggleStream" class="w-10 h-5 rounded-full relative transition-colors" :class="playerStore.streamActive ? 'bg-green-500' : 'bg-medical-300'">
+                      <button @click="toggleStream" class="w-10 h-5 rounded-full relative transition-colors" :class="playerStore.streamActive ? 'bg-accent' : 'bg-medical-300'">
                         <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.streamActive ? 'translateX(20px)' : 'translateX(0)' }"></div>
                       </button>
                     </div>
