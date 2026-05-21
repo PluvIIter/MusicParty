@@ -612,7 +612,9 @@ public class MusicPlayerService {
         currentMusic.set(null);
         positionAnchor.set(0);
 
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserToken(sessionId), null));
+        if (!"SYSTEM".equals(sessionId)) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserToken(sessionId), null));
+        }
         playNextInQueue();
     }
 
