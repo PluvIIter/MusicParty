@@ -120,7 +120,7 @@ const openWeb = () => {
     <div class="flex justify-between items-end border-b-2 border-medical-900 pb-4">
       <div>
         <h1 class="text-3xl font-black tracking-tighter">MusicParty</h1>
-        <p class="text-[10px] font-mono text-medical-400 mt-1 uppercase tracking-widest">> 启动器 v1.2</p>
+        <p class="text-[10px] font-mono text-medical-400 mt-1 uppercase tracking-widest">> 启动器</p>
       </div>
       <div class="flex items-center gap-6">
         <div v-if="isJavaReady" class="animate-in fade-in zoom-in duration-300">
