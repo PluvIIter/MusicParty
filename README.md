@@ -10,6 +10,7 @@
 **Music Party** 是一个开源的、私有化部署的多人实时在线WEB听歌平台。
 
 它允许你和朋友在一个虚拟房间内，通过 **网易云音乐** 或 **Bilibili** 搜索并点播歌曲。系统实现了播放进度同步，无论是在 PC 端还是移动端，所有人听到的都是同一秒的旋律。
+（本项目并非“破解版”，对于VIP歌曲/高音质等会员内容，需要具有相应资格账号的cookie来获取，下方有获取cookie的教程）
 <img width="1778" height="1080" alt="image" src="https://github.com/user-attachments/assets/64d7f5d1-9837-43ab-8c1b-dad78361b348" />
 
 ## 核心特性
@@ -72,23 +73,7 @@ docker run -d \
   thornex/music-party:latest
 ```
 
-## Windows 启动器
-
-如果你想在 Windows 上快速运行，而不想折腾 Docker、Java 或 Node.js 环境，可以使用 **一键启动器**。
-
-### 获取与使用
-1.  前往 [GitHub Releases](https://github.com/pluviiter/MusicParty/releases) 下载最新的 `MusicParty.exe`。
-2.  将 `MusicParty.exe` 放置在你喜欢的文件夹中。
-3.  **直接双击运行**：
-    *   启动器会自动释放内置的 JRE 环境、网易云 API 服务以及 Java 核心程序。
-    *   所有的配置、运行环境、缓存都保存在 EXE 同级目录下。
-4.  在 UI 界面上修改端口、密码、网易云 Cookie 等配置，点击“启动系统”即可。
-5.  系统就绪后，点击界面上的“打开网页”即可。
-6. 如果你需要公网部署，请保持监听地址为0.0.0.0，并使用你的公网IP:端口的形式访问网页。
-
----
-
-## 环境变量说明
+### 环境变量说明
 
 | 变量名                       | 必填 | 说明                                                                          |
 |:--------------------------|:---|:----------------------------------------------------------------------------|
@@ -117,6 +102,33 @@ docker run -d \
 
 ---
 
+## Windows 启动器
+
+如果你想在 Windows 上快速运行，而不想折腾 Docker、Java 或 Node.js 环境，可以使用 **一键启动器**。
+<img width="1010" height="713" alt="Snipaste_2026-05-21_10-45-11" src="https://github.com/user-attachments/assets/2402f66e-4a52-423f-a32c-c0478c84a283" />
+
+### 获取与使用
+1.  前往 [GitHub Releases](https://github.com/pluviiter/MusicParty/releases) 下载最新的 `MusicParty.exe`。
+2.  将 `MusicParty.exe` 放置在你喜欢的文件夹中。
+3.  **直接双击运行**：
+    *   启动器会自动释放内置的 JRE 环境、网易云 API 服务以及 Java 核心程序。
+    *   所有的配置、运行环境、缓存都保存在 EXE 同级目录下。
+4.  在 UI 界面上修改端口、密码、网易云 Cookie 等配置，点击“启动系统”即可。
+5.  系统就绪后，点击界面上的“打开网页”即可。
+6. 如果你需要公网部署，请保持监听地址为0.0.0.0，并使用你的公网IP:端口的形式访问网页。
+
+---
+
+## 房间密码
+<img width="622" height="427" alt="Image_2026-05-21_10-53-45_s10ixfb1 qoj" src="https://github.com/user-attachments/assets/1f5eeb44-4a21-4dc5-8399-753b9f16b88a" />
+
+部署后首次启动需要设置房间密码，其他成员只有使用密码才能进入。
+也可以设置为public公开，此时无需密码即可进入。
+密码可以在管理员面板中更改。
+
+
+---
+
 ## 聊天框命令
 
 在前端**聊天窗口**中可以输入以下命令：
@@ -141,6 +153,8 @@ docker run -d \
 
 ## 管理员面板
 在聊天窗口输入//admin并输入管理员密码后，可以进入管理员面板修改配置。
+<img width="1276" height="928" alt="Image_2026-05-21_10-56-16_5vxgwqdh kau" src="https://github.com/user-attachments/assets/593bcd6f-c039-4764-a009-d340cbdef287" />
+
 * 修改部署时的配置参数。
 * 锁定播放，切歌，随机按钮以防止用户滥用。（建议保持播放按钮锁定，防止某一个用户因为卸下耳机等行为导致的自动暂停）
 * 开关直播流功能。
@@ -166,6 +180,17 @@ docker run -d \
 2. 在聊天窗口中输入`//stream`
 3. 切换到系统日志窗口，即可看到自己的直播流链接。
 #### 注意，直播流使用FFmpeg，会占用更多性能，且有大量流量消耗。
+
+---
+
+## Cookie凭证获取
+* **网易云**
+浏览器打开网易云音乐，登录，按F12开启控制台，选择网络，然后点击我的音乐，在控制台中寻找playlist开头的请求，然后找到Cookie，将所有内容复制。
+<img width="1604" height="1084" alt="image" src="https://github.com/user-attachments/assets/afa77005-aebd-4120-90f3-ccddb2370712" />
+
+* **bilibili**
+浏览器打开bilibili，登录，进入我的收藏页面，按F12开启控制台，选择网络，然后收藏夹翻页，在控制台中寻找lsit开头的请求，然后找到Cookie，在内容中寻找SESSDATA，复制 = 后面到 ; 之前的所有内容。
+<img width="1959" height="1084" alt="image" src="https://github.com/user-attachments/assets/67cebc9d-bfd5-4ec6-ae17-1922b2a175e9" />
 
 ---
 
