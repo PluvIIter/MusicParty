@@ -153,7 +153,7 @@
                 {{ player.currentVotes }}
             </div>
             <!-- Wait Timer Hint -->
-            <div v-if="player.isVoteSkipEnabled && waitTimeLeft > 0" class="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-medical-900 text-white text-[8px] px-1 py-0.5 rounded-sm opacity-0 group-hover/skip:opacity-100 transition-opacity whitespace-nowrap">
+            <div v-if="player.isVoteSkipEnabled && canVote && waitTimeLeft > 0" class="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-medical-900 text-white text-[8px] px-1 py-0.5 rounded-sm opacity-0 group-hover/skip:opacity-100 transition-opacity whitespace-nowrap">
                 {{ waitTimeLeft }}s 后可投票
             </div>
         </button>
@@ -239,6 +239,7 @@ const canVote = computed(() => {
 const skipBtnTitle = computed(() => {
     if (player.isSkipLocked) return '切歌功能已被锁定';
     if (player.isVoteSkipEnabled) {
+        if (!canVote.value) return '强制切歌';
         if (waitTimeLeft.value > 0) return `${waitTimeLeft.value}s 后可投票`;
         return `投票切歌 (${player.currentVotes}/${player.eligibleUsers})`;
     }
