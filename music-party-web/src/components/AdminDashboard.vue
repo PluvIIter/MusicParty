@@ -143,8 +143,9 @@
                     <div class="p-3 bg-medical-50 border border-medical-100 flex flex-col gap-2 rounded-sm">
                       <span class="text-[9px] font-bold text-medical-400 uppercase font-mono text-center">数据清理</span>
                       <div class="flex flex-col gap-1 w-full">
-                        <button @click="clearData('QUEUE')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">清理队列</button>
-                        <button @click="clearData('CHAT')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">清理聊天</button>
+                        <button @click="clearData('QUEUE')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">清理播放队列</button>
+                        <button @click="clearData('OFFLINE')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">清理不在线成员歌曲</button>
+                        <button @click="clearData('CHAT')" class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">清理聊天记录</button>
                       </div>
                     </div>
                   </div>
@@ -297,7 +298,13 @@ const toggleStream = async () => {
 };
 
 const clearData = async (target) => {
-  if (!confirm(`确定要清空 ${target} 吗?`)) return;
+  const targetName = {
+    'QUEUE': '播放队列',
+    'OFFLINE': '不在线成员的点播歌曲',
+    'CHAT': '聊天记录'
+  }[target] || target;
+  
+  if (!confirm(`确定要清空 ${targetName} 吗?`)) return;
   try {
     const data = await adminApi.clearData(adminStore.adminPassword, target);
     warning(data.message);
