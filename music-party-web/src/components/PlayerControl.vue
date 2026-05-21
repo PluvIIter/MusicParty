@@ -107,7 +107,7 @@
          >
              <SkipForward class="w-4 h-4" />
              <!-- Badge -->
-             <div v-if="player.isVoteSkipEnabled && canVote" class="absolute -top-1 -right-1 bg-accent text-white text-[8px] font-bold px-1 min-w-[12px] h-3 flex items-center justify-center rounded-sm shadow-sm">
+             <div v-if="player.isVoteSkipEnabled && canVote && player.currentVotes > 0" class="absolute -top-1 -right-1 bg-accent text-white text-[8px] font-bold px-1 min-w-[12px] h-3 flex items-center justify-center rounded-sm shadow-sm">
                 {{ player.currentVotes }}
              </div>
          </button>
@@ -149,7 +149,7 @@
         >
             <SkipForward class="w-6 h-6 fill-current" />
             <!-- Badge -->
-            <div v-if="player.isVoteSkipEnabled && canVote" class="absolute -top-1 -right-1 bg-accent text-white text-[10px] font-bold px-1 min-w-[14px] h-3.5 flex items-center justify-center rounded-sm shadow-sm">
+            <div v-if="player.isVoteSkipEnabled && canVote && player.currentVotes > 0" class="absolute -top-1 -right-1 bg-accent text-white text-[10px] font-bold px-1 min-w-[14px] h-3.5 flex items-center justify-center rounded-sm shadow-sm">
                 {{ player.currentVotes }}
             </div>
             <!-- Wait Timer Hint -->
