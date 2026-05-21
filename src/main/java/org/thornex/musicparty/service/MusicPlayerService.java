@@ -226,6 +226,7 @@ public class MusicPlayerService {
     private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
         currentLikedUserIds.clear();
         currentLikeMarkers.clear();
+        skipVotes.clear(); // 切歌时清空投票
 
         // 重置计时器
         currentMusic.set(music);
