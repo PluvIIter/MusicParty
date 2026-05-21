@@ -2,6 +2,8 @@
 > 一个高颜值的实时在线协作听歌平台。
 >
 > *本项目参考自 [EveElseIf/MusicParty](https://github.com/EveElseIf/MusicParty)，85%的代码通过vibe coding完成开发。*
+> 
+> [演示地址](https://music.thornex.uk/)
 
 ***
 
@@ -10,7 +12,9 @@
 **Music Party** 是一个开源的、私有化部署的多人实时在线WEB听歌平台。
 
 它允许你和朋友在一个虚拟房间内，通过 **网易云音乐** 或 **Bilibili** 搜索并点播歌曲。系统实现了播放进度同步，无论是在 PC 端还是移动端，所有人听到的都是同一秒的旋律。
+
 （本项目并非“破解版”，对于VIP歌曲/高音质等会员内容，需要具有相应资格账号的cookie来获取，下方有获取cookie的教程）
+
 <img width="1778" height="1080" alt="image" src="https://github.com/user-attachments/assets/64d7f5d1-9837-43ab-8c1b-dad78361b348" />
 
 ## 核心特性
