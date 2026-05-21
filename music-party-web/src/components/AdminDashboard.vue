@@ -60,25 +60,61 @@
                     </button>
                   </div>
 
-                  <!-- Shuffle Sub-Settings -->
-                  <div v-if="playerStore.isShuffle" class="grid grid-cols-2 gap-3 p-3 bg-medical-50 border border-medical-100 rounded-sm">
-                    <div class="flex items-center justify-between">
-                      <div class="flex flex-col">
-                        <span class="text-[10px] font-bold text-medical-800">{{ playerStore.isFairShuffle ? '公平模式' : '全部随机' }}</span>
-                        <span class="text-[8px] text-medical-400 font-mono uppercase">算法类型</span>
+                  <!-- Playback Core Settings (Shuffle & Vote Skip) -->
+                  <div class="space-y-3 p-3 bg-medical-50 border border-medical-100 rounded-sm">
+                    <!-- Shuffle Controls -->
+                    <div v-if="playerStore.isShuffle" class="grid grid-cols-2 gap-3 pb-3 border-b border-medical-100">
+                      <div class="flex items-center justify-between">
+                        <div class="flex flex-col">
+                          <span class="text-[10px] font-bold text-medical-800">{{ playerStore.isFairShuffle ? '公平模式' : '全部随机' }}</span>
+                          <span class="text-[8px] text-medical-400 font-mono uppercase">算法类型</span>
+                        </div>
+                        <button @click="execPlayerAction('TOGGLE_FAIR_SHUFFLE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.isFairShuffle ? 'bg-accent' : 'bg-medical-300'">
+                          <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.isFairShuffle ? 'translateX(16px)' : 'translateX(0)' }"></div>
+                        </button>
                       </div>
-                      <button @click="execPlayerAction('TOGGLE_FAIR_SHUFFLE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.isFairShuffle ? 'bg-accent' : 'bg-medical-300'">
-                        <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.isFairShuffle ? 'translateX(16px)' : 'translateX(0)' }"></div>
-                      </button>
+                      <div class="flex items-center justify-between border-l border-medical-100 pl-3">
+                        <div class="flex flex-col">
+                          <span class="text-[10px] font-bold text-medical-800">{{ playerStore.allowOfflineShuffle ? '含离线' : '仅在线' }}</span>
+                          <span class="text-[8px] text-medical-400 font-mono uppercase">曲库范围</span>
+                        </div>
+                        <button @click="execPlayerAction('TOGGLE_ALLOW_OFFLINE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.allowOfflineShuffle ? 'bg-green-500' : 'bg-medical-300'">
+                          <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.allowOfflineShuffle ? 'translateX(16px)' : 'translateX(0)' }"></div>
+                        </button>
+                      </div>
                     </div>
-                    <div class="flex items-center justify-between border-l border-medical-100 pl-3">
-                      <div class="flex flex-col">
-                        <span class="text-[10px] font-bold text-medical-800">{{ playerStore.allowOfflineShuffle ? '含离线' : '仅在线' }}</span>
-                        <span class="text-[8px] text-medical-400 font-mono uppercase">曲库范围</span>
+
+                    <!-- Vote Skip Controls (Always Visible) -->
+                    <div class="space-y-3">
+                      <div class="flex items-center justify-between">
+                        <div class="flex flex-col">
+                          <span class="text-[10px] font-bold text-medical-800">投票切歌模式</span>
+                          <span class="text-[8px] text-medical-400 font-mono uppercase">VOTE_SKIP_MODE</span>
+                        </div>
+                        <button @click="updateInstantConfig({ voteSkipEnabled: !playerStore.config.voteSkipEnabled })" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.config.voteSkipEnabled ? 'bg-accent' : 'bg-medical-300'">
+                          <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.config.voteSkipEnabled ? 'translateX(16px)' : 'translateX(0)' }"></div>
+                        </button>
                       </div>
-                      <button @click="execPlayerAction('TOGGLE_ALLOW_OFFLINE')" class="w-8 h-4 rounded-full relative transition-colors" :class="playerStore.allowOfflineShuffle ? 'bg-green-500' : 'bg-medical-300'">
-                        <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300" :style="{ transform: playerStore.allowOfflineShuffle ? 'translateX(16px)' : 'translateX(0)' }"></div>
-                      </button>
+                      <div v-if="playerStore.config.voteSkipEnabled" class="grid grid-cols-2 gap-3 pt-1 border-t border-medical-100">
+                        <div class="space-y-1">
+                          <label class="block text-[8px] font-bold text-medical-400 uppercase">比例 (0.1-1.0)</label>
+                          <input 
+                            :value="playerStore.config.voteSkipThreshold" 
+                            @change="e => updateInstantConfig({ voteSkipThreshold: parseFloat(e.target.value) })"
+                            type="number" step="0.1" min="0.1" max="1.0" 
+                            class="w-full bg-white border border-medical-200 px-2 py-1 text-[10px] outline-none focus:border-accent" 
+                          />
+                        </div>
+                        <div class="space-y-1">
+                          <label class="block text-[8px] font-bold text-medical-400 uppercase">等待时间 (秒)</label>
+                          <input 
+                            :value="playerStore.config.voteSkipWaitTime" 
+                            @change="e => updateInstantConfig({ voteSkipWaitTime: parseInt(e.target.value) })"
+                            type="number" min="0" 
+                            class="w-full bg-white border border-medical-200 px-2 py-1 text-[10px] outline-none focus:border-accent" 
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -101,12 +137,12 @@
                 </div>
                 <div class="p-4 space-y-4">
                   <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-                    <div v-for="(val, key) in systemFields" :key="key" class="space-y-1">
+                  <div v-for="(val, key) in systemFields" :key="key" class="space-y-1">
                       <label class="block text-[9px] font-bold text-medical-400 font-mono uppercase">{{ key }}</label>
                       <input v-model.number="configProxy[val.field]" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-xs outline-none focus:border-accent font-mono" />
                     </div>
                   </div>
-                  
+
                   <button @click="saveSystemConfig" class="w-full bg-medical-900 text-white py-2 text-xs font-bold hover:bg-accent transition-colors flex items-center justify-center gap-2">
                     <Save class="w-4 h-4" /> 应用并保存所有更改
                   </button>
@@ -244,6 +280,15 @@ watch(() => playerStore.config, (newVal) => {
 const saveSystemConfig = async () => {
   try {
     const data = await adminApi.updateConfig(adminStore.adminPassword, configProxy.value);
+    success(data.message);
+  } catch (e) {
+    error('配置同步失败');
+  }
+};
+
+const updateInstantConfig = async (update) => {
+  try {
+    const data = await adminApi.updateConfig(adminStore.adminPassword, update);
     success(data.message);
   } catch (e) {
     error('配置同步失败');

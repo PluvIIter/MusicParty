@@ -100,8 +100,16 @@
                  <Pause v-else class="w-4 h-4" />
              </template>
          </button>
-         <button @click="player.playNext" :disabled="player.isSkipLocked" class="p-2 bg-medical-100 rounded-sm disabled:opacity-50">
+         <button 
+             @click="player.playNext" 
+             :disabled="isSkipDisabled" 
+             class="p-2 bg-medical-100 rounded-sm disabled:opacity-50 relative"
+         >
              <SkipForward class="w-4 h-4" />
+             <!-- Badge -->
+             <div v-if="player.isVoteSkipEnabled && canVote" class="absolute -top-1 -right-1 bg-accent text-white text-[8px] font-bold px-1 min-w-[12px] h-3 flex items-center justify-center rounded-sm shadow-sm">
+                {{ player.currentVotes }}
+             </div>
          </button>
       </div>
     </div>
@@ -133,8 +141,21 @@
             </template>
         </button>
 
-        <button @click="player.playNext" :disabled="player.isSkipLocked" class="text-medical-800 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Next">
+        <button 
+            @click="player.playNext" 
+            :disabled="isSkipDisabled" 
+            class="text-medical-800 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative group/skip" 
+            :title="skipBtnTitle"
+        >
             <SkipForward class="w-6 h-6 fill-current" />
+            <!-- Badge -->
+            <div v-if="player.isVoteSkipEnabled && canVote" class="absolute -top-1 -right-1 bg-accent text-white text-[10px] font-bold px-1 min-w-[14px] h-3.5 flex items-center justify-center rounded-sm shadow-sm">
+                {{ player.currentVotes }}
+            </div>
+            <!-- Wait Timer Hint -->
+            <div v-if="player.isVoteSkipEnabled && waitTimeLeft > 0" class="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-medical-900 text-white text-[8px] px-1 py-0.5 rounded-sm opacity-0 group-hover/skip:opacity-100 transition-opacity whitespace-nowrap">
+                {{ waitTimeLeft }}s 后可投票
+            </div>
         </button>
       </div>
 
@@ -177,6 +198,7 @@
 import { ref, computed, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
+import { useUserStore } from '../stores/user';
 import { formatDuration } from '../utils/format';
 import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink, Zap, Lock } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
@@ -189,6 +211,39 @@ const { info, error } = useToast();
 
 const nowPlaying = computed(() => player.nowPlaying);
 const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
+
+// 投票切歌相关计算
+const waitTimeLeft = computed(() => {
+    if (!player.isVoteSkipEnabled || !nowPlaying.value) return 0;
+    const elapsedSec = Math.floor(player.localProgress / 1000);
+    return Math.max(0, player.voteSkipWaitTime - elapsedSec);
+});
+
+const isSkipDisabled = computed(() => {
+    if (player.isSkipLocked) return true;
+    if (player.isVoteSkipEnabled) {
+        // 如果是点歌者（不可投票者），允许直接切歌，不受 15s 限制
+        if (!canVote.value) return false;
+        // 投票模式下：只有在等待时间结束后才能点击
+        return waitTimeLeft.value > 0;
+    }
+    return false;
+});
+
+const canVote = computed(() => {
+    // 只有非点歌者能投票
+    const userStore = useUserStore();
+    return nowPlaying.value && nowPlaying.value.enqueuedById !== userStore.userToken;
+});
+
+const skipBtnTitle = computed(() => {
+    if (player.isSkipLocked) return '切歌功能已被锁定';
+    if (player.isVoteSkipEnabled) {
+        if (waitTimeLeft.value > 0) return `${waitTimeLeft.value}s 后可投票`;
+        return `投票切歌 (${player.currentVotes}/${player.eligibleUsers})`;
+    }
+    return 'Next';
+});
 
 // 计算进度百分比
 const progressPercent = computed(() => {

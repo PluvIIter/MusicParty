@@ -16,6 +16,11 @@ public record PlayerState(
         boolean isLoading,
         int streamListenerCount,
         boolean isStreamEnabled,
+        boolean isVoteSkipEnabled,
+        double voteSkipThreshold,
+        int voteSkipWaitTime,
+        int currentVotes,
+        int eligibleUsers,
         AppConfigSummary config
 ) {
     public record AppConfigSummary(
@@ -27,6 +32,9 @@ public record PlayerState(
             long minChatIntervalMs,
             int maxChatMessageLength,
             boolean neteaseEnabled,
-            boolean bilibiliEnabled
+            boolean bilibiliEnabled,
+            boolean voteSkipEnabled,
+            double voteSkipThreshold,
+            int voteSkipWaitTime
     ) {}
 }

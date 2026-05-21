@@ -34,6 +34,9 @@ public class AppProperties {
     @Data
     public static class PlayerConfig {
         private int maxPlaylistImportSize = 100;
+        private boolean voteSkipEnabled = false;
+        private double voteSkipThreshold = 0.5;
+        private int voteSkipWaitTime = 15;
     }
 
     @Data
