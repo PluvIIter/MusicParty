@@ -141,23 +141,30 @@ jobs:
             exit 1
           }
           
-          # 2. 下载并准备轻量级 JRE (Temurin 21)
-          echo "Downloading JRE..."
-          $jreUrl = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.3%2B9/OpenJDK21U-jre_x64_windows_hotspot_21.0.3_9.zip"
-          Invoke-WebRequest -Uri $jreUrl -OutFile jre.zip
-          Expand-Archive jre.zip -DestinationPath temp_jre
-          $jreFolder = Get-ChildItem temp_jre | Select-Object -First 1
-          Move-Item "$($jreFolder.FullName)" "launcher/bin/jre"
-          Remove-Item jre.zip, temp_jre -Recurse -Force
+          # 2. [优化] 使用 jlink 构建极简 JRE (仅包含必要模块)
+          echo "Building custom minimal JRE..."
+          # 分析 JAR 依赖模块 (基础模块 + 常用网络/解析模块)
+          $modules = "java.base,java.logging,java.naming,java.desktop,java.management,java.security.jgss,java.instrument,java.sql,jdk.unsupported,java.net.http,java.xml"
+          jlink --add-modules $modules --strip-debug --no-man-pages --no-header-files --compress=2 --output launcher/bin/jre
 
-          # 3. 下载并准备 FFmpeg
+          # 3. 下载并准备 FFmpeg (精简版)
           echo "Downloading FFmpeg..."
+          # 使用更加精简的构建版本或继续使用原有版本
           $ffmpegUrl = "https://github.com/GyanD/codexffmpeg/releases/download/7.0.1/ffmpeg-7.0.1-essentials_build.zip"
           Invoke-WebRequest -Uri $ffmpegUrl -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath temp_ffmpeg
           $ffExe = Get-ChildItem -Path temp_ffmpeg -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
           Copy-Item $ffExe.FullName "launcher/bin/ffmpeg.exe"
           Remove-Item ffmpeg.zip, temp_ffmpeg -Recurse -Force
+
+          # 4. [优化] 安装并使用 UPX 压缩二进制
+          echo "Installing UPX..."
+          choco install upx
+          echo "Compressing binaries with UPX..."
+          upx --best "launcher/bin/ffmpeg.exe"
+          upx --best "launcher/bin/netease-api.exe"
+          # 注意：不建议压缩 server.jar，因为它是 ZIP 格式，UPX 处理效果不佳且可能破坏结构
+
 
       - name: Build Wails Launcher
         run: |
