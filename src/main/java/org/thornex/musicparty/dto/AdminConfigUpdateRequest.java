@@ -9,5 +9,8 @@ public record AdminConfigUpdateRequest(
     Long minChatIntervalMs,
     Integer maxChatMessageLength,
     Boolean neteaseEnabled,
-    Boolean bilibiliEnabled
+    Boolean bilibiliEnabled,
+    Boolean voteSkipEnabled,
+    Double voteSkipThreshold,
+    Integer voteSkipWaitTime
 ) {}

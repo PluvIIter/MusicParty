@@ -163,35 +163,8 @@ public class AdminController {
     public ResponseEntity<?> updateConfig(@RequestHeader("X-Admin-Password") String password, @RequestBody AdminConfigUpdateRequest request) {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
-        AppProperties.QueueConfig queue = musicPlayerService.getAppProperties().getQueue();
-        AppProperties.PlayerConfig player = musicPlayerService.getAppProperties().getPlayer();
-        AppProperties.ChatConfig chat = musicPlayerService.getAppProperties().getChat();
-
-        StringBuilder sb = new StringBuilder();
-
-        if (request.maxSize() != null) { queue.setMaxSize(request.maxSize()); sb.append("队列上限 "); }
-        if (request.historySize() != null) { queue.setHistorySize(request.historySize()); sb.append("历史容量 "); }
-        if (request.maxUserSongs() != null) { queue.setMaxUserSongs(request.maxUserSongs()); sb.append("点歌上限 "); }
-        
-        if (request.maxPlaylistImportSize() != null) { player.setMaxPlaylistImportSize(request.maxPlaylistImportSize()); sb.append("导入上限 "); }
-        
-        if (request.maxChatHistorySize() != null) { chat.setMaxHistorySize(request.maxChatHistorySize()); sb.append("聊天容量 "); }
-        if (request.minChatIntervalMs() != null) { chat.setMinIntervalMs(request.minChatIntervalMs()); sb.append("发言频率 "); }
-        if (request.maxChatMessageLength() != null) { chat.setMaxMessageLength(request.maxChatMessageLength()); sb.append("消息长度 "); }
-
-        if (request.neteaseEnabled() != null) {
-            musicPlayerService.getAppProperties().getNetease().setEnabled(request.neteaseEnabled());
-            sb.append(request.neteaseEnabled() ? "已开启网易云 " : "已禁用网易云 ");
-        }
-        if (request.bilibiliEnabled() != null) {
-            musicPlayerService.getAppProperties().getBilibili().setEnabled(request.bilibiliEnabled());
-            sb.append(request.bilibiliEnabled() ? "已开启Bilibili " : "已禁用Bilibili ");
-        }
-
-        String msg = sb.length() > 0 ? sb.toString().trim() + "已生效" : "系统配置已刷新";
-
-        musicPlayerService.broadcastFullPlayerState();
-        return ResponseEntity.ok(Map.of("message", msg));
+        musicPlayerService.updateConfig(request);
+        return ResponseEntity.ok(Map.of("message", "系统配置已刷新"));
     }
 
     // Keep compatibility for now or remove if sure

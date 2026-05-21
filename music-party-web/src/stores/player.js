@@ -31,6 +31,14 @@ export const usePlayerStore = defineStore('player', () => {
     const localProgress = ref(0);
     const isBuffering = ref(false);
     const isErrorState = ref(false);
+
+    // 投票切歌相关
+    const isVoteSkipEnabled = ref(false);
+    const voteSkipThreshold = ref(0.5);
+    const voteSkipWaitTime = ref(15);
+    const currentVotes = ref(0);
+    const eligibleUsers = ref(0);
+
     const config = ref({
         maxQueueSize: 1000,
         maxHistorySize: 50,
@@ -40,7 +48,10 @@ export const usePlayerStore = defineStore('player', () => {
         minChatIntervalMs: 1000,
         maxChatMessageLength: 200,
         neteaseEnabled: true,
-        bilibiliEnabled: true
+        bilibiliEnabled: true,
+        voteSkipEnabled: false,
+        voteSkipThreshold: 0.5,
+        voteSkipWaitTime: 15
     });
 
     const userStore = useUserStore();
@@ -90,6 +101,13 @@ export const usePlayerStore = defineStore('player', () => {
         isLoading.value = state.isLoading || false;
         streamListenerCount.value = state.streamListenerCount || 0;
         streamActive.value = state.isStreamEnabled || false;
+
+        // 投票状态同步
+        isVoteSkipEnabled.value = state.isVoteSkipEnabled || false;
+        voteSkipThreshold.value = state.voteSkipThreshold || 0.5;
+        voteSkipWaitTime.value = state.voteSkipWaitTime || 15;
+        currentVotes.value = state.currentVotes || 0;
+        eligibleUsers.value = state.eligibleUsers || 0;
 
         // 记录服务器发来的进度和收到包的时间
         if (state.nowPlaying) {
@@ -184,6 +202,7 @@ export const usePlayerStore = defineStore('player', () => {
         nowPlaying, queue, isPaused, isShuffle, isFairShuffle, allowOfflineShuffle, config,
         isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText,
         localProgress, isBuffering, isErrorState, streamListenerCount, streamActive,
+        isVoteSkipEnabled, voteSkipThreshold, voteSkipWaitTime, currentVotes, eligibleUsers,
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
         enqueue, enqueuePlaylist, topSong, removeSong,
