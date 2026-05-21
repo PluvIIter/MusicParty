@@ -162,7 +162,7 @@ jobs:
           choco install upx
           echo "Compressing binaries with UPX..."
           upx --best "launcher/bin/ffmpeg.exe"
-          upx --best "launcher/bin/netease-api.exe"
+          # 注意：不要压缩 netease-api.exe，因为它是由 pkg 打包的，压缩后会导致 'Pkg: Error reading from file' 错误
           # 注意：不建议压缩 server.jar，因为它是 ZIP 格式，UPX 处理效果不佳且可能破坏结构
 
 
