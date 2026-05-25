@@ -36,3 +36,4 @@ build/
 /GEMINI.md
 /.gemini/.env
 /scripts/publish-image.ps1
+/data/queue-data.json

@@ -202,6 +202,8 @@ import { ref, watch, nextTick, computed } from 'vue';
 import { useChatStore } from '../stores/chat';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
+import { useUiStore } from '../stores/ui';
+import { useToast } from '../composables/useToast';
 import { useDraggable, useWindowSize, useEventListener, clamp } from '@vueuse/core';
 import { MessageSquare, X, Send, Terminal, Zap, Loader2 } from 'lucide-vue-next';
 import dayjs from 'dayjs';
@@ -209,6 +211,8 @@ import dayjs from 'dayjs';
 const chatStore = useChatStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
+const uiStore = useUiStore();
+const { success, error } = useToast();
 const { width: windowWidth, height: windowHeight } = useWindowSize();
 
 // 新增: 创建一个计算属性来判断是否为移动端
@@ -397,6 +401,21 @@ const handleScroll = (e) => {
 const send = () => {
   const text = inputContent.value.trim();
   if (!text) return;
+
+  if (userStore.isGuest) {
+    error('请先设置名字后再参与聊天');
+    userStore.showNameModal = true;
+    return;
+  }
+
+  // 拦截本地保活指令
+  if (text === '//alive') {
+    uiStore.toggleKeepAlive();
+    success(`Keep-Alive ${uiStore.keepAliveEnabled ? 'ENABLED' : 'DISABLED'}. Please refresh to apply.`);
+    inputContent.value = '';
+    return;
+  }
+
   playerStore.sendChatMessage(text);
   inputContent.value = '';
   // 发送后强制滚到底部

@@ -2,8 +2,10 @@ import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
 import { useToast } from '../composables/useToast';
-import {socketService} from "./socket.js";
-import {WS_DEST} from "../constants/api.js";
+import { useAdminStore } from '../stores/admin';
+import { adminApi } from '../api/admin';
+import { WS_DEST } from '../constants/api';
+import { socketService } from './socket';
 
 /**
  * 处理游戏/播放器事件通知 (Toast)
@@ -12,12 +14,31 @@ import {WS_DEST} from "../constants/api.js";
 function handleGameEvent(event) {
     const userStore = useUserStore();
     const chatStore = useChatStore();
+    const adminStore = useAdminStore();
     const { show, error } = useToast(); // This now uses the Pinia store wrapper
     const userName = event.userId === 'SYSTEM' ? '系统' : userStore.resolveName(event.userId);
 
     // 1. 处理特殊业务逻辑 (非 UI 展示)
     if (event.action === 'LIKE') {
         window.dispatchEvent(new CustomEvent('player:like', { detail: { userId: event.userId } }));
+    }
+
+    if (event.action === 'ADMIN_TRIGGER') {
+        if (adminStore.adminPassword) {
+            // Attempt auto-login
+            adminApi.verify(adminStore.adminPassword)
+                .then(() => {
+                    adminStore.isVerified = true;
+                    adminStore.showDashboard = true;
+                })
+                .catch(() => {
+                    adminStore.logout();
+                    adminStore.showAuthModal = true;
+                });
+        } else {
+            adminStore.showAuthModal = true;
+        }
+        return;
     }
 
     if (event.action === 'RESET') {

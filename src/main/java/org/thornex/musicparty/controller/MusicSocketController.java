@@ -133,19 +133,20 @@ public class MusicSocketController {
     // 聊天消息处理
     @MessageMapping("/chat")
     public void handleChat(ChatRequest request, @Header("simpSessionId") String sessionId) {
+        // 1. Strict guest check: Guests cannot chat or send commands
         if (isGuest(sessionId)) return;
-        
-        // 1. Check content validity
+
+        // 2. Check content validity
         if (request.content() == null || request.content().trim().isEmpty()) return;
         if (!chatService.isMessageLengthValid(request.content())) return;
 
-        // 2. Try process as command
+        // 3. Try process as command
         if (chatService.processIncomingMessage(sessionId, request.content().trim())) {
             return;
         }
 
         userService.getUser(sessionId).ifPresent(user -> {
-            // 3. Rate Limit Check
+            // 4. Rate Limit Check
             if (!chatService.canUserSendMessage(user.getToken())) return;
 
             ChatMessage message = new ChatMessage(

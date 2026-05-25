@@ -35,6 +35,13 @@ public class ApiController {
     }
 
     private IMusicApiService getService(String platform) {
+        if ("netease".equalsIgnoreCase(platform) && !appProperties.getNetease().isEnabled()) {
+            throw new ApiRequestException("网易云音乐源已被禁用");
+        }
+        if ("bilibili".equalsIgnoreCase(platform) && !appProperties.getBilibili().isEnabled()) {
+            throw new ApiRequestException("Bilibili 源已被禁用");
+        }
+
         IMusicApiService service = apiServiceMap.get(platform);
         if (service == null) {
             throw new ApiRequestException("Platform not supported: " + platform);

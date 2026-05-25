@@ -18,10 +18,10 @@ services:
     ports:
       - "8848:8080" 
     environment:
-      # [必填] 管理员密码，用于在搜索框输入指令控制系统
+      # 管理员密码，用于在搜索框输入指令控制系统
       - ADMIN_PASSWORD=admin123
       
-      # [必填] 网易云 API 地址，指向上面的容器名
+      # 网易云 API 地址，指向上面的容器名
       - NETEASE_API_URL=http://netease-api:3000
       
       # [基础配置]
@@ -30,9 +30,11 @@ services:
       - APP_BACK_WORDS=MUSIC PARTY    # 中间背景装饰文字
       
       # [平台凭证]
-      - BILIBILI_SESSDATA=""         # B站 SESSDATA
+      - NETEASE_ENABLED=true         # 是否开启网易云音乐源
+      - BILIBILI_ENABLED=true        # 是否开启 Bilibili 源
       - NETEASE_COOKIE=""            # 网易云 Cookie
       - NETEASE_QUALITY=exhigh       # 网易云音质 (standard, higher, exhigh, lossless, hires)
+      - BILIBILI_SESSDATA=""         # B站 SESSDATA
 
       # [性能/策略配置]
       - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
