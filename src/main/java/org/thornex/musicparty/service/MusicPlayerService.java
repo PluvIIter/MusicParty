@@ -53,12 +53,20 @@ public class MusicPlayerService {
 
 
     private final AtomicBoolean isShuffle = new AtomicBoolean(false);
+    private final AtomicBoolean isFairShuffle;
+    private final AtomicBoolean allowOfflineShuffle;
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
     private final AtomicBoolean isPauseLocked = new AtomicBoolean(false);
     private final AtomicBoolean isSkipLocked = new AtomicBoolean(false);
     private final AtomicBoolean isShuffleLocked = new AtomicBoolean(false);
     private final AtomicBoolean isLoading = new AtomicBoolean(false);
     private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
+
+    // 投票切歌状态
+    private final AtomicBoolean isVoteSkipEnabled = new AtomicBoolean(false);
+    private final AtomicReference<Double> voteSkipThreshold = new AtomicReference<>(0.5);
+    private final AtomicReference<Integer> voteSkipWaitTime = new AtomicReference<>(15);
+    private final Set<String> skipVotes = ConcurrentHashMap.newKeySet();
 
     private final Map<String, Object> likeLock = new HashMap<>();
     private Set<String> currentLikedUserIds;
@@ -84,6 +92,8 @@ public class MusicPlayerService {
         this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
+        this.isFairShuffle = new AtomicBoolean(true);
+        this.allowOfflineShuffle = new AtomicBoolean(false);
         this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
         this.currentLikeMarkers = new CopyOnWriteArrayList<>();
     }
@@ -91,6 +101,12 @@ public class MusicPlayerService {
     @PostConstruct
     public void init() {
         log.info("MusicPlayerService initialized with {} API services: {}", apiServiceMap.size(), apiServiceMap.keySet());
+        
+        // 从配置初始化投票参数
+        AppProperties.PlayerConfig playerConfig = appProperties.getPlayer();
+        isVoteSkipEnabled.set(playerConfig.isVoteSkipEnabled());
+        voteSkipThreshold.set(playerConfig.getVoteSkipThreshold());
+        voteSkipWaitTime.set(playerConfig.getVoteSkipWaitTime());
     }
 
     @Scheduled(fixedRate = 1000)
@@ -141,7 +157,7 @@ public class MusicPlayerService {
 
         Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
 
-        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), statusMap, onlineUserTokens);
+        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), isFairShuffle.get(), allowOfflineShuffle.get(), statusMap, onlineUserTokens);
 
         if (nextItem == null) {
             if (isLoading.get()) {
@@ -210,6 +226,7 @@ public class MusicPlayerService {
     private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
         currentLikedUserIds.clear();
         currentLikeMarkers.clear();
+        skipVotes.clear(); // 切歌时清空投票
 
         // 重置计时器
         currentMusic.set(music);
@@ -244,18 +261,97 @@ public class MusicPlayerService {
             );
         }
 
+        Set<String> onlineTokens = userService.getRecentlyActiveUserTokens();
+        int currentVoteCount = (int) skipVotes.stream().filter(onlineTokens::contains).count();
+        int eligibleCount = calculateEligibleUsers(onlineTokens);
+
         return new PlayerState(
                 infoToSend,
                 getQueueWithUpdatedStatus(),
                 isShuffle.get(),
+                isFairShuffle.get(),
+                allowOfflineShuffle.get(),
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
                 isPauseLocked.get(),
                 isSkipLocked.get(),
                 isShuffleLocked.get(),
                 isLoading.get(),
-                liveStreamService.getStreamListenerCount()
+                liveStreamService.getStreamListenerCount(),
+                liveStreamService.isEnabled(),
+                isVoteSkipEnabled.get(),
+                voteSkipThreshold.get(),
+                voteSkipWaitTime.get(),
+                currentVoteCount,
+                eligibleCount,
+                new PlayerState.AppConfigSummary(
+                        appProperties.getQueue().getMaxSize(),
+                        appProperties.getQueue().getHistorySize(),
+                        appProperties.getQueue().getMaxUserSongs(),
+                        appProperties.getPlayer().getMaxPlaylistImportSize(),
+                        appProperties.getChat().getMaxHistorySize(),
+                        appProperties.getChat().getMinIntervalMs(),
+                        appProperties.getChat().getMaxMessageLength(),
+                        appProperties.getNetease().isEnabled(),
+                        appProperties.getBilibili().isEnabled(),
+                        isVoteSkipEnabled.get(),
+                        voteSkipThreshold.get(),
+                        voteSkipWaitTime.get()
+                )
         );
+    }
+
+    private int calculateEligibleUsers(Set<String> onlineTokens) {
+        String enqueuerToken = currentEnqueuerId.get();
+        // 必须是在线、活跃、非游客、且不是点歌者
+        return (int) userService.getOnlineUserSummaries().stream()
+                .filter(u -> !u.isGuest())
+                .filter(u -> onlineTokens.contains(u.token()))
+                .filter(u -> !u.token().equals(enqueuerToken))
+                .count();
+    }
+
+    public void toggleFairShuffle(String sessionId) {
+        if (isRateLimited(sessionId)) return;
+        boolean current;
+        boolean newState;
+        do {
+            current = isFairShuffle.get();
+            newState = !current;
+        } while (!isFairShuffle.compareAndSet(current, newState));
+
+        log.info("Fair shuffle mode set to {} by {}", newState, getUserName(sessionId));
+        broadcastFullPlayerState();
+        broadcastQueueUpdate(); // 可能会影响前端展示
+    }
+
+    public void toggleAllowOfflineShuffle(String sessionId) {
+        if (isRateLimited(sessionId)) return;
+        boolean current;
+        boolean newState;
+        do {
+            current = allowOfflineShuffle.get();
+            newState = !current;
+        } while (!allowOfflineShuffle.compareAndSet(current, newState));
+
+        log.info("Allow offline shuffle set to {} by {}", newState, getUserName(sessionId));
+        broadcastFullPlayerState();
+    }
+
+    public int clearOfflineSongs() {
+        Set<String> onlineTokens = userService.getRecentlyActiveUserTokens();
+        List<MusicQueueItem> snapshot = queueManager.getQueueSnapshot();
+        int removedCount = 0;
+        for (MusicQueueItem item : snapshot) {
+            if (!onlineTokens.contains(item.enqueuedBy().token())) {
+                queueManager.remove(item.queueId());
+                removedCount++;
+            }
+        }
+        log.info("Cleared {} songs from offline users.", removedCount);
+        broadcastQueueUpdate();
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "已清理 " + removedCount + " 首离线成员的点播歌曲"));
+        return removedCount;
     }
 
     public void setLock(String type, boolean locked) {
@@ -290,6 +386,16 @@ public class MusicPlayerService {
         Optional<User> userOpt = userService.getUser(sessionId);
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
+
+        // Check platform enabled
+        if ("netease".equalsIgnoreCase(request.platform()) && !appProperties.getNetease().isEnabled()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: 网易云音乐源已被禁用"));
+            return;
+        }
+        if ("bilibili".equalsIgnoreCase(request.platform()) && !appProperties.getBilibili().isEnabled()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: Bilibili 源已被禁用"));
+            return;
+        }
 
         // Check user song limit
         long userSongCount = queueManager.getQueueSnapshot().stream()
@@ -356,6 +462,16 @@ public class MusicPlayerService {
         Optional<User> userOpt = userService.getUser(sessionId);
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
+
+        // Check platform enabled
+        if ("netease".equalsIgnoreCase(request.platform()) && !appProperties.getNetease().isEnabled()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: 网易云音乐源已被禁用"));
+            return;
+        }
+        if ("bilibili".equalsIgnoreCase(request.platform()) && !appProperties.getBilibili().isEnabled()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: Bilibili 源已被禁用"));
+            return;
+        }
 
         // Check user song limit
         long currentCount = queueManager.getQueueSnapshot().stream()
@@ -424,6 +540,66 @@ public class MusicPlayerService {
 
     public void skipToNext(String sessionId) {
         if (isRateLimited(sessionId)) return;
+        
+        // 管理员通过控制面板切歌 (SYSTEM) 或未开启投票模式，直接切歌
+        if ("SYSTEM".equals(sessionId) || !isVoteSkipEnabled.get()) {
+            executeSkip(sessionId);
+            return;
+        }
+
+        // 投票模式逻辑
+        handleVoteSkip(sessionId);
+    }
+
+    private void handleVoteSkip(String sessionId) {
+        if (currentMusic.get() == null) return;
+        
+        Optional<User> userOpt = userService.getUser(sessionId);
+        if (userOpt.isEmpty() || userOpt.get().isGuest()) return;
+        
+        String token = userOpt.get().getToken();
+        String enqueuerToken = currentEnqueuerId.get();
+
+        // 特殊逻辑：点歌者切自己的歌，视为强制切歌，不走投票逻辑，且不设 15 秒限制
+        if (token.equals(enqueuerToken)) {
+            log.info("Enqueuer {} skipped their own song.", userOpt.get().getName());
+            executeSkip(sessionId);
+            return;
+        }
+
+        // 1. 检查播放时长 (15秒限制，仅针对投票者)
+        long currentPos = calculateCurrentPosition();
+        if (currentPos < voteSkipWaitTime.get() * 1000L) {
+            return;
+        }
+
+        // 2. 切换投票状态 (Toggle)
+        if (skipVotes.contains(token)) {
+            skipVotes.remove(token);
+        } else {
+            skipVotes.add(token);
+        }
+
+        // 3. 判定是否达成条件
+        checkVoteSkipThreshold();
+        
+        // 4. 广播状态更新 (用于前端角标)
+        broadcastFullPlayerState();
+    }
+
+    private void checkVoteSkipThreshold() {
+        Set<String> onlineTokens = userService.getRecentlyActiveUserTokens();
+        int currentVoteCount = (int) skipVotes.stream().filter(onlineTokens::contains).count();
+        int eligibleCount = calculateEligibleUsers(onlineTokens);
+
+        if (eligibleCount > 0 && (double) currentVoteCount / eligibleCount >= voteSkipThreshold.get()) {
+            String msg = String.format("投票切歌通过！(%d/%d 票)，正在进入下一首。", currentVoteCount, eligibleCount);
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SYSTEM_MESSAGE, "SYSTEM", msg));
+            executeSkip("SYSTEM");
+        }
+    }
+
+    private void executeSkip(String sessionId) {
         if (isSkipLocked.get() && !"SYSTEM".equals(sessionId)) {
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, getUserToken(sessionId), "切歌功能已被锁定"));
             return;
@@ -436,8 +612,73 @@ public class MusicPlayerService {
         currentMusic.set(null);
         positionAnchor.set(0);
 
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserToken(sessionId), null));
+        if (!"SYSTEM".equals(sessionId)) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserToken(sessionId), null));
+        }
         playNextInQueue();
+    }
+
+    public void updateConfig(AdminConfigUpdateRequest request) {
+        StringBuilder logMsg = new StringBuilder("System configuration updated: ");
+        
+        if (request.maxSize() != null) {
+            appProperties.getQueue().setMaxSize(request.maxSize());
+            logMsg.append("MaxQueueSize=").append(request.maxSize()).append(" ");
+        }
+        if (request.historySize() != null) {
+            appProperties.getQueue().setHistorySize(request.historySize());
+            logMsg.append("HistorySize=").append(request.historySize()).append(" ");
+        }
+        if (request.maxUserSongs() != null) {
+            appProperties.getQueue().setMaxUserSongs(request.maxUserSongs());
+            logMsg.append("MaxUserSongs=").append(request.maxUserSongs()).append(" ");
+        }
+        if (request.maxPlaylistImportSize() != null) {
+            appProperties.getPlayer().setMaxPlaylistImportSize(request.maxPlaylistImportSize());
+            logMsg.append("MaxPlaylistImportSize=").append(request.maxPlaylistImportSize()).append(" ");
+        }
+        if (request.maxChatHistorySize() != null) {
+            appProperties.getChat().setMaxHistorySize(request.maxChatHistorySize());
+            logMsg.append("MaxChatHistorySize=").append(request.maxChatHistorySize()).append(" ");
+        }
+        if (request.minChatIntervalMs() != null) {
+            appProperties.getChat().setMinIntervalMs(request.minChatIntervalMs());
+            logMsg.append("MinChatInterval=").append(request.minChatIntervalMs()).append("ms ");
+        }
+        if (request.maxChatMessageLength() != null) {
+            appProperties.getChat().setMaxMessageLength(request.maxChatMessageLength());
+            logMsg.append("MaxChatMessageLength=").append(request.maxChatMessageLength()).append(" ");
+        }
+        if (request.neteaseEnabled() != null) {
+            appProperties.getNetease().setEnabled(request.neteaseEnabled());
+            logMsg.append("NeteaseEnabled=").append(request.neteaseEnabled()).append(" ");
+        }
+        if (request.bilibiliEnabled() != null) {
+            appProperties.getBilibili().setEnabled(request.bilibiliEnabled());
+            logMsg.append("BilibiliEnabled=").append(request.bilibiliEnabled()).append(" ");
+        }
+        
+        if (request.voteSkipEnabled() != null) {
+            isVoteSkipEnabled.set(request.voteSkipEnabled());
+            logMsg.append("VoteSkipEnabled=").append(request.voteSkipEnabled()).append(" ");
+        }
+        if (request.voteSkipThreshold() != null) {
+            voteSkipThreshold.set(request.voteSkipThreshold());
+            logMsg.append("VoteSkipThreshold=").append(request.voteSkipThreshold()).append(" ");
+        }
+        if (request.voteSkipWaitTime() != null) {
+            voteSkipWaitTime.set(request.voteSkipWaitTime());
+            logMsg.append("VoteSkipWaitTime=").append(request.voteSkipWaitTime()).append("s ");
+        }
+
+        log.info(logMsg.toString().trim());
+        
+        // 关键增强：如果更新了投票相关配置，立即触发一次阈值检查
+        if (isVoteSkipEnabled.get() && currentMusic.get() != null) {
+            checkVoteSkipThreshold();
+        }
+
+        broadcastFullPlayerState();
     }
 
     public void togglePause(String sessionId) {
@@ -540,6 +781,12 @@ public class MusicPlayerService {
     public void onUserCountChanged(UserCountChangeEvent event) {
         if (event.getOnlineUserCount() == 0 && !isStreamActive.get()) {
             enterIdleMode();
+        }
+        
+        // 用户变动时重新检查投票阈值
+        if (isVoteSkipEnabled.get() && currentMusic.get() != null) {
+            checkVoteSkipThreshold();
+            broadcastFullPlayerState();
         }
     }
 
@@ -686,6 +933,10 @@ public class MusicPlayerService {
         }
         lastControlTimestamp.set(now);
         return false;
+    }
+
+    public AppProperties getAppProperties() {
+        return appProperties;
     }
 
     private IMusicApiService getApiService(String platform) {

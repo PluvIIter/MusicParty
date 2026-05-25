@@ -11,10 +11,11 @@
         referrerpolicy="no-referrer"
     ></audio>
 
-    <!-- 静默保活音轨 (Keep-Alive) -->
+    <!-- 极弱音轨保活 (Keep-Alive) -->
     <audio
-        ref="silentAudioRef"
-        :src="SILENT_WAV"
+        v-if="ui.keepAliveEnabled"
+        ref="aliveAudioRef"
+        :src="ALIVE_WAV"
         loop
     ></audio>
   </div>
@@ -29,10 +30,10 @@ import { useAudio } from '../composables/useAudio';
 const player = usePlayerStore();
 const ui = useUiStore();
 const audioRef = ref(null);
-const silentAudioRef = ref(null);
+const aliveAudioRef = ref(null);
 
-// 极简 1秒 静默 WAV
-const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+// 极弱底噪 WAV (人耳难以察觉)
+const ALIVE_WAV = 'data:audio/wav;base64,UklGRjIAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YRAAAAAAAAAAAAAAAAD//w==';
 
 const {
   localProgress,
@@ -55,12 +56,12 @@ watch(isErrorState, (val) => {
   player.isErrorState = val;
 });
 
-// 监听播放状态以维持静默音轨
+// 监听播放状态以维持保活音轨
 watch(() => player.isPaused, (paused) => {
-  if (!paused) {
-    silentAudioRef.value?.play().catch(() => {});
+  if (!paused && ui.keepAliveEnabled) {
+    aliveAudioRef.value?.play().catch(() => {});
   } else {
-    silentAudioRef.value?.pause();
+    aliveAudioRef.value?.pause();
   }
 });
 
@@ -80,9 +81,12 @@ onMounted(() => {
   if (audioRef.value) {
     audioRef.value.volume = ui.volume;
   }
-  // 初始尝试播放静默音轨
-  if (!player.isPaused) {
-    silentAudioRef.value?.play().catch(() => {});
+  // 初始尝试播放保活音轨
+  if (!player.isPaused && ui.keepAliveEnabled) {
+    if (aliveAudioRef.value) {
+      aliveAudioRef.value.volume = 0.001;
+      aliveAudioRef.value.play().catch(() => {});
+    }
   }
 });
 </script>

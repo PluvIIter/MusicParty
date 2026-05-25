@@ -9,8 +9,8 @@
       QUEUE EMPTY / WAITING FOR INPUT
     </div>
 
-    <!-- Shuffle Mode View: Grouped by User -->
-    <div v-else-if="player.isShuffle" class="flex-1 overflow-y-auto p-2">
+    <!-- Shuffle Mode View: Grouped by User (ONLY for Fair Shuffle) -->
+    <div v-else-if="player.isShuffle && player.isFairShuffle" class="flex-1 overflow-y-auto p-2">
       <!-- Shuffle Indicator -->
       <div class="mb-4 bg-accent/10 border border-accent/20 p-2 flex items-center gap-2 rounded-sm text-accent text-xs font-bold">
         <Shuffle class="w-4 h-4" />
@@ -98,11 +98,11 @@ const { list, containerProps, wrapperProps } = useVirtualList(queue, {
 // --- Shuffle Mode Logic ---
 
 const topItems = computed(() => {
-  return queue.value.filter(item => item.queueId.startsWith('TOP-'));
+  return queue.value.filter(item => item.priority === 'GLOBAL_TOP');
 });
 
 const userGroups = computed(() => {
-  const normalItems = queue.value.filter(item => !item.queueId.startsWith('TOP-'));
+  const normalItems = queue.value.filter(item => item.priority !== 'GLOBAL_TOP');
   const groupsMap = new Map();
 
   normalItems.forEach(item => {
@@ -117,12 +117,12 @@ const userGroups = computed(() => {
     groupsMap.get(token).items.push(item);
   });
 
-  // 对每个组内的歌曲进行排序：个人置顶 (USERTOP-) 放在最前面
+  // 对每个组内的歌曲进行排序：个人置顶 (USER_TOP) 放在最前面
   return Array.from(groupsMap.values()).map(group => ({
     ...group,
     items: [...group.items].sort((a, b) => {
-      const aIsUserTop = a.queueId.startsWith('USERTOP-');
-      const bIsUserTop = b.queueId.startsWith('USERTOP-');
+      const aIsUserTop = a.priority === 'USER_TOP';
+      const bIsUserTop = b.priority === 'USER_TOP';
       if (aIsUserTop && !bIsUserTop) return -1;
       if (!aIsUserTop && bIsUserTop) return 1;
       return 0; // 保持原有相对顺序
