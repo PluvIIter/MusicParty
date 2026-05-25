@@ -1,5 +1,5 @@
 #  Music Party 
-> 一个高颜值的实时在线协作听歌平台。
+> 一个高颜值的实时在线听歌Web应用。
 >
 > *本项目参考自 [EveElseIf/MusicParty](https://github.com/EveElseIf/MusicParty)，通过vibi coding完成开发。*
 
