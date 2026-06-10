@@ -3,7 +3,7 @@
 >
 > *本项目参考自 [EveElseIf/MusicParty](https://github.com/EveElseIf/MusicParty)，85%的代码通过vibe coding完成开发。*
 > 
-> [演示地址](https://music.thornex.uk/)
+> [演示地址](https://music.thornex.uk/)  [视频演示](https://www.bilibili.com/video/BV1LCVJ6QEmk)
 
 ***
 
