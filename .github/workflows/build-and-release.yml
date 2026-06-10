@@ -128,7 +128,7 @@ jobs:
           if (-not (Test-Path "launcher/bin")) { 
             New-Item -ItemType Directory "launcher/bin" 
           }
-          
+
           # 1. 拷贝 Java 后端 (排除 original JAR)
           echo "Copying Server JAR..."
           $jarFile = Get-ChildItem "target/*.jar" | Where-Object { $_.Name -like "MusicParty*" -and $_.Name -notmatch "original" } | Select-Object -First 1
@@ -140,11 +140,11 @@ jobs:
             ls target/
             exit 1
           }
-          
+
           # 2. [优化] 使用 jlink 构建极简 JRE (仅包含必要模块)
           echo "Building custom minimal JRE..."
           # 分析 JAR 依赖模块 (基础模块 + 常用网络/解析模块)
-          $modules = "java.base,java.logging,java.naming,java.desktop,java.management,java.security.jgss,java.instrument,java.sql,jdk.unsupported,java.net.http,java.xml"
+          $modules = "java.base,java.logging,java.naming,java.desktop,java.management,java.security.jgss,java.instrument,java.sql,jdk.unsupported,java.net.http,java.xml,jdk.crypto.ec,jdk.crypto.cryptoki"
           jlink --add-modules $modules --strip-debug --no-man-pages --no-header-files --compress=2 --output launcher/bin/jre
 
           # 3. 下载并准备 FFmpeg (精简版)
@@ -164,7 +164,6 @@ jobs:
           upx --best "launcher/bin/ffmpeg.exe"
           # 注意：不要压缩 netease-api.exe，因为它是由 pkg 打包的，压缩后会导致 'Pkg: Error reading from file' 错误
           # 注意：不建议压缩 server.jar，因为它是 ZIP 格式，UPX 处理效果不佳且可能破坏结构
-
 
       - name: Build Wails Launcher
         run: |
