@@ -10,6 +10,8 @@ import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.enums.TopResult;
 import org.thornex.musicparty.enums.Priority;
 
+import org.thornex.musicparty.enums.PlayMode;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicReference;
@@ -57,7 +59,7 @@ public class MusicQueueManager {
     /**
      * 将指定歌曲置顶
      */
-    public synchronized TopResult top(String queueId, boolean isShuffle) {
+    public synchronized TopResult top(String queueId, PlayMode playMode) {
         Optional<MusicQueueItem> itemOpt = findByQueueId(queueId);
         if (itemOpt.isEmpty()) {
             return TopResult.NONE;
@@ -81,7 +83,7 @@ public class MusicQueueManager {
         }
 
         // 3. 如果是普通歌曲
-        if (isShuffle) {
+        if (playMode == PlayMode.SHUFFLE) {
             // 随机模式下 -> 变为个人置顶 (USER_TOP)
             // 为了保持物理顺序不变（以便切换回顺序模式时不乱），我们需要原地替换
             // 由于 ConcurrentLinkedDeque 不支持原地替换，我们用重建队列的方式
@@ -94,7 +96,7 @@ public class MusicQueueManager {
                 return TopResult.PERSONAL;
             }
         } else {
-            // 顺序模式下 -> 直接变为全局置顶 (GLOBAL_TOP)
+            // 顺序模式或单曲循环下 -> 直接变为全局置顶 (GLOBAL_TOP)
             if (queue.remove(item)) {
                 queue.addFirst(item.withPriority(Priority.GLOBAL_TOP));
                 return TopResult.GLOBAL;
@@ -117,6 +119,13 @@ public class MusicQueueManager {
     }
 
     /**
+     * 根据 queueId 获取队列项（不移除）
+     */
+    public synchronized Optional<MusicQueueItem> getItem(String queueId) {
+        return findByQueueId(queueId);
+    }
+
+    /**
      * 从队列中移除一首歌曲
      */
     public synchronized Optional<MusicQueueItem> remove(String queueId) {
@@ -127,13 +136,13 @@ public class MusicQueueManager {
 
     /**
      * 从队列中取出下一首可播放的歌曲
-     * @param isShuffle 是否启用随机模式
+     * @param playMode 当前播放模式
      * @param isFairShuffle 是否启用公平随机 (轮询)
      * @param allowOfflineShuffle 是否允许随机到离线用户的歌
      * @param onlineUserTokens 在线用户的 Token 集合 (用于优先调度)
      * @return 下一首歌曲，如果队列为空则返回 null
      */
-    public synchronized MusicQueueItem pollNext(boolean isShuffle, boolean isFairShuffle, boolean allowOfflineShuffle, Map<String, QueueItemStatus> statusMap, Set<String> onlineUserTokens) {
+    public synchronized MusicQueueItem pollNext(PlayMode playMode, boolean isFairShuffle, boolean allowOfflineShuffle, Map<String, QueueItemStatus> statusMap, Set<String> onlineUserTokens) {
         if (queue.isEmpty()) {
             return pollFromHistory(); // 队列为空时，尝试从历史记录播放
         }
@@ -160,7 +169,7 @@ public class MusicQueueManager {
         }
 
         MusicQueueItem chosenItem;
-        if (isShuffle) {
+        if (playMode == PlayMode.SHUFFLE) {
             if (isFairShuffle) {
                 // 公平随机逻辑 (轮询 + 个人置顶优先)
                 // 注意：pollNextFairShuffle 内部现在需要根据 allowOfflineShuffle 决定用户池
@@ -170,7 +179,8 @@ public class MusicQueueManager {
                 chosenItem = pollNextTotalShuffle(availableItems, onlineUserTokens, allowOfflineShuffle);
             }
         } else {
-            chosenItem = availableItems.get(0); // 顺序播放，直接取第一个
+            // 顺序播放或单曲循环模式下切歌：直接取第一个
+            chosenItem = availableItems.get(0);
         }
 
         if (chosenItem == null) {

@@ -84,14 +84,13 @@
         </button>
         <button
             id="tutorial-random-mobile"
-            @click="player.toggleShuffle"
-            :disabled="!player.connected || player.isShuffleLocked"
-            class="p-2 border rounded-sm disabled:opacity-50 transition-colors"
-            :class="player.isShuffle
-                ? 'bg-accent text-white border-accent'
-                : 'bg-medical-50 border-medical-200 text-medical-500'"
+            @click="player.cyclePlayMode"
+            :disabled="!player.connected || player.isPlayModeLocked"
+            class="p-2 border rounded-sm disabled:opacity-50 transition-colors bg-medical-50 border-medical-200 text-medical-500"
         >
-          <Shuffle class="w-4 h-4" />
+          <ListOrdered v-if="player.playMode === 'SEQUENTIAL'" class="w-4 h-4" />
+          <Shuffle v-else-if="player.playMode === 'SHUFFLE'" class="w-4 h-4" />
+          <Repeat1 v-else class="w-4 h-4" />
         </button>
          <button id="tutorial-pause-mobile" @click="player.togglePause" :disabled="player.isPauseLocked && !player.isPaused" class="p-2 bg-medical-100 rounded-sm disabled:opacity-50">
              <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-medical-400" />
@@ -124,8 +123,10 @@
           <Download class="w-5 h-5" />
         </button>
 
-        <button id="tutorial-random" @click="player.toggleShuffle" :disabled="player.isShuffleLocked" :class="[player.isShuffle ? 'text-accent' : 'text-medical-400', player.isShuffleLocked ? 'opacity-50 cursor-not-allowed' : '']" title="Shuffle">
-            <Shuffle class="w-5 h-5" />
+        <button id="tutorial-random" @click="player.cyclePlayMode" :disabled="player.isPlayModeLocked" :class="['text-medical-400', player.isPlayModeLocked ? 'opacity-50 cursor-not-allowed' : '']" :title="modeTitle">
+            <ListOrdered v-if="player.playMode === 'SEQUENTIAL'" class="w-5 h-5" />
+            <Shuffle v-else-if="player.playMode === 'SHUFFLE'" class="w-5 h-5" />
+            <Repeat1 v-else class="w-5 h-5" />
         </button>
         
         <button 
@@ -200,7 +201,7 @@ import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
 import { formatDuration } from '../utils/format';
-import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink, Zap, Lock } from 'lucide-vue-next';
+import { Download, ListOrdered, Repeat1, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink, Zap, Lock } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { useToast } from '../composables/useToast';
 
@@ -211,6 +212,15 @@ const { info, error } = useToast();
 
 const nowPlaying = computed(() => player.nowPlaying);
 const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
+
+const modeTitle = computed(() => {
+    switch (player.playMode) {
+        case 'SEQUENTIAL': return '顺序播放';
+        case 'SHUFFLE': return '随机播放';
+        case 'REPEAT_ONE': return '单曲循环';
+        default: return '';
+    }
+});
 
 // 投票切歌相关计算
 const waitTimeLeft = computed(() => {

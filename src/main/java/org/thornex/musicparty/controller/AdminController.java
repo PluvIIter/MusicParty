@@ -60,7 +60,7 @@ public class AdminController {
             String desc = switch (type) {
                 case "PAUSE" -> "暂停控制";
                 case "SKIP" -> "切歌控制";
-                case "SHUFFLE" -> "随机控制";
+                case "SHUFFLE" -> "播放模式";
                 default -> type;
             };
             return ResponseEntity.ok(Map.of("message", desc + (request.locked() ? "已锁定" : "已解锁")));
@@ -82,8 +82,8 @@ public class AdminController {
                 yield "已强制跳过当前歌曲";
             }
             case "SHUFFLE" -> {
-                musicPlayerService.toggleShuffle("SYSTEM");
-                yield "随机播放主开关已切换";
+                musicPlayerService.cyclePlayMode("SYSTEM");
+                yield "播放模式已切换";
             }
             case "TOGGLE_FAIR_SHUFFLE" -> {
                 musicPlayerService.toggleFairShuffle("SYSTEM");

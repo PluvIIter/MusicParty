@@ -35,7 +35,7 @@ const getTypeClass = (type) => {
   switch (type) {
     case 'success': return 'border-accent';
     case 'error': return 'border-red-500';
-    case 'warning': return 'border-yellow-500';
+    case 'warning': case 'warn': return 'border-yellow-500';
     default: return 'border-medical-400';
   }
 };
@@ -44,7 +44,7 @@ const getIcon = (type) => {
   switch (type) {
     case 'success': return CheckCircle;
     case 'error': return AlertCircle;
-    case 'warning': return AlertTriangle;
+    case 'warning': case 'warn': return AlertTriangle;
     default: return Info;
   }
 };

@@ -10,6 +10,7 @@ import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.enums.PlayerAction;
+import org.thornex.musicparty.enums.PlayMode;
 import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.enums.TopResult;
 import org.thornex.musicparty.event.*;
@@ -53,12 +54,13 @@ public class MusicPlayerService {
 
 
     private final AtomicBoolean isShuffle = new AtomicBoolean(false);
+    private final AtomicReference<PlayMode> playMode = new AtomicReference<>(PlayMode.SEQUENTIAL);
     private final AtomicBoolean isFairShuffle;
     private final AtomicBoolean allowOfflineShuffle;
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
     private final AtomicBoolean isPauseLocked = new AtomicBoolean(false);
     private final AtomicBoolean isSkipLocked = new AtomicBoolean(false);
-    private final AtomicBoolean isShuffleLocked = new AtomicBoolean(false);
+    private final AtomicBoolean isPlayModeLocked = new AtomicBoolean(false);
     private final AtomicBoolean isLoading = new AtomicBoolean(false);
     private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
 
@@ -124,6 +126,16 @@ public class MusicPlayerService {
             if (currentPos >= music.duration() && music.duration() > 0) {
                 log.info("Song finished: {}", music.name());
 
+                if (playMode.get() == PlayMode.REPEAT_ONE) {
+                    // 单曲循环模式：重置进度，重新播放当前歌曲
+                    // 前端 AudioEngine 通过 @seeked 事件检测进度跳变并自动重启播放
+                    positionAnchor.set(0);
+                    timestampAnchor.set(System.currentTimeMillis());
+                    log.info("Repeat-one mode: restarting {}", music.name());
+                    broadcastFullPlayerState();
+                    return;
+                }
+
                 Music finishedMusic = new Music(
                         music.id(),
                         music.name(),
@@ -157,7 +169,7 @@ public class MusicPlayerService {
 
         Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
 
-        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), isFairShuffle.get(), allowOfflineShuffle.get(), statusMap, onlineUserTokens);
+        MusicQueueItem nextItem = queueManager.pollNext(playMode.get(), isFairShuffle.get(), allowOfflineShuffle.get(), statusMap, onlineUserTokens);
 
         if (nextItem == null) {
             if (isLoading.get()) {
@@ -171,7 +183,7 @@ public class MusicPlayerService {
         if (nextItem.status() == QueueItemStatus.FAILED ||
                 (statusMap.get(nextItem.music().id()) == QueueItemStatus.FAILED)) {
             log.warn("Skipping failed song: {}", nextItem.music().name());
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", "加载失败: " + nextItem.music().name()));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
             playNextInQueue(); // Recursively try next
             return;
         }
@@ -265,17 +277,19 @@ public class MusicPlayerService {
         int currentVoteCount = (int) skipVotes.stream().filter(onlineTokens::contains).count();
         int eligibleCount = calculateEligibleUsers(onlineTokens);
 
+        PlayMode currentPlayMode = playMode.get();
         return new PlayerState(
                 infoToSend,
                 getQueueWithUpdatedStatus(),
-                isShuffle.get(),
+                currentPlayMode.name(),
+                currentPlayMode == PlayMode.SHUFFLE,
                 isFairShuffle.get(),
                 allowOfflineShuffle.get(),
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
                 isPauseLocked.get(),
                 isSkipLocked.get(),
-                isShuffleLocked.get(),
+                isPlayModeLocked.get(),
                 isLoading.get(),
                 liveStreamService.getStreamListenerCount(),
                 liveStreamService.isEnabled(),
@@ -350,7 +364,7 @@ public class MusicPlayerService {
         }
         log.info("Cleared {} songs from offline users.", removedCount);
         broadcastQueueUpdate();
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "已清理 " + removedCount + " 首离线成员的点播歌曲"));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "管理员已清理 " + removedCount + " 首离线成员的点播歌曲"));
         return removedCount;
     }
 
@@ -360,7 +374,7 @@ public class MusicPlayerService {
         switch (type.toUpperCase()) {
             case "PAUSE" -> { targetLock = isPauseLocked; desc = "暂停"; }
             case "SKIP" -> { targetLock = isSkipLocked; desc = "切歌"; }
-            case "SHUFFLE" -> { targetLock = isShuffleLocked; desc = "随机播放"; }
+            case "SHUFFLE" -> { targetLock = isPlayModeLocked; desc = "播放模式"; }
             default -> throw new IllegalArgumentException("Unknown lock type");
         }
 
@@ -376,7 +390,7 @@ public class MusicPlayerService {
     public void setAllLocks(boolean locked) {
         isPauseLocked.set(locked);
         isSkipLocked.set(locked);
-        isShuffleLocked.set(locked);
+        isPlayModeLocked.set(locked);
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
                 locked ? "管理员锁定了所有控制" : "管理员解锁了所有控制"));
@@ -389,11 +403,11 @@ public class MusicPlayerService {
 
         // Check platform enabled
         if ("netease".equalsIgnoreCase(request.platform()) && !appProperties.getNetease().isEnabled()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: 网易云音乐源已被禁用"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "添加失败: 网易云音乐源已被禁用"));
             return;
         }
         if ("bilibili".equalsIgnoreCase(request.platform()) && !appProperties.getBilibili().isEnabled()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: Bilibili 源已被禁用"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "添加失败: Bilibili 源已被禁用"));
             return;
         }
 
@@ -403,7 +417,7 @@ public class MusicPlayerService {
                 .count();
 
         if (userSongCount >= appProperties.getQueue().getMaxUserSongs()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: 您的点歌数量已达上限 (" + appProperties.getQueue().getMaxUserSongs() + "首)"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "添加失败: 您的点歌数量已达上限 (" + appProperties.getQueue().getMaxUserSongs() + "首)"));
             return;
         }
 
@@ -428,7 +442,7 @@ public class MusicPlayerService {
                         error -> {
                             log.error("Enqueue failed for musicId: {}", request.musicId(), error);
                             String msg = error.getMessage().contains("Could not get Bilibili video info") ? "无效资源或API受限" : error.getMessage();
-                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: " + msg));
+                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "添加失败: " + msg));
                         });
     }
 
@@ -465,11 +479,11 @@ public class MusicPlayerService {
 
         // Check platform enabled
         if ("netease".equalsIgnoreCase(request.platform()) && !appProperties.getNetease().isEnabled()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: 网易云音乐源已被禁用"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "导入失败: 网易云音乐源已被禁用"));
             return;
         }
         if ("bilibili".equalsIgnoreCase(request.platform()) && !appProperties.getBilibili().isEnabled()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: Bilibili 源已被禁用"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "导入失败: Bilibili 源已被禁用"));
             return;
         }
 
@@ -480,7 +494,7 @@ public class MusicPlayerService {
         int maxUserSongs = appProperties.getQueue().getMaxUserSongs();
 
         if (currentCount >= maxUserSongs) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: 您的点歌数量已达上限"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "导入失败: 您的点歌数量已达上限"));
             return;
         }
 
@@ -512,7 +526,7 @@ public class MusicPlayerService {
 
     public synchronized void topSong(String queueId, String sessionId) {
         // 先调用 top 执行置顶操作
-        TopResult result = queueManager.top(queueId, isShuffle.get());
+        TopResult result = queueManager.top(queueId, playMode.get());
         
         if (result != TopResult.NONE) {
             log.info("Song topped ({}) request by {}", result, getUserName(sessionId));
@@ -520,7 +534,10 @@ public class MusicPlayerService {
 
             // 只有全局置顶才发送系统消息广播
             if (result == TopResult.GLOBAL) {
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), "置顶成功"));
+                String songName = queueManager.getItem(queueId)
+                        .map(item -> item.music().name())
+                        .orElse("未知歌曲");
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), songName));
             }
             
             if (currentMusic.get() == null) {
@@ -601,7 +618,7 @@ public class MusicPlayerService {
 
     private void executeSkip(String sessionId) {
         if (isSkipLocked.get() && !"SYSTEM".equals(sessionId)) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, getUserToken(sessionId), "切歌功能已被锁定"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, getUserToken(sessionId), "切歌功能已被锁定"));
             return;
         }
 
@@ -716,22 +733,35 @@ public class MusicPlayerService {
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserToken(sessionId), null));
     }
 
-    public void toggleShuffle(String sessionId) {
+    public void cyclePlayMode(String sessionId) {
         if (isRateLimited(sessionId)) return;
-        if (isShuffleLocked.get() && !"SYSTEM".equals(sessionId)) return;
+        if (isPlayModeLocked.get() && !"SYSTEM".equals(sessionId)) return;
 
-        // 使用标准的 CAS 循环来原子性地翻转布尔值
-        boolean current;
-        boolean newState;
+        PlayMode current;
+        PlayMode next;
         do {
-            current = isShuffle.get();
-            newState = !current;
-        } while (!isShuffle.compareAndSet(current, newState));
+            current = playMode.get();
+            next = switch (current) {
+                case SEQUENTIAL -> PlayMode.SHUFFLE;
+                case SHUFFLE -> PlayMode.REPEAT_ONE;
+                case REPEAT_ONE -> PlayMode.SEQUENTIAL;
+            };
+        } while (!playMode.compareAndSet(current, next));
 
-        log.info("Shuffle mode set to {} by {}", newState, getUserName(sessionId));
+        // 同步 isShuffle 以保持向后兼容
+        isShuffle.set(next == PlayMode.SHUFFLE);
+
+        log.info("Play mode cycled to {} by {}", next, getUserName(sessionId));
         broadcastFullPlayerState();
+
+        // 统一格式的通知：MessageFormatter 格式化为 "XXX 切换到了[模式]"
+        String modeName = switch (next) {
+            case SEQUENTIAL -> "顺序播放";
+            case SHUFFLE -> "随机播放";
+            case REPEAT_ONE -> "单曲循环";
+        };
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
-                newState ? PlayerAction.SHUFFLE_ON : PlayerAction.SHUFFLE_OFF, getUserToken(sessionId), null));
+                PlayerAction.MODE_CHANGE, getUserToken(sessionId), modeName));
     }
 
     public void resetSystem() {
@@ -743,6 +773,7 @@ public class MusicPlayerService {
         queueManager.clearAll();
         isPaused.set(false);
         isShuffle.set(false);
+        playMode.set(PlayMode.SEQUENTIAL);
         isLoading.set(false);
 
         broadcastFullPlayerState();
@@ -757,7 +788,7 @@ public class MusicPlayerService {
         // 广播队列更新
         broadcastQueueUpdate();
         // 发送全员通知
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "播放列表已由管理员清空"));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "管理员已清空播放列表"));
     }
 
     @EventListener
@@ -875,9 +906,7 @@ public class MusicPlayerService {
     }
 
     public void broadcastPasswordChanged() {
-        // Can create a specific event or use SystemMessageEvent
-        // For now, let's keep it simple
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, null, "SYSTEM", "PASSWORD_CHANGED"));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "房间密码已更改，请重新验证"));
     }
 
     private List<MusicQueueItem> getQueueWithUpdatedStatus() {
@@ -946,6 +975,7 @@ public class MusicPlayerService {
     }
 
     private String getUserToken(String sessionId) {
+        if ("SYSTEM".equals(sessionId)) return "SYSTEM";
         return userService.getUser(sessionId).map(User::getToken).orElse("UNKNOWN_TOKEN");
     }
 

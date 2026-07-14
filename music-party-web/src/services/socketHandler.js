@@ -69,13 +69,16 @@ function handleGameEvent(event) {
     // 2. 使用后端传来的格式化消息
     let msgText = event.message || event.payload || `${userName} ${event.action}`;
 
-    // 如果是 ERROR_LOAD，强制类型为 error，否则使用后端传来的 type (INFO/WARN/SUCCESS)
-    let type = event.type ? event.type.toLowerCase() : 'info';
+    // 将后端 Level 枚举映射为 toast 类型
+    const typeMap = { 'error': 'error', 'warn': 'warning', 'success': 'success' };
+    let type = typeMap[event.type?.toLowerCase()] || 'info';
     if (event.action === 'ERROR_LOAD') type = 'error';
-    if (event.action === 'RESET' || event.action === 'REMOVE') type = 'warning';
 
     show({
-        title: event.action === 'ERROR_LOAD' ? 'PLAYBACK ERROR' : (event.action === 'SYSTEM_MESSAGE' ? 'SYSTEM' : event.action),
+        title: event.action === 'ERROR_LOAD' ? 'PLAYBACK ERROR'
+             : event.action === 'SYSTEM_MESSAGE' ? 'SYSTEM'
+             : event.action === 'MODE_CHANGE' ? '播放模式'
+             : event.action,
         message: msgText,
         type: type,
         duration: 3000

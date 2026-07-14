@@ -23,11 +23,15 @@ public class MessageFormatter {
             case TOP -> userName + " 置顶了: " + payload;
             case LIKE -> userName + " 觉得很赞";
             case IMPORT_PLAYLIST -> userName + " 导入了歌单 (" + payload + "首)";
-            case SHUFFLE_ON -> userName + " 开启了随机播放";
-            case SHUFFLE_OFF -> userName + " 关闭了随机播放";
+            case MODE_CHANGE -> userName + " 切换到了" + payload;
             case RESET -> "系统已被重置";
-            case SYSTEM_MESSAGE -> payload;
             case ERROR_LOAD -> "加载失败: " + payload;
+            case SYSTEM_MESSAGE -> {
+                if (event.getUserId() != null && !"SYSTEM".equals(event.getUserId())) {
+                    yield userName + " " + payload;
+                }
+                yield payload;
+            }
             default -> userName + " 执行操作: " + event.getAction();
         };
     }

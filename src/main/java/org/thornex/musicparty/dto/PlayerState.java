@@ -5,6 +5,7 @@ import java.util.List;
 public record PlayerState(
         NowPlayingInfo nowPlaying,
         List<MusicQueueItem> queue,
+        String playMode,
         boolean isShuffle,
         boolean isFairShuffle,
         boolean allowOfflineShuffle,
@@ -12,7 +13,7 @@ public record PlayerState(
         boolean isPaused,
         boolean isPauseLocked,
         boolean isSkipLocked,
-        boolean isShuffleLocked,
+        boolean isPlayModeLocked,
         boolean isLoading,
         int streamListenerCount,
         boolean isStreamEnabled,

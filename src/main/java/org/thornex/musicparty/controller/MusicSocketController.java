@@ -56,9 +56,9 @@ public class MusicSocketController {
     }
 
     @MessageMapping("/control/toggle-shuffle")
-    public void toggleShuffle(@Header("simpSessionId") String sessionId) {
+    public void cyclePlayMode(@Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
-        musicPlayerService.toggleShuffle(sessionId);
+        musicPlayerService.cyclePlayMode(sessionId);
     }
 
     @MessageMapping("/control/toggle-pause")
