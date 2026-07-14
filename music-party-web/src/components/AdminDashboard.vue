@@ -54,9 +54,11 @@
                       <SkipForward class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
                       <span class="text-[10px] font-bold font-mono">切歌</span>
                     </button>
-                    <button @click="execPlayerAction('SHUFFLE')" class="flex flex-col items-center justify-center p-4 bg-medical-50 border border-medical-200 hover:border-accent hover:text-accent transition-all group" :class="playerStore.isShuffle ? 'border-accent text-accent' : ''">
-                      <Shuffle class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
-                      <span class="text-[10px] font-bold font-mono">随机</span>
+                    <button @click="execPlayerAction('SHUFFLE')" class="flex flex-col items-center justify-center p-4 bg-medical-50 border border-medical-200 hover:border-accent hover:text-accent transition-all group">
+                      <ListOrdered v-if="playerStore.playMode === 'SEQUENTIAL'" class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
+                      <Shuffle v-else-if="playerStore.playMode === 'SHUFFLE'" class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
+                      <Repeat1 v-else class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
+                      <span class="text-[10px] font-bold font-mono">{{ playerStore.playMode === 'SEQUENTIAL' ? '顺序' : playerStore.playMode === 'SHUFFLE' ? '随机' : '单曲循环' }}</span>
                     </button>
                   </div>
 
@@ -249,8 +251,8 @@ import { useAdminStore } from '../stores/admin';
 import { usePlayerStore } from '../stores/player';
 import { adminApi } from '../api/admin';
 import { useToast } from '../composables/useToast';
-import { 
-  Settings, X, Pause, Play, SkipForward, Shuffle, 
+import {
+  Settings, X, Pause, Play, SkipForward, ListOrdered, Repeat1, Shuffle,
   Lock, Unlock, ShieldAlert, Save, AlertTriangle,
   PlayCircle, Database, Globe, Sliders, ShieldCheck
 } from 'lucide-vue-next';
@@ -298,7 +300,7 @@ const updateInstantConfig = async (update) => {
 const locks = computed(() => [
   { key: 'PAUSE', cnLabel: '锁定暂停', value: playerStore.isPauseLocked },
   { key: 'SKIP', cnLabel: '锁定切歌', value: playerStore.isSkipLocked },
-  { key: 'SHUFFLE', cnLabel: '锁定随机', value: playerStore.isShuffleLocked },
+  { key: 'SHUFFLE', cnLabel: '锁定模式', value: playerStore.isPlayModeLocked },
 ]);
 
 const platforms = ref([

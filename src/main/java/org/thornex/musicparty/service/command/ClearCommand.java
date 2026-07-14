@@ -29,10 +29,10 @@ public class ClearCommand implements ChatCommand {
         if (count > 0) {
             // 发送系统通知 (聊天栏)
             eventPublisher.publishEvent(new SystemMessageEvent(
-                    this, 
-                    SystemMessageEvent.Level.INFO, 
-                    PlayerAction.REMOVE, 
-                    user.getToken(), 
+                    this,
+                    SystemMessageEvent.Level.INFO,
+                    PlayerAction.SYSTEM_MESSAGE,
+                    user.getToken(),
                     String.format("清空了自己点的 %d 首歌", count)
             ));
             

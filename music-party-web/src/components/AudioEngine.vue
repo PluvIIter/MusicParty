@@ -8,6 +8,7 @@
         @waiting="player.isBuffering = true"
         @playing="player.isBuffering = false"
         @canplay="onCanPlay"
+        @seeked="onCanPlay"
         referrerpolicy="no-referrer"
     ></audio>
 

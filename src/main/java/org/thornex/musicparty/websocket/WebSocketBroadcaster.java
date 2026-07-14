@@ -6,6 +6,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.thornex.musicparty.dto.PlayerEvent;
 import org.thornex.musicparty.dto.User;
+import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.event.PlayerStateEvent;
 import org.thornex.musicparty.event.QueueUpdateEvent;
 import org.thornex.musicparty.event.SystemMessageEvent;
@@ -53,8 +54,8 @@ public class WebSocketBroadcaster {
 
         String formattedMessage = MessageFormatter.format(event, userName);
 
-        // 特殊处理密码修改的广播
-        if ("PASSWORD_CHANGED".equals(event.getPayload())) {
+        // 特殊处理密码修改的广播：标记为 PASSWORD_CHANGED 以便前端强制重新验证
+        if (event.getAction() == PlayerAction.SYSTEM_MESSAGE && event.getPayload() != null && event.getPayload().startsWith("房间密码")) {
             actionCode = "PASSWORD_CHANGED";
             type = "ERROR";
         }

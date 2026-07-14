@@ -1,7 +1,7 @@
 // src/stores/player.js
 
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useUserStore } from './user';
 import { socketService } from '../services/socket';
 import { createSocketSubscriptions, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
@@ -14,12 +14,14 @@ export const usePlayerStore = defineStore('player', () => {
     const nowPlaying = ref(null);
     const queue = ref([]);
     const isPaused = ref(false);
-    const isShuffle = ref(false);
+    const playMode = ref('SEQUENTIAL'); // 'SEQUENTIAL' | 'SHUFFLE' | 'REPEAT_ONE'
+    const isShuffle = computed(() => playMode.value === 'SHUFFLE');
+    const isRepeatOne = computed(() => playMode.value === 'REPEAT_ONE');
     const isFairShuffle = ref(true);
     const allowOfflineShuffle = ref(false);
     const isPauseLocked = ref(false);
     const isSkipLocked = ref(false);
-    const isShuffleLocked = ref(false);
+    const isPlayModeLocked = ref(false);
     const lyricText = ref('');
     const connected = ref(false);
     const isLoading = ref(false);
@@ -92,12 +94,12 @@ export const usePlayerStore = defineStore('player', () => {
         nowPlaying.value = state.nowPlaying;
         queue.value = state.queue;
         isPaused.value = state.isPaused;
-        isShuffle.value = state.isShuffle;
+        playMode.value = state.playMode || (state.isShuffle ? 'SHUFFLE' : 'SEQUENTIAL');
         isFairShuffle.value = state.isFairShuffle !== undefined ? state.isFairShuffle : true;
         allowOfflineShuffle.value = state.allowOfflineShuffle || false;
         isPauseLocked.value = state.isPauseLocked || false;
         isSkipLocked.value = state.isSkipLocked || false;
-        isShuffleLocked.value = state.isShuffleLocked || false;
+        isPlayModeLocked.value = state.isPlayModeLocked || false;
         isLoading.value = state.isLoading || false;
         streamListenerCount.value = state.streamListenerCount || 0;
         streamActive.value = state.isStreamEnabled || false;
@@ -160,7 +162,7 @@ export const usePlayerStore = defineStore('player', () => {
     // --- 指令发送 ---
     const playNext = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_NEXT);
     const togglePause = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_PAUSE);
-    const toggleShuffle = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_SHUFFLE);
+    const cyclePlayMode = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_SHUFFLE);
 
     const enqueue = (platform, musicId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
     const enqueuePlaylist = (platform, playlistId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_PLAYLIST, { platform, playlistId });
@@ -199,12 +201,12 @@ export const usePlayerStore = defineStore('player', () => {
     });
 
     return {
-        nowPlaying, queue, isPaused, isShuffle, isFairShuffle, allowOfflineShuffle, config,
-        isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText,
+        nowPlaying, queue, isPaused, playMode, isShuffle, isRepeatOne, isFairShuffle, allowOfflineShuffle, config,
+        isPauseLocked, isSkipLocked, isPlayModeLocked, connected, isLoading, lyricText,
         localProgress, isBuffering, isErrorState, streamListenerCount, streamActive,
         isVoteSkipEnabled, voteSkipThreshold, voteSkipWaitTime, currentVotes, eligibleUsers,
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
-        playNext, togglePause, toggleShuffle,
+        playNext, togglePause, cyclePlayMode,
         enqueue, enqueuePlaylist, topSong, removeSong,
         bindAccount, renameUser, sendChatMessage, sendLike
     };

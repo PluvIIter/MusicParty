@@ -340,7 +340,7 @@ onMounted(() => {
       { cond: player.isLoading, msg: `BUFFER_STATE: LOADING...` },
       { cond: !player.isLoading, msg: `BUFFER_STATE: STABLE` },
       { cond: true, msg: `QUEUE_LEN: ${player.queue.length}` },
-      { cond: true, msg: `PLAY_MODE: ${player.isShuffle ? 'SHUFFLE' : 'SEQUENTIAL'}` },
+      { cond: true, msg: `PLAY_MODE: ${player.playMode}` },
       { cond: parsedLyrics.value.length > 0, msg: `LYRIC_SYNC: ${parsedLyrics.value.length} LINES` },
       { cond: !player.isPaused, msg: `CUR_POS: ${Math.floor(player.getCurrentProgress())}MS` },
 

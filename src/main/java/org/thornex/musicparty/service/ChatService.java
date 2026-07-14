@@ -189,8 +189,10 @@ public class ChatService {
             type = MessageType.SYSTEM;
         }
 
-        String msgUserId = (event.getAction() == PlayerAction.LIKE || event.getAction() == PlayerAction.PLAY_START) ? event.getUserId() : "SYSTEM";
-        String msgUserName = (event.getAction() == PlayerAction.LIKE || event.getAction() == PlayerAction.PLAY_START) ? userName : "SYSTEM";
+        // 系统级通知（userId="SYSTEM"）使用 SYSTEM 作为发送者；用户触发的通知保留真实身份
+        boolean isSystemActor = "SYSTEM".equals(event.getUserId());
+        String msgUserId = isSystemActor ? "SYSTEM" : event.getUserId();
+        String msgUserName = isSystemActor ? "SYSTEM" : userName;
 
         ChatMessage sysMsg = new ChatMessage(
                 UUID.randomUUID().toString(),

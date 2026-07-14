@@ -27,6 +27,7 @@ public enum PlayerAction {
 
     // 播放事件扩展
     PLAY_START,
+    MODE_CHANGE,
 
     // 系统级
     RESET,
