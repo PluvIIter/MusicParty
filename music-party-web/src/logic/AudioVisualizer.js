@@ -137,48 +137,36 @@ export class AudioVisualizer {
             ctx.globalCompositeOperation = 'screen';
 
             this.rings.forEach((ring) => {
-                ctx.beginPath();
-                const count = 120; // Reduced from 240
+                const count = 60; // 波形点数 (3~5 段波, 每段 12~20 点, 运动+半透明下无可见棱角)
                 const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
 
-                // 外圈
+                // 预计算一圈的波形点，内外圈共享 (原来内外圈各算一遍三角函数)
+                const pts = [];
                 for (let i = 0; i <= count; i++) {
                     const angle = (i / count) * Math.PI * 2;
                     const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
-                    const normalizedWave = (wave + 1) / 2;
-                    const currentWidth = ring.baseWidth + normalizedWave * currentMaxWidth;
-
-                    const r = ring.radius + currentWidth / 2;
-                    const x = center + Math.cos(angle) * r;
-                    const y = center + Math.sin(angle) * r;
-
-                    if (i === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
+                    pts.push({
+                        x: Math.cos(angle),
+                        y: Math.sin(angle),
+                        w: ring.baseWidth + ((wave + 1) / 2) * currentMaxWidth
+                    });
                 }
 
-                // 光晕：沿外圈宽描边替代 shadowBlur
-                // (shadowBlur 在 Firefox 中为软件渲染，占用了绝大部分帧时间；宽描边视觉近似且成本可忽略)
-                ctx.closePath();
-                ctx.strokeStyle = `rgba(249, 115, 22, ${Math.min(1, this.smoothAlpha * 1.5)})`;
-                ctx.lineWidth = currentMaxWidth + 40;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.stroke();
-
-                // 内圈
+                // 外圈 → 内圈回折成环带，一次 fill 完成
+                // (不再用宽描边模拟光晕：该描边是 Firefox 的新渲染热点，且光晕在浅色背景上几乎不可见)
+                ctx.beginPath();
+                for (let i = 0; i <= count; i++) {
+                    ctx.lineTo(
+                        center + pts[i].x * (ring.radius + pts[i].w / 2),
+                        center + pts[i].y * (ring.radius + pts[i].w / 2)
+                    );
+                }
                 for (let i = count; i >= 0; i--) {
-                    const angle = (i / count) * Math.PI * 2;
-                    const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
-                    const normalizedWave = (wave + 1) / 2;
-                    const currentWidth = ring.baseWidth + normalizedWave * currentMaxWidth;
-
-                    const r = ring.radius - currentWidth / 2;
-                    const x = center + Math.cos(angle) * r;
-                    const y = center + Math.sin(angle) * r;
-
-                    ctx.lineTo(x, y);
+                    ctx.lineTo(
+                        center + pts[i].x * (ring.radius - pts[i].w / 2),
+                        center + pts[i].y * (ring.radius - pts[i].w / 2)
+                    );
                 }
-
                 ctx.closePath();
                 ctx.fillStyle = `rgba(249, 115, 22, ${this.smoothAlpha})`;
                 ctx.fill();
@@ -190,22 +178,20 @@ export class AudioVisualizer {
         ctx.globalCompositeOperation = 'source-over';
         this.breatheOffset += 0.05;
 
+        // 全部线段合并为一条路径、一次 stroke (原来 60 次 beginPath/stroke)
+        ctx.beginPath();
         for (let i = 0; i < this.breatheBars; i++) {
             const angle = (Math.PI * 2 * i) / this.breatheBars;
             const h = Math.sin(i * 0.5 + now / 500) * 5 + 5;
+            const r1 = this.breatheRadiusBase + 10;
+            const r2 = r1 + h;
 
-            const startX = center + Math.cos(angle) * (this.breatheRadiusBase + 10);
-            const startY = center + Math.sin(angle) * (this.breatheRadiusBase + 10);
-            const endX = center + Math.cos(angle) * (this.breatheRadiusBase + 10 + h);
-            const endY = center + Math.sin(angle) * (this.breatheRadiusBase + 10 + h);
-
-            ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.lineTo(endX, endY);
-            ctx.strokeStyle = '#D1D5DB';
-            ctx.lineWidth = 2;
-            ctx.lineCap = 'round';
-            ctx.stroke();
+            ctx.moveTo(center + Math.cos(angle) * r1, center + Math.sin(angle) * r1);
+            ctx.lineTo(center + Math.cos(angle) * r2, center + Math.sin(angle) * r2);
         }
+        ctx.strokeStyle = '#D1D5DB';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.stroke();
     }
 }
