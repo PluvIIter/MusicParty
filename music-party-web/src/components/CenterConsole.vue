@@ -19,8 +19,8 @@
     <div class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
       <canvas
           ref="canvasRef"
-          width="1200"
-          height="1200"
+          width="600"
+          height="600"
           class="absolute left-1/2 top-1/2 -translate-x-1/4 -translate-y-1/3 w-[160vw] h-[160vw] md:w-[1000px] md:h-[1000px]"
       ></canvas>
 

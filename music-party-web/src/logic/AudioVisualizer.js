@@ -18,8 +18,12 @@ export class AudioVisualizer {
         // 状态标记
         this.isPlaying = false;
 
-        // 帧计数 (用于暂停时的降频渲染)
-        this.frameCount = 0;
+        // 设计分辨率与渲染缩放 (物理分辨率 = 逻辑 × PIXEL_RATIO。
+        // Firefox 的 canvas 光栅化为软件实现, 半分辨率渲染使其面积降至 1/4,
+        // 放大显示由合成器 (GPU) 完成, 半透明流动效果在放大后无可见损失)
+        this.LOGICAL_SIZE = 1200;
+        this.PIXEL_RATIO = 0.5;
+        this.lastFrameTime = 0;
 
         // 爆发控制变量
         this.speedMultiplier = 1.0;
@@ -44,10 +48,14 @@ export class AudioVisualizer {
      */
     mount(canvasElement) {
         this.canvas = canvasElement;
+        const size = Math.round(this.LOGICAL_SIZE * this.PIXEL_RATIO);
+        this.canvas.width = size;
+        this.canvas.height = size;
         this.ctx = this.canvas.getContext('2d', { alpha: true }); // optimize
-        this.width = this.canvas.width;
-        this.height = this.canvas.height;
-        this.center = this.width / 2;
+        // 逻辑尺寸 (所有几何均按设计分辨率计算, 绘制时统一缩放)
+        this.width = this.LOGICAL_SIZE;
+        this.height = this.LOGICAL_SIZE;
+        this.center = this.LOGICAL_SIZE / 2;
         this.startLoop();
     }
 
@@ -90,93 +98,100 @@ export class AudioVisualizer {
     }
 
     startLoop() {
+        let lastDraw = 0;
         const loop = (now) => {
             if (!this.canvas || !this.ctx) return;
 
-            this.draw(now);
+            // 播放时 60fps, 暂停时 10fps (暂停状态下动画几乎静止, 无交互时无需满帧渲染)。
+            // 动画速度在 draw 内按帧间隔换算, 与 60fps 基准完全一致
+            const minInterval = this.isPlaying ? 16.67 : 100;
+            if (now - lastDraw >= minInterval) {
+                lastDraw = now;
+                this.draw(now);
+            }
             this.animationId = requestAnimationFrame(loop);
         };
         this.animationId = requestAnimationFrame(loop);
     }
 
     draw(now = performance.now()) {
-        const { ctx, width, height, center } = this;
-        ctx.clearRect(0, 0, width, height);
+        const { ctx, center } = this;
 
-        // 如果不播放且没有爆发，可以降低渲染频率或跳过部分渲染（为了简单起见，这里保持 loop 但降低计算量）
-        
+        // 帧间隔换算到 60fps 基准, 保证降帧后动画速度与衰减速率不变
+        const frameScale = this.lastFrameTime ? Math.min(3, (now - this.lastFrameTime) / 16.67) : 1;
+        this.lastFrameTime = now;
+
         const decayFactor = 0.005;
 
-        this.speedMultiplier += (1.0 - this.speedMultiplier) * decayFactor;
-        this.widthMultiplier += (1.0 - this.widthMultiplier) * decayFactor;
-        this.roughnessMultiplier += (1.0 - this.roughnessMultiplier) * decayFactor;
+        this.speedMultiplier += (1.0 - this.speedMultiplier) * decayFactor * frameScale;
+        this.widthMultiplier += (1.0 - this.widthMultiplier) * decayFactor * frameScale;
+        this.roughnessMultiplier += (1.0 - this.roughnessMultiplier) * decayFactor * frameScale;
 
         // --- 1. 状态计算与平滑过渡 (Lerp) ---
         // 时间流速
         const baseSpeed = this.isPlaying ? 0.5 : 0.1;
-        this.rippleTime += baseSpeed * this.speedMultiplier;
+        this.rippleTime += baseSpeed * this.speedMultiplier * frameScale;
 
         // 目标透明度与宽度
         const targetAlpha = this.isPlaying ? 0.25 : 0.05;
         const targetWidthScale = this.isPlaying ? 1.0 : 0.3;
 
         // 线性插值
-        this.smoothAlpha += (targetAlpha - this.smoothAlpha) * 0.03;
-        this.smoothWidthScale += (targetWidthScale - this.smoothWidthScale) * 0.05;
+        this.smoothAlpha += (targetAlpha - this.smoothAlpha) * 0.03 * frameScale;
+        this.smoothWidthScale += (targetWidthScale - this.smoothWidthScale) * 0.05 * frameScale;
 
         // 优化：透明度极低时不渲染复杂图形
         if (this.smoothAlpha < 0.01) return;
 
+        // 物理分辨率清除 + 整体缩放到设计分辨率 (光栅化面积降至 1/4)
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.save();
+        ctx.scale(this.PIXEL_RATIO, this.PIXEL_RATIO);
+
         // --- 2. 绘制橙色流体圆环 ---
-        // 暂停时圆环降频渲染 (约 10fps)，呼吸条保持 60fps
-        this.frameCount++;
-        const drawRings = this.isPlaying || this.frameCount % 6 === 0;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
 
-        if (drawRings) {
-            ctx.save();
-            ctx.globalCompositeOperation = 'screen';
+        this.rings.forEach((ring) => {
+            const count = 60; // 波形点数 (3~5 段波, 每段 12~20 点, 运动+半透明下无可见棱角)
+            const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
 
-            this.rings.forEach((ring) => {
-                const count = 60; // 波形点数 (3~5 段波, 每段 12~20 点, 运动+半透明下无可见棱角)
-                const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
+            // 预计算一圈的波形点，内外圈共享 (原来内外圈各算一遍三角函数)
+            const pts = [];
+            for (let i = 0; i <= count; i++) {
+                const angle = (i / count) * Math.PI * 2;
+                const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
+                pts.push({
+                    x: Math.cos(angle),
+                    y: Math.sin(angle),
+                    w: ring.baseWidth + ((wave + 1) / 2) * currentMaxWidth
+                });
+            }
 
-                // 预计算一圈的波形点，内外圈共享 (原来内外圈各算一遍三角函数)
-                const pts = [];
-                for (let i = 0; i <= count; i++) {
-                    const angle = (i / count) * Math.PI * 2;
-                    const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
-                    pts.push({
-                        x: Math.cos(angle),
-                        y: Math.sin(angle),
-                        w: ring.baseWidth + ((wave + 1) / 2) * currentMaxWidth
-                    });
-                }
-
-                // 外圈 → 内圈回折成环带，一次 fill 完成
-                // (不再用宽描边模拟光晕：该描边是 Firefox 的新渲染热点，且光晕在浅色背景上几乎不可见)
-                ctx.beginPath();
-                for (let i = 0; i <= count; i++) {
-                    ctx.lineTo(
-                        center + pts[i].x * (ring.radius + pts[i].w / 2),
-                        center + pts[i].y * (ring.radius + pts[i].w / 2)
-                    );
-                }
-                for (let i = count; i >= 0; i--) {
-                    ctx.lineTo(
-                        center + pts[i].x * (ring.radius - pts[i].w / 2),
-                        center + pts[i].y * (ring.radius - pts[i].w / 2)
-                    );
-                }
-                ctx.closePath();
-                ctx.fillStyle = `rgba(249, 115, 22, ${this.smoothAlpha})`;
-                ctx.fill();
-            });
-            ctx.restore();
-        }
+            // 外圈 → 内圈回折成环带，一次 fill 完成
+            // (不再用宽描边模拟光晕：该描边是 Firefox 的新渲染热点，且光晕在浅色背景上几乎不可见)
+            ctx.beginPath();
+            for (let i = 0; i <= count; i++) {
+                ctx.lineTo(
+                    center + pts[i].x * (ring.radius + pts[i].w / 2),
+                    center + pts[i].y * (ring.radius + pts[i].w / 2)
+                );
+            }
+            for (let i = count; i >= 0; i--) {
+                ctx.lineTo(
+                    center + pts[i].x * (ring.radius - pts[i].w / 2),
+                    center + pts[i].y * (ring.radius - pts[i].w / 2)
+                );
+            }
+            ctx.closePath();
+            ctx.fillStyle = `rgba(249, 115, 22, ${this.smoothAlpha})`;
+            ctx.fill();
+        });
+        ctx.restore();
 
         // --- 3. 绘制呼吸态频谱 (前景灰色) ---
         ctx.globalCompositeOperation = 'source-over';
-        this.breatheOffset += 0.05;
+        this.breatheOffset += 0.05 * frameScale;
 
         // 全部线段合并为一条路径、一次 stroke (原来 60 次 beginPath/stroke)
         ctx.beginPath();
@@ -193,5 +208,7 @@ export class AudioVisualizer {
         ctx.lineWidth = 2;
         ctx.lineCap = 'round';
         ctx.stroke();
+
+        ctx.restore();
     }
 }
