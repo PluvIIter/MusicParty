@@ -18,6 +18,9 @@ export class AudioVisualizer {
         // 状态标记
         this.isPlaying = false;
 
+        // 帧计数 (用于暂停时的降频渲染)
+        this.frameCount = 0;
+
         // 爆发控制变量
         this.speedMultiplier = 1.0;
         this.widthMultiplier = 1.0;
@@ -87,16 +90,16 @@ export class AudioVisualizer {
     }
 
     startLoop() {
-        const loop = () => {
+        const loop = (now) => {
             if (!this.canvas || !this.ctx) return;
 
-            this.draw();
+            this.draw(now);
             this.animationId = requestAnimationFrame(loop);
         };
-        loop();
+        this.animationId = requestAnimationFrame(loop);
     }
 
-    draw() {
+    draw(now = performance.now()) {
         const { ctx, width, height, center } = this;
         ctx.clearRect(0, 0, width, height);
 
@@ -125,50 +128,63 @@ export class AudioVisualizer {
         if (this.smoothAlpha < 0.01) return;
 
         // --- 2. 绘制橙色流体圆环 ---
-        ctx.save();
-        ctx.globalCompositeOperation = 'screen';
-        ctx.shadowBlur = 50;
-        ctx.shadowColor = '#F97316';
+        // 暂停时圆环降频渲染 (约 10fps)，呼吸条保持 60fps
+        this.frameCount++;
+        const drawRings = this.isPlaying || this.frameCount % 6 === 0;
 
-        this.rings.forEach((ring) => {
-            ctx.beginPath();
-            const count = 120; // Reduced from 240
-            const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
+        if (drawRings) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
 
-            // 外圈
-            for (let i = 0; i <= count; i++) {
-                const angle = (i / count) * Math.PI * 2;
-                const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
-                const normalizedWave = (wave + 1) / 2;
-                const currentWidth = ring.baseWidth + normalizedWave * currentMaxWidth;
+            this.rings.forEach((ring) => {
+                ctx.beginPath();
+                const count = 120; // Reduced from 240
+                const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
 
-                const r = ring.radius + currentWidth / 2;
-                const x = center + Math.cos(angle) * r;
-                const y = center + Math.sin(angle) * r;
+                // 外圈
+                for (let i = 0; i <= count; i++) {
+                    const angle = (i / count) * Math.PI * 2;
+                    const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
+                    const normalizedWave = (wave + 1) / 2;
+                    const currentWidth = ring.baseWidth + normalizedWave * currentMaxWidth;
 
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
+                    const r = ring.radius + currentWidth / 2;
+                    const x = center + Math.cos(angle) * r;
+                    const y = center + Math.sin(angle) * r;
 
-            // 内圈
-            for (let i = count; i >= 0; i--) {
-                const angle = (i / count) * Math.PI * 2;
-                const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
-                const normalizedWave = (wave + 1) / 2;
-                const currentWidth = ring.baseWidth + normalizedWave * currentMaxWidth;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
 
-                const r = ring.radius - currentWidth / 2;
-                const x = center + Math.cos(angle) * r;
-                const y = center + Math.sin(angle) * r;
+                // 光晕：沿外圈宽描边替代 shadowBlur
+                // (shadowBlur 在 Firefox 中为软件渲染，占用了绝大部分帧时间；宽描边视觉近似且成本可忽略)
+                ctx.closePath();
+                ctx.strokeStyle = `rgba(249, 115, 22, ${Math.min(1, this.smoothAlpha * 1.5)})`;
+                ctx.lineWidth = currentMaxWidth + 40;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.stroke();
 
-                ctx.lineTo(x, y);
-            }
+                // 内圈
+                for (let i = count; i >= 0; i--) {
+                    const angle = (i / count) * Math.PI * 2;
+                    const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
+                    const normalizedWave = (wave + 1) / 2;
+                    const currentWidth = ring.baseWidth + normalizedWave * currentMaxWidth;
 
-            ctx.closePath();
-            ctx.fillStyle = `rgba(249, 115, 22, ${this.smoothAlpha})`;
-            ctx.fill();
-        });
-        ctx.restore();
+                    const r = ring.radius - currentWidth / 2;
+                    const x = center + Math.cos(angle) * r;
+                    const y = center + Math.sin(angle) * r;
+
+                    ctx.lineTo(x, y);
+                }
+
+                ctx.closePath();
+                ctx.fillStyle = `rgba(249, 115, 22, ${this.smoothAlpha})`;
+                ctx.fill();
+            });
+            ctx.restore();
+        }
 
         // --- 3. 绘制呼吸态频谱 (前景灰色) ---
         ctx.globalCompositeOperation = 'source-over';
@@ -176,7 +192,7 @@ export class AudioVisualizer {
 
         for (let i = 0; i < this.breatheBars; i++) {
             const angle = (Math.PI * 2 * i) / this.breatheBars;
-            const h = Math.sin(i * 0.5 + Date.now() / 500) * 5 + 5;
+            const h = Math.sin(i * 0.5 + now / 500) * 5 + 5;
 
             const startX = center + Math.cos(angle) * (this.breatheRadiusBase + 10);
             const startY = center + Math.sin(angle) * (this.breatheRadiusBase + 10);
