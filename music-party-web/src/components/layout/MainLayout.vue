@@ -44,7 +44,7 @@ const handleSearchClick = () => {
         <div class="w-2.5 h-2.5 md:w-3 md:h-3 bg-accent flex-shrink-0"></div>
         <div class="flex items-baseline gap-1">
           <a href="https://github.com/PluvIIter/MusicParty" target="_blank" class="font-black text-base md:text-xl tracking-tighter text-medical-900 whitespace-nowrap hover:text-accent transition-colors">MUSIC PARTY</a>
-          <span class="text-medical-300 font-mono font-normal text-[10px] md:text-xs whitespace-nowrap">by {{ uiStore.authorName }}</span>
+          <span class="hidden sm:inline text-medical-300 font-mono font-normal text-[10px] md:text-xs whitespace-nowrap">by {{ uiStore.authorName }}</span>
         </div>
       </div>
 
@@ -102,7 +102,7 @@ const handleSearchClick = () => {
       </div>
 
       <Transition name="slide-fade">
-        <div v-if="mobileQueueOpen" class="md:hidden absolute inset-0 bg-white z-30 pt-4 overflow-y-auto">
+        <div v-if="mobileQueueOpen" class="md:hidden absolute inset-0 bg-white z-30 pt-4 overflow-y-auto overscroll-contain">
           <div class="px-4 pb-2 border-b border-medical-100 mb-2 flex justify-between">
             <span class="text-xs font-mono text-medical-400">QUEUE</span>
             <button @click="mobileQueueOpen = false"><X class="w-4 h-4"/></button>
@@ -112,7 +112,7 @@ const handleSearchClick = () => {
       </Transition>
 
       <Transition name="slide-fade">
-        <div v-if="mobileUserOpen" class="md:hidden absolute inset-0 bg-medical-50 z-30 pt-4 overflow-y-auto">
+        <div v-if="mobileUserOpen" class="md:hidden absolute inset-0 bg-medical-50 z-30 pt-4 overflow-y-auto overscroll-contain">
           <div class="px-4 pb-2 border-b border-medical-200 mb-2 flex justify-between">
             <span class="text-xs font-mono text-medical-400">OPERATIVES</span>
             <button @click="mobileUserOpen = false"><X class="w-4 h-4"/></button>
@@ -123,7 +123,7 @@ const handleSearchClick = () => {
     </div>
 
     <!-- 3. 精简模式视图 -->
-    <div v-else class="flex-1 flex flex-col items-center justify-center bg-medical-50 relative overflow-hidden p-6">
+    <div v-else class="flex-1 flex flex-col items-center justify-center bg-medical-50 relative overflow-hidden p-4 md:p-6">
       <!-- 背景装饰 -->
       <div class="absolute inset-0 z-0 pointer-events-none opacity-40">
         <div class="absolute inset-0 bg-[linear-gradient(rgba(17,24,39,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(17,24,39,0.03)_1px,transparent_1px)] bg-[size:32px_32px]"></div>
@@ -138,7 +138,7 @@ const handleSearchClick = () => {
         </div>
 
         <!-- 核心显示卡片 -->
-        <div class="w-full bg-white border border-medical-200 shadow-2xl relative p-8 chamfer-br">
+        <div class="w-full bg-white border border-medical-200 shadow-2xl relative p-5 md:p-8 chamfer-br">
            <!-- 四角修饰 -->
           <div class="absolute top-2 left-2 w-2 h-2 border-t border-l border-medical-300"></div>
           <div class="absolute top-2 right-2 w-2 h-2 border-t border-r border-medical-300"></div>
