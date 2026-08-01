@@ -50,16 +50,17 @@ public class StreamController {
         ResponseBodyEmitter emitter = new ResponseBodyEmitter(appProperties.getStream().getEmitterTimeoutMs());
         StreamClient client = new StreamClient(new ResponseBodyEmitterStreamSink(emitter), remoteAddr, appProperties.getStream());
 
+        // 先注册终态回调再 addListener：若泵线程因 emitter 初始化竞态提前终止，
+        // onCompletion 也能确保 removeListener 执行清理（见 StreamClient#sendWithRetry）
+        emitter.onCompletion(() -> liveStreamService.removeListener(client));
+        emitter.onTimeout(() -> liveStreamService.removeListener(client));
+        emitter.onError(e -> liveStreamService.removeListener(client));
+
         if (!liveStreamService.addListener(client)) {
             client.close();
             response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
             return null;
         }
-
-        // 连接生命周期由容器管理：所有终态（断开/超时/错误）都汇聚到幂等的 removeListener
-        emitter.onCompletion(() -> liveStreamService.removeListener(client));
-        emitter.onTimeout(() -> liveStreamService.removeListener(client));
-        emitter.onError(e -> liveStreamService.removeListener(client));
 
         return emitter;
     }

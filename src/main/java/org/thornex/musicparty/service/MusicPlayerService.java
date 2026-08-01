@@ -847,7 +847,9 @@ public class MusicPlayerService {
             }
         } else {
             // 场景 C: 流用户离开，且网页端也没人 -> 进入休眠
-            if (userService.getOnlineUserSummaries().isEmpty()) {
+            // 额外校验确无流连接：并发的 addListener 可能在旧监听者断开后才登记新连接，
+            // 此时陈旧的 StreamStatusEvent(false) 不应把播放器误送入休眠
+            if (userService.getOnlineUserSummaries().isEmpty() && liveStreamService.getStreamConnectionCount() == 0) {
                 enterIdleMode();
             }
         }
