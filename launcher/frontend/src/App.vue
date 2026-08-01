@@ -13,7 +13,7 @@ const config = reactive({
   neteaseCookie: '',
   neteaseQuality: 'exhigh',
   neteaseEnabled: true,
-  biliSessData: '',
+  biliCookie: '',
   bilibiliEnabled: true,
   queueMaxSize: 1000,
   queueHistorySize: 50,
@@ -218,8 +218,8 @@ const openWeb = () => {
                 <input type="checkbox" v-model="config.bilibiliEnabled" class="w-4 h-4 accent-medical-900" />
               </div>
               <div class="space-y-1" :class="!config.bilibiliEnabled ? 'opacity-40 grayscale pointer-events-none' : ''">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">SessData</label>
-                <input v-model="config.biliSessData" placeholder="用于解析B站音频流" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
+                <label class="text-[10px] font-bold text-medical-500 uppercase">Cookie</label>
+                <input v-model="config.biliCookie" placeholder="浏览器完整Cookie串(含SESSDATA)" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
               </div>
             </div>
           </div>

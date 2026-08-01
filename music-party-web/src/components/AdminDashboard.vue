@@ -305,7 +305,7 @@ const locks = computed(() => [
 
 const platforms = ref([
   { id: 'netease', name: '网易云音乐', tokenName: 'COOKIE', value: '' },
-  { id: 'bilibili', name: '哔哩哔哩', tokenName: 'SESSDATA', value: '' }
+  { id: 'bilibili', name: '哔哩哔哩', tokenName: 'COOKIE', value: '' }
 ]);
 
 const execPlayerAction = async (action) => {

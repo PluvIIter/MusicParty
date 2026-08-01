@@ -23,7 +23,7 @@ type AppConfig struct {
 	NeteaseEnabled bool `json:"neteaseEnabled"`
 
 	// Bilibili
-	BiliSessData string `json:"biliSessData"`
+	BiliCookie string `json:"biliCookie"`
 	BilibiliEnabled bool `json:"bilibiliEnabled"`
 
 	// Queue Settings

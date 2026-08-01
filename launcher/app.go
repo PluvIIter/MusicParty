@@ -170,7 +170,7 @@ func (a *App) StartServices() {
 		fmt.Sprintf("--app.music-api.netease.cookie=%s", a.cfg.NeteaseCookie),
 		fmt.Sprintf("--app.music-api.netease.quality=%s", a.cfg.NeteaseQuality),
 		fmt.Sprintf("--app.music-api.netease.enabled=%v", a.cfg.NeteaseEnabled),
-		fmt.Sprintf("--app.music-api.bilibili.sessdata=%s", a.cfg.BiliSessData),
+		fmt.Sprintf("--app.music-api.bilibili.cookie=%s", a.cfg.BiliCookie),
 		fmt.Sprintf("--app.music-api.bilibili.enabled=%v", a.cfg.BilibiliEnabled),
 		fmt.Sprintf("--app.music-api.queue.max-size=%d", a.cfg.QueueMaxSize),
 		fmt.Sprintf("--app.music-api.queue.history-size=%d", a.cfg.QueueHistorySize),

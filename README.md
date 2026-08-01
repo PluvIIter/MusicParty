@@ -65,7 +65,7 @@ docker run -d \
   -e APP_AUTHOR_NAME="ThorNex" \
   -e APP_BACK_WORDS="MUSIC PARTY" \
   -e NETEASE_COOKIE="" \
-  -e BILIBILI_SESSDATA="" \
+  -e BILIBILI_COOKIE="" \
   -e QUEUE_MAX_SIZE=1000 \
   -e QUEUE_HISTORY_SIZE=50 \
   -e PLAYLIST_IMPORT_LIMIT=100 \
@@ -88,7 +88,7 @@ docker run -d \
 | `NETEASE_API_URL`         | 是  | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。           |
 | `BASE_URL`                | 否  | 服务的域名（带协议）。用户获取直播流链接时，拼接在前面。默认为 `http://localhost:8848`。                    |
 | `BILIBILI_ENABLED`        | 否  | B站源是否开启。                                                                    |
-| `BILIBILI_SESSDATA`       | 否  | B站账号的 SESSDATA。配置后可支持高音质解析，减少风控。                                            |
+| `BILIBILI_COOKIE`         | 否  | B站账号的**完整 Cookie**（浏览器登录后复制的完整 Cookie 串，含 buvid3/SESSDATA/bili_jct 等）。不填仅 B站源不可用，不影响其他音乐源；填入后可用 B站源并解析高音质 DASH 音频。 |
 | `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。                                          |
 | `NETEASE_QUALITY`         | 否  | 网易云音质等级。可选：`standard`, `higher`, `exhigh`, `lossless`, `hires`。默认 `exhigh`。 |
 | `QUEUE_MAX_SIZE`          | 否  | 播放队列最大长度，默认 `1000`。                                                         |
@@ -199,7 +199,7 @@ docker run -d \
 <img width="1604" height="1084" alt="image" src="https://github.com/user-attachments/assets/afa77005-aebd-4120-90f3-ccddb2370712" />
 
 * **bilibili**
-浏览器打开bilibili，登录，进入我的收藏页面，按F12开启控制台，选择网络，然后收藏夹翻页，在控制台中寻找lsit开头的请求，然后找到Cookie，在内容中寻找SESSDATA，复制 = 后面到 ; 之前的所有内容。
+浏览器打开bilibili，登录，进入我的收藏页面，按F12开启控制台，选择网络，然后收藏夹翻页，在控制台中寻找list开头的请求，然后找到请求头中的 **Cookie**，复制**整个 Cookie 值**（含 buvid3、SESSDATA、bili_jct 等全部内容，分号分隔的完整一段）。⚠️ 请务必提供完整 Cookie，不要只复制 SESSDATA——B站要求 Cookie 中含 buvid3 等设备指纹，否则会被风控拦截（-412）。
 <img width="1959" height="1084" alt="image" src="https://github.com/user-attachments/assets/67cebc9d-bfd5-4ec6-ae17-1922b2a175e9" />
 
 ---
@@ -223,7 +223,7 @@ docker run -d \
 ### 后端 (Java)
 
 1.  环境要求：JDK 21, Maven 3.x, 并已部署Netease Cloud Music Api。
-2.  配置：修改 `src/main/resources/application.yml` 或通过 IDEA 环境变量传入 `BILIBILI_SESSDATA` 等配置。
+2.  配置：修改 `src/main/resources/application.yml` 或通过 IDEA 环境变量传入 `BILIBILI_COOKIE` 等配置。
 3.  运行：
     ```bash
     mvn spring-boot:run

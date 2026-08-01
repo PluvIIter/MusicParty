@@ -34,7 +34,7 @@ services:
       - BILIBILI_ENABLED=true        # 是否开启 Bilibili 源
       - NETEASE_COOKIE=""            # 网易云 Cookie
       - NETEASE_QUALITY=exhigh       # 网易云音质 (standard, higher, exhigh, lossless, hires)
-      - BILIBILI_SESSDATA=""         # B站 SESSDATA
+      - BILIBILI_COOKIE=""           # B站完整Cookie(可选，仅B站源需要)
 
       # [性能/策略配置]
       - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
