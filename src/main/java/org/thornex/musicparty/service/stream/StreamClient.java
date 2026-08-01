@@ -108,6 +108,8 @@ public class StreamClient implements AutoCloseable {
         }
     }
 
+    private static final int SEND_INIT_RETRIES = 20; // 每次 5ms，共约 100ms，覆盖 emitter 初始化窗口
+
     private void pumpLoop() {
         try {
             while (!closed.get()) {
@@ -115,10 +117,7 @@ public class StreamClient implements AutoCloseable {
                 if (closed.get()) {
                     break;
                 }
-                try {
-                    sink.send(data);
-                } catch (IOException | IllegalStateException e) {
-                    // 客户端断开 / 响应已结束 → 终止本客户端
+                if (!sendWithRetry(data)) {
                     break;
                 }
             }
@@ -127,5 +126,34 @@ public class StreamClient implements AutoCloseable {
         } finally {
             close();
         }
+    }
+
+    /**
+     * 发送一块数据。
+     * ResponseBodyEmitter 在控制器返回、Spring 完成初始化之前 send() 会抛 IllegalStateException；
+     * 该窗口极短（微秒级），短暂重试即可，避免把"初始化竞态"误判为断连、丢掉刚接入的收听者。
+     * 若客户端已关闭或连接真正断开，则终止。
+     */
+    private boolean sendWithRetry(byte[] data) {
+        for (int attempt = 0; attempt < SEND_INIT_RETRIES; attempt++) {
+            try {
+                sink.send(data);
+                return true;
+            } catch (IOException e) {
+                // 客户端断开 → 终止
+                return false;
+            } catch (IllegalStateException e) {
+                if (closed.get()) {
+                    return false;
+                }
+                try {
+                    Thread.sleep(5);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return false;
     }
 }
