@@ -199,7 +199,7 @@ docker run -d \
 <img width="1604" height="1084" alt="image" src="https://github.com/user-attachments/assets/afa77005-aebd-4120-90f3-ccddb2370712" />
 
 * **bilibili**
-浏览器打开bilibili，登录，进入我的收藏页面，按F12开启控制台，选择网络，然后收藏夹翻页，在控制台中寻找list开头的请求，然后找到请求头中的 **Cookie**，复制**整个 Cookie 值**（含 buvid3、SESSDATA、bili_jct 等全部内容，分号分隔的完整一段）。⚠️ 请务必提供完整 Cookie，不要只复制 SESSDATA——B站要求 Cookie 中含 buvid3 等设备指纹，否则会被风控拦截（-412）。
+浏览器打开bilibili，登录，进入我的收藏页面，按F12开启控制台，选择网络，然后收藏夹翻页，在控制台中寻找list开头的请求，然后找到请求头中的 Cookie，将所有内容复制。
 <img width="1959" height="1084" alt="image" src="https://github.com/user-attachments/assets/67cebc9d-bfd5-4ec6-ae17-1922b2a175e9" />
 
 ---
