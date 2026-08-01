@@ -14,6 +14,7 @@ import org.thornex.musicparty.event.PlayerStateEvent;
 import org.thornex.musicparty.event.StreamStatusEvent;
 import org.thornex.musicparty.service.LocalCacheService;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -28,6 +29,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -52,6 +54,10 @@ public class LiveStreamService {
     private static final long CRASH_RESTART_BACKOFF_MS = 30000;
     /** 首字节重锚定时允许吸收的最大启动偏移：超出部分视为"启动窗口内的 seek"，触发重启对齐 */
     private static final long MAX_STARTUP_OFFSET_MS = 8000;
+    /** 退出码 0 时判定"自然播完"的位置容差：位置距歌曲末尾超过该值即视为异常退出，需重启 */
+    private static final long NATURAL_END_TOLERANCE_MS = 10000;
+    /** 静音填充的分块大小，约等于 128kbps 一秒的数据量 */
+    private static final int SILENCE_CHUNK_BYTES = 16 * 1024;
 
     private final LocalCacheService localCacheService;
     private final ApplicationEventPublisher eventPublisher;
@@ -75,6 +81,12 @@ public class LiveStreamService {
     // 广播器：非阻塞分发给所有客户端
     private final StreamBroadcaster broadcaster = new StreamBroadcaster();
 
+    // 常驻静音基底：预生成的 MP3 静音，无歌/暂停/转码间隙时广播，保证连接始终能收到数据
+    private volatile byte[] silenceChunk;
+    private Thread silenceThread;
+    // 当前是否有歌曲转码器在产出真实音频（true 时静音填充暂停）
+    private final AtomicBoolean songActive = new AtomicBoolean(false);
+
     // 统计唯一收听人数（按 IP 地址去重）
     private final Map<String, Integer> ipConnectionCount = new ConcurrentHashMap<>();
 
@@ -97,6 +109,13 @@ public class LiveStreamService {
     public void init() {
         streamExecutor = Executors.newCachedThreadPool();
         broadcaster.setOnClientRemoved(this::handleClientRemoved);
+        // 预生成 MP3 静音作为常驻基底，保证任何连接随时能收到数据（不依赖歌曲转码器状态）
+        silenceChunk = generateSilence();
+        if (silenceChunk != null && silenceChunk.length > 0) {
+            silenceThread = Thread.ofPlatform().daemon().name("stream-silence-filler").start(this::silenceLoop);
+        } else {
+            log.warn("Stream: silence fallback unavailable; idle connections may stall");
+        }
     }
 
     private void handleClientRemoved(StreamClient client) {
@@ -117,10 +136,84 @@ public class LiveStreamService {
 
     @PreDestroy
     public void cleanup() {
+        if (silenceThread != null) {
+            silenceThread.interrupt();
+        }
         stopTranscoding();
         broadcaster.closeAll();
         if (streamExecutor != null) {
             streamExecutor.shutdownNow();
+        }
+    }
+
+    /**
+     * 一次性生成约 10 秒的 MP3 静音（128kbps 44.1kHz 立体声，与歌曲转码输出格式一致），
+     * 供静音填充线程在无歌/暂停/转码间隙时广播。
+     */
+    private byte[] generateSilence() {
+        try {
+            List<String> command = List.of(
+                    appProperties.getFfmpegPath(),
+                    "-loglevel", "error",
+                    "-f", "lavfi",
+                    "-i", "anullsrc=r=44100:cl=stereo",
+                    "-t", "10",
+                    "-c:a", "libmp3lame",
+                    "-b:a", "128k",
+                    "-ac", "2",
+                    "-ar", "44100",
+                    "-f", "mp3",
+                    "pipe:1");
+            Process process = new ProcessBuilder(command)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            try (InputStream is = process.getInputStream()) {
+                is.transferTo(bos);
+            }
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                log.warn("Stream: silence generation timed out");
+                return null;
+            }
+            byte[] data = bos.toByteArray();
+            log.info("Stream: generated {} bytes of silence", data.length);
+            return data.length > 0 ? data : null;
+        } catch (Exception e) {
+            log.warn("Stream: failed to generate silence, silence fallback disabled", e);
+            return null;
+        }
+    }
+
+    /**
+     * 静音填充循环：无歌/暂停/转码器启动或死亡的空窗期，按实时码率（约 16KB/s）广播静音，
+     * 让已连接的客户端缓冲始终有数据、永不判断流。有歌曲转码器产出时（songActive）自动让位。
+     */
+    private void silenceLoop() {
+        int offset = 0;
+        while (!Thread.currentThread().isInterrupted()) {
+            boolean shouldBroadcast = isEnabled.get() && broadcaster.getClientCount() > 0
+                    && !songActive.get() && silenceChunk != null && silenceChunk.length > 0;
+            if (shouldBroadcast) {
+                int len = Math.min(SILENCE_CHUNK_BYTES, silenceChunk.length - offset);
+                byte[] chunk = new byte[len];
+                System.arraycopy(silenceChunk, offset, chunk, 0, len);
+                offset = (offset + len) % silenceChunk.length;
+                broadcaster.broadcast(chunk);
+                try {
+                    Thread.sleep(1000); // 16KB/s ≈ 128kbps 实时速率
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            } else {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
         }
     }
 
@@ -340,6 +433,8 @@ public class LiveStreamService {
     private synchronized void stopTranscoding() {
         // 清空各客户端缓冲，丢弃暂停/切歌前的过期音频
         broadcaster.flushAll();
+        // 交还静音基底：此后由静音填充线程维持连接数据流
+        songActive.set(false);
         if (transcoderProcess != null) {
             if (transcoderProcess.isAlive()) {
                 transcoderProcess.destroy();
@@ -379,6 +474,10 @@ public class LiveStreamService {
                     // 成功产出 = 源已恢复健康：清除崩溃冷却，避免"已恢复的源"在 30s 内
                     // 因暂停/恢复被错误静默拦截（真正死源不会产出首字节，冷却仍会生效）
                     lastCrashRestartTimeMs = 0;
+                    // 切换到真实音频：标记 songActive 让静音填充让位，
+                    // 并清空客户端已缓冲的静音，避免歌前先播一段静音
+                    songActive.set(true);
+                    broadcaster.flushAll();
                 }
                 broadcaster.broadcast(Arrays.copyOf(buf, n));
             }
@@ -398,23 +497,35 @@ public class LiveStreamService {
         }
         transcoderProcess = null;
 
-        // 退出码 0 = 歌曲自然播完（ffmpeg EOF），由播放器在 1s 内自然推进下一首，不算崩溃，
-        // 不在此处重启（否则会在歌曲末尾反复 -ss 到 EOF 空转，并白白消耗崩溃冷却额度）
+        // 退出码 0：只在"确实产出过音频 且 位置接近歌曲末尾"时才视为自然播完；
+        // 否则（未产出首字节 / 远未到末尾就退出）是异常，需要重启恢复
+        // （否则会出现"新歌转码器静默退出 → 流静默死等"，见 mabataki 案例）
         if (process.exitValue() == 0) {
-            log.debug("Stream: transcoder reached natural EOF");
-            return;
+            boolean nearEnd = currentMusic != null && currentMusic.duration() > 0
+                    && estimatePlayerPosition() >= currentMusic.duration() - NATURAL_END_TOLERANCE_MS;
+            if (hasProducedFirstByte && nearEnd) {
+                songActive.set(false);
+                log.debug("Stream: transcoder reached natural EOF");
+                return;
+            }
+            log.warn("Stream: transcoder exited 0 without completing the song (produced={}, pos={}ms, dur={}ms), restarting",
+                    hasProducedFirstByte, estimatePlayerPosition(),
+                    currentMusic != null ? currentMusic.duration() : -1);
         }
 
         boolean shouldRun = isEnabled.get() && broadcaster.getClientCount() > 0 && currentMusic != null && !isPaused && resolveTarget() != null;
         if (shouldRun) {
             long now = System.currentTimeMillis();
             if (now - lastCrashRestartTimeMs < CRASH_RESTART_BACKOFF_MS) {
+                songActive.set(false);
                 log.error("Stream: transcoder died repeatedly, backing off restart");
                 return;
             }
             lastCrashRestartTimeMs = now;
             log.warn("Stream: transcoder died unexpectedly, restarting");
-            doRestart();
+            doRestart(); // doRestart -> stopTranscoding 会置 songActive=false，空窗由静音基底覆盖
+        } else {
+            songActive.set(false);
         }
     }
 
