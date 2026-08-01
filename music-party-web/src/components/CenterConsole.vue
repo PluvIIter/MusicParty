@@ -8,9 +8,9 @@
       <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[12vw] font-black text-medical-200/40 select-none whitespace-nowrap tracking-tighter blur-sm">
         {{ uiStore.backWords.toUpperCase() }}
       </div>
-      <!-- 四角标记 -->
-      <div class="absolute top-8 left-8 w-8 h-8 border-t-2 border-l-2 border-medical-300"></div>
-      <div class="absolute top-8 right-8 w-8 h-8 border-t-2 border-r-2 border-medical-300"></div>
+      <!-- 四角标记 (移动端下移，避开右上角浮动队列按钮) -->
+      <div class="absolute top-14 md:top-8 left-8 w-8 h-8 border-t-2 border-l-2 border-medical-300"></div>
+      <div class="absolute top-14 md:top-8 right-8 w-8 h-8 border-t-2 border-r-2 border-medical-300"></div>
       <div class="absolute bottom-8 left-8 w-8 h-8 border-b-2 border-l-2 border-medical-300"></div>
       <div class="absolute bottom-8 right-8 w-8 h-8 border-b-2 border-r-2 border-medical-300"></div>
     </div>
