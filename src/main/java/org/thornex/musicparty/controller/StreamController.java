@@ -43,6 +43,11 @@ public class StreamController {
         response.setHeader("Pragma", "no-cache");
         response.setHeader("Expires", "0");
 
+        // 显式设置 Content-Type：produces 注解在 ResponseBodyEmitter 异步路径下不会可靠写出该头。
+        // 浏览器/VLC 会嗅探内容自动识别音频，但 VRC 等严格播放器依赖 audio/mpeg 头识别音频流，
+        // 缺失会导致其直接拒绝播放（"无法加载音频"）。
+        response.setContentType("audio/mpeg");
+
         String remoteAddr = getClientIp(request);
 
         // 显式长超时（默认 24h）：Tomcat 默认 async 超时仅 30s，且为固定墙钟计时、不因活跃重置，

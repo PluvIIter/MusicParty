@@ -310,7 +310,9 @@ public class LiveStreamService {
     }
 
     private synchronized void checkState() {
-        boolean shouldRun = isEnabled.get() && broadcaster.getClientCount() > 0 && currentMusic != null && !isPaused && resolveTarget() != null;
+        // 转码器不随连接数启停：只要开关开启且有歌在播就持续转码（"常驻热转码"）。
+        // 否则新连接会先吃到几秒静音（转码器冷启动），VRC 等不到真实音频就判定失败重试。
+        boolean shouldRun = isEnabled.get() && currentMusic != null && !isPaused && resolveTarget() != null;
         if (shouldRun) {
             startTranscodingIfNeeded();
         } else {
@@ -513,7 +515,7 @@ public class LiveStreamService {
                     currentMusic != null ? currentMusic.duration() : -1);
         }
 
-        boolean shouldRun = isEnabled.get() && broadcaster.getClientCount() > 0 && currentMusic != null && !isPaused && resolveTarget() != null;
+        boolean shouldRun = isEnabled.get() && currentMusic != null && !isPaused && resolveTarget() != null;
         if (shouldRun) {
             long now = System.currentTimeMillis();
             if (now - lastCrashRestartTimeMs < CRASH_RESTART_BACKOFF_MS) {
