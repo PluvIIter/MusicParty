@@ -1,25 +1,26 @@
 <template>
-  <div v-if="isOpen" class="fixed inset-0 z-[60] bg-medical-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="w-full max-w-4xl bg-medical-50 h-[85vh] md:h-[80vh] flex flex-col shadow-2xl relative chamfer-br max-h-full">
+  <div v-if="isOpen" class="fixed inset-0 z-[60] bg-medical-900/80 backdrop-blur-sm flex items-center justify-center p-0 md:p-4">
+    <!-- 移动端全屏面板；桌面端居中弹窗。安全区 padding 兼容刘海屏/全面屏 -->
+    <div class="w-full max-w-4xl bg-medical-50 h-full md:h-[80vh] flex flex-col shadow-2xl relative chamfer-br max-h-full pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
 
-      <!-- 关闭按钮 -->
-      <button @click="emit('close')" class="absolute top-0 right-0 p-4 hover:text-accent z-50">
+      <!-- 关闭按钮 (移动端避开刘海区域) -->
+      <button @click="emit('close')" class="absolute top-[env(safe-area-inset-top)] right-0 p-4 hover:text-accent z-50">
         <X class="w-6 h-6" />
       </button>
 
       <!-- 头部 -->
       <div class="p-4 md:p-6 border-b border-medical-200 bg-white flex-shrink-0">
-        <h2 class="text-xl md:text-2xl font-bold font-mono mb-4 text-medical-900 flex items-center gap-2">
+        <h2 class="text-xl md:text-2xl font-bold font-mono mb-3 md:mb-4 text-medical-900 flex items-center gap-2">
           <Search class="w-5 h-5 text-accent"/> SEARCH
         </h2>
 
-        <!-- 平台切换 TAB -->
-        <div class="flex gap-1 mb-4">
+        <!-- 平台切换 TAB (移动端收紧内边距，防小屏换行) -->
+        <div class="flex gap-1 mb-3 md:mb-4">
           <button
               v-for="p in ['netease', 'bilibili']" :key="p"
               @click="platform = p"
               :disabled="!isPlatformEnabled(p)"
-              class="px-6 py-2 text-sm font-bold uppercase transition-all"
+              class="px-4 md:px-6 py-2 text-sm font-bold uppercase transition-all"
               :class="[
                 platform === p ? 'bg-medical-900 text-white clip-tab' : 'bg-medical-200 text-medical-500 hover:bg-medical-300',
                 !isPlatformEnabled(p) ? 'opacity-30 cursor-not-allowed grayscale' : ''
@@ -35,7 +36,7 @@
               v-model="keyword"
               @keyup.enter="doSearch"
               placeholder="搜索音乐..."
-              class="flex-1 border p-3 outline-none transition-colors duration-300 font-sans bg-medical-100 border-medical-200 focus:border-accent"
+              class="flex-1 min-w-0 border p-2.5 md:p-3 outline-none transition-colors duration-300 font-sans bg-medical-100 border-medical-200 focus:border-accent"
           />
           <button
               @click="handleSearchAction"
@@ -57,7 +58,7 @@
             <span>用户歌单</span>
           </div>
 
-          <div class="flex-1 overflow-y-auto p-2 space-y-2">
+          <div class="flex-1 overflow-y-auto overscroll-contain p-2 space-y-2">
             <!-- 未绑定 -->
             <div v-if="!bindings[platform]" class="p-4 border border-dashed border-medical-300 bg-medical-50">
               <div class="text-xs text-medical-500 mb-2 text-center font-sans">绑定用户以获取用户歌单</div>
@@ -106,7 +107,7 @@
             <span class="font-bold text-sm text-medical-800">{{ listMode === 'search' ? 'SEARCH RESULTS' : 'PLAYLIST DETAILS' }}</span>
           </div>
 
-          <div @scroll="handleScroll" class="flex-1 overflow-y-auto p-2 md:p-4">
+          <div @scroll="handleScroll" class="flex-1 overflow-y-auto overscroll-contain p-2 md:p-4">
             <div v-if="loading" class="text-center py-10 font-mono text-accent animate-pulse">> LOADING DATA STREAM...</div>
 
             <!-- 歌单操作头 -->
