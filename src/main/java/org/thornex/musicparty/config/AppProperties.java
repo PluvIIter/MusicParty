@@ -21,6 +21,7 @@ public class AppProperties {
     private ChatConfig chat = new ChatConfig();
     private CacheConfig cache = new CacheConfig();
     private AuthConfig auth = new AuthConfig();
+    private StreamConfig stream = new StreamConfig();
 
     @Data
     public static class QueueConfig {
@@ -62,6 +63,23 @@ public class AppProperties {
     @Data
     public static class ApiConfig {
         private String baseUrl;
+    }
+
+    /**
+     * 直播流（radio）模块配置
+     */
+    @Data
+    public static class StreamConfig {
+        /** 最大同时连接的收听者数量（按连接数，非唯一 IP） */
+        private int maxClients = 100;
+        /** 每个收听者的缓冲队列容量（块数），chunkSizeBytes * bufferChunks ≈ 缓冲时长 */
+        private int bufferChunks = 32;
+        /** ffmpeg 输出的分块大小（字节），默认 16KB */
+        private int chunkSizeBytes = 16384;
+        /** seek 判定阈值（毫秒）：与实时进度的漂移超过该值才重启转码 */
+        private long seekThresholdMs = 3000;
+        /** ResponseBodyEmitter 超时（毫秒），默认 24h。Tomcat 默认 async 超时仅 30s，必须显式设大 */
+        private long emitterTimeoutMs = 24 * 60 * 60 * 1000L;
     }
 
     @EqualsAndHashCode(callSuper = true)

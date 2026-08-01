@@ -41,6 +41,12 @@ app:
       max-message-length: ${CHAT_MAX_LENGTH:200}
     cache:
       max-size: ${CACHE_MAX_SIZE:1GB}
+    stream:
+      max-clients: ${STREAM_MAX_CLIENTS:100}
+      buffer-chunks: ${STREAM_BUFFER_CHUNKS:32}
+      chunk-size-bytes: ${STREAM_CHUNK_SIZE_BYTES:16384}
+      seek-threshold-ms: ${STREAM_SEEK_THRESHOLD_MS:3000}
+      emitter-timeout-ms: ${STREAM_EMITTER_TIMEOUT_MS:86400000}
     auth:
       rate-limit:
         enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
