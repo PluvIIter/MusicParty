@@ -37,3 +37,13 @@ build/
 /.gemini/.env
 /scripts/publish-image.ps1
 /data/queue-data.json
+
+### 运行时产物 ###
+# B站音频本地缓存
+/cached_media/
+# 运行日志
+/log.log
+# cloudflared 隧道二进制
+/cloudflared-windows-amd64.exe
+# 工具生成目录
+/.snow/
