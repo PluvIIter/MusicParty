@@ -200,7 +200,7 @@ docker run -d \
 
 * **bilibili**
 浏览器打开bilibili，登录，进入我的收藏页面，按F12开启控制台，选择网络，然后收藏夹翻页，在控制台中寻找list开头的请求，然后找到请求头中的 Cookie，将所有内容复制。
-<img width="1959" height="1084" alt="image" src="https://github.com/user-attachments/assets/67cebc9d-bfd5-4ec6-ae17-1922b2a175e9" />
+<img width="1604" height="921" alt="Snipaste_2026-08-01_19-48-25" src="https://github.com/user-attachments/assets/4d9e9a29-e4d9-4e2f-877e-e22fde7b1f56" />
 
 ---
 
