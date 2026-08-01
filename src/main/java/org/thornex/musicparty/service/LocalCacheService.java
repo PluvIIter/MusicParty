@@ -47,10 +47,16 @@ public class LocalCacheService {
 
     private record DownloadTask(
             String musicId,
-            Mono<String> urlProvider,
-            Map<String, String> headers,
-            String extension
+            Mono<DownloadSource> source,
+            Map<String, String> headers
     ) {}
+
+    /**
+     * 下载源：URL + 文件扩展名。
+     * 扩展名随源变化（如 DASH 音频 .m4a、html5 兜底 MP4 .mp4），
+     * 因此无法在提交任务时预先固定。
+     */
+    public record DownloadSource(String url, String extension) {}
 
     public LocalCacheService(WebClient webClient, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
         this.webClient = webClient;
@@ -114,11 +120,10 @@ public class LocalCacheService {
     /**
      * 提交下载任务
      * @param musicId 音乐ID（作为文件名）
-     * @param urlProvider 提供下载链接的 Mono（因为链接可能是动态获取的）
+     * @param source 提供下载源（URL + 扩展名）的 Mono，链接可能是动态获取的
      * @param headers 下载需要的请求头（Referer, Cookie等）
-     * @param extension 文件扩展名 (如 .m4a, .mp3)
      */
-    public void submitDownload(String musicId, Mono<String> urlProvider, Map<String, String> headers, String extension) {
+    public synchronized void submitDownload(String musicId, Mono<DownloadSource> source, Map<String, String> headers) {
         if (cacheIndex.containsKey(musicId) && cacheIndex.get(musicId).getStatus() == CacheStatus.COMPLETED) {
             log.info("Music {} already cached.", musicId);
             touch(musicId); // 更新访问时间
@@ -143,7 +148,7 @@ public class LocalCacheService {
 
         eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
 
-        Sinks.EmitResult result = downloadQueue.tryEmitNext(new DownloadTask(musicId, urlProvider, headers, extension));
+        Sinks.EmitResult result = downloadQueue.tryEmitNext(new DownloadTask(musicId, source, headers));
 
         if (result.isFailure()) {
             log.error("Failed to enqueue download task for {}", musicId);
@@ -166,15 +171,15 @@ public class LocalCacheService {
         eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
         log.info("Processing download: {}", musicId);
 
-        return task.urlProvider()
-                .flatMap(url -> {
-                    entry.setOriginalUrl(url);
-                    String fileName = musicId + task.extension();
+        return task.source()
+                .flatMap(src -> {
+                    entry.setOriginalUrl(src.url());
+                    String fileName = musicId + src.extension();
                     entry.setFileName(fileName);
                     Path destPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName);
 
                     return webClient.get()
-                            .uri(url)
+                            .uri(src.url())
                             .headers(httpHeaders -> task.headers().forEach(httpHeaders::add))
                             .retrieve()
                             .bodyToFlux(DataBuffer.class)

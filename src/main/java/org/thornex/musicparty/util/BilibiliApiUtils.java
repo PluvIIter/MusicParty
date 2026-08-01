@@ -24,25 +24,28 @@ public class BilibiliApiUtils {
         return millis;
     }
 
-    private static WebClient.RequestHeadersSpec<?> buildRequest(String uri, String sessdata, WebClient webClient) {
+    /**
+     * @param cookie 完整 Cookie 头（含 SESSDATA、buvid3、bili_ticket 等）
+     */
+    private static WebClient.RequestHeadersSpec<?> buildRequest(String uri, String cookie, WebClient webClient) {
         return webClient.get().uri(uri)
-                .header("Cookie", "SESSDATA=" + sessdata)
+                .header("Cookie", cookie)
                 .header("Referer", "https://www.bilibili.com/");
     }
 
-    public static Mono<String> getVideoCid(String bvid, WebClient webClient, String baseUrl, String sessdata) {
-        return getVideoInfo(bvid, webClient, baseUrl, sessdata).map(BilibiliVideoInfo::cid);
+    public static Mono<String> getVideoCid(String bvid, WebClient webClient, String baseUrl, String cookie) {
+        return getVideoInfo(bvid, webClient, baseUrl, cookie).map(BilibiliVideoInfo::cid);
     }
 
-    public static Mono<Music> getVideoDetails(String bvid, WebClient webClient, String baseUrl, String sessdata) {
-        return getVideoInfo(bvid, webClient, baseUrl, sessdata).map(BilibiliVideoInfo::music);
+    public static Mono<Music> getVideoDetails(String bvid, WebClient webClient, String baseUrl, String cookie) {
+        return getVideoInfo(bvid, webClient, baseUrl, cookie).map(BilibiliVideoInfo::music);
     }
 
     /**
      * 🟢 核心方法：一次请求获取 CID 和 视频详情
      */
-    public static Mono<BilibiliVideoInfo> getVideoInfo(String bvid, WebClient webClient, String baseUrl, String sessdata) {
-        return buildRequest(baseUrl + "/x/web-interface/view?bvid=" + bvid, sessdata, webClient)
+    public static Mono<BilibiliVideoInfo> getVideoInfo(String bvid, WebClient webClient, String baseUrl, String cookie) {
+        return buildRequest(baseUrl + "/x/web-interface/view?bvid=" + bvid, cookie, webClient)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .handle((jsonNode, sink) -> {

@@ -182,10 +182,15 @@ public class MusicPlayerService {
         // Handle failed items
         if (nextItem.status() == QueueItemStatus.FAILED ||
                 (statusMap.get(nextItem.music().id()) == QueueItemStatus.FAILED)) {
-            log.warn("Skipping failed song: {}", nextItem.music().name());
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
-            playNextInQueue(); // Recursively try next
-            return;
+            // B站下载失败不直接跳过：getPlayableMusic 会尝试 html5 直连兜底，
+            // 兜底也失败时再由下方 getPlayableMusic 的错误处理器跳过该曲。
+            if (!"bilibili".equalsIgnoreCase(nextItem.music().platform())) {
+                log.warn("Skipping failed song: {}", nextItem.music().name());
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
+                playNextInQueue(); // Recursively try next
+                return;
+            }
+            log.warn("Bilibili download failed for {}, attempting html5 direct-play rescue.", nextItem.music().name());
         }
 
         // 增加版本号，这表示"开始一次新的播放尝试"

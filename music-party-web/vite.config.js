@@ -5,6 +5,8 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   server: {
+    // 完全放开 host 校验，允许通过 Cloudflare 隧道等任意域名访问（本地测试用）
+    allowedHosts: true,
     proxy: {
       // 代理 API 请求
       '/api': {

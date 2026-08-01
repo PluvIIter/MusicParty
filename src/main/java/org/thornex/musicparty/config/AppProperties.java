@@ -67,7 +67,13 @@ public class AppProperties {
     @EqualsAndHashCode(callSuper = true)
     @Data
     public static class BilibiliApiConfig extends ApiConfig {
-        private String sessdata;
+        /**
+         * 完整 Cookie（可选，与网易云 Cookie 一致）：浏览器登录 B站后复制完整 Cookie 请求头。
+         * 不填仅导致 B站源不可用，不影响其他音乐源。
+         * 须含 buvid3/buvid4/SESSDATA/bili_jct/_uuid 等，请求才接近真实登录浏览器，
+         * 才能解析高音质 DASH 音频并降低风控概率。
+         */
+        private String cookie;
         private boolean enabled = true;
     }
 

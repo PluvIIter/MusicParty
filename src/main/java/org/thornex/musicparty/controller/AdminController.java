@@ -143,8 +143,8 @@ public class AdminController {
             neteaseMusicApiService.updateCookie(request.value());
             return ResponseEntity.ok(Map.of("message", "网易云音乐凭据已更新"));
         } else if ("bilibili".equalsIgnoreCase(request.platform())) {
-            bilibiliMusicApiService.updateSessdata(request.value());
-            return ResponseEntity.ok(Map.of("message", "Bilibili SessData 已更新"));
+            bilibiliMusicApiService.updateCookie(request.value());
+            return ResponseEntity.ok(Map.of("message", "Bilibili Cookie 已更新"));
         } else {
             return ResponseEntity.badRequest().build();
         }

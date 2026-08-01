@@ -25,7 +25,9 @@ app:
     bilibili:
       # Bilibili API base URL, it's public
       base-url: "https://api.bilibili.com"
-      sessdata: ${BILIBILI_SESSDATA:}
+      # 完整 Cookie（可选）：浏览器登录 B站后复制的完整 Cookie 串，含 buvid3/SESSDATA/bili_jct 等。
+      # 不填仅 B站源不可用，不影响其他音乐源。
+      cookie: ${BILIBILI_COOKIE:}
       enabled: ${BILIBILI_ENABLED:true}
     queue:
       max-size: ${QUEUE_MAX_SIZE:1000}
