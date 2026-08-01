@@ -5,6 +5,7 @@ import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.config.LocalResourceConfig;
@@ -58,6 +59,10 @@ public class LiveStreamService {
     private static final long NATURAL_END_TOLERANCE_MS = 10000;
     /** 静音填充的分块大小，约等于 128kbps 一秒的数据量 */
     private static final int SILENCE_CHUNK_BYTES = 16 * 1024;
+    /** 看门狗：转码器启动后超过该时长仍无首个输出字节 → 判定卡住，重启 */
+    private static final long TRANSCODER_STARTUP_TIMEOUT_MS = 15000;
+    /** 看门狗：转码器运行中超过该时长无任何输出 → 判定停滞（网络源卡住），重启 */
+    private static final long TRANSCODER_STALL_TIMEOUT_MS = 10000;
 
     private final LocalCacheService localCacheService;
     private final ApplicationEventPublisher eventPublisher;
@@ -76,6 +81,8 @@ public class LiveStreamService {
 
     // FFmpeg 进程管理（volatile：读者线程在 readLoop 中会跨线程比较）
     private volatile Process transcoderProcess;
+    private volatile long transcoderStartTimeMs;
+    private volatile long lastTranscoderOutputMs;
     private ExecutorService streamExecutor;
 
     // 广播器：非阻塞分发给所有客户端
@@ -351,7 +358,8 @@ public class LiveStreamService {
             doRestart();
             return;
         }
-        if (hasProducedFirstByte) {
+        // 仅在锚点有效（本进程已产出首字节）时才做漂移检测，避免残留旧进程锚点导致伪重启
+        if (hasProducedFirstByte && runningStartTimeMs != 0) {
             long expectedLive = runningStartPosMs + (System.currentTimeMillis() - runningStartTimeMs);
             if (Math.abs(estimatePlayerPosition() - expectedLive) > appProperties.getStream().getSeekThresholdMs()) {
                 restartForSeek();
@@ -387,12 +395,15 @@ public class LiveStreamService {
         runningSourceKey = target.key();
         launchStartPosMs = launchPos;
         runningStartPosMs = launchPos;
+        runningStartTimeMs = 0; // 锚点置无效：新进程产出首字节时才会重新锚定
         hasProducedFirstByte = false;
 
         double startSeconds = launchPos / 1000.0;
 
         List<String> command = new ArrayList<>();
         command.add(appProperties.getFfmpegPath());
+        command.add("-loglevel");
+        command.add("error"); // stderr 只输出错误，便于看门狗/日志诊断拉流失败
 
         // 网络源需要携带的请求头（如 Bilibili 防盗链）
         if (target.input().startsWith("http") && !target.headers().isEmpty()) {
@@ -422,13 +433,33 @@ public class LiveStreamService {
         log.info("Stream: starting transcoding for {} at {}ms", currentMusic.name(), estimatePlayerPosition());
 
         try {
+            long now = System.currentTimeMillis();
+            transcoderStartTimeMs = now;
+            lastTranscoderOutputMs = now;
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
             transcoderProcess = pb.start();
             streamExecutor.submit(() -> readLoop(transcoderProcess, target));
+            // 异步读取 stderr：ffmpeg 卡住/拉流失败的原因会打到应用日志
+            streamExecutor.submit(() -> readErrorLoop(transcoderProcess));
         } catch (IOException e) {
             log.error("Stream: failed to start ffmpeg", e);
             transcoderProcess = null;
+        }
+    }
+
+    /** 读取 ffmpeg stderr 并打日志（配合 -loglevel error，只有真正的错误会出现）。 */
+    private void readErrorLoop(Process process) {
+        try (InputStream is = process.getErrorStream();
+             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(is))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (Thread.currentThread().isInterrupted()) {
+                    break;
+                }
+                log.warn("Stream ffmpeg: {}", line);
+            }
+        } catch (IOException e) {
+            // 进程被杀或管道关闭，忽略
         }
     }
 
@@ -461,6 +492,7 @@ public class LiveStreamService {
                 if (n <= 0) {
                     continue;
                 }
+                lastTranscoderOutputMs = System.currentTimeMillis();
                 // 锚定"首个输出字节"的时刻：网络源启动期（1-5s）内的任意事件不应触发 seek 重启
                 if (!hasProducedFirstByte && process == transcoderProcess) {
                     hasProducedFirstByte = true;
@@ -529,6 +561,37 @@ public class LiveStreamService {
         } else {
             songActive.set(false);
         }
+    }
+
+    /**
+     * 转码器看门狗：检测"进程活着但没在产出"的情况（网络源拉流卡住 / 静默失败），
+     * 超时后杀掉重启——否则当前歌曲会整首静音，VRC 只能等到切歌才有声。
+     */
+    @Scheduled(fixedRate = 5000)
+    public void transcodeWatchdog() {
+        Process process = transcoderProcess;
+        if (process == null || !process.isAlive()) {
+            return; // 未运行或已退出（退出由 handleTranscoderExit 处理）
+        }
+        long now = System.currentTimeMillis();
+        if (!hasProducedFirstByte && now - transcoderStartTimeMs > TRANSCODER_STARTUP_TIMEOUT_MS) {
+            log.warn("Stream: transcoder started but produced no output in {}ms, restarting", TRANSCODER_STARTUP_TIMEOUT_MS);
+            restartForWatchdog();
+        } else if (hasProducedFirstByte && now - lastTranscoderOutputMs > TRANSCODER_STALL_TIMEOUT_MS) {
+            log.warn("Stream: transcoder stalled (no output for {}ms), restarting", TRANSCODER_STALL_TIMEOUT_MS);
+            restartForWatchdog();
+        }
+    }
+
+    /** 看门狗触发的重启，带 30s 崩溃冷却防反复。 */
+    private synchronized void restartForWatchdog() {
+        long now = System.currentTimeMillis();
+        if (now - lastCrashRestartTimeMs < CRASH_RESTART_BACKOFF_MS) {
+            log.error("Stream: transcoder keeps failing, backing off watchdog restart");
+            return;
+        }
+        lastCrashRestartTimeMs = now;
+        doRestart();
     }
 
     /**
