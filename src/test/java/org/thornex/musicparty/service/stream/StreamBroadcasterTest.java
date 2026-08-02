@@ -158,4 +158,39 @@ class StreamBroadcasterTest {
         assertTrue(Arrays.equals(client.snapshot(), new byte[0][]));
         client.close();
     }
+
+    @Test
+    void broadcastWithNoClientsStillKeepsRecentChunks() {
+        StreamBroadcaster broadcaster = new StreamBroadcaster();
+        for (int i = 1; i <= 10; i++) {
+            broadcaster.broadcast(new byte[]{(byte) i}); // 无监听者
+        }
+        // 新客户端加入即被预填最近 8 块（c3..c10），无需等待下一次广播
+        StreamClient client = new StreamClient(new RecordingSink(), "9.9.9.9", config(8), false);
+        broadcaster.addClient(client);
+        byte[][] snap = client.snapshot();
+        assertEquals(8, snap.length, "首连应预填最近 8 块音频");
+        assertArrayEquals(new byte[]{3}, snap[0], "预填应从最近缓冲的最旧块开始");
+        assertArrayEquals(new byte[]{10}, snap[7], "预填应包含最新的块");
+        client.close();
+    }
+
+    @Test
+    void flushClearsRecentChunksSoNewClientIsNotPrimedWithStaleAudio() {
+        StreamBroadcaster broadcaster = new StreamBroadcaster();
+        broadcaster.broadcast(new byte[]{1});
+        broadcaster.broadcast(new byte[]{2});
+
+        StreamClient before = new StreamClient(new RecordingSink(), "9.9.9.9", config(8), false);
+        broadcaster.addClient(before);
+        assertEquals(2, before.snapshot().length, "flush 前新客户端应拿到最近音频");
+
+        broadcaster.flushAll(); // 切歌/暂停：清空环形缓冲
+        StreamClient after = new StreamClient(new RecordingSink(), "8.8.8.8", config(8), false);
+        broadcaster.addClient(after);
+        assertEquals(0, after.snapshot().length, "flush 后新客户端不应被预填旧歌音频");
+
+        before.close();
+        after.close();
+    }
 }
