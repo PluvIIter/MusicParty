@@ -415,6 +415,12 @@ public class LiveStreamService {
         command.add("-ss");
         command.add(String.format(Locale.US, "%.2f", startSeconds));
         command.add("-re");
+        // HTTP 拉流自动重连：网易云 CDN 偶发切断连接（TLS IO error: End of file），
+        // 让 ffmpeg 自动重连继续拉取，而不是直接退出触发看门狗 15s 循环
+        command.add("-reconnect");
+        command.add("1");
+        command.add("-reconnect_delay_max");
+        command.add("5");
         command.add("-i");
         command.add(target.input());
         command.add("-vn");
@@ -618,7 +624,13 @@ public class LiveStreamService {
         }
 
         Map<String, String> headers = new HashMap<>();
-        if ("bilibili".equals(currentMusic.platform())) {
+        if ("netease".equals(currentMusic.platform())) {
+            // 网易云 CDN 对非浏览器请求（ffmpeg 默认 UA、无 Referer）有限流/丢弃行为，
+            // 实测会导致 ffmpeg TLS 连接被切断（IO error: End of file）→ 转码器无输出 → 断断续续。
+            // 带上浏览器 UA + Referer 后请求特征接近真实浏览器，显著降低被切断概率。
+            headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            headers.put("Referer", "https://music.163.com/");
+        } else if ("bilibili".equals(currentMusic.platform())) {
             headers.put("Referer", "https://www.bilibili.com/");
             headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         }
