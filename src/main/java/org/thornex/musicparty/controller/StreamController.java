@@ -48,6 +48,12 @@ public class StreamController {
         // 缺失会导致其直接拒绝播放（"无法加载音频"）。
         response.setContentType("audio/mpeg");
 
+        // 根因（2026-08-02 实测）：反向代理（nginx/openresty）默认 proxy_buffering on，
+        // 会把 app 稳定送出的 ~16KB/s 音频缓冲成 64KB/4s 大块才转给客户端 → VRC 看到 4s 数据空洞
+        // → 首连断开重试、~10s 顿卡。X-Accel-Buffering: no 是 nginx 官方标准头，令其对本响应
+        // 逐块透传（不缓冲）。直连 app 验证数据本就稳定，此头可根治首连顿卡；对无 nginx 的部署无害。
+        response.setHeader("X-Accel-Buffering", "no");
+
         String remoteAddr = getClientIp(request);
 
         // 显式长超时（默认 24h）：Tomcat 默认 async 超时仅 30s，且为固定墙钟计时、不因活跃重置，
