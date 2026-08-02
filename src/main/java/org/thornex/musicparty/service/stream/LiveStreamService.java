@@ -625,6 +625,14 @@ public class LiveStreamService {
 
         Map<String, String> headers = new HashMap<>();
         if ("netease".equals(currentMusic.platform())) {
+            // 根因：NeteaseMusicApiService.upgradeToHttps 会把 CDN 直链强制转成 https（供浏览器在
+            // https 页面上直连，避免混合内容拦截）。但实测（2026-08-02，服务器 ffmpeg 8.0.1）网易云
+            // CDN 从服务器走 HTTPS 的 TLS 极不稳定：随机 [tls] Unknown error / 握手挂起 → 转码器
+            // 零产出 → 看门狗反复重启 → 切歌卡顿。转码器是服务器侧拉流，改走 http 输入稳定可用；
+            // 浏览器侧仍用 https 的 currentMusic.url()，不受影响。
+            if (url.startsWith("https://")) {
+                url = "http://" + url.substring("https://".length());
+            }
             // 网易云 CDN 对非浏览器请求（ffmpeg 默认 UA、无 Referer）有限流/丢弃行为，
             // 实测会导致 ffmpeg TLS 连接被切断（IO error: End of file）→ 转码器无输出 → 断断续续。
             // 带上浏览器 UA + Referer 后请求特征接近真实浏览器，显著降低被切断概率。
