@@ -2,6 +2,8 @@ package org.thornex.musicparty.service.stream;
 
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -15,7 +17,19 @@ import java.util.function.Consumer;
 @Slf4j
 public class StreamBroadcaster {
 
+    /**
+     * 新客户端首连时预填的最近音频块数：约 8s。
+     * <p>
+     * 首连若从空队列开始，第一个字节要等下一个转码块（{@code -re} 实时 ≈1s 一块），
+     * ResponseBodyEmitter 的响应头也随首个 send() 延迟 ~1s 才提交，VRC 等不及会断开重试
+     * （实测首连出现 3 次 connect/disconnect、~10s 顿卡）。预填最近音频后：首字节/响应头
+     * 毫秒级到达，且客户端自带一段初始缓冲，播放器不会欠缓冲。
+     */
+    private static final int RECENT_CHUNKS_FOR_NEW_CLIENT = 8;
+
     private final Set<StreamClient> clients = ConcurrentHashMap.newKeySet();
+    /** 最近广播的音频块环形缓冲：无监听者时也持续记录，供新客户端首连立即拿到数据、立即提交响应头 */
+    private final Deque<byte[]> recentChunks = new ArrayDeque<>();
     private volatile Consumer<StreamClient> onClientRemoved;
 
     public void setOnClientRemoved(Consumer<StreamClient> onClientRemoved) {
@@ -23,6 +37,13 @@ public class StreamBroadcaster {
     }
 
     public void addClient(StreamClient client) {
+        // 先预填最近音频再加入集合：保证首连立即有数据（响应头随之立即提交），
+        // 且队列顺序为"最近→实时"，不会出现旧音频排在新音频之后的乱序。
+        synchronized (recentChunks) {
+            for (byte[] chunk : recentChunks) {
+                client.offer(chunk);
+            }
+        }
         clients.add(client);
         log.info("Stream client connected. Total: {}", clients.size());
     }
@@ -52,8 +73,17 @@ public class StreamBroadcaster {
     /**
      * 将一块音频分发给所有客户端。非阻塞：只做 {@code offer}，永不失败、永不移除（drop-oldest）。
      * 已关闭的客户端会被顺带清理。
+     * <p>
+     * 环形缓冲在<b>无监听者时也持续记录</b>（热转码 0 连接场景），这样第一个听众加入时
+     * 立即有最近音频可预填，而不必等下一个转码块。
      */
     public void broadcast(byte[] chunk) {
+        synchronized (recentChunks) {
+            recentChunks.addLast(chunk);
+            while (recentChunks.size() > RECENT_CHUNKS_FOR_NEW_CLIENT) {
+                recentChunks.pollFirst();
+            }
+        }
         if (clients.isEmpty()) {
             return;
         }
@@ -64,8 +94,11 @@ public class StreamBroadcaster {
         }
     }
 
-    /** 清空所有客户端的缓冲（暂停 / 切歌 / seek 时丢弃过期音频）。 */
+    /** 清空所有客户端的缓冲与环形缓冲（暂停 / 切歌 / seek 时丢弃过期音频，避免新听众被预填旧歌音频）。 */
     public void flushAll() {
+        synchronized (recentChunks) {
+            recentChunks.clear();
+        }
         clients.forEach(StreamClient::flush);
     }
 
