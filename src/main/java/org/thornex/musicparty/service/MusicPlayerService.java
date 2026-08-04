@@ -8,6 +8,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.*;
+import org.thornex.musicparty.dto.PrivateDjSegment;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.enums.PlayMode;
@@ -16,13 +17,16 @@ import org.thornex.musicparty.enums.TopResult;
 import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
+import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -42,6 +46,8 @@ public class MusicPlayerService {
     private final MusicQueueManager queueManager;
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
+    private final NeteaseMusicApiService neteaseMusicApiService;
+    private final PrivateDjService privateDjService;
 
     // --- Player State ---
     private final AtomicReference<PlayableMusic> currentMusic = new AtomicReference<>(null);
@@ -76,16 +82,26 @@ public class MusicPlayerService {
 
     private final AtomicLong lastControlTimestamp = new AtomicLong(0);
     private static final long GLOBAL_COOLDOWN_MS = 1000;
-    private static final long IDLE_RESET_TIMEOUT_MS = Duration.ofHours(2).toMillis();
+    private static final long IDLE_RESET_TIMEOUT_MS = Duration.ofMinutes(20).toMillis();
 
     private final AtomicLong playHeadVersion = new AtomicLong(0);
+
+    // 私人FM/DJ 播放失败指数退避（5s→10s→20s→40s→80s，封顶 80s）
+    private final AtomicLong fmDjRetryAt = new AtomicLong(0);
+    private final AtomicInteger fmDjFailCount = new AtomicInteger(0);
+    private static final long FM_DJ_MAX_BACKOFF_MS = 80_000L;
+
+    // 当前播放段是否为 DJ 语音（语音段播完不进历史记录）
+    private final AtomicBoolean currentIsVoice = new AtomicBoolean(false);
 
     public MusicPlayerService(List<IMusicApiService> apiServices, UserService userService,
                               LocalCacheService localCacheService,
                               LiveStreamService liveStreamService,
                               MusicQueueManager queueManager,
                               ApplicationEventPublisher eventPublisher,
-                              AppProperties appProperties) {
+                              AppProperties appProperties,
+                              NeteaseMusicApiService neteaseMusicApiService,
+                              PrivateDjService privateDjService) {
         this.apiServiceMap = apiServices.stream()
                 .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
@@ -94,6 +110,8 @@ public class MusicPlayerService {
         this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
+        this.neteaseMusicApiService = neteaseMusicApiService;
+        this.privateDjService = privateDjService;
         this.isFairShuffle = new AtomicBoolean(true);
         this.allowOfflineShuffle = new AtomicBoolean(false);
         this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
@@ -136,15 +154,18 @@ public class MusicPlayerService {
                     return;
                 }
 
-                Music finishedMusic = new Music(
-                        music.id(),
-                        music.name(),
-                        music.artists(),
-                        music.duration(),
-                        music.platform(),
-                        music.coverUrl()
-                );
-                queueManager.addToHistory(finishedMusic);
+                // DJ 语音段不进历史记录（spec/plan 明确要求；否则空队时会从历史取到语音并被当作真实网易云歌曲导致 NPE）
+                if (!currentIsVoice.get()) {
+                    Music finishedMusic = new Music(
+                            music.id(),
+                            music.name(),
+                            music.artists(),
+                            music.duration(),
+                            music.platform(),
+                            music.coverUrl()
+                    );
+                    queueManager.addToHistory(finishedMusic);
+                }
 
                 // 清空当前，触发下一首
                 currentMusic.set(null);
@@ -154,7 +175,8 @@ public class MusicPlayerService {
             if (userService.getOnlineUserSummaries().isEmpty() && !isStreamActive.get()) {
                 return;
             }
-            if (!queueManager.getQueueSnapshot().isEmpty()) {
+            if (System.currentTimeMillis() >= fmDjRetryAt.get()
+                    && (shouldPlayPrivateFmDj() || !queueManager.getQueueSnapshot().isEmpty())) {
                 playNextInQueue();
             }
         }
@@ -165,12 +187,25 @@ public class MusicPlayerService {
             return;
         }
 
+        // 加入队列功能：按条件同步 FM 标记（SHUFFLE + 总开关 + 加入队列且非托管 → 在队，否则移除）
+        syncFmMarker();
+
+        // 播放源决策：托管 > (队列有有效歌曲则队列) > 填充空白
+        if (shouldPlayPrivateFmDj()) {
+            playFmDjNext();
+            return;
+        }
+
         Map<String, QueueItemStatus> statusMap = buildStatusMap();
 
         Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
 
         MusicQueueItem nextItem = queueManager.pollNext(playMode.get(), isFairShuffle.get(), allowOfflineShuffle.get(), statusMap, onlineUserTokens);
 
+        if (isFmMarker(nextItem)) {
+            playFmMarkerNext(nextItem);
+            return;
+        }
         if (nextItem == null) {
             if (isLoading.get()) {
                 isLoading.set(false);
@@ -229,6 +264,140 @@ public class MusicPlayerService {
         }
     }
 
+    /** 播放源决策：托管 > (队列有有效歌曲则队列) > 填充空白 */
+    boolean shouldPlayPrivateFmDj() {
+        AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
+        if (!c.isMasterEnabled()) return false;
+        if (c.isCustodyEnabled()) return true;
+        if (c.isFillBlankEnabled()) {
+            return !queueManager.hasPlayableItems(buildStatusMap());
+        }
+        return false;
+    }
+
+    /** 从私人FM/DJ 内容提供器取下一段并播放（托管 / 填充空白共用） */
+    private void playFmDjNext() {
+        long version = playHeadVersion.incrementAndGet();
+        isLoading.set(true);
+        broadcastFullPlayerState();
+        privateDjService.nextSegment()
+                .timeout(Duration.ofSeconds(15))
+                .subscribe(
+                        segment -> {
+                            if (playHeadVersion.get() != version) return;
+                            loadFmDjPlayable(segment, version, false);
+                        },
+                        error -> handleFmDjError(version, error));
+    }
+
+    /** FM 标记被选中 → 强制取私人FM 段播放 */
+    private void playFmMarkerNext(MusicQueueItem marker) {
+        // 选中即移除（pollNext），这里立刻补回，保证"私人FM"在播放期间也常驻队列可见
+        syncFmMarker();
+        long version = playHeadVersion.incrementAndGet();
+        isLoading.set(true);
+        broadcastFullPlayerState();
+        privateDjService.nextFmSegment()
+                .timeout(Duration.ofSeconds(15))
+                .subscribe(
+                        segment -> {
+                            if (playHeadVersion.get() != version) return;
+                            loadFmDjPlayable(segment, version, true);
+                        },
+                        error -> handleFmDjError(version, error));
+    }
+
+    private boolean isFmMarker(MusicQueueItem item) {
+        return item != null && MusicQueueManager.FM_MARKER_ID.equals(item.music().platform());
+    }
+
+    /**
+     * 加入队列功能：SHUFFLE + 总开关 + 加入队列且非托管时确保 FM 标记在队；
+     * 任一条件不满足时移除标记（对称清理，防止陈旧标记在 SEQUENTIAL 等路径被选中触发 FM 播放）。
+     */
+    void syncFmMarker() {
+        AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
+        boolean shouldPresent = c.isMasterEnabled() && c.isJoinQueueEnabled()
+                && !c.isCustodyEnabled() && playMode.get() == PlayMode.SHUFFLE;
+        if (shouldPresent) {
+            queueManager.ensureFmMarker();
+        } else {
+            queueManager.removeFmMarker();
+        }
+    }
+
+    // ---- 测试辅助（仅测试使用）----
+    void setPlayModeForTest(PlayMode mode) { playMode.set(mode); }
+    void syncFmMarkerForTest() { syncFmMarker(); }
+    void playFmMarkerNextForTest(MusicQueueItem marker) { playFmMarkerNext(marker); }
+    void setPositionForTest(long positionMs) { positionAnchor.set(positionMs); }
+    void applyFmDjSegmentForTest(PlayableMusic music, PrivateDjSegment segment) { applyFmDjSegment(music, segment, false); }
+
+    private void loadFmDjPlayable(PrivateDjSegment segment, long version, boolean forceFm) {
+        Mono<PlayableMusic> playableMono;
+        if (segment instanceof PrivateDjSegment.Song s) {
+            // FM/DJ 推荐歌曲用 eapi /song/url 取直链（普通点播的 getPlayableMusic 用 /song/url/v1，
+            // 对 fee=1/8 推荐歌曲会 404），并从段信息直接构造，省一次 /song/detail。
+            playableMono = neteaseMusicApiService.getFmDjSongUrl(s.songId())
+                    .map(url -> new PlayableMusic(
+                            s.songId(), s.name(), s.artists(), s.durationMs(),
+                            "netease", url, s.coverUrl(), false));
+        } else if (segment instanceof PrivateDjSegment.Voice v) {
+            playableMono = Mono.just(new PlayableMusic(
+                    v.voiceId(), "AI DJ", List.of("私人DJ"), v.durationMs(),
+                    "netease", v.voiceUrl(), v.relatedCoverUrl(), false));
+        } else {
+            handleFmDjError(version, new IllegalStateException("Unknown segment"));
+            return;
+        }
+        playableMono.timeout(Duration.ofSeconds(10)).subscribe(
+                pm -> {
+                    if (playHeadVersion.get() != version) return;
+                    applyFmDjSegment(pm, segment, forceFm);
+                },
+                error -> handleFmDjError(version, error));
+    }
+
+    private void applyFmDjSegment(PlayableMusic music, PrivateDjSegment segment, boolean forceFm) {
+        currentLikedUserIds.clear();
+        currentLikeMarkers.clear();
+        skipVotes.clear();
+        currentMusic.set(music);
+        currentIsVoice.set(segment instanceof PrivateDjSegment.Voice);
+        currentEnqueuerId.set(MusicQueueManager.FM_MARKER_USER_TOKEN);
+        boolean djMode = "DJ".equals(appProperties.getPrivateDj().getMode());
+        currentEnqueuerName.set(forceFm ? "私人FM" : (djMode ? "私人DJ" : "私人FM"));
+        positionAnchor.set(0);
+        timestampAnchor.set(System.currentTimeMillis());
+        isPaused.set(false);
+        isLoading.set(false);
+        fmDjFailCount.set(0);
+        fmDjRetryAt.set(0);
+
+        if (segment instanceof PrivateDjSegment.Song s) {
+            queueManager.addToHistory(new Music(s.songId(), s.name(), s.artists(),
+                    s.durationMs(), "netease", s.coverUrl()));
+        }
+
+        log.info("Now playing (private {}): {}", djMode ? "DJ" : "FM", music.name());
+        broadcastFullPlayerState();
+        broadcastQueueUpdate();
+        eventPublisher.publishEvent(new SystemMessageEvent(this,
+                SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, "__FM__", music.name()));
+    }
+
+    private void handleFmDjError(long version, Throwable error) {
+        if (playHeadVersion.get() != version) return;
+        log.error("Private FM/DJ segment failed: {}", error.getMessage());
+        int fails = fmDjFailCount.incrementAndGet();
+        long backoff = Math.min(5_000L << Math.min(fails - 1, 4), FM_DJ_MAX_BACKOFF_MS);
+        fmDjRetryAt.set(System.currentTimeMillis() + backoff);
+        isLoading.set(false);
+        broadcastFullPlayerState();
+        eventPublisher.publishEvent(new SystemMessageEvent(this,
+                SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "私人FM/DJ 获取失败，稍后自动重试"));
+    }
+
     private long calculateCurrentPosition() {
         if (currentMusic.get() == null) return 0;
         if (isPaused.get()) {
@@ -247,6 +416,7 @@ public class MusicPlayerService {
 
         // 重置计时器
         currentMusic.set(music);
+        currentIsVoice.set(false);
         currentEnqueuerId.set(queueItem.enqueuedBy().token());
         currentEnqueuerName.set(queueItem.enqueuedBy().name());
 
@@ -315,7 +485,15 @@ public class MusicPlayerService {
                         appProperties.getBilibili().isEnabled(),
                         isVoteSkipEnabled.get(),
                         voteSkipThreshold.get(),
-                        voteSkipWaitTime.get()
+                        voteSkipWaitTime.get(),
+                        neteaseMusicApiService.isCookieConfigured(),
+                        new PlayerState.AppConfigSummary.PrivateDjConfigSummary(
+                                appProperties.getPrivateDj().isMasterEnabled(),
+                                appProperties.getPrivateDj().getMode(),
+                                appProperties.getPrivateDj().isFillBlankEnabled(),
+                                appProperties.getPrivateDj().isJoinQueueEnabled(),
+                                appProperties.getPrivateDj().isCustodyEnabled()
+                        )
                 )
         );
     }

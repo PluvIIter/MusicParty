@@ -7,8 +7,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.music-api")
 @Data
 public class AppProperties {
-    private NeteaseApiConfig  netease;
-    private BilibiliApiConfig bilibili;
+    private NeteaseApiConfig  netease  = new NeteaseApiConfig();
+    private BilibiliApiConfig bilibili = new BilibiliApiConfig();
     private String adminPassword;
     private String baseUrl;
     private String authorName = "ThorNex";
@@ -22,6 +22,17 @@ public class AppProperties {
     private CacheConfig cache = new CacheConfig();
     private AuthConfig auth = new AuthConfig();
     private StreamConfig stream = new StreamConfig();
+    private PrivateDjConfig privateDj = new PrivateDjConfig();
+
+    /** 私人电台/私人DJ 模块配置（仅运行时生效） */
+    @Data
+    public static class PrivateDjConfig {
+        private boolean masterEnabled = false;    // 总开关（需已配置网易云 cookie 才能开启）
+        private String mode = "FM";               // "FM" | "DJ"
+        private boolean fillBlankEnabled = false; // 填充空白
+        private boolean joinQueueEnabled = false; // 加入队列
+        private boolean custodyEnabled = false;   // 播放托管
+    }
 
     @Data
     public static class QueueConfig {

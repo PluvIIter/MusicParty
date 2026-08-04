@@ -4,14 +4,17 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.dto.AdminPrivateDjUpdateRequest;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.MusicPlayerService;
+import org.thornex.musicparty.service.PrivateDjService;
 import org.thornex.musicparty.service.api.BilibiliMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -19,20 +22,24 @@ public class AdminController {
 
     private final MusicPlayerService musicPlayerService;
     private final ChatService chatService;
+    private final AppProperties appProperties;
     private final String adminPassword;
     private final AuthController authController;
     private final NeteaseMusicApiService neteaseMusicApiService;
     private final BilibiliMusicApiService bilibiliMusicApiService;
     private final LiveStreamService liveStreamService;
+    private final PrivateDjService privateDjService;
 
-    public AdminController(MusicPlayerService musicPlayerService, ChatService chatService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService, LiveStreamService liveStreamService) {
+    public AdminController(MusicPlayerService musicPlayerService, ChatService chatService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService, LiveStreamService liveStreamService, PrivateDjService privateDjService) {
         this.musicPlayerService = musicPlayerService;
         this.chatService = chatService;
         this.adminPassword = appProperties.getAdminPassword();
+        this.appProperties = appProperties;
         this.authController = authController;
         this.neteaseMusicApiService = neteaseMusicApiService;
         this.bilibiliMusicApiService = bilibiliMusicApiService;
         this.liveStreamService = liveStreamService;
+        this.privateDjService = privateDjService;
     }
 
     private boolean isValid(String password) {
@@ -141,6 +148,8 @@ public class AdminController {
 
         if ("netease".equalsIgnoreCase(request.platform())) {
             neteaseMusicApiService.updateCookie(request.value());
+            // 首次配置 cookie 后即时广播，刷新控制面板总开关门禁（neteaseCookieConfigured 来自 PlayerState）
+            musicPlayerService.broadcastFullPlayerState();
             return ResponseEntity.ok(Map.of("message", "网易云音乐凭据已更新"));
         } else if ("bilibili".equalsIgnoreCase(request.platform())) {
             bilibiliMusicApiService.updateCookie(request.value());
@@ -165,6 +174,34 @@ public class AdminController {
 
         musicPlayerService.updateConfig(request);
         return ResponseEntity.ok(Map.of("message", "系统配置已刷新"));
+    }
+
+    @PostMapping("/private-dj")
+    public ResponseEntity<?> updatePrivateDj(@RequestHeader("X-Admin-Password") String password,
+                                             @RequestBody AdminPrivateDjUpdateRequest request) {
+        if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
+
+        if (request.masterEnabled() != null) {
+            if (request.masterEnabled() && !neteaseMusicApiService.isCookieConfigured()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "需先配置网易云 Cookie 才能开启私人电台"));
+            }
+            c.setMasterEnabled(request.masterEnabled());
+        }
+        if (request.mode() != null) {
+            if (!Set.of("FM", "DJ").contains(request.mode())) {
+                return ResponseEntity.badRequest().body(Map.of("message", "模式仅支持 FM 或 DJ"));
+            }
+            c.setMode(request.mode());
+        }
+        if (request.fillBlankEnabled() != null) c.setFillBlankEnabled(request.fillBlankEnabled());
+        if (request.joinQueueEnabled() != null) c.setJoinQueueEnabled(request.joinQueueEnabled());
+        if (request.custodyEnabled() != null) c.setCustodyEnabled(request.custodyEnabled());
+
+        privateDjService.invalidate();
+        musicPlayerService.broadcastFullPlayerState();
+        return ResponseEntity.ok(Map.of("message", "私人电台/私人DJ 配置已更新"));
     }
 
     // Keep compatibility for now or remove if sure

@@ -131,6 +131,64 @@
                 </div>
               </div>
 
+              <!-- Section: Private Radio -->
+              <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
+                <div class="p-3 bg-medical-700 text-white flex items-center gap-2">
+                  <Radio class="w-4 h-4" />
+                  <span class="text-xs font-bold uppercase tracking-widest font-mono">私人电台 / Private_Radio</span>
+                </div>
+                <div class="p-4 space-y-4">
+                  <!-- 总开关 -->
+                  <div class="flex items-center justify-between">
+                    <div class="flex flex-col">
+                      <span class="text-[10px] font-bold text-medical-800">私人FM/DJ 总开关</span>
+                      <span class="text-[8px] text-medical-400 font-mono uppercase">MASTER SWITCH</span>
+                    </div>
+                    <button @click="togglePrivateDjMaster"
+                            class="w-8 h-4 rounded-full relative transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            :class="privateDj.masterEnabled ? 'bg-accent' : 'bg-medical-300'"
+                            :disabled="!playerStore.config.neteaseCookieConfigured"
+                            :title="playerStore.config.neteaseCookieConfigured ? '' : '需先配置网易云 Cookie'">
+                      <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300"
+                           :style="{ transform: privateDj.masterEnabled ? 'translateX(16px)' : 'translateX(0)' }"></div>
+                    </button>
+                  </div>
+
+                  <!-- 模式切换 -->
+                  <div class="space-y-1">
+                    <span class="text-[9px] font-bold text-medical-400 font-mono uppercase">模式</span>
+                    <div class="grid grid-cols-2 gap-1 p-1 bg-medical-50 border border-medical-100">
+                      <button @click="setPrivateDjMode('FM')"
+                              class="py-1.5 text-[10px] font-bold transition-colors disabled:opacity-40"
+                              :class="privateDj.mode === 'FM' ? 'bg-accent text-white' : 'text-medical-500 hover:bg-medical-200'"
+                              :disabled="!privateDj.masterEnabled">私人FM</button>
+                      <button @click="setPrivateDjMode('DJ')"
+                              class="py-1.5 text-[10px] font-bold transition-colors disabled:opacity-40"
+                              :class="privateDj.mode === 'DJ' ? 'bg-accent text-white' : 'text-medical-500 hover:bg-medical-200'"
+                              :disabled="!privateDj.masterEnabled">私人DJ</button>
+                    </div>
+                    <p class="text-[8px] text-medical-400">私人DJ模式=先播语音再播歌；加入队列功能固定为私人FM</p>
+                  </div>
+
+                  <!-- 三个功能开关 -->
+                  <div class="space-y-2">
+                    <div v-for="sw in privateDjSwitches" :key="sw.field" class="flex items-center justify-between p-2 bg-medical-50 border border-medical-100">
+                      <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-medical-800">{{ sw.label }}</span>
+                        <span class="text-[8px] text-medical-400 font-mono uppercase">{{ sw.hint }}</span>
+                      </div>
+                      <button @click="togglePrivateDjSwitch(sw.field)"
+                              class="w-8 h-4 rounded-full relative transition-colors disabled:opacity-40"
+                              :class="privateDj[sw.field] ? 'bg-accent' : 'bg-medical-300'"
+                              :disabled="!privateDj.masterEnabled">
+                        <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300"
+                             :style="{ transform: privateDj[sw.field] ? 'translateX(16px)' : 'translateX(0)' }"></div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Section: System Parameters -->
               <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
                 <div class="p-3 bg-medical-700 text-white flex items-center gap-2">
@@ -254,7 +312,7 @@ import { useToast } from '../composables/useToast';
 import {
   Settings, X, Pause, Play, SkipForward, ListOrdered, Repeat1, Shuffle,
   Lock, Unlock, ShieldAlert, Save, AlertTriangle,
-  PlayCircle, Database, Globe, Sliders, ShieldCheck
+  PlayCircle, Database, Globe, Sliders, ShieldCheck, Radio
 } from 'lucide-vue-next';
 
 const adminStore = useAdminStore();
@@ -307,6 +365,51 @@ const platforms = ref([
   { id: 'netease', name: '网易云音乐', tokenName: 'COOKIE', value: '' },
   { id: 'bilibili', name: '哔哩哔哩', tokenName: 'COOKIE', value: '' }
 ]);
+
+// 私人电台/私人DJ 状态（来自 config.privateDj，服务端广播）
+const privateDj = computed(() => playerStore.config.privateDj || {
+  masterEnabled: false, mode: 'FM',
+  fillBlankEnabled: false, joinQueueEnabled: false, custodyEnabled: false
+});
+
+const privateDjSwitches = [
+  { field: 'fillBlankEnabled', label: '填充空白', hint: '队列无有效歌曲时播FM/DJ' },
+  { field: 'joinQueueEnabled', label: '加入队列', hint: '仅随机模式生效·固定私人FM' },
+  { field: 'custodyEnabled', label: '播放托管', hint: '无视队列·仅播FM/DJ' },
+];
+
+const togglePrivateDjMaster = async () => {
+  const next = !privateDj.value.masterEnabled;
+  if (next && !playerStore.config.neteaseCookieConfigured) {
+    error('需先配置网易云 Cookie');
+    return;
+  }
+  try {
+    const data = await adminApi.updatePrivateDj(adminStore.adminPassword, { masterEnabled: next });
+    success(data.message);
+  } catch (e) {
+    error('私人电台配置更新失败');
+  }
+};
+
+const setPrivateDjMode = async (mode) => {
+  try {
+    const data = await adminApi.updatePrivateDj(adminStore.adminPassword, { mode });
+    success(data.message);
+  } catch (e) {
+    error('模式切换失败');
+  }
+};
+
+const togglePrivateDjSwitch = async (field) => {
+  const update = { [field]: !privateDj.value[field] };
+  try {
+    const data = await adminApi.updatePrivateDj(adminStore.adminPassword, update);
+    success(data.message);
+  } catch (e) {
+    error('功能开关更新失败');
+  }
+};
 
 const execPlayerAction = async (action) => {
   try {
