@@ -36,6 +36,16 @@ public record PlayerState(
             boolean bilibiliEnabled,
             boolean voteSkipEnabled,
             double voteSkipThreshold,
-            int voteSkipWaitTime
-    ) {}
+            int voteSkipWaitTime,
+            boolean neteaseCookieConfigured,
+            PrivateDjConfigSummary privateDj
+    ) {
+        public record PrivateDjConfigSummary(
+                boolean masterEnabled,
+                String mode,
+                boolean fillBlankEnabled,
+                boolean joinQueueEnabled,
+                boolean custodyEnabled
+        ) {}
+    }
 }

@@ -45,5 +45,10 @@ export const adminApi = {
     // 更新系统配置
     updateConfig: (adminPwd, config) => client.post('/api/admin/config/update', config, {
         headers: { 'X-Admin-Password': adminPwd }
+    }),
+
+    // 更新私人电台/私人DJ 配置
+    updatePrivateDj: (adminPwd, update) => client.post('/api/admin/private-dj', update, {
+        headers: { 'X-Admin-Password': adminPwd }
     })
 };

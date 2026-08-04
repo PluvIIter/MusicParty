@@ -53,7 +53,15 @@ export const usePlayerStore = defineStore('player', () => {
         bilibiliEnabled: true,
         voteSkipEnabled: false,
         voteSkipThreshold: 0.5,
-        voteSkipWaitTime: 15
+        voteSkipWaitTime: 15,
+        neteaseCookieConfigured: false,
+        privateDj: {
+            masterEnabled: false,
+            mode: 'FM',
+            fillBlankEnabled: false,
+            joinQueueEnabled: false,
+            custodyEnabled: false
+        }
     });
 
     const userStore = useUserStore();

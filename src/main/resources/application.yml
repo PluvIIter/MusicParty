@@ -7,7 +7,7 @@ logging:
     # Set the root logger to INFO
     root: INFO
     # Set our application's package to DEBUG for more detailed logs during development
-    com.example.musicparty: DEBUG
+    org.thornex.musicparty: DEBUG
 
 # Custom application properties
 app:

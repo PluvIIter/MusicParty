@@ -30,6 +30,10 @@ public class MusicQueueManager {
     // 用于实现“公平随机播放”：记录上一个播放的用户
     private final AtomicReference<String> lastPlayedUserToken = new AtomicReference<>("");
 
+    /** 私人FM 合成标记项常量 */
+    public static final String FM_MARKER_ID = "netease-fm";
+    public static final String FM_MARKER_USER_TOKEN = "__FM__";
+
     // --- Public API for Queue Manipulation ---
 
     /**
@@ -200,8 +204,10 @@ public class MusicQueueManager {
         if (allowOffline) {
             pool = availableItems;
         } else {
+            // FM 合成标记（__FM__）并非真实注册用户，需无条件放行，否则"加入队列"功能在默认离线过滤下永不命中
             pool = availableItems.stream()
-                    .filter(item -> onlineUserTokens.contains(item.enqueuedBy().token()))
+                    .filter(item -> onlineUserTokens.contains(item.enqueuedBy().token())
+                            || FM_MARKER_USER_TOKEN.equals(item.enqueuedBy().token()))
                     .toList();
         }
 
@@ -241,9 +247,9 @@ public class MusicQueueManager {
             // 还是直接平权？通常公平随机下，允许离线意味着轮询不跳过离线人。
             targetUserTokens = allUserTokens;
         } else {
-            // 不允许离线：只从在线用户中轮询
+            // 不允许离线：只从在线用户中轮询；FM 合成标记（__FM__）视为一个用户无条件放行
             targetUserTokens = allUserTokens.stream()
-                    .filter(onlineUserTokens::contains)
+                    .filter(t -> onlineUserTokens.contains(t) || FM_MARKER_USER_TOKEN.equals(t))
                     .collect(Collectors.toList());
         }
 
@@ -321,6 +327,32 @@ public class MusicQueueManager {
 
     public synchronized void clearPendingQueue() {
         queue.clear();
+    }
+
+    /** 确保队列中存在一个私人FM 合成标记项（幂等） */
+    public synchronized void ensureFmMarker() {
+        if (queue.size() >= appProperties.getQueue().getMaxSize()) return;
+        if (isMusicInQueue(FM_MARKER_ID)) return;
+        Music fmMusic = new Music(FM_MARKER_ID, "私人FM", List.of("私人FM"), 0L, FM_MARKER_ID, null);
+        UserSummary fmUser = new UserSummary(FM_MARKER_USER_TOKEN, FM_MARKER_USER_TOKEN, "私人FM", false);
+        queue.addLast(new MusicQueueItem(UUID.randomUUID().toString(), fmMusic, fmUser, QueueItemStatus.READY, Priority.REGULAR));
+    }
+
+    /** 移除队列中的私人FM 合成标记项（幂等，用于总开关关闭/退出随机等对称清理） */
+    public synchronized void removeFmMarker() {
+        List<MusicQueueItem> toRemove = queue.stream()
+                .filter(item -> FM_MARKER_ID.equals(item.music().platform()))
+                .toList();
+        toRemove.forEach(queue::remove);
+    }
+
+    /** 队列中是否存在至少一个"可播放"项（READY 或 FAILED） */
+    public boolean hasPlayableItems(Map<String, QueueItemStatus> statusMap) {
+        return queue.stream()
+                .anyMatch(item -> {
+                    QueueItemStatus st = statusMap.getOrDefault(item.music().id(), QueueItemStatus.PENDING);
+                    return st == QueueItemStatus.READY || st == QueueItemStatus.FAILED;
+                });
     }
 
     public List<MusicQueueItem> getQueueSnapshot() {

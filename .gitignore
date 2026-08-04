@@ -47,3 +47,5 @@ build/
 /cloudflared-windows-amd64.exe
 # 工具生成目录
 /.snow/
+# git worktree 工作区
+/.worktrees/

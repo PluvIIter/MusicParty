@@ -25,6 +25,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     private final WebClient webClient;
     private final String baseUrl;
+    private final AppProperties.NeteaseApiConfig neteaseConfig;
     private final String initialCookieFromConfig;
     private final String quality;
     private volatile String currentCookie;
@@ -33,6 +34,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getNetease().getBaseUrl();
+        this.neteaseConfig = appProperties.getNetease();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
         this.quality = appProperties.getNetease().getQuality();
         // 初始化时先使用配置文件的内容
@@ -57,6 +59,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     public void updateCookie(String newCookie) {
         this.currentCookie = newCookie;
+        this.neteaseConfig.setCookie(newCookie);
         checkCookie(newCookie).subscribe(isValid -> {
             if (isValid) {
                 log.info("Netease cookie updated and verified successfully.");
@@ -79,7 +82,38 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private String getCookie() {
         return currentCookie != null ? currentCookie : "";
     }
-    
+
+    /** 是否已配置可用的网易云 cookie（非空且非占位符） */
+    public boolean isCookieConfigured() {
+        return StringUtils.hasText(neteaseConfig.getCookie())
+                && !"YOUR_NETEASE_COOKIE_STRING_HERE".equals(neteaseConfig.getCookie());
+    }
+
+    /** 拉取私人FM 推荐（返回原始 JSON，解析在 PrivateDjService） */
+    public Mono<JsonNode> fetchPersonalFm() {
+        ensureConfigured();
+        return webClient.get()
+                .uri(baseUrl + "/personal_fm?cookie={cookie}", getCookie())
+                .retrieve()
+                .bodyToMono(JsonNode.class);
+    }
+
+    /** 拉取私人DJ 推荐（经纬度可选，可为 null） */
+    public Mono<JsonNode> fetchAidjRcmd(Double latitude, Double longitude) {
+        ensureConfigured();
+        if (latitude != null) {
+            return webClient.get()
+                    .uri(baseUrl + "/aidj/content/rcmd?cookie={cookie}&latitude={lat}&longitude={lon}",
+                            getCookie(), latitude, longitude)
+                    .retrieve()
+                    .bodyToMono(JsonNode.class);
+        }
+        return webClient.get()
+                .uri(baseUrl + "/aidj/content/rcmd?cookie={cookie}", getCookie())
+                .retrieve()
+                .bodyToMono(JsonNode.class);
+    }
+
     // Helper to force HTTPS
     private String upgradeToHttps(String url) {
         if (url != null && url.startsWith("http://")) {
@@ -136,12 +170,8 @@ public class NeteaseMusicApiService implements IMusicApiService {
     public Mono<PlayableMusic> getPlayableMusic(String musicId) {
         ensureConfigured();
         Mono<Music> musicDetailsMono = getMusicDetails(musicId);
-        Mono<String> musicUrlMono = webClient.get()
-                .uri(baseUrl + "/song/url/v1?id={musicId}&level={quality}&cookie={cookie}", musicId, quality, getCookie())
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL", response))
-                .bodyToMono(JsonNode.class)
-                .map(jsonNode -> jsonNode.path("data").get(0).path("url").asText());
+        // 优先 xeapi /song/url/v1（支持更高音质），失败（404 或空 url）自动回退 eapi /song/url
+        Mono<String> musicUrlMono = resolveSongUrl(musicId);
 
         return Mono.zip(musicDetailsMono, musicUrlMono)
                 .map(tuple -> new PlayableMusic(
@@ -154,6 +184,61 @@ public class NeteaseMusicApiService implements IMusicApiService {
                         tuple.getT1().coverUrl(),
                         false
                 ));
+    }
+
+    /**
+     * 私人FM/DJ 推荐歌曲的播放直链（与普通点播一致的回退策略：xeapi 优先、eapi 兜底）。
+     * 从段信息直接构造，省一次 /song/detail。
+     */
+    public Mono<String> getFmDjSongUrl(String musicId) {
+        return resolveSongUrl(musicId).map(this::upgradeToHttps);
+    }
+
+    /**
+     * 歌曲直链：先尝试 xeapi /song/url/v1（高音质档位），
+     * 出错或返回空 url 时回退到 eapi /song/url（br 码率，稳定）。
+     * 部署环境的 api-enhanced 若 xeapi 公钥未就绪，/song/url/v1 会一律 404，这里自动降级不影响播放。
+     */
+    private Mono<String> resolveSongUrl(String musicId) {
+        return xeapiSongUrl(musicId)
+                .flatMap(url -> StringUtils.hasText(url)
+                        ? Mono.just(url)
+                        : Mono.error(new ApiRequestException("xeapi song url empty, falling back to eapi")))
+                .onErrorResume(e -> {
+                    log.debug("xeapi /song/url/v1 failed ({}), falling back to eapi /song/url", e.getMessage());
+                    return eapiSongUrl(musicId);
+                });
+    }
+
+    private Mono<String> xeapiSongUrl(String musicId) {
+        ensureConfigured();
+        return webClient.get()
+                .uri(baseUrl + "/song/url/v1?id={musicId}&level={quality}&cookie={cookie}", musicId, quality, getCookie())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL", response))
+                .bodyToMono(JsonNode.class)
+                .map(jsonNode -> jsonNode.path("data").get(0).path("url").asText());
+    }
+
+    private Mono<String> eapiSongUrl(String musicId) {
+        ensureConfigured();
+        return webClient.get()
+                .uri(baseUrl + "/song/url?id={musicId}&br={br}&cookie={cookie}", musicId, resolveBr(quality), getCookie())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL (eapi fallback)", response))
+                .bodyToMono(JsonNode.class)
+                .map(jsonNode -> jsonNode.path("data").get(0).path("url").asText());
+    }
+
+    /** 将 level 音质档位映射为 eapi /song/url 的 br 码率（exhigh≈320k 高音质） */
+    int resolveBr(String level) {
+        if (level == null) return 320_000;
+        return switch (level.toLowerCase()) {
+            case "standard" -> 128_000;
+            case "higher" -> 192_000;
+            case "lossless", "hires", "jymaster", "sky", "jyeffect" -> 999_000;
+            default -> 320_000;
+        };
     }
 
     private Mono<Music> getMusicDetails(String musicId) {
