@@ -181,7 +181,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                         tuple.getT1().duration(),
                         tuple.getT1().platform(),
                         upgradeToHttps(tuple.getT2()),
-                        tuple.getT1().coverUrl(),
+                        upgradeToHttps(tuple.getT1().coverUrl()),
                         false
                 ));
     }

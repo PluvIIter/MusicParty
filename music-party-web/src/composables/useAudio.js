@@ -8,6 +8,7 @@ import { WS_DEST } from '../constants/api';
 const ENDED_RESYNC_DELAY = 2500;       // 当前曲播完但服务器未推新曲时，等待多久后主动重同步
 const STALL_TIMEOUT = 8000;            // 持续缓冲超时（ms），超时后重载 + 重同步
 const POSITION_STATE_INTERVAL = 1000;  // setPositionState 节流间隔（ms）
+const SHELL_NOTIFY_INTERVAL = 15000;   // 安卓原生壳通知栏进度刷新间隔（ms）
 
 export function useAudio(audioRef, playerStore) {
     const localProgress = ref(0);
@@ -20,6 +21,7 @@ export function useAudio(audioRef, playerStore) {
     let endedTrackId = null;
     let stallTimer = null;
     let lastPositionStateAt = 0;
+    let lastShellNotifyAt = 0;
 
     // 请求唤醒锁 (防止 WebSocket 断连)
     const requestWakeLock = async () => {
@@ -67,6 +69,21 @@ export function useAudio(audioRef, playerStore) {
         }
     };
 
+    // 安卓原生壳：把播放状态推给通知栏媒体控制器（window.AndroidBridge 由原生注入）
+    const notifyAndroidShell = () => {
+        const bridge = typeof window !== 'undefined' ? window.AndroidBridge : null;
+        if (!bridge?.updateMedia || !playerStore.nowPlaying) return;
+        const music = playerStore.nowPlaying.music;
+        bridge.updateMedia(JSON.stringify({
+            title: music.name,
+            artist: music.artists.join(' / '),
+            position: Math.round(playerStore.localProgress / 1000),
+            duration: Math.round((music.duration || 0) / 1000),
+            paused: playerStore.isPaused,
+            coverUrl: music.coverUrl || '',
+        }));
+    };
+
     // 尝试播放并处理浏览器拦截
     const safePlay = async () => {
         if (!audioRef.value || !playerStore.nowPlaying) return;
@@ -110,6 +127,7 @@ export function useAudio(audioRef, playerStore) {
             safePlay();
             navigator.mediaSession.playbackState = 'playing';
         }
+        notifyAndroidShell();
     });
 
     // === 3. 监听切歌 ===
@@ -131,6 +149,7 @@ export function useAudio(audioRef, playerStore) {
         retryCount.value = 0;
         isErrorState.value = false;
         updateMediaSession();
+        notifyAndroidShell();
     });
 
     // === 4. 错误重试机制 ===
@@ -216,6 +235,14 @@ export function useAudio(audioRef, playerStore) {
         document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('online', handleNetworkChange);
 
+        // 注册通知栏媒体控制的 Web 端动作（由原生 evaluateJavascript 调用）
+        if (typeof window !== 'undefined') {
+            window.MusicPartyControl = {
+                togglePause: () => playerStore.togglePause(),
+                next: () => playerStore.playNext(),
+            };
+        }
+
         syncTimer = setInterval(() => {
             if (!playerStore.nowPlaying) {
                 localProgress.value = 0;
@@ -265,10 +292,19 @@ export function useAudio(audioRef, playerStore) {
                     // 某些状态（如无有效时长）会抛异常，忽略
                 }
             }
+
+            // 5. 安卓原生壳：定期刷新通知栏进度（WebView 无原生 MediaSession，靠轮询补偿）
+            if (now - lastShellNotifyAt >= SHELL_NOTIFY_INTERVAL) {
+                lastShellNotifyAt = now;
+                notifyAndroidShell();
+            }
         }, 200);
     });
 
     onUnmounted(() => {
+        if (typeof window !== 'undefined') {
+            delete window.MusicPartyControl;
+        }
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.removeEventListener('online', handleNetworkChange);
         clearInterval(syncTimer);
