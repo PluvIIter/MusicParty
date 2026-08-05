@@ -1,23 +1,15 @@
 <template>
   <div class="hidden">
-    <!-- 主播放器 -->
     <audio
         ref="audioRef"
         :src="audioSrc"
         @error="handleError"
-        @waiting="player.isBuffering = true"
-        @playing="player.isBuffering = false"
+        @waiting="onWaiting"
+        @playing="onPlaying"
         @canplay="onCanPlay"
         @seeked="onCanPlay"
+        @ended="handleEnded"
         referrerpolicy="no-referrer"
-    ></audio>
-
-    <!-- 极弱音轨保活 (Keep-Alive) -->
-    <audio
-        v-if="ui.keepAliveEnabled"
-        ref="aliveAudioRef"
-        :src="ALIVE_WAV"
-        loop
     ></audio>
   </div>
 </template>
@@ -31,20 +23,32 @@ import { useAudio } from '../composables/useAudio';
 const player = usePlayerStore();
 const ui = useUiStore();
 const audioRef = ref(null);
-const aliveAudioRef = ref(null);
-
-// 极弱底噪 WAV (人耳难以察觉)
-const ALIVE_WAV = 'data:audio/wav;base64,UklGRjIAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YRAAAAAAAAAAAAAAAAD//w==';
 
 const {
   localProgress,
   isBuffering,
   isErrorState,
   handleError,
-  checkAutoPlay
+  checkAutoPlay,
+  handleEnded,
+  onWaiting,
+  onPlaying
 } = useAudio(audioRef, player);
 
-const audioSrc = computed(() => player.nowPlaying?.music.url || '');
+// 记住最后一首有效 URL：服务器拉取下一首（nowPlaying=null）的间隙不硬断
+const lastGoodUrl = ref('');
+watch(() => player.nowPlaying?.music?.url, (url) => {
+  if (url) lastGoodUrl.value = url;
+});
+
+const audioSrc = computed(() => {
+  const current = player.nowPlaying?.music?.url;
+  if (current) return current;
+  // 服务器仍在加载下一首：继续播上一首，避免间隙中断
+  if (player.isLoading && lastGoodUrl.value) return lastGoodUrl.value;
+  // 服务器空闲：清空 src，音频自然停止
+  return '';
+});
 
 // 同步状态到 playerStore
 watch(localProgress, (val) => {
@@ -55,15 +59,6 @@ watch(isBuffering, (val) => {
 });
 watch(isErrorState, (val) => {
   player.isErrorState = val;
-});
-
-// 监听播放状态以维持保活音轨
-watch(() => player.isPaused, (paused) => {
-  if (!paused && ui.keepAliveEnabled) {
-    aliveAudioRef.value?.play().catch(() => {});
-  } else {
-    aliveAudioRef.value?.pause();
-  }
 });
 
 // 监听音量
@@ -81,13 +76,6 @@ const onCanPlay = () => {
 onMounted(() => {
   if (audioRef.value) {
     audioRef.value.volume = ui.volume;
-  }
-  // 初始尝试播放保活音轨
-  if (!player.isPaused && ui.keepAliveEnabled) {
-    if (aliveAudioRef.value) {
-      aliveAudioRef.value.volume = 0.001;
-      aliveAudioRef.value.play().catch(() => {});
-    }
   }
 });
 </script>

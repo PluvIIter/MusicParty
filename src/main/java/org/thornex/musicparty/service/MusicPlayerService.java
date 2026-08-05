@@ -332,6 +332,7 @@ public class MusicPlayerService {
     void playFmMarkerNextForTest(MusicQueueItem marker) { playFmMarkerNext(marker); }
     void setPositionForTest(long positionMs) { positionAnchor.set(positionMs); }
     void applyFmDjSegmentForTest(PlayableMusic music, PrivateDjSegment segment) { applyFmDjSegment(music, segment, false); }
+    void setPausedForTest(boolean paused) { isPaused.set(paused); }
 
     private void loadFmDjPlayable(PrivateDjSegment segment, long version, boolean forceFm) {
         Mono<PlayableMusic> playableMono;
@@ -1073,6 +1074,18 @@ public class MusicPlayerService {
                 broadcastFullPlayerState();
             }
         }
+    }
+
+    /**
+     * 周期状态广播（心跳）：让所有客户端周期性重锚播放进度，主动防漂移，
+     * 同时让客户端能通过"长时间收不到广播"识别假连接。空闲（无曲且暂停）时跳过。
+     */
+    @Scheduled(fixedRateString = "${app.music-api.player.sync-broadcast-interval-ms:5000}")
+    public void broadcastSyncHeartbeat() {
+        if (currentMusic.get() == null && isPaused.get()) {
+            return;
+        }
+        broadcastFullPlayerState();
     }
 
     // --- Broadcasting and Helper Methods ---

@@ -1,16 +1,25 @@
 // src/composables/useAudio.js
 
 import { ref, onMounted, onUnmounted, watch } from 'vue';
-import { useToast } from './useToast';
+import { socketService } from '../services/socket';
+import { WS_DEST } from '../constants/api';
+
+// 阈值常量
+const ENDED_RESYNC_DELAY = 2500;       // 当前曲播完但服务器未推新曲时，等待多久后主动重同步
+const STALL_TIMEOUT = 8000;            // 持续缓冲超时（ms），超时后重载 + 重同步
+const POSITION_STATE_INTERVAL = 1000;  // setPositionState 节流间隔（ms）
 
 export function useAudio(audioRef, playerStore) {
     const localProgress = ref(0);
     const isBuffering = ref(false);
     const retryCount = ref(0);
     const isErrorState = ref(false);
-    const { info, error, success } = useToast();
     let syncTimer = null;
     let wakeLock = null;
+    let endedTimer = null;
+    let endedTrackId = null;
+    let stallTimer = null;
+    let lastPositionStateAt = 0;
 
     // 请求唤醒锁 (防止 WebSocket 断连)
     const requestWakeLock = async () => {
@@ -48,7 +57,6 @@ export function useAudio(audioRef, playerStore) {
         });
 
         // 2. 注册控制事件 (关键：告诉系统我们支持后台控制)
-        // 这样点击锁屏的下一首/暂停，会通过 WebSocket 发送给服务器
         try {
             navigator.mediaSession.setActionHandler('play', () => playerStore.togglePause());
             navigator.mediaSession.setActionHandler('pause', () => playerStore.togglePause());
@@ -69,7 +77,6 @@ export function useAudio(audioRef, playerStore) {
             updateMediaSession();
             requestWakeLock();
         } catch (e) {
-            // NotAllowedError 是浏览器由于缺乏用户交互而拦截
             if (e.name === 'NotAllowedError') {
                 console.warn("Autoplay blocked. User interaction required.");
             } else if (e.name !== 'AbortError') {
@@ -79,10 +86,11 @@ export function useAudio(audioRef, playerStore) {
     };
 
     // === 1. 监听资源加载 (canplay) ===
-    // 这是修复你问题的关键：音频加载就绪后，主动判断是否需要播放
     const checkAutoPlay = () => {
         if (!playerStore.nowPlaying) return;
         isBuffering.value = false;
+        clearTimeout(endedTimer);   // 新曲已到位，取消 ended 重同步等待
+        clearTimeout(stallTimer);
 
         if (playerStore.isPaused) {
             audioRef.value.pause();
@@ -106,6 +114,10 @@ export function useAudio(audioRef, playerStore) {
 
     // === 3. 监听切歌 ===
     watch(() => playerStore.nowPlaying?.music?.id, () => {
+        // 服务器已推新曲（或清空），取消 ended 重同步等待
+        clearTimeout(endedTimer);
+        endedTrackId = null;
+
         // 更新媒体中心信息 (锁屏显示)
         if ('mediaSession' in navigator && playerStore.nowPlaying) {
             const music = playerStore.nowPlaying.music;
@@ -118,8 +130,6 @@ export function useAudio(audioRef, playerStore) {
 
         retryCount.value = 0;
         isErrorState.value = false;
-        // 切歌会导致 src 变化，自动触发 load -> canplay -> checkAutoPlay
-        // 所以这里不需要手动 call play
         updateMediaSession();
     });
 
@@ -127,7 +137,6 @@ export function useAudio(audioRef, playerStore) {
     const handleError = () => {
         if (!playerStore.nowPlaying?.music?.url) return;
 
-        // 忽略由切换 src 导致的中断错误
         if (audioRef.value && audioRef.value.error && audioRef.value.error.code === 20) return;
 
         isBuffering.value = false;
@@ -141,34 +150,68 @@ export function useAudio(audioRef, playerStore) {
         setTimeout(() => {
             if (audioRef.value) {
                 audioRef.value.load();
-                // load 完会触发 canplay，进而触发 checkAutoPlay
             }
         }, 1500);
     };
 
+    // === 5. 音频自然结束兜底：服务器没推新曲就主动重同步 ===
+    const handleEnded = () => {
+        if (playerStore.isPaused) return; // 服务器暂停态：保持暂停，不动作
+
+        endedTrackId = playerStore.nowPlaying?.music?.id ?? null;
+        clearTimeout(endedTimer);
+        endedTimer = setTimeout(() => {
+            const currentId = playerStore.nowPlaying?.music?.id ?? null;
+            // 超时仍停留在同一曲（或无曲目）→ 服务器广播丢失/连接异常
+            if (currentId === endedTrackId) {
+                console.warn('[Ended] No next track pushed, forcing resync...');
+                playerStore.tryReconnect();
+                socketService.send(WS_DEST.RESYNC);
+            }
+        }, ENDED_RESYNC_DELAY);
+    };
+
+    // === 6. 持续缓冲看门狗：不再无限干等 ===
+    const onWaiting = () => {
+        isBuffering.value = true;
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => {
+            if (audioRef.value && !playerStore.isPaused) {
+                console.warn('[Stall] Buffer timeout, reloading audio...');
+                audioRef.value.load();
+                playerStore.tryReconnect();
+                socketService.send(WS_DEST.RESYNC);
+            }
+        }, STALL_TIMEOUT);
+    };
+
+    const onPlaying = () => {
+        isBuffering.value = false;
+        clearTimeout(stallTimer);
+    };
+
     // 页面可见性变化监听
-    // 当重新回到前台时，如果发现 WebSocket 断了，应该自动重连
-    // 这里主要处理 Wake Lock 的重新获取以及 Socket 的快速恢复
     const handleVisibilityChange = async () => {
         if (document.visibilityState === 'visible') {
-            // 1. 尝试恢复 Wake Lock
             if (!playerStore.isPaused) {
                 await requestWakeLock();
             }
-            // 2. 检查连接状态，必要时重连
             playerStore.tryReconnect();
+            // 回到前台无条件重同步，立即对齐服务器进度
+            socketService.send(WS_DEST.RESYNC);
         }
     };
-    
+
     // 网络状态监听
     const handleNetworkChange = () => {
         if (navigator.onLine) {
             console.log('[Network] Back online, checking socket...');
             playerStore.tryReconnect();
+            socketService.send(WS_DEST.RESYNC);
         }
     };
 
-    // === 5. 进度条同步 ===
+    // === 7. 进度条同步 ===
     onMounted(() => {
         document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('online', handleNetworkChange);
@@ -183,8 +226,6 @@ export function useAudio(audioRef, playerStore) {
             const targetTime = playerStore.getCurrentProgress();
 
             // 2. 更新 UI 绑定值 (localProgress)
-            // 如果音频正在播放，直接用 audio.currentTime 作为 UI 显示源，这样最平滑
-            // 如果没在播（缓冲中/暂停），用 targetTime
             if (audioRef.value && !audioRef.value.paused) {
                 localProgress.value = audioRef.value.currentTime * 1000;
             } else {
@@ -193,25 +234,35 @@ export function useAudio(audioRef, playerStore) {
 
             // 3. 强行同步逻辑 (纠偏)
             if (audioRef.value && !isBuffering.value && !isErrorState.value) {
-                // 如果是暂停状态，强制对齐
                 if (playerStore.isPaused) {
-                    // 避免重复赋值导致杂音
                     if (Math.abs(audioRef.value.currentTime * 1000 - targetTime) > 200) {
                         audioRef.value.currentTime = targetTime / 1000;
                     }
-                }
-                // 如果是播放状态，只有偏差过大才对齐
-                else {
+                } else {
                     const domTime = audioRef.value.currentTime * 1000;
-                    // 动态调整阈值：前台 2s，后台 10s (避免后台节流导致的频繁 seek 卡顿)
                     const threshold = document.hidden ? 10000 : 2000;
-                    
                     if (Math.abs(domTime - targetTime) > threshold) {
                         if (audioRef.value.readyState >= 2) {
                             console.log(`[Sync] Correcting time (${document.hidden ? 'bg' : 'fg'}): ${domTime} -> ${targetTime}`);
                             audioRef.value.currentTime = targetTime / 1000;
                         }
                     }
+                }
+            }
+
+            // 4. 锁屏/通知栏真实进度（节流，避免每 200ms 都调用）
+            const now = Date.now();
+            if (now - lastPositionStateAt >= POSITION_STATE_INTERVAL
+                && 'mediaSession' in navigator && navigator.mediaSession.setPositionState) {
+                lastPositionStateAt = now;
+                try {
+                    navigator.mediaSession.setPositionState({
+                        duration: playerStore.nowPlaying.music.duration / 1000,
+                        playbackRate: playerStore.isPaused ? 0 : 1,
+                        position: playerStore.localProgress / 1000,
+                    });
+                } catch (e) {
+                    // 某些状态（如无有效时长）会抛异常，忽略
                 }
             }
         }, 200);
@@ -221,6 +272,8 @@ export function useAudio(audioRef, playerStore) {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.removeEventListener('online', handleNetworkChange);
         clearInterval(syncTimer);
+        clearTimeout(endedTimer);
+        clearTimeout(stallTimer);
         releaseWakeLock();
     });
 
@@ -230,6 +283,9 @@ export function useAudio(audioRef, playerStore) {
         isErrorState,
         retryCount,
         handleError,
-        checkAutoPlay
+        checkAutoPlay,
+        handleEnded,
+        onWaiting,
+        onPlaying
     };
 }
