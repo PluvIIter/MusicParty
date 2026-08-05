@@ -11,12 +11,14 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-// 注意：androidx.media:media 兼容库的媒体类都在 android.support.v4.media.* 命名空间
+// androidx.media:media 兼容库是「混合包名」：
+//   MediaMetadataCompat / MediaSessionCompat / PlaybackStateCompat → android.support.v4.media.*
+//   MediaStyle / MediaButtonReceiver                             → androidx.media.*
 import android.support.v4.media.MediaMetadataCompat
-import android.support.v4.media.app.NotificationCompat.MediaStyle
-import android.support.v4.media.session.MediaButtonReceiver
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import androidx.media.app.NotificationCompat.MediaStyle
+import androidx.media.session.MediaButtonReceiver
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -123,10 +125,13 @@ object MediaSessionManager {
                 val bmp = BitmapFactory.decodeStream(stream)
                 if (bmp != null) {
                     val s = session ?: return@Thread
-                    val meta = s.controller.metadata?.buildUpon()
-                        ?.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bmp)
-                        ?.build()
-                    if (meta != null) s.setMetadata(meta)
+                    // MediaMetadataCompat 没有 buildUpon()：用拷贝构造 Builder(旧元数据)
+                    val cur = s.controller.metadata
+                    val meta = (if (cur != null) MediaMetadataCompat.Builder(cur)
+                                else MediaMetadataCompat.Builder())
+                        .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bmp)
+                        .build()
+                    s.setMetadata(meta)
                     notification = buildNotification(title, artist, paused, bmp)
                     NotificationManagerCompat.from(appContext).notify(NOTIF_ID, notification!!)
                 }
