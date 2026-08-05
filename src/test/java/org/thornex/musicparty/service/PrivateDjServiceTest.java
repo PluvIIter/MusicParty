@@ -57,7 +57,8 @@ class PrivateDjServiceTest {
         assertEquals("1981999919", ((PrivateDjSegment.Song) s1).songId());
         assertEquals("相爱就是说了100次对不起", ((PrivateDjSegment.Song) s1).name());
         assertEquals(264727L, ((PrivateDjSegment.Song) s1).durationMs());
-        assertEquals("http://x/pic.jpg", ((PrivateDjSegment.Song) s1).coverUrl());
+        // 解析时统一升级为 HTTPS（防止 HTTPS 站点混合内容拦截封面）
+        assertEquals("https://x/pic.jpg", ((PrivateDjSegment.Song) s1).coverUrl());
 
         PrivateDjSegment s2 = service.nextSegment().block();
         assertEquals("22425068", ((PrivateDjSegment.Song) s2).songId());
@@ -75,10 +76,10 @@ class PrivateDjServiceTest {
         when(api.fetchAidjRcmd(nullable(Double.class), nullable(Double.class))).thenReturn(Mono.just(parse(DJ_JSON)));
         PrivateDjSegment v1 = service.nextDjSegment().block();
         assertInstanceOf(PrivateDjSegment.Voice.class, v1);
-        assertEquals("http://aidj/x.mp3", ((PrivateDjSegment.Voice) v1).voiceUrl());
+        assertEquals("https://aidj/x.mp3", ((PrivateDjSegment.Voice) v1).voiceUrl());
         assertEquals(15100L, ((PrivateDjSegment.Voice) v1).durationMs());
         assertEquals("3597639", ((PrivateDjSegment.Voice) v1).relatedSongId());
-        assertEquals("http://cover/run.jpg", ((PrivateDjSegment.Voice) v1).relatedCoverUrl());
+        assertEquals("https://cover/run.jpg", ((PrivateDjSegment.Voice) v1).relatedCoverUrl());
 
         PrivateDjSegment s1 = service.nextDjSegment().block();
         assertInstanceOf(PrivateDjSegment.Song.class, s1);
@@ -89,7 +90,7 @@ class PrivateDjServiceTest {
 
         PrivateDjSegment v2 = service.nextDjSegment().block();
         assertInstanceOf(PrivateDjSegment.Voice.class, v2);
-        assertEquals("http://aidj/y.mp3", ((PrivateDjSegment.Voice) v2).voiceUrl());
+        assertEquals("https://aidj/y.mp3", ((PrivateDjSegment.Voice) v2).voiceUrl());
     }
 
     @Test

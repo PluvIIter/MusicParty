@@ -91,7 +91,7 @@ public class PrivateDjService {
                 JsonNode sd = r.path("value").path("songData");
                 if (!sd.isMissingNode() && sd.has("id")) {
                     String cover = sd.path("album").path("picUrl").asText("");
-                    songCovers.put(String.valueOf(sd.path("id").asLong()), cover.isEmpty() ? null : cover);
+                    songCovers.put(String.valueOf(sd.path("id").asLong()), cover.isEmpty() ? null : toHttps(cover));
                 }
             }
         }
@@ -100,7 +100,7 @@ public class PrivateDjService {
             String type = r.path("type").asText();
             if ("audio".equals(type)) {
                 JsonNode a = r.path("value").path("audioList").path(0);
-                String url = a.path("audioUrl").asText();
+                String url = toHttps(a.path("audioUrl").asText());
                 if (!url.isEmpty()) {
                     long durMs = Math.round(a.path("duration").asDouble() * 1000);
                     String related = null;
@@ -129,7 +129,15 @@ public class PrivateDjService {
                 s.path("name").asText(),
                 artists,
                 s.path("duration").asLong(),
-                s.path("album").path("picUrl").asText()
+                toHttps(s.path("album").path("picUrl").asText())
         );
+    }
+
+    /** 网易云 CDN 资源统一升级为 HTTPS，避免 HTTPS 站点上的混合内容被拦截（音乐直链与封面同理） */
+    private static String toHttps(String url) {
+        if (url != null && url.startsWith("http://")) {
+            return url.replace("http://", "https://");
+        }
+        return url;
     }
 }
