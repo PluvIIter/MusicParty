@@ -33,7 +33,7 @@
 
         <!-- 媒体按钮路由：通知栏 播放/暂停/下一首 → MediaSession 回调 -->
         <receiver
-            android:name="androidx.media.session.MediaButtonReceiver"
+            android:name="android.support.v4.media.session.MediaButtonReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
