@@ -202,7 +202,6 @@ import { ref, watch, nextTick, computed } from 'vue';
 import { useChatStore } from '../stores/chat';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
-import { useUiStore } from '../stores/ui';
 import { useToast } from '../composables/useToast';
 import { useDraggable, useWindowSize, useEventListener, clamp } from '@vueuse/core';
 import { MessageSquare, X, Send, Terminal, Zap, Loader2 } from 'lucide-vue-next';
@@ -211,7 +210,6 @@ import dayjs from 'dayjs';
 const chatStore = useChatStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
-const uiStore = useUiStore();
 const { success, error } = useToast();
 const { width: windowWidth, height: windowHeight } = useWindowSize();
 
@@ -405,14 +403,6 @@ const send = () => {
   if (userStore.isGuest) {
     error('请先设置名字后再参与聊天');
     userStore.showNameModal = true;
-    return;
-  }
-
-  // 拦截本地保活指令
-  if (text === '//alive') {
-    uiStore.toggleKeepAlive();
-    success(`Keep-Alive ${uiStore.keepAliveEnabled ? 'ENABLED' : 'DISABLED'}. Please refresh to apply.`);
-    inputContent.value = '';
     return;
   }
 
