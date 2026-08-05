@@ -11,11 +11,12 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.media.MediaMetadataCompat
-import androidx.media.app.NotificationCompat.MediaStyle
-import androidx.media.session.MediaButtonReceiver
-import androidx.media.session.MediaSessionCompat
-import androidx.media.session.PlaybackStateCompat
+// 注意：androidx.media:media 兼容库的媒体类都在 android.support.v4.media.* 命名空间
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.app.NotificationCompat.MediaStyle
+import android.support.v4.media.session.MediaButtonReceiver
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
