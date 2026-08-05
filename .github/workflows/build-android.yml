@@ -11,6 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # 发布 GitHub Release 需要
+    # secrets 不能直接在 if 里用，提到 job 级 env；未配置时为空串
+    env:
+      KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,13 +49,9 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
       # ---------- Tag 时：签名 release APK 并发布到 GitHub Release ----------
+      # 未配置签名 secrets 时，以下步骤全部跳过（env.KS_B64 为空）
       - name: Sign release APK
-        if: github.ref_type == 'tag' && secrets.ANDROID_KEYSTORE_B64 != ''
-        env:
-          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        if: github.ref_type == 'tag' && env.KS_B64 != ''
         run: |
           echo "$KS_B64" | base64 -d > keystore.jks
           apksigner sign --ks keystore.jks \
@@ -58,14 +60,14 @@ jobs:
             android/app/build/outputs/apk/release/app-release-unsigned.apk
 
       - name: Upload signed APK (artifact)
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && env.KS_B64 != ''
         uses: actions/upload-artifact@v4
         with:
           name: music-party-release
           path: music-party-signed.apk
 
       - name: Publish to GitHub Release
-        if: github.ref_type == 'tag' && secrets.ANDROID_KEYSTORE_B64 != ''
+        if: github.ref_type == 'tag' && env.KS_B64 != ''
         uses: softprops/action-gh-release@v2
         with:
           files: music-party-signed.apk
