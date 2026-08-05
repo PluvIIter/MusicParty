@@ -49,6 +49,7 @@ public class AppProperties {
         private boolean voteSkipEnabled = false;
         private double voteSkipThreshold = 0.5;
         private int voteSkipWaitTime = 15;
+        private long syncBroadcastIntervalMs = 5000; // 周期状态广播间隔（ms），修复移动端后台同步漂移
     }
 
     @Data
