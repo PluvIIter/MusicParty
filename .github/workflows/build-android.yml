@@ -1,0 +1,65 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ dev ]
+    tags: [ 'v*.*.*' ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages (compileSdk 35)
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;34.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle assembleDebug
+
+      # 正式发布（release 签名）——需要先在 Secrets 配置 4 个变量，再放开此步：
+      # ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASS / ANDROID_KEY_ALIAS / ANDROID_KEY_PASS
+      # - name: Build release APK
+      #   working-directory: android
+      #   run: gradle assembleRelease
+      #
+      # - name: Sign release APK
+      #   if: github.ref_type == 'tag'
+      #   env:
+      #     KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      #     KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+      #     KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      #     KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+      #   run: |
+      #     echo "$KS_B64" | base64 -d > keystore.jks
+      #     apksigner sign --ks keystore.jks \
+      #       --ks-pass env:KS_PASS --key-pass env:KEY_PASS --ks-key-alias "$KEY_ALIAS" \
+      #       --out music-party-signed.apk \
+      #       android/app/build/outputs/apk/release/app-release-unsigned.apk
+      # - uses: actions/upload-artifact@v4
+      #   with:
+      #     name: music-party-release
+      #     path: music-party-signed.apk
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-party-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
