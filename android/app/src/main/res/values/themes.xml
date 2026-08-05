@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 全屏无 ActionBar 的深色壳，黑底与播放页融合 -->
+    <!-- 深色壳，黑底与播放页融合 -->
     <style name="Theme.MusicParty" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
+        <!-- Android 15 默认强制 edge-to-edge（内容顶到状态栏），此处退出该行为，
+             让 WebView 不绘制到系统栏下方。旧版本此属性被忽略，原本就不绘制。 -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
     </style>
 </resources>
