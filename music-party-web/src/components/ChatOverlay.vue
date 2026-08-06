@@ -396,6 +396,10 @@ const handleScroll = (e) => {
 };
 
 // === 7. 交互动作 ===
+// 标记：已发送消息，等这条消息真正渲染（服务器回声）后强制滚到底部，
+// 避免固定 100ms 提前滚动导致停在旧位置
+let pendingScrollToBottom = false;
+
 const send = () => {
   const text = inputContent.value.trim();
   if (!text) return;
@@ -408,8 +412,7 @@ const send = () => {
 
   playerStore.sendChatMessage(text);
   inputContent.value = '';
-  // 发送后强制滚到底部
-  setTimeout(() => scrollToBottom(true), 100);
+  pendingScrollToBottom = true;
 };
 
 // 监听：打开窗口或切换 Tab 时滚到底部
@@ -425,7 +428,13 @@ watch(() => processedMessages.value.length, (newLen, oldLen) => {
   // 如果是增量追加(正常聊天)，且在底部，则自动滚
   // 如果是历史加载(头部追加)，则不由这里处理(由handleScroll处理)
   if (newLen > oldLen) {
-    scrollToBottom(false);
+    if (pendingScrollToBottom) {
+      // 刚发过消息：强制滚到自己刚发送的那条
+      pendingScrollToBottom = false;
+      scrollToBottom(true);
+    } else {
+      scrollToBottom(false);
+    }
   }
 });
 </script>
