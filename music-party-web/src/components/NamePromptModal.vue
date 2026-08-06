@@ -19,7 +19,7 @@
           autofocus
       />
       
-      <div v-if="errorMsg" class="text-xs text-red-500 font-bold mb-4 animate-pulse">{{ errorMsg }}</div>
+      <div v-if="errorMsg || userStore.renameError" class="text-xs text-red-500 font-bold mb-4 animate-pulse">{{ errorMsg || userStore.renameError }}</div>
 
       <div class="flex gap-2">
         <button @click="userStore.showNameModal = false" class="flex-1 py-3 text-xs font-bold text-medical-400 hover:bg-medical-50">
@@ -43,9 +43,13 @@ const playerStore = usePlayerStore();
 const inputName = ref('');
 const errorMsg = ref('');
 
-watch(inputName, () => errorMsg.value = '');
+watch(inputName, () => {
+  errorMsg.value = '';
+  userStore.renameError = '';
+});
 
 const confirm = () => {
+  userStore.renameError = '';
   const name = inputName.value.trim();
   if(!name) return;
 
@@ -53,7 +57,7 @@ const confirm = () => {
     errorMsg.value = '不能使用“游客”作为正式名字';
     return;
   }
-  
+
   // 调用 renameUser，等待后端 socket 确认后关闭
   playerStore.renameUser(name);
 };
