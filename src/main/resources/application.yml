@@ -29,6 +29,7 @@ app:
       # 不填仅 B站源不可用，不影响其他音乐源。
       cookie: ${BILIBILI_COOKIE:}
       enabled: ${BILIBILI_ENABLED:true}
+      max-duration-minutes: ${BILIBILI_MAX_DURATION_MINUTES:10}
     queue:
       max-size: ${QUEUE_MAX_SIZE:1000}
       history-size: ${QUEUE_HISTORY_SIZE:50}

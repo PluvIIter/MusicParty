@@ -484,6 +484,7 @@ public class MusicPlayerService {
                         appProperties.getChat().getMaxMessageLength(),
                         appProperties.getNetease().isEnabled(),
                         appProperties.getBilibili().isEnabled(),
+                        appProperties.getBilibili().getMaxDurationMinutes(),
                         isVoteSkipEnabled.get(),
                         voteSkipThreshold.get(),
                         voteSkipWaitTime.get(),
@@ -858,7 +859,11 @@ public class MusicPlayerService {
             appProperties.getBilibili().setEnabled(request.bilibiliEnabled());
             logMsg.append("BilibiliEnabled=").append(request.bilibiliEnabled()).append(" ");
         }
-        
+        if (request.bilibiliMaxDurationMinutes() != null) {
+            appProperties.getBilibili().setMaxDurationMinutes(request.bilibiliMaxDurationMinutes());
+            logMsg.append("BilibiliMaxDurationMinutes=").append(request.bilibiliMaxDurationMinutes()).append(" ");
+        }
+
         if (request.voteSkipEnabled() != null) {
             isVoteSkipEnabled.set(request.voteSkipEnabled());
             logMsg.append("VoteSkipEnabled=").append(request.voteSkipEnabled()).append(" ");
