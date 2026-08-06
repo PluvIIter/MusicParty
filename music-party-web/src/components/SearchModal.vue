@@ -133,7 +133,7 @@
                     <div class="text-xs text-medical-500 truncate">{{ song.artists.join(' / ') }}</div>
                   </div>
                 </div>
-                <div v-if="isUnplayable(song)" class="ml-2 flex-shrink-0"><span class="px-1.5 py-0.5 text-[10px] font-mono font-bold text-medical-400 border border-medical-300 bg-medical-100 rounded-sm">>10MIN</span></div>
+                <div v-if="isUnplayable(song)" class="ml-2 flex-shrink-0"><span class="px-1.5 py-0.5 text-[10px] font-mono font-bold text-medical-400 border border-medical-300 bg-medical-100 rounded-sm">>{{ (playerStore.config.bilibiliMaxDurationMinutes || 10) }}MIN</span></div>
 
                 <button
                     v-else
@@ -208,11 +208,11 @@ const {
 
 // 3. UI 状态
 const mobileView = ref('playlists');
-const MAX_DURATION = 10 * 60 * 1000;
-
 // 4. 交互胶水代码
 const isUnplayable = (song) => {
-  return platform.value === 'bilibili' && song.duration > MAX_DURATION;
+  // B站视频时长上限（分钟）由管理面板配置，默认 10
+  const maxMin = playerStore.config.bilibiliMaxDurationMinutes || 10;
+  return platform.value === 'bilibili' && song.duration > maxMin * 60 * 1000;
 };
 
 const handleSelectPlaylist = (pid) => {
