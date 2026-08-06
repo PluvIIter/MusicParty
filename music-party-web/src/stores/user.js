@@ -38,6 +38,9 @@ export const useUserStore = defineStore('user', () => {
     // 全局状态：控制改名弹窗显示
     const showNameModal = ref(false);
 
+    // 改名失败原因：在弹窗内展示（弹窗背板会模糊背景 toast，所以不走 toast）
+    const renameError = ref('');
+
     const onNameSetCallback = ref(null);
 
     const isGuest = ref(!storageName);
@@ -133,6 +136,7 @@ export const useUserStore = defineStore('user', () => {
         saveName,
         isGuest,
         showNameModal,
+        renameError,
         resolveName,
         userToken,
         setPostNameAction,

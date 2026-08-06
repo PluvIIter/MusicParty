@@ -403,7 +403,8 @@ public class MusicQueueManager {
         }
         Music randomSong = playHistory.get(new Random().nextInt(playHistory.size()));
 
-        UserSummary systemUser = new UserSummary("SYSTEM", "SYSTEM", "AutoDJ", false);
+        // 历史记录自动播放：REQ_BY 展示名显示"历史记录"而非 AutoDJ
+        UserSummary systemUser = new UserSummary("SYSTEM", "SYSTEM", "历史记录", false);
 
         // 注意：历史记录出来的歌需要重新判断状态
         return new MusicQueueItem(
