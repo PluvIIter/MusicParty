@@ -34,6 +34,7 @@ public record PlayerState(
             int maxChatMessageLength,
             boolean neteaseEnabled,
             boolean bilibiliEnabled,
+            int bilibiliMaxDurationMinutes,
             boolean voteSkipEnabled,
             double voteSkipThreshold,
             int voteSkipWaitTime,

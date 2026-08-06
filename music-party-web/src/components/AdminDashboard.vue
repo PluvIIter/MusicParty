@@ -330,7 +330,8 @@ const systemFields = {
   '用户点歌上限': { field: 'maxUserSongs' },
   '导入单次上限': { field: 'maxPlaylistImportSize' },
   '聊天记录容量': { field: 'maxChatHistorySize' },
-  '发言频率限制(ms)': { field: 'minChatIntervalMs' }
+  '发言频率限制(ms)': { field: 'minChatIntervalMs' },
+  'B站时长上限(分钟)': { field: 'bilibiliMaxDurationMinutes' }
 };
 
 watch(() => playerStore.config, (newVal) => {

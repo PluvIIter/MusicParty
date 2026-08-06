@@ -105,6 +105,8 @@ public class AppProperties {
          */
         private String cookie;
         private boolean enabled = true;
+        /** B站视频时长上限（分钟），超过则前端标记为不可播放 */
+        private int maxDurationMinutes = 10;
     }
 
     @EqualsAndHashCode(callSuper = true)
