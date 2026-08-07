@@ -632,7 +632,7 @@ public class MusicPlayerService {
     }
 
     // 点赞逻辑
-    public void likeSong(String sessionId) {
+    public void likeSong(String sessionId, Long clientPositionMs) {
         PlayableMusic music = currentMusic.get();
         if (music == null) return;
 
@@ -644,8 +644,18 @@ public class MusicPlayerService {
         // 2. 更新数据
         currentLikedUserIds.add(token);
 
-        // 使用计算出的当前进度作为 Marker
-        long progress = calculateCurrentPosition();
+        // 3. 打点位置：优先用客户端上报的音频位置（用户实际听到的时刻），
+        //    否则回退到服务器推算进度。服务器时钟在 applyNewSong 时就开始走、
+        //    音频要等缓冲/转码后才起播，直接用服务器进度会让打点超前于听感位置。
+        long progress;
+        if (clientPositionMs != null) {
+            long duration = music.duration();
+            progress = duration > 0
+                    ? Math.max(0, Math.min(duration, clientPositionMs))
+                    : Math.max(0, clientPositionMs);
+        } else {
+            progress = calculateCurrentPosition();
+        }
         currentLikeMarkers.add(progress);
 
         log.info("Like received from {}", getUserName(sessionId));

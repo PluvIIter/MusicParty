@@ -157,11 +157,8 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                                 String durationStr = video.path("duration").asText();
                                                 long durationMs = BilibiliApiUtils.durationToMillis(durationStr);
 
-                                                // 获取图片，确保有 https
-                                                String picUrl = video.path("pic").asText();
-                                                if (!picUrl.startsWith("http")) {
-                                                    picUrl = "https:" + picUrl;
-                                                }
+                                                // 获取图片，统一转 https（search 返回协议相对 //，view 返回 http://，https 页面上 http 会被混合内容拦截）
+                                                String picUrl = BilibiliApiUtils.normalizeCoverUrl(video.path("pic").asText());
 
                                                 musicList.add(new Music(
                                                         video.path("bvid").asText(),
@@ -490,7 +487,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                     List.of(media.path("upper").path("name").asText()),
                                     media.path("duration").asLong() * 1000,
                                     PLATFORM,
-                                    media.path("cover").asText()
+                                    BilibiliApiUtils.normalizeCoverUrl(media.path("cover").asText())
                             ));
                         });
                     }
@@ -540,10 +537,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                         JsonNode results = jsonNode.path("data").path("result");
                                         if (results.isArray()) {
                                             results.forEach(u -> {
-                                                String pic = u.path("upic").asText();
-                                                if (!pic.startsWith("http")) {
-                                                    pic = "https:" + pic;
-                                                }
+                                                String pic = BilibiliApiUtils.normalizeCoverUrl(u.path("upic").asText());
                                                 users.add(new UserSearchResult(
                                                         u.path("mid").asText(),
                                                         u.path("uname").asText(),

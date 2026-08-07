@@ -173,9 +173,15 @@ public class ChatService {
 
         String userName = "SYSTEM";
         if (!"SYSTEM".equals(event.getUserId())) {
-            userName = userService.getUserByToken(event.getUserId())
-                    .map(User::getName)
-                    .orElse("Unknown");
+            // 私人FM/DJ 是虚拟用户（令牌 __FM__），用户表查不到 → 按当前模式显示友好名称
+            if (MusicQueueManager.FM_MARKER_USER_TOKEN.equals(event.getUserId())) {
+                boolean djMode = "DJ".equals(appProperties.getPrivateDj().getMode());
+                userName = djMode ? "私人DJ" : "私人FM";
+            } else {
+                userName = userService.getUserByToken(event.getUserId())
+                        .map(User::getName)
+                        .orElse("Unknown");
+            }
         }
 
         String content = MessageFormatter.format(event, userName);
