@@ -16,7 +16,8 @@
     </div>
 
     <!-- LAYER 1: 动态视觉层 (Canvas) -->
-    <div class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+    <!-- 移动端随封面一起上移，保持背景圆环与封面同心 -->
+    <div class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none -translate-y-12 md:translate-y-0">
       <canvas
           ref="canvasRef"
           width="1200"
@@ -67,7 +68,8 @@
     </div>
 
     <!-- LAYER 3: 核心实体层 (封面) -->
-    <div class="relative z-30 flex items-center justify-center pointer-events-auto">
+    <!-- 移动端上移，给底部歌词腾出空间，观感更平衡 -->
+    <div class="relative z-30 flex items-center justify-center pointer-events-auto -translate-y-12 md:translate-y-0">
       <div class="relative">
         <div v-if="player.nowPlaying?.enqueuedById" class="absolute -top-4 right-0 text-[10px] font-mono text-accent flex items-center gap-2 z-20 select-none">
           <span>REQ_BY</span>
