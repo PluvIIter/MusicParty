@@ -124,6 +124,12 @@ docker run -d \
 
 ---
 
+### 移动端
+在移动端环境中，由于对浏览器的限制，在后台播放或锁屏播放时，经常会出现断联，失去同步等情况
+为了解决这个方法，安卓端可以下载Release中的APK（本质套壳浏览器），苹果则可以尝试在浏览器中将网页添加到桌面。
+
+---
+
 ## 房间密码
 <img width="622" height="427" alt="Image_2026-05-21_10-53-45_s10ixfb1 qoj" src="https://github.com/user-attachments/assets/1f5eeb44-4a21-4dc5-8399-753b9f16b88a" />
 

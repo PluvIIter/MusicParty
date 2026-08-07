@@ -23,6 +23,12 @@ export class AudioVisualizer {
         this.widthMultiplier = 1.0;
         this.roughnessMultiplier = 1.0;
 
+        // 爆发平滑控制（点赞触发的波动应平滑爬升，不要瞬间跳变）
+        this.impulseActive = false;
+        this.speedTarget = 1.0;
+        this.widthTarget = 1.0;
+        this.roughnessTarget = 1.0;
+
         // 配置参数 (Performance Optimized)
         this.breatheBars = 60; // Reduced from 120
         this.breatheRadiusBase = 180;
@@ -80,10 +86,12 @@ export class AudioVisualizer {
 
     //触发爆发特效
     impulse() {
-        // 瞬间拉高参数
-        this.speedMultiplier = 6.0;   // 速度变快 8 倍
-        this.widthMultiplier = 2.0;   // 宽度变粗 1.8 倍
-        this.roughnessMultiplier = 1.5; // 波动幅度变大
+        // 设置峰值作为目标值 + 进入 attack：由 draw() 里的 lerp 平滑爬升，
+        // 避免瞬间拉高导致点赞那一下"突然波动"不平滑
+        this.speedTarget = 6.0;    // 速度峰值 6 倍
+        this.widthTarget = 2.0;    // 宽度峰值 2 倍
+        this.roughnessTarget = 1.5; // 波动幅度峰值 1.5 倍
+        this.impulseActive = true;
     }
 
     startLoop() {
@@ -102,11 +110,24 @@ export class AudioVisualizer {
 
         // 如果不播放且没有爆发，可以降低渲染频率或跳过部分渲染（为了简单起见，这里保持 loop 但降低计算量）
         
-        const decayFactor = 0.005;
+        // 爆发平滑：attack 缓入到峰值，逼近后再缓慢回落（release）。
+        // 相比原"瞬间拉高"，这里用 lerp 让点赞波动平滑展开而不是突然跳变。
+        const followFactor = this.impulseActive ? 0.20 : 0.005;
 
-        this.speedMultiplier += (1.0 - this.speedMultiplier) * decayFactor;
-        this.widthMultiplier += (1.0 - this.widthMultiplier) * decayFactor;
-        this.roughnessMultiplier += (1.0 - this.roughnessMultiplier) * decayFactor;
+        this.speedMultiplier += (this.speedTarget - this.speedMultiplier) * followFactor;
+        this.widthMultiplier += (this.widthTarget - this.widthMultiplier) * followFactor;
+        this.roughnessMultiplier += (this.roughnessTarget - this.roughnessMultiplier) * followFactor;
+
+        // 三个倍率都逼近峰值后，目标复位为 1.0，进入缓慢回落（延续原长尾效果）
+        if (this.impulseActive
+                && Math.abs(this.speedMultiplier - this.speedTarget) < 0.15
+                && Math.abs(this.widthMultiplier - this.widthTarget) < 0.1
+                && Math.abs(this.roughnessMultiplier - this.roughnessTarget) < 0.1) {
+            this.impulseActive = false;
+            this.speedTarget = 1.0;
+            this.widthTarget = 1.0;
+            this.roughnessTarget = 1.0;
+        }
 
         // --- 1. 状态计算与平滑过渡 (Lerp) ---
         // 时间流速

@@ -1,66 +1,30 @@
-name: Build and Release
+name: Build Release (Launcher + APK)
 
 on:
   push:
-    branches: [ "main", "master", "dev" ]
     tags: [ 'v*.*.*' ]
   workflow_dispatch:
-
-env:
-  REGISTRY: docker.io
-  IMAGE_NAME: thornex/music-party
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    inputs:
+      release_tag:
+        description: '发布到的 Release tag（如 v1.2.3-beta）。留空则不创建 Release，产物只作为 artifact 上传'
+        type: string
+        required: false
+        default: ''
+      release_name:
+        description: 'Release 显示标题（留空默认用 tag 名）'
+        type: string
+        required: false
+        default: ''
+      release_notes:
+        description: 'Release 说明（正文），留空则无正文'
+        type: string
+        required: false
+        default: ''
 
 jobs:
-  # 1. 构建 Docker 镜像 (Linux)
-  build-and-push-docker:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log into registry ${{ env.REGISTRY }}
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-,format=short
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # 2. 构建 Windows 便携式 EXE
-  build-windows-exe:
+  # ===================== 业务2：Windows 启动器 EXE =====================
+  build-launcher:
     runs-on: windows-latest
-    permissions:
-      contents: write
-    # 仅在推送 Tag 时执行 EXE 发布
-    if: github.ref_type == 'tag'
     defaults:
       run:
         shell: pwsh
@@ -125,8 +89,8 @@ jobs:
 
       - name: Prepare Assets
         run: |
-          if (-not (Test-Path "launcher/bin")) { 
-            New-Item -ItemType Directory "launcher/bin" 
+          if (-not (Test-Path "launcher/bin")) {
+            New-Item -ItemType Directory "launcher/bin"
           }
 
           # 1. 拷贝 Java 后端 (排除 original JAR)
@@ -171,9 +135,100 @@ jobs:
           go mod tidy
           wails build -platform windows/amd64
 
-      - name: Create Release and Upload Asset
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicParty-windows-exe
+          path: launcher/build/bin/MusicParty.exe
+
+  # ===================== 业务3：Android APK =====================
+  build-apk:
+    runs-on: ubuntu-latest
+    # secrets 不能直接在 if 里用，提到 job 级 env；未配置时为空串
+    env:
+      KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages (compileSdk 35)
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;34.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug + release APK
+        working-directory: android
+        run: gradle assembleDebug assembleRelease
+
+      - name: Upload debug APK (dev 测试用)
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-party-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      # 配置了签名 secrets 才签名（未配置则跳过，仅出未签名 release 包）
+      - name: Sign release APK
+        if: env.KS_B64 != ''
+        run: |
+          echo "$KS_B64" | base64 -d > keystore.jks
+          # apksigner 属于 Android SDK build-tools，默认不在 PATH 上，用完整路径调用
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
+            --ks keystore.jks \
+            --ks-pass env:KS_PASS --key-pass env:KEY_PASS --ks-key-alias "$KEY_ALIAS" \
+            --out music-party-signed.apk \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Upload signed APK (供发布/手动下载)
+        if: env.KS_B64 != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-party-release
+          path: music-party-signed.apk
+
+  # ===================== 发布：把 EXE + APK 合并进同一个 Release =====================
+  publish:
+    runs-on: ubuntu-latest
+    needs: [build-launcher, build-apk]
+    permissions:
+      contents: write   # 发布 GitHub Release 需要
+    # 推 tag 自动发布；手动触发须填 release_tag 才发布
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    steps:
+      - name: Download EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: MusicParty-windows-exe
+          path: release-artifacts/
+
+      - name: Download signed APK
+        uses: actions/download-artifact@v4
+        with:
+          name: music-party-release
+          path: release-artifacts/
+        continue-on-error: true   # 未配置签名 secrets 时没有该 artifact，不阻塞发布 EXE
+
+      # tag / 标题 / 正文 由手动触发时填的输入决定
+      - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: launcher/build/bin/MusicParty.exe
+          tag_name: ${{ github.ref_type == 'tag' ? github.ref_name : inputs.release_tag }}
+          name: ${{ inputs.release_name != '' ? inputs.release_name : (github.ref_type == 'tag' ? github.ref_name : inputs.release_tag) }}
+          body: ${{ github.event_name == 'workflow_dispatch' ? inputs.release_notes : '' }}
+          files: release-artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
