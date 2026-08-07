@@ -226,9 +226,9 @@ jobs:
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' ? github.ref_name : inputs.release_tag }}
-          name: ${{ inputs.release_name != '' ? inputs.release_name : (github.ref_type == 'tag' ? github.ref_name : inputs.release_tag) }}
-          body: ${{ github.event_name == 'workflow_dispatch' ? inputs.release_notes : '' }}
+          tag_name: '${{ github.ref_type == "tag" ? github.ref_name : inputs.release_tag }}'
+          name: '${{ inputs.release_name != "" ? inputs.release_name : (github.ref_type == "tag" ? github.ref_name : inputs.release_tag) }}'
+          body: '${{ github.event_name == "workflow_dispatch" ? inputs.release_notes : "" }}'
           files: release-artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
