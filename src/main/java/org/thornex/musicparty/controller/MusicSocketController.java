@@ -79,11 +79,11 @@ public class MusicSocketController {
         musicPlayerService.removeSongFromQueue(request.queueId(), sessionId);
     }
 
-    // 点赞接口
+    // 点赞接口（可携带客户端上报的播放位置，用于播放条打点；为空则服务器自己算）
     @MessageMapping("/control/like")
-    public void likeSong(@Header("simpSessionId") String sessionId) {
+    public void likeSong(@Payload(required = false) LikeRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
-        musicPlayerService.likeSong(sessionId);
+        musicPlayerService.likeSong(sessionId, request != null ? request.position() : null);
     }
 
     @MessageMapping("/user/rename")

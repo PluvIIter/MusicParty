@@ -188,7 +188,9 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const sendLike = () => {
-        if (requireAuth()) socketService.send(WS_DEST.PLAYER_LIKE);
+        // 上报当前本地播放位置（音频实际听到的位置），服务器用它作为打点，
+        // 避免服务器时钟从歌曲开始计时、音频需缓冲后才起播导致打点超前于听感位置
+        if (requireAuth()) socketService.send(WS_DEST.PLAYER_LIKE, { position: Math.round(localProgress.value) });
     };
 
     const sendChatMessage = (content) => {

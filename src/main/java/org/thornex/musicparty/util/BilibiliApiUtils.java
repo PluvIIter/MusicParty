@@ -13,6 +13,19 @@ public class BilibiliApiUtils {
     // 内部记录类，用于一次性返回 CID 和 Music 详情
     public record BilibiliVideoInfo(String cid, Music music) {}
 
+    /**
+     * 封面/头像统一转 https。B站各 API 返回的图片 URL 格式不一致：
+     * search 接口返回协议相对 {@code //i0.hdslb.com/...}，view/favorite 接口返回显式 {@code http://...}。
+     * https 页面上 {@code http://} 子资源会被浏览器/WebView 当作混合内容拦截 → 封面加载不出来，
+     * 因此统一升级为 https（与网易云源 upgradeToHttps 的做法一致）。
+     */
+    public static String normalizeCoverUrl(String url) {
+        if (url == null || url.isEmpty()) return url;
+        if (url.startsWith("//")) return "https:" + url;
+        if (url.startsWith("http://")) return "https://" + url.substring("http://".length());
+        return url;
+    }
+
     public static long durationToMillis(String durationStr) {
         if (durationStr == null || durationStr.isEmpty()) return 0;
         String[] parts = durationStr.split(":");
@@ -65,7 +78,7 @@ public class BilibiliApiUtils {
                             List.of(data.path("owner").path("name").asText()),
                             durationMs,
                             "bilibili",
-                            data.path("pic").asText()
+                            normalizeCoverUrl(data.path("pic").asText())
                     );
 
                     sink.next(new BilibiliVideoInfo(cid, music));
