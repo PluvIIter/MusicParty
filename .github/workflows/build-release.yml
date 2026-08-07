@@ -1,8 +1,7 @@
 name: Build Release (Launcher + APK)
 
 on:
-  push:
-    tags: [ 'v*.*.*' ]
+  # 只手动触发：填了 release_tag 会发布 Release，留空则只出 artifact
   workflow_dispatch:
     inputs:
       release_tag:
@@ -206,8 +205,8 @@ jobs:
     needs: [build-launcher, build-apk]
     permissions:
       contents: write   # 发布 GitHub Release 需要
-    # 推 tag 自动发布；手动触发须填 release_tag 才发布
-    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    # 手动触发且填了 release_tag 才发布；留空则只出 artifact
+    if: inputs.release_tag != ''
     steps:
       - name: Download EXE
         uses: actions/download-artifact@v4
@@ -222,13 +221,13 @@ jobs:
           path: release-artifacts/
         continue-on-error: true   # 未配置签名 secrets 时没有该 artifact，不阻塞发布 EXE
 
-      # tag / 标题 / 正文 由手动触发时填的输入决定
+      # tag / 标题 / 正文 直接引用手动触发时填的输入（标题留空，GitHub 默认用 tag 名）
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: '${{ github.ref_type == "tag" ? github.ref_name : inputs.release_tag }}'
-          name: '${{ inputs.release_name != "" ? inputs.release_name : (github.ref_type == "tag" ? github.ref_name : inputs.release_tag) }}'
-          body: '${{ github.event_name == "workflow_dispatch" ? inputs.release_notes : "" }}'
+          tag_name: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_name }}
+          body: ${{ inputs.release_notes }}
           files: release-artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

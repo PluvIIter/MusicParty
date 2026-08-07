@@ -3,7 +3,6 @@ name: Build Docker Image
 on:
   push:
     branches: [ "main", "master", "dev" ]
-    tags: [ 'v*.*.*' ]
   workflow_dispatch:
 
 env:
