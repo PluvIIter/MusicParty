@@ -74,4 +74,44 @@ class MusicQueueManagerFmMarkerTest {
         qm.removeFmMarker(); // 幂等
         assertEquals(1, qm.getQueueSnapshot().size());
     }
+
+    // ─── 离线歌曲回退：播放列表只有离线用户的歌、没有在线用户点歌时，不应空转 ───
+
+    @Test
+    void fairShuffleFallsBackToOfflineSongsWhenNoOnlineUserQueued() {
+        Music m = new Music("1", "offlineSong", List.of(), 1000L, "netease", null);
+        qm.add(m, new UserSummary("offline-token", null, "offlineUser", false), QueueItemStatus.READY);
+        Map<String, QueueItemStatus> statusMap = new HashMap<>();
+        statusMap.put("1", QueueItemStatus.READY);
+
+        MusicQueueItem picked = qm.pollNext(PlayMode.SHUFFLE, true, false, statusMap, Collections.singleton("online-token"));
+        assertNotNull(picked, "没有在线用户点歌时，公平随机应回退播放离线用户的歌");
+        assertEquals("1", picked.music().id());
+    }
+
+    @Test
+    void totalShuffleFallsBackToOfflineSongsWhenNoOnlineUserQueued() {
+        Music m = new Music("1", "offlineSong", List.of(), 1000L, "netease", null);
+        qm.add(m, new UserSummary("offline-token", null, "offlineUser", false), QueueItemStatus.READY);
+        Map<String, QueueItemStatus> statusMap = new HashMap<>();
+        statusMap.put("1", QueueItemStatus.READY);
+
+        MusicQueueItem picked = qm.pollNext(PlayMode.SHUFFLE, false, false, statusMap, Collections.singleton("online-token"));
+        assertNotNull(picked, "没有在线用户点歌时，普通随机应回退播放离线用户的歌");
+        assertEquals("1", picked.music().id());
+    }
+
+    @Test
+    void fairShuffleStillPrefersOnlineSongsWhenOnlineUserQueued() {
+        Music offline = new Music("1", "offlineSong", List.of(), 1000L, "netease", null);
+        Music online = new Music("2", "onlineSong", List.of(), 1000L, "netease", null);
+        qm.add(offline, new UserSummary("offline-token", null, "offlineUser", false), QueueItemStatus.READY);
+        qm.add(online, new UserSummary("online-token", "s1", "onlineUser", false), QueueItemStatus.READY);
+        Map<String, QueueItemStatus> statusMap = new HashMap<>();
+        statusMap.put("1", QueueItemStatus.READY);
+        statusMap.put("2", QueueItemStatus.READY);
+
+        MusicQueueItem picked = qm.pollNext(PlayMode.SHUFFLE, true, false, statusMap, Collections.singleton("online-token"));
+        assertEquals("2", picked.music().id(), "在线用户有点歌时，公平随机仍应排除离线、优先在线用户的歌");
+    }
 }

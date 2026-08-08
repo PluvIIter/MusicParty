@@ -165,6 +165,13 @@ public class ChatService {
         // 这里我们记录所有 INFO, WARN, SUCCESS 级别的事件，忽略 ERROR (通常 ERROR 只弹 Toast)
         if (event.getLevel() == SystemMessageEvent.Level.ERROR) return;
 
+        // 私人FM/DJ 是虚拟用户（__FM__），它每切一首歌就发一条 PLAY_START，
+        // 会刷屏聊天栏/系统栏 → 直接拦截：不入历史、不广播（前端弹窗本来也过滤 PLAY_START）
+        if (event.getAction() == PlayerAction.PLAY_START
+                && MusicQueueManager.FM_MARKER_USER_TOKEN.equals(event.getUserId())) {
+            return;
+        }
+
         // 如果是 RESET 事件，清空历史
         if (event.getAction() == PlayerAction.RESET) {
             clearHistory();

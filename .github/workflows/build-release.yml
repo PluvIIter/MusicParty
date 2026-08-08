@@ -189,7 +189,7 @@ jobs:
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
             --ks keystore.jks \
             --ks-pass env:KS_PASS --key-pass env:KEY_PASS --ks-key-alias "$KEY_ALIAS" \
-            --out music-party-signed.apk \
+            --out MusicParty.apk \
             android/app/build/outputs/apk/release/app-release-unsigned.apk
 
       - name: Upload signed APK (供发布/手动下载)
@@ -197,7 +197,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: music-party-release
-          path: music-party-signed.apk
+          path: MusicParty.apk
 
   # ===================== 发布：把 EXE + APK 合并进同一个 Release =====================
   publish:
