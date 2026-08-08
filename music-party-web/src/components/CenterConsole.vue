@@ -213,11 +213,13 @@ import {useEventListener, useWindowSize} from '@vueuse/core';
 import { parseLyrics } from '../utils/parser';
 import { AudioVisualizer } from '../logic/AudioVisualizer';
 import { useUiStore } from '../stores/ui';
+import { useLikedSongs } from '../composables/useLikedSongs';
 import { Heart, Activity, Zap } from 'lucide-vue-next';
 
 const userStore = useUserStore();
 const player = usePlayerStore();
 const uiStore = useUiStore();
+const { addLikedSong } = useLikedSongs();
 const canvasRef = ref(null);
 const currentCover = computed(() => player.nowPlaying?.music.coverUrl);
 const { width } = useWindowSize();
@@ -262,6 +264,8 @@ const handleCoverClick = () => {
 
 const confirmLike = () => {
   player.sendLike();
+  // 本地点赞缓存（仅本机，不上报服务器）：供搜索页 LikeSong 列表展示
+  if (player.nowPlaying?.music) addLikedSong(player.nowPlaying.music);
   triggerBurst(); // 本地先爆发一次，提升手感
 };
 
