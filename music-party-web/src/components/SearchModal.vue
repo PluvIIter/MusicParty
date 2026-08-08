@@ -88,7 +88,7 @@
               </div>
               
               <div v-else v-for="pl in playlists" :key="pl.id" @click="handleSelectPlaylist(pl.id)" class="flex items-center gap-3 p-2 hover:bg-medical-50 cursor-pointer group transition-colors border-l-2 border-transparent hover:border-accent">
-                <div class="w-10 h-10 bg-medical-200 flex-shrink-0 overflow-hidden"><CoverImage :src="pl.coverImgUrl" class="w-full h-full" /></div>
+                <div class="w-10 h-10 bg-medical-200 flex-shrink-0 overflow-hidden"><CoverImage :src="pl.coverImgUrl" class="w-full h-full" :scanline="false" /></div>
                 <div class="overflow-hidden">
                   <div class="text-sm font-bold truncate group-hover:text-accent">{{ pl.name }}</div>
                   <div class="text-xs font-mono text-medical-400">{{ pl.trackCount }} TRACKS</div>
@@ -127,7 +127,7 @@
               <div v-if="songs.length === 0 && !loading" class="text-center py-10 text-medical-400 text-xs font-mono">NO DATA FOUND</div>
               <div v-for="song in songs" :key="song.id" class="flex items-center p-3 border border-transparent transition-all group" :class="isUnplayable(song) ? 'opacity-50 grayscale bg-medical-50 cursor-not-allowed' : 'bg-white hover:border-medical-300 hover:shadow-sm'">
                 <div class="flex-1 w-0 flex items-center gap-3">
-                  <div class="w-8 h-8 bg-medical-200 flex-shrink-0 relative overflow-hidden"><CoverImage :src="song.coverUrl" class="w-full h-full" /></div>
+                  <div class="w-8 h-8 bg-medical-200 flex-shrink-0 relative overflow-hidden"><CoverImage :src="song.coverUrl" class="w-full h-full" :scanline="false" /></div>
                   <div class="min-w-0 flex-1">
                     <div class="text-sm font-bold truncate">{{ song.name }}</div>
                     <div class="text-xs text-medical-500 truncate">{{ song.artists.join(' / ') }}</div>

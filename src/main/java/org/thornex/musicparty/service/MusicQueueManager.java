@@ -212,7 +212,13 @@ public class MusicQueueManager {
         }
 
         if (pool.isEmpty()) {
-            return null;
+            // 没有任何在线用户点的歌可播（离线过滤把队里所有歌都滤掉了）→ 回退到全部可播项。
+            // 语义：在线优先，但"仅在线"不是"宁可不播"——否则只有离线用户的歌时播放器一直空转。
+            if (!allowOffline && !availableItems.isEmpty()) {
+                pool = availableItems;
+            } else {
+                return null;
+            }
         }
 
         // 优先检查个人置顶 (即便完全随机，也要尊重用户的置顶意愿，或者是直接纯随机？)
@@ -254,7 +260,13 @@ public class MusicQueueManager {
         }
 
         if (targetUserTokens.isEmpty()) {
-            return null;
+            // 没有任何在线用户点的歌可播（离线过滤把队里所有用户都滤掉了）→ 回退到含离线用户的全部用户池。
+            // 语义：在线优先，但"仅在线"不是"宁可不播"——否则只有离线用户的歌时播放器一直空转。
+            if (!allowOffline && !allUserTokens.isEmpty()) {
+                targetUserTokens = new ArrayList<>(allUserTokens);
+            } else {
+                return null;
+            }
         }
 
         // 3. 严格轮询逻辑

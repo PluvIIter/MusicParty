@@ -22,8 +22,9 @@
     </div>
     <!-- 🟢 修改部分结束 -->
 
-    <!-- 扫描线装饰 -->
-    <div class="absolute inset-0 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAADCAYAAABS3WWCAAAAE0lEQVQYV2NkYGD4zwABjFAQAwBATgMJy2B8NAAAAABJRU5ErkJggg==')] opacity-10 pointer-events-none"></div>
+    <!-- 扫描线装饰：默认显示（播放器/中间视觉区大封面保留）；
+         搜索页等小缩略图通过 :scanline="false" 关闭 -->
+    <div v-if="scanline" class="absolute inset-0 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAADCAYAAABS3WWCAAAAE0lEQVQYV2NkYGD4zwABjFAQAwBATgMJy2B8NAAAAABJRU5ErkJggg==')] opacity-10 pointer-events-none"></div>
   </div>
 </template>
 
@@ -32,7 +33,11 @@ import { ref, watch } from 'vue';
 // 🟢 新增：引入图标
 import { ImageOff } from 'lucide-vue-next';
 
-const props = defineProps(['src']);
+const props = defineProps({
+  src: String,
+  // 是否显示扫描线横纹：播放器/中间视觉区大封面默认保留，搜索页小封面通过 :scanline="false" 关闭
+  scanline: { type: Boolean, default: true }
+});
 const hasError = ref(false);
 // 当 src 变化时重置错误状态
 watch(() => props.src, () => hasError.value = false);
