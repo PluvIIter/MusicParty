@@ -183,15 +183,14 @@ public class AdminController {
 
         AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
 
-        if (request.masterEnabled() != null) {
-            if (request.masterEnabled() && !neteaseMusicApiService.isCookieConfigured()) {
-                return ResponseEntity.badRequest().body(Map.of("message", "需先配置网易云 Cookie 才能开启私人电台"));
-            }
-            c.setMasterEnabled(request.masterEnabled());
-        }
+        // 模式即开关：OFF=关闭 / FM=私人FM / DJ=私人DJ
         if (request.mode() != null) {
-            if (!Set.of("FM", "DJ").contains(request.mode())) {
-                return ResponseEntity.badRequest().body(Map.of("message", "模式仅支持 FM 或 DJ"));
+            if (!Set.of("OFF", "FM", "DJ").contains(request.mode())) {
+                return ResponseEntity.badRequest().body(Map.of("message", "模式仅支持 关闭/私人FM/私人DJ"));
+            }
+            // 切到 FM/DJ 视为开启私人电台，需先配置网易云 Cookie；切到 OFF 关闭则无需校验
+            if (!"OFF".equals(request.mode()) && !neteaseMusicApiService.isCookieConfigured()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "需先配置网易云 Cookie 才能开启私人电台"));
             }
             c.setMode(request.mode());
         }

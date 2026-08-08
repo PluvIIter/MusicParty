@@ -42,7 +42,6 @@ public record PlayerState(
             PrivateDjConfigSummary privateDj
     ) {
         public record PrivateDjConfigSummary(
-                boolean masterEnabled,
                 String mode,
                 boolean fillBlankEnabled,
                 boolean joinQueueEnabled,

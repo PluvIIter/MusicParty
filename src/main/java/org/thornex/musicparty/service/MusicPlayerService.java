@@ -187,7 +187,7 @@ public class MusicPlayerService {
             return;
         }
 
-        // 加入队列功能：按条件同步 FM 标记（SHUFFLE + 总开关 + 加入队列且非托管 → 在队，否则移除）
+        // 加入队列功能：按条件同步 FM 标记（SHUFFLE + 模式非关闭 + 加入队列且非托管 → 在队，否则移除）
         syncFmMarker();
 
         // 播放源决策：托管 > (队列有有效歌曲则队列) > 填充空白
@@ -267,7 +267,7 @@ public class MusicPlayerService {
     /** 播放源决策：托管 > (队列有有效歌曲则队列) > 填充空白 */
     boolean shouldPlayPrivateFmDj() {
         AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
-        if (!c.isMasterEnabled()) return false;
+        if ("OFF".equals(c.getMode())) return false;
         if (c.isCustodyEnabled()) return true;
         if (c.isFillBlankEnabled()) {
             return !queueManager.hasPlayableItems(buildStatusMap());
@@ -312,12 +312,12 @@ public class MusicPlayerService {
     }
 
     /**
-     * 加入队列功能：SHUFFLE + 总开关 + 加入队列且非托管时确保 FM 标记在队；
+     * 加入队列功能：SHUFFLE + 模式非关闭(OFF) + 加入队列且非托管时确保 FM 标记在队；
      * 任一条件不满足时移除标记（对称清理，防止陈旧标记在 SEQUENTIAL 等路径被选中触发 FM 播放）。
      */
     void syncFmMarker() {
         AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
-        boolean shouldPresent = c.isMasterEnabled() && c.isJoinQueueEnabled()
+        boolean shouldPresent = !"OFF".equals(c.getMode()) && c.isJoinQueueEnabled()
                 && !c.isCustodyEnabled() && playMode.get() == PlayMode.SHUFFLE;
         if (shouldPresent) {
             queueManager.ensureFmMarker();
@@ -490,7 +490,6 @@ public class MusicPlayerService {
                         voteSkipWaitTime.get(),
                         neteaseMusicApiService.isCookieConfigured(),
                         new PlayerState.AppConfigSummary.PrivateDjConfigSummary(
-                                appProperties.getPrivateDj().isMasterEnabled(),
                                 appProperties.getPrivateDj().getMode(),
                                 appProperties.getPrivateDj().isFillBlankEnabled(),
                                 appProperties.getPrivateDj().isJoinQueueEnabled(),

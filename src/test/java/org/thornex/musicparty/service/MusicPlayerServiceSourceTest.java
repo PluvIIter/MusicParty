@@ -41,15 +41,15 @@ class MusicPlayerServiceSourceTest {
     }
 
     @Test
-    void masterOffNeverPlaysPrivateFmDj() {
-        props.getPrivateDj().setMasterEnabled(false);
+    void modeOffNeverPlaysPrivateFmDj() {
+        props.getPrivateDj().setMode("OFF");
         props.getPrivateDj().setCustodyEnabled(true);
         assertFalse(service.shouldPlayPrivateFmDj());
     }
 
     @Test
     void custodyOverridesQueue() {
-        props.getPrivateDj().setMasterEnabled(true);
+        props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setCustodyEnabled(true);
         when(queueManager.hasPlayableItems(anyMap())).thenReturn(true);
         assertTrue(service.shouldPlayPrivateFmDj(), "托管开启应无视队列有歌");
@@ -57,7 +57,7 @@ class MusicPlayerServiceSourceTest {
 
     @Test
     void fillBlankOnlyWhenNoPlayableItem() {
-        props.getPrivateDj().setMasterEnabled(true);
+        props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setFillBlankEnabled(true);
         when(queueManager.hasPlayableItems(anyMap())).thenReturn(false);
         assertTrue(service.shouldPlayPrivateFmDj());

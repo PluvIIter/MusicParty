@@ -56,8 +56,7 @@ export const usePlayerStore = defineStore('player', () => {
         voteSkipWaitTime: 15,
         neteaseCookieConfigured: false,
         privateDj: {
-            masterEnabled: false,
-            mode: 'FM',
+            mode: 'OFF',
             fillBlankEnabled: false,
             joinQueueEnabled: false,
             custodyEnabled: false
