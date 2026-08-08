@@ -38,21 +38,20 @@ class AdminControllerPrivateDjTest {
     }
 
     @Test
-    void masterEnableRejectedWithoutCookie() {
+    void enableRejectedWithoutCookie() {
         when(api.isCookieConfigured()).thenReturn(false);
         ResponseEntity<?> resp = controller.updatePrivateDj("pw",
-                new AdminPrivateDjUpdateRequest(true, null, null, null, null));
+                new AdminPrivateDjUpdateRequest("FM", null, null, null));
         assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
-        assertFalse(props.getPrivateDj().isMasterEnabled());
+        assertEquals("OFF", props.getPrivateDj().getMode()); // 未配置 Cookie 时开启被拒，保持关闭
     }
 
     @Test
-    void masterEnableAcceptedWithCookie() {
+    void enableAcceptedWithCookie() {
         when(api.isCookieConfigured()).thenReturn(true);
         ResponseEntity<?> resp = controller.updatePrivateDj("pw",
-                new AdminPrivateDjUpdateRequest(true, "DJ", true, false, false));
+                new AdminPrivateDjUpdateRequest("DJ", true, false, false));
         assertEquals(HttpStatus.OK, resp.getStatusCode());
-        assertTrue(props.getPrivateDj().isMasterEnabled());
         assertEquals("DJ", props.getPrivateDj().getMode());
         assertTrue(props.getPrivateDj().isFillBlankEnabled());
         verify(djService).invalidate();
@@ -63,8 +62,18 @@ class AdminControllerPrivateDjTest {
     void invalidModeRejected() {
         when(api.isCookieConfigured()).thenReturn(true);
         ResponseEntity<?> resp = controller.updatePrivateDj("pw",
-                new AdminPrivateDjUpdateRequest(null, "XYZ", null, null, null));
+                new AdminPrivateDjUpdateRequest("XYZ", null, null, null));
         assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+    }
+
+    @Test
+    void switchToOffDoesNotRequireCookie() {
+        when(api.isCookieConfigured()).thenReturn(false);
+        props.getPrivateDj().setMode("FM");
+        ResponseEntity<?> resp = controller.updatePrivateDj("pw",
+                new AdminPrivateDjUpdateRequest("OFF", null, null, null));
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals("OFF", props.getPrivateDj().getMode()); // 关闭不需 Cookie
     }
 
     @Test
@@ -72,6 +81,6 @@ class AdminControllerPrivateDjTest {
         ResponseEntity<?> resp = controller.setCookie("pw", new AdminCookieRequest("netease", "MUSIC_U=abc"));
         assertEquals(HttpStatus.OK, resp.getStatusCode());
         verify(api).updateCookie("MUSIC_U=abc");
-        verify(player).broadcastFullPlayerState(); // 刷新控制面板总开关门禁
+        verify(player).broadcastFullPlayerState(); // 刷新控制面板开启门禁
     }
 }

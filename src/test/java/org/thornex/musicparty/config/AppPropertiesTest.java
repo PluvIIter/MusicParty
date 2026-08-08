@@ -6,11 +6,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class AppPropertiesTest {
 
     @Test
-    void privateDjDefaultsAreOffAndFm() {
+    void privateDjDefaultsAreOff() {
         AppProperties props = new AppProperties();
         AppProperties.PrivateDjConfig c = props.getPrivateDj();
-        assertFalse(c.isMasterEnabled());
-        assertEquals("FM", c.getMode());
+        assertEquals("OFF", c.getMode()); // 默认关闭，模式即开关
         assertFalse(c.isFillBlankEnabled());
         assertFalse(c.isJoinQueueEnabled());
         assertFalse(c.isCustodyEnabled());

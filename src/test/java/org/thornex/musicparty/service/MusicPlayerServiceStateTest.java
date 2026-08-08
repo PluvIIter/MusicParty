@@ -37,7 +37,6 @@ class MusicPlayerServiceStateTest {
     @Test
     void configSummaryExposesPrivateDjAndCookieState() {
         AppProperties props = new AppProperties();
-        props.getPrivateDj().setMasterEnabled(true);
         props.getPrivateDj().setMode("DJ");
         props.getPrivateDj().setCustodyEnabled(true);
         NeteaseMusicApiService api = mock(NeteaseMusicApiService.class);
@@ -46,7 +45,6 @@ class MusicPlayerServiceStateTest {
         PlayerState state = build(props, api).getCurrentPlayerState();
 
         assertTrue(state.config().neteaseCookieConfigured());
-        assertTrue(state.config().privateDj().masterEnabled());
         assertEquals("DJ", state.config().privateDj().mode());
         assertTrue(state.config().privateDj().custodyEnabled());
     }

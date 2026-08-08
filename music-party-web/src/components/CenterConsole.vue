@@ -34,7 +34,7 @@
     <div class="absolute inset-0 z-20 pointer-events-none">
       <!-- 左侧：同步歌词 -->
       <div class="absolute font-mono transition-all duration-300
-                  inset-x-0 bottom-7 flex flex-col items-center justify-end h-64 pb-2
+                  inset-x-0 bottom-14 flex flex-col items-center justify-end h-72 pb-2
                   md:inset-auto md:bottom-8 md:left-10 md:items-start md:justify-end md:h-auto md:w-80
       ">
         <div class="hidden md:block text-[10px] text-accent/80 mb-1 tracking-widest border-b border-accent/30 pb-1 w-16">
@@ -44,17 +44,41 @@
           <div v-if="parsedLyrics.length === 0" class="opacity-50 flex items-center justify-center md:justify-start">
             <span class="text-accent/50 mr-2 text-[10px]">></span>NO_DATA_STREAM
           </div>
+          <!-- 移动端歌词单行显示：过长歌词左右滚动（不再换行/顶出边框），桌面端保持换行 -->
           <div
               v-else
               v-for="(line, i) in activeLines"
               :key="line.time"
-              class="transition-all duration-300 flex items-center md:justify-start justify-center"
+              class="w-full transition-all duration-300"
               :class="i === activeLines.length - 1 ? 'opacity-100 scale-105 md:scale-100 text-medical-900' : 'opacity-40 blur-[0.5px]'"
           >
-            <span class="hidden md:inline text-accent mr-2 text-[10px]" :class="{'animate-pulse': i === activeLines.length - 1}">></span>
-            <span :class="{'bg-medical-900 text-white px-1': i === activeLines.length - 1 && isMobile}">
-                     {{ line.text }}
-            </span>
+            <div
+                :ref="el => setLineRef(el, line.time)"
+                class="flex items-center overflow-hidden whitespace-nowrap md:whitespace-normal"
+                :class="[
+                  // 当前行且文字溢出：黑色背景槽固定在容器上（居中，至多占屏幕 70%），文字在槽内滚动
+                  i === activeLines.length - 1 && isMobile && isOverflowing(line.time) ? 'bg-medical-900 text-white' : '',
+                  // 溢出行（当前或刚结束）：文字起始贴槽左缘，滚动/定格位置一致；其余行居中（桌面左对齐）
+                  isOverflowing(line.time) ? 'justify-start' : 'justify-center md:justify-start'
+                ]"
+                :style="isOverflowing(line.time) ? { maxWidth: `${Math.round(width * 0.7)}px`, width: 'fit-content', marginLeft: 'auto', marginRight: 'auto' } : {}"
+            >
+              <span class="hidden md:inline text-accent mr-2 text-[10px] flex-shrink-0" :class="{'animate-pulse': i === activeLines.length - 1}">></span>
+              <span
+                  class="inline-block whitespace-nowrap md:whitespace-normal will-change-transform"
+                  :class="[
+                    // 已测量且未溢出的当前行：保留紧凑黑底高亮（未测量前不渲染背景，避免闪全幅黑条）
+                    {'bg-medical-900 text-white px-1': i === activeLines.length - 1 && isMobile && isShort(line.time)},
+                    {'marquee-scroll': i === activeLines.length - 1 && isOverflowing(line.time) && isMobile}
+                  ]"
+                  :style="i === activeLines.length - 1 && isOverflowing(line.time) ? {
+                    animationDuration: marqueeDuration(line.text, line.time),
+                    '--mp-scroll-dist': `-${scrollDist(line.time)}px`   // 首字贴左缘 → 末字右缘贴右缘
+                  } : (isOverflowing(line.time) ? {
+                    transform: `translateX(-${scrollDist(line.time)}px)` // 刚结束的溢出行：无黑底，定格在滚动末尾位置
+                  } : {})"
+              >{{ line.text }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -182,7 +206,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import {useEventListener, useWindowSize} from '@vueuse/core';
@@ -260,12 +284,64 @@ const currentLineIndex = ref(-1);
 const activeLines = computed(() => {
   const idx = currentLineIndex.value;
   if (parsedLyrics.value.length === 0) return [];
-  const historyCount = isMobile.value ? 5 : 10;
+  // 封面上调后底部空间更充裕：移动端显示更多历史行（9行含当前行）
+  const historyCount = isMobile.value ? 8 : 10;
   const start = Math.max(0, idx - historyCount);
   const end = Math.min(parsedLyrics.value.length, idx + 1);
   if (idx === -1) return parsedLyrics.value.slice(0, 3);
   return parsedLyrics.value.slice(start, end);
 });
+
+// === 长歌词左右滚动（移动端单行）：文字宽度测量 + 溢出/滚动距离即时计算 ===
+const lineEls = new Map();                  // time -> 行元素（非响应式）
+const lineTextWidths = reactive(new Map()); // time -> 文字固有宽度 px（nowrap 单行宽，与容器宽无关）
+
+function setLineRef(el, time) {
+  if (!el) {
+    lineEls.delete(time);
+    lineTextWidths.delete(time); // 行移出渲染时清理，避免残留
+    return;
+  }
+  lineEls.set(time, el);
+  // 取文本 span（容器最后一个子元素）测真实文字宽度——用容器 scrollWidth 的话，
+  // 文字不满容器时也会等于容器宽，导致没过长的行也被判为溢出。
+  // 文字宽度是单行 nowrap 的固有宽度，任意时机测量结果一致。
+  const textEl = el.lastElementChild;
+  lineTextWidths.set(time, textEl ? textEl.scrollWidth : el.scrollWidth);
+}
+
+// 溢出不存状态，由「文字宽 > 屏幕横向 70%」即时判定——与槽宽（屏幕 70%）同源，
+// 滚动距离因此恒为正、不受渲染时序影响；未测量过的行（首帧）返回 false，不会闪全幅黑条
+function isOverflowing(time) {
+  return (lineTextWidths.get(time) || 0) > Math.round(width.value * 0.7);
+}
+
+// 已测量且未溢出：当前行可保留紧凑黑底高亮
+function isShort(time) {
+  const tw = lineTextWidths.get(time);
+  return tw != null && tw <= Math.round(width.value * 0.7);
+}
+
+function scrollDist(time) {
+  const tw = lineTextWidths.get(time);
+  if (tw == null) return 0;
+  // 滚动距离 = 文字宽 - 槽宽（屏幕 70%）：动画从 translateX(0)（首字贴槽左缘）
+  // 滑到距离终点（末字右缘贴槽右缘），黑底槽本身不动
+  return Math.max(0, tw - Math.round(width.value * 0.7));
+}
+
+function marqueeDuration(text, time) {
+  // 动画总时长 = 该句展示时长 与 舒适总时长 的较小者：
+  //   关键帧里 12% 起始停顿 + 68% 滚动（到 80% 处提前完成）+ 20% 末尾停顿，其余交给 fill forwards 保持，
+  //   从而保证切句前一定滚动完毕（短句也不拖到下一句）。
+  // 末句无下一句时按 8s 兜底。
+  const next = parsedLyrics.value[currentLineIndex.value + 1];
+  const lineEnd = next ? next.time : time + 8000;              // 毫秒
+  const lineDuration = Math.max(2000, lineEnd - time);         // 该句展示时长，保底 2s
+  const comfortable = Math.max(5000, Math.round((text || '').length * 323)); // 按文字长度的舒适总时长
+  const duration = Math.max(1500, Math.min(comfortable, lineDuration));
+  return `${duration / 1000}s`;
+}
 
 
 watch(() => player.lyricText, (newVal) => {
@@ -394,3 +470,22 @@ onUnmounted(() => {
   clearInterval(updateInterval);
 });
 </script>
+
+<style scoped>
+/*
+ * 移动端长歌词滚动：黑底固定不动，仅文字在槽内滚动。
+ * 起点：首字母贴黑底左缘（translateX(0)）；终点：末字母右缘贴黑底右缘（--mp-scroll-dist）。
+ * 起始约 12% 停顿 → 滚动到 80% 处提前完成 → 末尾约 20% 停顿，
+ * 单次播放 + fill forwards：滚完停在末尾，不循环、不拖到下一句。
+ */
+@keyframes mp-marquee {
+  0%   { transform: translateX(0); }
+  12%  { transform: translateX(0); }
+  80%  { transform: translateX(var(--mp-scroll-dist, -100%)); }
+  100% { transform: translateX(var(--mp-scroll-dist, -100%)); }
+}
+.marquee-scroll {
+  display: inline-block;
+  animation: mp-marquee linear 1 forwards;
+}
+</style>

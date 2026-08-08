@@ -138,36 +138,18 @@
                   <span class="text-xs font-bold uppercase tracking-widest font-mono">私人电台 / Private_Radio</span>
                 </div>
                 <div class="p-4 space-y-4">
-                  <!-- 总开关 -->
-                  <div class="flex items-center justify-between">
-                    <div class="flex flex-col">
-                      <span class="text-[10px] font-bold text-medical-800">私人FM/DJ 总开关</span>
-                      <span class="text-[8px] text-medical-400 font-mono uppercase">MASTER SWITCH</span>
-                    </div>
-                    <button @click="togglePrivateDjMaster"
-                            class="w-8 h-4 rounded-full relative transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            :class="privateDj.masterEnabled ? 'bg-accent' : 'bg-medical-300'"
-                            :disabled="!playerStore.config.neteaseCookieConfigured"
-                            :title="playerStore.config.neteaseCookieConfigured ? '' : '需先配置网易云 Cookie'">
-                      <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300"
-                           :style="{ transform: privateDj.masterEnabled ? 'translateX(16px)' : 'translateX(0)' }"></div>
-                    </button>
-                  </div>
-
-                  <!-- 模式切换 -->
+                  <!-- 模式开关（两个开关都是"点选开启、再点关闭"；全关即整体关闭，无需独立"关闭"按钮） -->
                   <div class="space-y-1">
-                    <span class="text-[9px] font-bold text-medical-400 font-mono uppercase">模式</span>
+                    <span class="text-[9px] font-bold text-medical-400 font-mono uppercase">模式 · 开关</span>
                     <div class="grid grid-cols-2 gap-1 p-1 bg-medical-50 border border-medical-100">
-                      <button @click="setPrivateDjMode('FM')"
-                              class="py-1.5 text-[10px] font-bold transition-colors disabled:opacity-40"
-                              :class="privateDj.mode === 'FM' ? 'bg-accent text-white' : 'text-medical-500 hover:bg-medical-200'"
-                              :disabled="!privateDj.masterEnabled">私人FM</button>
-                      <button @click="setPrivateDjMode('DJ')"
-                              class="py-1.5 text-[10px] font-bold transition-colors disabled:opacity-40"
-                              :class="privateDj.mode === 'DJ' ? 'bg-accent text-white' : 'text-medical-500 hover:bg-medical-200'"
-                              :disabled="!privateDj.masterEnabled">私人DJ</button>
+                      <button @click="setPrivateDjMode(privateDj.mode === 'FM' ? 'OFF' : 'FM')"
+                              class="py-1.5 text-[10px] font-bold transition-colors"
+                              :class="privateDj.mode === 'FM' ? 'bg-accent text-white' : 'text-medical-500 hover:bg-medical-200'">私人FM</button>
+                      <button @click="setPrivateDjMode(privateDj.mode === 'DJ' ? 'OFF' : 'DJ')"
+                              class="py-1.5 text-[10px] font-bold transition-colors"
+                              :class="privateDj.mode === 'DJ' ? 'bg-accent text-white' : 'text-medical-500 hover:bg-medical-200'">私人DJ</button>
                     </div>
-                    <p class="text-[8px] text-medical-400">私人DJ模式=先播语音再播歌；加入队列功能固定为私人FM</p>
+                    <p class="text-[8px] text-medical-400">点选即开启，再点已选中的模式即关闭；私人DJ模式=先播语音再播歌；加入队列功能固定为私人FM</p>
                   </div>
 
                   <!-- 三个功能开关 -->
@@ -180,7 +162,7 @@
                       <button @click="togglePrivateDjSwitch(sw.field)"
                               class="w-8 h-4 rounded-full relative transition-colors disabled:opacity-40"
                               :class="privateDj[sw.field] ? 'bg-accent' : 'bg-medical-300'"
-                              :disabled="!privateDj.masterEnabled">
+                              :disabled="privateDj.mode === 'OFF'">
                         <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300"
                              :style="{ transform: privateDj[sw.field] ? 'translateX(16px)' : 'translateX(0)' }"></div>
                       </button>
@@ -367,9 +349,9 @@ const platforms = ref([
   { id: 'bilibili', name: '哔哩哔哩', tokenName: 'COOKIE', value: '' }
 ]);
 
-// 私人电台/私人DJ 状态（来自 config.privateDj，服务端广播）
+// 私人电台/私人DJ 状态（来自 config.privateDj，服务端广播；mode 即开关：OFF=关闭/FM=私人FM/DJ=私人DJ）
 const privateDj = computed(() => playerStore.config.privateDj || {
-  masterEnabled: false, mode: 'FM',
+  mode: 'OFF',
   fillBlankEnabled: false, joinQueueEnabled: false, custodyEnabled: false
 });
 
@@ -379,21 +361,12 @@ const privateDjSwitches = [
   { field: 'custodyEnabled', label: '播放托管', hint: '无视队列·仅播FM/DJ' },
 ];
 
-const togglePrivateDjMaster = async () => {
-  const next = !privateDj.value.masterEnabled;
-  if (next && !playerStore.config.neteaseCookieConfigured) {
+const setPrivateDjMode = async (mode) => {
+  // 切到 FM/DJ 视为开启，需已配置网易云 Cookie（后端同样校验，这里先给友好提示）
+  if (mode !== 'OFF' && !playerStore.config.neteaseCookieConfigured) {
     error('需先配置网易云 Cookie');
     return;
   }
-  try {
-    const data = await adminApi.updatePrivateDj(adminStore.adminPassword, { masterEnabled: next });
-    success(data.message);
-  } catch (e) {
-    error('私人电台配置更新失败');
-  }
-};
-
-const setPrivateDjMode = async (mode) => {
   try {
     const data = await adminApi.updatePrivateDj(adminStore.adminPassword, { mode });
     success(data.message);

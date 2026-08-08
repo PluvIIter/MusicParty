@@ -46,8 +46,8 @@ class MusicPlayerServiceJoinQueueTest {
     }
 
     @Test
-    void fmMarkerOnlyWhenShuffleMasterAndJoinQueue() {
-        props.getPrivateDj().setMasterEnabled(true);
+    void fmMarkerOnlyWhenShuffleModeOnAndJoinQueue() {
+        props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setJoinQueueEnabled(true);
         service.setPlayModeForTest(PlayMode.SHUFFLE);
         service.syncFmMarkerForTest();
@@ -62,7 +62,7 @@ class MusicPlayerServiceJoinQueueTest {
 
     @Test
     void custodySuppressesFmMarker() {
-        props.getPrivateDj().setMasterEnabled(true);
+        props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setJoinQueueEnabled(true);
         props.getPrivateDj().setCustodyEnabled(true);
         service.setPlayModeForTest(PlayMode.SHUFFLE);
@@ -72,22 +72,22 @@ class MusicPlayerServiceJoinQueueTest {
     }
 
     @Test
-    void disablingMasterRemovesFmMarker() {
-        props.getPrivateDj().setMasterEnabled(true);
+    void modeOffRemovesFmMarker() {
+        props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setJoinQueueEnabled(true);
         service.setPlayModeForTest(PlayMode.SHUFFLE);
         service.syncFmMarkerForTest();
         verify(queueManager).ensureFmMarker();
 
-        props.getPrivateDj().setMasterEnabled(false);
+        props.getPrivateDj().setMode("OFF");
         service.syncFmMarkerForTest();
-        verify(queueManager).removeFmMarker(); // 总开关关闭后清除陈旧标记
+        verify(queueManager).removeFmMarker(); // 切到"关闭"后清除陈旧标记
         verify(queueManager, times(1)).ensureFmMarker(); // 不再添加
     }
 
     @Test
     void fmMarkerReplenishedImmediatelyWhenSelected() {
-        props.getPrivateDj().setMasterEnabled(true);
+        props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setJoinQueueEnabled(true);
         service.setPlayModeForTest(PlayMode.SHUFFLE);
         when(djService.nextFmSegment()).thenReturn(Mono.empty());
