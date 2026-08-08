@@ -14,19 +14,27 @@
           <Search class="w-5 h-5 text-accent"/> SEARCH
         </h2>
 
-        <!-- 平台切换 TAB (移动端收紧内边距，防小屏换行) -->
-        <div class="flex gap-1 mb-3 md:mb-4">
+        <!-- 平台切换 TAB (移动端收紧内边距，防小屏换行)；全长方形，选中用主题色高亮 -->
+        <div class="flex gap-1 mb-3 md:mb-4 flex-wrap">
           <button
               v-for="p in ['netease', 'bilibili']" :key="p"
-              @click="platform = p"
+              @click="selectPlatform(p)"
               :disabled="!isPlatformEnabled(p)"
               class="px-4 md:px-6 py-2 text-sm font-bold uppercase transition-all"
               :class="[
-                platform === p ? 'bg-medical-900 text-white clip-tab' : 'bg-medical-200 text-medical-500 hover:bg-medical-300',
+                mode === 'search' && platform === p ? 'bg-accent text-white' : 'bg-medical-200 text-medical-500 hover:bg-medical-300',
                 !isPlatformEnabled(p) ? 'opacity-30 cursor-not-allowed grayscale' : ''
               ]"
           >
             {{ p }}
+          </button>
+          <!-- 本地点赞列表标签（仅本地缓存，不上报服务器） -->
+          <button
+              @click="mode = 'likesong'"
+              class="px-4 md:px-6 py-2 text-sm font-bold transition-all"
+              :class="mode === 'likesong' ? 'bg-accent text-white' : 'bg-medical-200 text-medical-500 hover:bg-medical-300'"
+          >
+            LIKESONG
           </button>
         </div>
 
@@ -34,8 +42,8 @@
         <div class="flex gap-2">
           <input
               v-model="keyword"
-              @keyup.enter="doSearch"
-              placeholder="搜索音乐..."
+              @keyup.enter="handleSearchAction"
+              :placeholder="mode === 'likesong' ? '搜索点赞的歌曲...' : '搜索音乐...'"
               class="flex-1 min-w-0 border p-2.5 md:p-3 outline-none transition-colors duration-300 font-sans bg-medical-100 border-medical-200 focus:border-accent"
           />
           <button
@@ -50,9 +58,55 @@
       <!-- 内容区 -->
       <div class="flex-1 overflow-hidden flex flex-col md:flex-row relative">
 
+        <!-- LikeSong：本地点赞歌曲列表（仅本地缓存，不上报服务器） -->
+        <div v-if="mode === 'likesong'" class="flex-1 bg-medical-50 flex-col min-h-0 flex">
+          <div class="flex items-center justify-between p-3 bg-white border-b border-medical-200 flex-shrink-0">
+            <span class="font-bold text-sm text-medical-800 font-mono">LIKESONG</span>
+            <span class="text-[10px] font-mono text-medical-400">{{ likedSongs.length }} LIKED</span>
+          </div>
+          <div class="flex-1 overflow-y-auto overscroll-contain p-2 md:p-4">
+            <div v-if="filteredLikedSongs.length === 0" class="text-center py-10 text-medical-400 text-xs font-mono">{{ keyword.trim() ? 'NO MATCH' : 'NO LIKED SONGS YET' }}</div>
+            <div class="space-y-1">
+              <div v-for="song in filteredLikedSongs" :key="song.platform + ':' + song.id" class="flex items-center p-3 bg-white border border-transparent transition-all group hover:border-medical-300 hover:shadow-sm">
+                <div class="flex-1 w-0 flex items-center gap-3">
+                  <div class="w-8 h-8 bg-medical-200 flex-shrink-0 relative overflow-hidden"><CoverImage :src="song.coverUrl" class="w-full h-full" :scanline="false" /></div>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-bold truncate">{{ song.name }}</div>
+                    <div class="text-xs text-medical-500 truncate">{{ song.artists.join(' / ') }}</div>
+                  </div>
+                </div>
+                <button
+                    @click="addLikedClick(song)"
+                    :disabled="isInQueue(song.id) || pendingIds.has(song.id)"
+                    class="ml-2 p-2 flex-shrink-0 transition-all duration-300"
+                    :class="[
+                        isInQueue(song.id) ? 'text-green-500 cursor-default' :
+                        pendingIds.has(song.id) ? 'text-accent cursor-wait' :
+                        'text-medical-300 hover:text-accent'
+                    ]"
+                >
+                  <!-- 状态 1: 正在添加 -->
+                  <Loader2 v-if="pendingIds.has(song.id)" class="w-5 h-5 animate-spin" />
+                  <!-- 状态 2: 已经在队列中 -->
+                  <Check v-else-if="isInQueue(song.id)" class="w-5 h-5" />
+                  <!-- 状态 3: 普通添加按钮 -->
+                  <PlusCircle v-else class="w-5 h-5"/>
+                </button>
+                <button
+                    @click="openLikedSource(song)"
+                    title="打开源页面"
+                    class="ml-1 p-2 flex-shrink-0 text-medical-300 hover:text-accent transition-all duration-300"
+                >
+                  <ExternalLink class="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 左侧：我的歌单 / 绑定 -->
         <div class="md:w-1/3 md:h-auto flex-shrink-0 border-b md:border-b-0 md:border-r border-medical-200 flex-col bg-white transition-all"
-             :class="mobileView === 'playlists' ? 'flex w-full h-full' : 'hidden md:flex'"
+             :class="mode === 'likesong' ? 'hidden' : (mobileView === 'playlists' ? 'flex w-full h-full' : 'hidden md:flex')"
         >
           <div class="p-2 md:p-3 bg-medical-100 text-xs font-bold text-medical-500 flex justify-between items-center font-sans">
             <span>用户歌单</span>
@@ -100,7 +154,7 @@
         </div>
 
         <!-- 右侧：歌曲列表 -->
-        <div class="md:flex-1 bg-medical-50 flex-col min-h-0" :class="mobileView === 'songs' ? 'flex w-full h-full' : 'hidden md:flex'">
+        <div class="md:flex-1 bg-medical-50 flex-col min-h-0" :class="mode === 'likesong' ? 'hidden' : (mobileView === 'songs' ? 'flex w-full h-full' : 'hidden md:flex')">
           <!-- 移动端返回条 -->
           <div class="md:hidden flex items-center gap-2 p-3 bg-white border-b border-medical-200 flex-shrink-0">
             <button @click="mobileView = 'playlists'" class="p-1 -ml-1 text-medical-500 hover:text-medical-900"><ArrowLeft class="w-5 h-5" /></button>
@@ -171,11 +225,12 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { usePlaylistLogic } from '../composables/usePlaylistLogic';
-import { X, Search, PlusCircle, ListPlus, Loader2, ArrowLeft, ChevronRight, Check } from 'lucide-vue-next';
+import { useLikedSongs } from '../composables/useLikedSongs';
+import { X, Search, PlusCircle, ListPlus, Loader2, ArrowLeft, ChevronRight, Check, ExternalLink } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 
 const props = defineProps(['isOpen']);
@@ -194,9 +249,38 @@ const {
 } = useSearchLogic(emit);
 
 const handleSearchAction = async () => {
+  // LIKESONG 模式下搜索针对本地点赞记录（列表已按关键词实时过滤），不触发平台搜索
+  if (mode.value === 'likesong') return;
   await doSearch();
   // 无论 listMode 之前是不是 search，只要用户手动搜索了，就切到列表视图
   mobileView.value = 'songs';
+};
+
+// LikeSong 标签：'search' = 平台搜索 / 歌单，'likesong' = 本地点赞列表
+const mode = ref('search');
+const { likedSongs } = useLikedSongs();
+
+// LIKESONG 下搜索：按关键词过滤本地点赞记录（匹配歌名或歌手，不区分大小写）
+const filteredLikedSongs = computed(() => {
+  const kw = keyword.value.trim().toLowerCase();
+  if (!kw) return likedSongs.value;
+  return likedSongs.value.filter((s) =>
+    s.name.toLowerCase().includes(kw) ||
+    (s.artists || []).some((a) => String(a).toLowerCase().includes(kw))
+  );
+});
+
+const selectPlatform = async (p) => {
+  // 已在当前搜索平台则无需重复搜索
+  if (mode.value === 'search' && platform.value === p) return;
+  platform.value = p;
+  mode.value = 'search';
+  // 切换平台：有关键词则用新平台重新搜索，否则清空上一平台的残留结果
+  if (keyword.value.trim()) {
+    await doSearch();
+  } else {
+    songs.value = [];
+  }
 };
 
 // 2. 引入歌单逻辑 (注入依赖)
@@ -252,16 +336,30 @@ const handleAddClick = (song) => {
   }, 2000);
 };
 
+// LikeSong 列表：添加（用该歌曲自身的平台入队）
+const addLikedClick = (song) => {
+  if (pendingIds.value.has(song.id) || isInQueue(song.id)) return;
+  pendingIds.value.add(song.id);
+  playerStore.enqueue(song.platform, song.id);
+  setTimeout(() => {
+    pendingIds.value.delete(song.id);
+  }, 2000);
+};
+
+// LikeSong 列表：跳转源页面（与播放控制器专辑封面逻辑一致）
+const openLikedSource = (song) => {
+  const url = song.platform === 'netease'
+    ? `https://music.163.com/#/song?id=${song.id}`
+    : `https://www.bilibili.com/video/${song.id}`;
+  if (url) window.open(url, '_blank');
+};
+
 // 监听搜索动作 -> 自动切视图
-watch(listMode, (mode) => {
-  if (mode === 'search') mobileView.value = 'songs';
+watch(listMode, (m) => {
+  if (m === 'search') mobileView.value = 'songs';
 });
 
 watch(() => props.isOpen, (val) => {
   if (val) mobileView.value = 'playlists';
 });
 </script>
-
-<style scoped>
-.clip-tab { clip-path: polygon(0 0, 100% 0, 90% 100%, 0 100%); }
-</style>
