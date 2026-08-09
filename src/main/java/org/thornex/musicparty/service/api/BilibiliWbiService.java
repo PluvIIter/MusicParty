@@ -84,7 +84,11 @@ public class BilibiliWbiService {
                     keyCache.put("mixin_key", mixinKey);
                     lastCacheTime = System.currentTimeMillis();
                     return mixinKey;
-                });
+                })
+                // nav 也是 WBI 关键端点，风控 IP 会在这里被 HTTP 412 挑战拦截；
+                // 与搜索链路一致兜底转友好 502，避免漏到通用 500
+                .onErrorResume(e -> BilibiliMusicApiService.isRiskControlChallenge(e),
+                        e -> BilibiliMusicApiService.<String>riskControlFallback(e));
     }
 
     /**

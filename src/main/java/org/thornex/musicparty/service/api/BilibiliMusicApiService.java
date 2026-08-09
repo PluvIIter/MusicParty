@@ -1,9 +1,11 @@
 package org.thornex.musicparty.service.api;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.codec.DecodingException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.Music;
@@ -184,7 +186,10 @@ public class BilibiliMusicApiService implements IMusicApiService {
                 .onErrorResume(WbiSignatureException.class, e -> {
                     log.error("Bilibili search failed after retry: {}", e.getMessage());
                     return Mono.just(new ArrayList<>());
-                });
+                })
+                // HTTP 级风控挑战（HTTP 412/403 + HTML 挑战页、或 200 但正文非 JSON → DecodingException）
+                // 会逃过上方 JSON body 的 code:-412 判断，漏到通用 500；这里捕获转成友好 502
+                .onErrorResume(e -> isRiskControlChallenge(e), e -> riskControlFallback(e));
     }
 
     @Override
@@ -548,11 +553,35 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                         }
                                         return users;
                                     });
-                        }));
+                        }))
+                // 与 searchMusic 一致：HTTP 级风控挑战漏到 500，这里捕获转成友好 502
+                .onErrorResume(e -> isRiskControlChallenge(e), e -> riskControlFallback(e));
     }
 
     @Override
     public Mono<String> getLyric(String musicId) {
         return Mono.just(""); // B站暂时不支持歌词
+    }
+
+    /**
+     * 判断异常是否为 B站 HTTP 级风控挑战：
+     * <ul>
+     *   <li>{@link WebClientResponseException} 且状态码 412/403（B站对风控 IP 返回 HTTP 412 + HTML 挑战页）；</li>
+     *   <li>{@link DecodingException}（挑战页正文不是 JSON，bodyToMono(JsonNode) 解码失败）。</li>
+     * </ul>
+     * 这类异常不会产生 JSON body 的 {@code code:-412}，因此走不到上方 sink.error 的 -412 判断，需要在此兜底。
+     */
+    static boolean isRiskControlChallenge(Throwable e) {
+        if (e instanceof WebClientResponseException wcre) {
+            int status = wcre.getStatusCode().value();
+            return status == 412 || status == 403;
+        }
+        return e instanceof DecodingException;
+    }
+
+    /** 风控挑战统一转成友好 502（与 JSON code:-412 文案一致），并保留真实异常日志供排查。 */
+    static <T> Mono<T> riskControlFallback(Throwable e) {
+        log.error("Bilibili request blocked by B站 risk control (HTTP challenge): {}", e.getMessage());
+        return Mono.error(new ApiRequestException("请求被B站风控拦截(IP受限或凭据不足)，请稍后重试"));
     }
 }

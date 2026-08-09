@@ -47,7 +47,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Object> handleGenericException(Exception ex, jakarta.servlet.http.HttpServletResponse response) {
+    public ResponseEntity<Object> handleGenericException(Exception ex, jakarta.servlet.http.HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
         // 若响应内容类型已被设为媒体/二进制类型（如 audio/mp4）或响应已提交，JSON 错误体无法写入。
         // 此时返回空体，但必须把原始异常记录下来，绝不掩盖真实根因。
         String contentType = response.getContentType();
@@ -57,6 +57,8 @@ public class GlobalExceptionHandler {
         }
 
         // For all other unexpected errors, return 500 Internal Server Error
+        // 前端只展示 message，异常类名与堆栈对用户不可见；这里必须落日志，否则真实根因被掩盖
+        log.error("Unhandled exception on {}: ", request.getMethod() + " " + request.getRequestURI(), ex);
         Map<String, Object> body = Map.of(
                 "message", "An unexpected internal server error occurred.",
                 "error", ex.getClass().getSimpleName(),
