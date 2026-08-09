@@ -3,6 +3,7 @@ name: Build Docker Image
 on:
   push:
     branches: [ "main", "master", "dev" ]
+    tags: [ 'v*.*.*' ]
   workflow_dispatch:
 
 env:
@@ -42,6 +43,20 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
 
+      - name: Compute APP_VERSION
+        id: appver
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Show image tags and labels
+        run: |
+          echo "tags: ${{ steps.meta.outputs.tags }}"
+          echo "labels: ${{ steps.meta.outputs.labels }}"
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -49,5 +64,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.appver.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

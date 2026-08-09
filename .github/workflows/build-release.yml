@@ -1,7 +1,8 @@
 name: Build Release (Launcher + APK)
 
 on:
-  # 只手动触发：填了 release_tag 会发布 Release，留空则只出 artifact
+  push:
+    tags: [ 'v*.*.*' ]
   workflow_dispatch:
     inputs:
       release_tag:
@@ -15,15 +16,48 @@ on:
         required: false
         default: ''
       release_notes:
-        description: 'Release 说明（正文），留空则无正文'
+        description: 'Release 说明（正文），留空则自动生成 commit 列表'
         type: string
         required: false
         default: ''
 
 jobs:
+  # ===================== 版本号唯一来源：从 tag 提取并计算 =====================
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      version_code: ${{ steps.compute.outputs.version_code }}
+      tag: ${{ steps.compute.outputs.tag }}
+      wails_version: ${{ steps.compute.outputs.wails_version }}
+    steps:
+      - name: Compute version
+        id: compute
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            RAW="$GITHUB_REF_NAME"
+          else
+            RAW="${{ inputs.release_tag }}"
+          fi
+          RAW="${RAW#v}"
+          VER="${RAW:-dev}"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=$VER" >> "$GITHUB_OUTPUT"
+          # versionCode: 主*10000+次*100+patch（先删非数字、空段再兜底 0，避免 dev 回退时算术报错）
+          IFS='.' read -r M m p <<< "$VER"
+          M=${M//[^0-9]/}; m=${m//[^0-9]/}; p=${p//[^0-9]/}
+          M=${M:-0}; m=${m:-0}; p=${p:-0}
+          VC=$(( M * 10000 + m * 100 + p ))
+          VC=$(( VC == 0 ? 1 : VC ))
+          echo "version_code=$VC" >> "$GITHUB_OUTPUT"
+          # Wails 需要数值版本号，dev 回退 0.0.0（否则 EXE 版本资源解析可能失败）
+          if [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then WV="$VER"; else WV="0.0.0"; fi
+          echo "wails_version=$WV" >> "$GITHUB_OUTPUT"
+
   # ===================== 业务2：Windows 启动器 EXE =====================
   build-launcher:
     runs-on: windows-latest
+    needs: setup
     defaults:
       run:
         shell: pwsh
@@ -66,18 +100,27 @@ jobs:
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
+      - name: Set Wails product version
+        run: node -e "const fs=require('fs');const p='launcher/wails.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.info=j.info||{};j.info.productVersion=process.env.MP_VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2));"
+        env:
+          MP_VERSION: ${{ needs.setup.outputs.wails_version }}
+
       - name: Build Frontend
         run: |
           cd music-party-web
           npm install
           npm run build
+        env:
+          VITE_APP_VERSION: ${{ needs.setup.outputs.version }}
 
       - name: Build Java Backend
         run: |
           if (Test-Path "src/main/resources/static") { Remove-Item -Recurse -Force "src/main/resources/static" }
           New-Item -ItemType Directory -Force "src/main/resources/static"
           Copy-Item -Recurse "music-party-web/dist/*" "src/main/resources/static/"
-          mvn clean package -DskipTests
+          mvn clean package -DskipTests -Drevision=$env:MP_VERSION
+        env:
+          MP_VERSION: ${{ needs.setup.outputs.version }}
 
       # C. 编译 API EXE (使用官方 working-directory 隔离环境)
       - name: Build Netease API EXE
@@ -143,6 +186,7 @@ jobs:
   # ===================== 业务3：Android APK =====================
   build-apk:
     runs-on: ubuntu-latest
+    needs: setup
     # secrets 不能直接在 if 里用，提到 job 级 env；未配置时为空串
     env:
       KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -172,7 +216,7 @@ jobs:
 
       - name: Build debug + release APK
         working-directory: android
-        run: gradle assembleDebug assembleRelease
+        run: gradle assembleDebug assembleRelease -PversionName=${{ needs.setup.outputs.version }} -PversionCode=${{ needs.setup.outputs.version_code }}
 
       - name: Upload debug APK (dev 测试用)
         uses: actions/upload-artifact@v4
@@ -202,11 +246,11 @@ jobs:
   # ===================== 发布：把 EXE + APK 合并进同一个 Release =====================
   publish:
     runs-on: ubuntu-latest
-    needs: [build-launcher, build-apk]
+    needs: [build-launcher, build-apk, setup]
     permissions:
       contents: write   # 发布 GitHub Release 需要
-    # 手动触发且填了 release_tag 才发布；留空则只出 artifact
-    if: inputs.release_tag != ''
+    # tag 推送或手动填了 release_tag 才发布；留空则只出 artifact
+    if: github.ref_type == 'tag' || inputs.release_tag != ''
     steps:
       - name: Download EXE
         uses: actions/download-artifact@v4
@@ -221,13 +265,48 @@ jobs:
           path: release-artifacts/
         continue-on-error: true   # 未配置签名 secrets 时没有该 artifact，不阻塞发布 EXE
 
-      # tag / 标题 / 正文 直接引用手动触发时填的输入（标题留空，GitHub 默认用 tag 名）
+      - name: Checkout (for commit log)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release body
+        run: |
+          if [ -n "$RELEASE_TAG" ]; then
+            git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG" || true
+            git checkout -q "$RELEASE_TAG"
+            REF="$RELEASE_TAG"
+          else
+            REF="$GITHUB_REF_NAME"
+          fi
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV" ]; then
+            LOG=$(git log --oneline "$PREV..HEAD")
+          else
+            LOG=$(git log --oneline HEAD)
+          fi
+          {
+            echo "## 版本变更 ($PREV → ${REF})"
+            echo ""
+            echo '### Commits'
+            echo '```'
+            echo "$LOG"
+            echo '```'
+            echo ""
+            echo "### Docker 部署"
+            echo '- 精确版本：`docker pull thornex/music-party:${{ needs.setup.outputs.version }}`'
+            echo '- 最新：`docker pull thornex/music-party:latest`'
+          } > release-body.md
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+
+      # tag / 标题 / 正文 自动取 tag 或手动输入
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag }}
-          name: ${{ inputs.release_name }}
-          body: ${{ inputs.release_notes }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
+          name: ${{ github.ref_type == 'tag' && format('MusicParty {0}', github.ref_name) || inputs.release_name }}
+          body_path: release-body.md
           files: release-artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
