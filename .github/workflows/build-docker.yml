@@ -2,7 +2,8 @@ name: Build Docker Image
 
 on:
   push:
-    branches: [ "main", "master", "dev" ]
+    # 只有 dev 分支 push 构建 dev 镜像；master 仅在打 tag 时构建（见下方 tags）
+    branches: [ "dev" ]
     tags: [ 'v*.*.*' ]
   workflow_dispatch:
 
@@ -38,7 +39,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            # latest 仅由 tag 构建的 semver 规则（flavor latest=auto）产出；无分支 push 的 latest 维护
             type=sha,prefix=sha-,format=short
             type=ref,event=branch
             type=semver,pattern={{version}}
