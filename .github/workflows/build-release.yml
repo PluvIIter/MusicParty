@@ -118,8 +118,8 @@ jobs:
           if (Test-Path "src/main/resources/static") { Remove-Item -Recurse -Force "src/main/resources/static" }
           New-Item -ItemType Directory -Force "src/main/resources/static"
           Copy-Item -Recurse "music-party-web/dist/*" "src/main/resources/static/"
-          # 用模板插值而非 $env:MP_VERSION：PowerShell 调用 mvn.cmd(批处理) 时不会展开 $env:，字面量会传给 Maven 导致 jar 名含 $env:MP_VERSION 而失败
-          mvn clean package -DskipTests -Drevision=${{ needs.setup.outputs.version }}
+          # pwsh 给 mvn.cmd(批处理) 传带点号的 -D 参数会拆成 -Drevision=1 .3.5，Maven 把 .3.5 当生命周期阶段直接失败；用 cmd /c 包裹，改由 cmd 拆分参数
+          cmd /c "mvn clean package -DskipTests -Drevision=${{ needs.setup.outputs.version }}"
 
       # C. 编译 API EXE (使用官方 working-directory 隔离环境)
       - name: Build Netease API EXE
