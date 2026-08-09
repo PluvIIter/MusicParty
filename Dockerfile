@@ -6,9 +6,11 @@ WORKDIR /app/frontend
 
 ARG APP_AUTHOR_NAME="ThorNex"
 ARG APP_BACK_WORDS="THORNEX"
+ARG APP_VERSION="0.0.0-dev"
 
 ENV VITE_APP_AUTHOR_NAME=${APP_AUTHOR_NAME}
 ENV VITE_APP_BACK_WORDS=${APP_BACK_WORDS}
+ENV VITE_APP_VERSION=${APP_VERSION}
 
 # 复制前端项目定义文件
 COPY music-party-web/package*.json ./
@@ -26,6 +28,8 @@ RUN npm run build
 FROM maven:3.9-eclipse-temurin-21-alpine AS backend-builder
 WORKDIR /app/backend
 
+ARG APP_VERSION="0.0.0-dev"
+
 # 复制 Maven 依赖定义
 COPY pom.xml .
 # 预下载依赖 (利用缓存，加速构建)
@@ -38,7 +42,7 @@ COPY src ./src
 COPY --from=frontend-builder /app/frontend/dist ./src/main/resources/static/
 
 # 编译 JAR 包，跳过测试
-RUN mvn clean package -DskipTests
+RUN mvn clean package -DskipTests -Drevision=${APP_VERSION}
 
 # ============================
 # Stage 3: Runtime Image
