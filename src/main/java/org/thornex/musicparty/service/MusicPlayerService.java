@@ -8,6 +8,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.*;
+import org.thornex.musicparty.dto.SettingsSnapshot;
 import org.thornex.musicparty.dto.PrivateDjSegment;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.enums.PlayerAction;
@@ -578,6 +579,42 @@ public class MusicPlayerService {
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
                 locked ? "管理员锁定了所有控制" : "管理员解锁了所有控制"));
+    }
+
+    /** 捕获当前播放相关运行时设置（持久化用）。只读 Atomic 字段——它们是 updateConfig 的运行时真相。 */
+    public SettingsSnapshot.PlayerSettings getPlayerSettings() {
+        return new SettingsSnapshot.PlayerSettings(
+                playMode.get().name(),
+                isFairShuffle.get(),
+                allowOfflineShuffle.get(),
+                isVoteSkipEnabled.get(),
+                voteSkipThreshold.get(),
+                voteSkipWaitTime.get(),
+                isPauseLocked.get(),
+                isSkipLocked.get(),
+                isPlayModeLocked.get());
+    }
+
+    /** 回填持久化的播放设置。逐字段判空；playMode 恢复时同步 isShuffle 保持派生一致。 */
+    public void applyPlayerSettings(SettingsSnapshot.PlayerSettings s) {
+        if (s == null) return;
+        if (s.playMode() != null) {
+            try {
+                PlayMode mode = PlayMode.valueOf(s.playMode());
+                playMode.set(mode);
+                isShuffle.set(mode == PlayMode.SHUFFLE);
+            } catch (IllegalArgumentException e) {
+                log.warn("Ignored invalid persisted playMode: {}", s.playMode());
+            }
+        }
+        if (s.fairShuffle() != null) isFairShuffle.set(s.fairShuffle());
+        if (s.allowOfflineShuffle() != null) allowOfflineShuffle.set(s.allowOfflineShuffle());
+        if (s.voteSkipEnabled() != null) isVoteSkipEnabled.set(s.voteSkipEnabled());
+        if (s.voteSkipThreshold() != null) voteSkipThreshold.set(s.voteSkipThreshold());
+        if (s.voteSkipWaitTime() != null) voteSkipWaitTime.set(s.voteSkipWaitTime());
+        if (s.pauseLocked() != null) isPauseLocked.set(s.pauseLocked());
+        if (s.skipLocked() != null) isSkipLocked.set(s.skipLocked());
+        if (s.playModeLocked() != null) isPlayModeLocked.set(s.playModeLocked());
     }
 
     public void enqueue(EnqueueRequest request, String sessionId) {
