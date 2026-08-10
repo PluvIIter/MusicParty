@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.thornex.musicparty.dto.ChatMessage;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.enums.MessageType;
@@ -165,13 +166,6 @@ public class ChatService {
         // 这里我们记录所有 INFO, WARN, SUCCESS 级别的事件，忽略 ERROR (通常 ERROR 只弹 Toast)
         if (event.getLevel() == SystemMessageEvent.Level.ERROR) return;
 
-        // 私人FM/DJ 是虚拟用户（__FM__），它每切一首歌就发一条 PLAY_START，
-        // 会刷屏聊天栏/系统栏 → 直接拦截：不入历史、不广播（前端弹窗本来也过滤 PLAY_START）
-        if (event.getAction() == PlayerAction.PLAY_START
-                && MusicQueueManager.FM_MARKER_USER_TOKEN.equals(event.getUserId())) {
-            return;
-        }
-
         // 如果是 RESET 事件，清空历史
         if (event.getAction() == PlayerAction.RESET) {
             clearHistory();
@@ -179,7 +173,11 @@ public class ChatService {
         }
 
         String userName = "SYSTEM";
-        if (!"SYSTEM".equals(event.getUserId())) {
+        if (StringUtils.hasText(event.getUserName())) {
+            // 优先用发布者携带的名字快照：点歌人离线超 1h 会被 UserService 清理，
+            // 现场按 token 查会查不到而显示 Unknown
+            userName = event.getUserName();
+        } else if (!"SYSTEM".equals(event.getUserId())) {
             // 私人FM/DJ 是虚拟用户（令牌 __FM__），用户表查不到 → 按当前模式显示友好名称
             if (MusicQueueManager.FM_MARKER_USER_TOKEN.equals(event.getUserId())) {
                 boolean djMode = "DJ".equals(appProperties.getPrivateDj().getMode());
