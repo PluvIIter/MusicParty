@@ -256,12 +256,14 @@ jobs:
         with:
           name: MusicParty-windows-exe
           path: release-artifacts/
+          merge-multiple: true   # v4 默认按 artifact 名建子目录，flatten 后 release-artifacts/* 才能匹配到文件
 
       - name: Download signed APK
         uses: actions/download-artifact@v4
         with:
           name: music-party-release
           path: release-artifacts/
+          merge-multiple: true
         continue-on-error: true   # 未配置签名 secrets 时没有该 artifact，不阻塞发布 EXE
 
       - name: Checkout (for commit log)
