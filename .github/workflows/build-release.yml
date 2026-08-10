@@ -251,6 +251,13 @@ jobs:
     # tag 推送或手动填了 release_tag 才发布；留空则只出 artifact
     if: github.ref_type == 'tag' || inputs.release_tag != ''
     steps:
+      # ⚠️ 必须先 checkout 再下载产物：checkout@v4 默认 clean:true 会 git clean -ffdx，
+      # 若先下载 release-artifacts/ 再 checkout，整个目录会被清空，softprops 的 glob 匹配 0 文件 → release 无 assets
+      - name: Checkout (for commit log)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download EXE
         uses: actions/download-artifact@v4
         with:
@@ -265,11 +272,6 @@ jobs:
           path: release-artifacts/
           merge-multiple: true
         continue-on-error: true   # 未配置签名 secrets 时没有该 artifact，不阻塞发布 EXE
-
-      - name: Checkout (for commit log)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Generate release body
         run: |
@@ -300,6 +302,18 @@ jobs:
           } > release-body.md
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+
+      # 保险：删掉该 tag 已有的 release（draft 或已发布）。
+      # softprops 对已存在的 release 只更新正文、跳过 assets 上传（实测手动触发 target 已存在 release 时 0 assets）；
+      # 先删再建，保证每次都走 create 路径把 EXE+APK 传进去。
+      # 不加 --cleanup-tag：tag 是发布锚点，只删 release 保留 tag。
+      # 没有已存在 release 时 delete 报错，|| true 吞掉，幂等。
+      - name: Delete existing release (if any)
+        run: |
+          gh release delete "$TAG" --yes 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
 
       # tag / 标题 / 正文 自动取 tag 或手动输入
       - name: Create Release and Upload Assets
