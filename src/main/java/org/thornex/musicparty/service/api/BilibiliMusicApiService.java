@@ -5,6 +5,7 @@ import org.springframework.core.codec.DecodingException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.thornex.musicparty.config.AppProperties;
@@ -189,7 +190,10 @@ public class BilibiliMusicApiService implements IMusicApiService {
                 })
                 // HTTP 级风控挑战（HTTP 412/403 + HTML 挑战页、或 200 但正文非 JSON → DecodingException）
                 // 会逃过上方 JSON body 的 code:-412 判断，漏到通用 500；这里捕获转成友好 502
-                .onErrorResume(e -> isRiskControlChallenge(e), e -> riskControlFallback(e));
+                .onErrorResume(e -> isRiskControlChallenge(e), e -> riskControlFallback(e))
+                // 网络层失败（DNS 解析失败 / 连接失败 / 超时，由 WebClientRequestException 包装）也会漏到通用 500；
+                // 常见于 Netty 在 Windows 读不到系统 DNS 回退 Google 解析失败，这里捕获转成友好 502
+                .onErrorResume(e -> isNetworkFailure(e), e -> networkFailureFallback(e));
     }
 
     @Override
@@ -555,7 +559,9 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                     });
                         }))
                 // 与 searchMusic 一致：HTTP 级风控挑战漏到 500，这里捕获转成友好 502
-                .onErrorResume(e -> isRiskControlChallenge(e), e -> riskControlFallback(e));
+                .onErrorResume(e -> isRiskControlChallenge(e), e -> riskControlFallback(e))
+                // 与 searchMusic 一致：网络层失败（DNS/连接/超时）漏到 500，这里捕获转成友好 502
+                .onErrorResume(e -> isNetworkFailure(e), e -> networkFailureFallback(e));
     }
 
     @Override
@@ -583,5 +589,16 @@ public class BilibiliMusicApiService implements IMusicApiService {
     static <T> Mono<T> riskControlFallback(Throwable e) {
         log.error("Bilibili request blocked by B站 risk control (HTTP challenge): {}", e.getMessage());
         return Mono.error(new ApiRequestException("请求被B站风控拦截(IP受限或凭据不足)，请稍后重试"));
+    }
+
+    /** 判断异常是否为网络层失败：DNS 解析失败 / 连接失败 / 超时等，由 {@link WebClientRequestException} 包装。 */
+    static boolean isNetworkFailure(Throwable e) {
+        return e instanceof WebClientRequestException;
+    }
+
+    /** 网络层失败统一转成友好 502（提示检查网络/DNS），并保留真实异常日志供排查。 */
+    static <T> Mono<T> networkFailureFallback(Throwable e) {
+        log.error("Bilibili network request failed (DNS/connect): {}", e.getMessage());
+        return Mono.error(new ApiRequestException("无法连接B站服务器，请检查网络/DNS配置后重试"));
     }
 }
