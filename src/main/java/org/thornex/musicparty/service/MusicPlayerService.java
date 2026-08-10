@@ -432,7 +432,7 @@ public class MusicPlayerService {
         broadcastQueueUpdate();
 
         // 发布开始播放事件 (用于聊天栏展示)
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().token(), music.name()));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().token(), queueItem.enqueuedBy().name(), music.name()));
     }
 
     public PlayerState getCurrentPlayerState() {
