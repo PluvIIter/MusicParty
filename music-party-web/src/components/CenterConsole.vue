@@ -314,7 +314,17 @@ function setLineRef(el, i) {
   // 文字不满容器时也会等于容器宽，导致没过长的行也被判为溢出。
   // 文字宽度是单行 nowrap 的固有宽度，任意时机测量结果一致。
   const textEl = el.lastElementChild;
-  lineTextWidths.set(i, textEl ? textEl.scrollWidth : el.scrollWidth);
+  let w = textEl ? textEl.scrollWidth : el.scrollWidth;
+  // 关键：测量值必须排除 span 自身水平 padding（未溢出的当前行会加 px-1=左右各4px）。
+  // 否则 px-1 的增删会反向改变测量值：isShort 加 px-1 → scrollWidth+8 → 越过 70% 阈值
+  // → 判为溢出去掉 px-1 → 测量回落 → 又判为 short……文字宽落在 [阈值-8, 阈值] 时无限重渲染
+  // 死循环（Float 的 "The war outside that kept alive" raw≈205 / pad≈213，阈值≈207-210 时必现，
+  // 生产构建不报错、主线程占死）。减去 padding 后测量值恒定，px-1 不再参与反馈。
+  if (textEl) {
+    const cs = getComputedStyle(textEl);
+    w -= (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  }
+  lineTextWidths.set(i, w);
 }
 
 // 溢出不存状态，由「文字宽 > 屏幕横向 70%」即时判定——与槽宽（屏幕 70%）同源，
