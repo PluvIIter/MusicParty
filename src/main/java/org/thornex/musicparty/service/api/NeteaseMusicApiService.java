@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.dto.AlbumInfo;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
@@ -17,6 +18,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.time.Duration;
 import java.util.stream.StreamSupport;
 
 @Service
@@ -353,4 +357,76 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 })
                 .onErrorReturn("");
     }
+
+    private void validateAlbumId(String id) {
+        ensureConfigured();
+        if (id == null || !id.matches("[1-9][0-9]{0,19}")) {
+            throw new ApiRequestException("无效的歌曲或专辑 ID");
+        }
+    }
+
+    private Mono<JsonNode> fetchAlbumData(String route, String id) {
+        return webClient.get()
+                .uri(baseUrl + route + "&cookie={cookie}", id, getCookie())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, response -> response.releaseBody()
+                        .then(Mono.error(new ApiRequestException("专辑读取失败，请稍后重试"))))
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(8))
+                .onErrorMap(error -> error instanceof ApiRequestException ? error
+                        : new ApiRequestException("专辑读取失败，请检查音乐接口连接"));
+    }
+
+    @Override
+    public Mono<AlbumInfo> getAlbumForSong(String musicId) {
+        return Mono.defer(() -> {
+            validateAlbumId(musicId);
+            return fetchAlbumData("/song/detail?ids={id}", musicId).flatMap(json -> {
+                JsonNode song = json.path("songs").path(0);
+                String albumId = song.path("al").path("id").asText("");
+                if (albumId.isBlank()) albumId = song.path("album").path("id").asText("");
+                if (albumId.isBlank() || "0".equals(albumId)) {
+                    return Mono.error(new ApiRequestException("这首歌暂无可添加的专辑"));
+                }
+                return getAlbum(albumId);
+            });
+        });
+    }
+
+    @Override
+    public Mono<AlbumInfo> getAlbum(String albumId) {
+        return Mono.defer(() -> {
+            validateAlbumId(albumId);
+            return fetchAlbumData("/album?id={id}", albumId).map(json -> {
+                JsonNode album = json.path("album");
+                if (album.path("id").asText("").isBlank() || !json.path("songs").isArray()) {
+                    throw new ApiRequestException("未找到专辑，或当前账号无法读取该专辑");
+                }
+                Map<String, Music> songs = new LinkedHashMap<>();
+                for (JsonNode song : json.path("songs")) {
+                    String id = song.path("id").asText("");
+                    if (id.isBlank() || "0".equals(id)) continue;
+                    JsonNode al = song.has("al") ? song.path("al") : song.path("album");
+                    songs.putIfAbsent(id, new Music(id, song.path("name").asText("未知歌曲"),
+                            albumArtists(song), song.path("dt").asLong(song.path("duration").asLong(0)),
+                            PLATFORM, upgradeToHttps(al.path("picUrl").asText(album.path("picUrl").asText("")))));
+                }
+                if (songs.isEmpty()) throw new ApiRequestException("专辑中没有可添加的曲目");
+                return new AlbumInfo(album.path("id").asText(),
+                        album.path("name").asText("未命名专辑"), albumArtists(album),
+                        upgradeToHttps(album.path("picUrl").asText("")), songs.size(), List.copyOf(songs.values()));
+            });
+        });
+    }
+
+    private List<String> albumArtists(JsonNode value) {
+        JsonNode artists = value.has("ar") ? value.path("ar") : value.path("artists");
+        List<String> names = new ArrayList<>();
+        for (JsonNode artist : artists) {
+            if (!artist.path("name").asText("").isBlank()) names.add(artist.path("name").asText());
+        }
+        if (names.isEmpty() && value.has("artist")) names.add(value.path("artist").path("name").asText("未知歌手"));
+        return names;
+    }
+
 }

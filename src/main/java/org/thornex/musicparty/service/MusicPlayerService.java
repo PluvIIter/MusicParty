@@ -755,6 +755,57 @@ public class MusicPlayerService {
                 });
     }
 
+    public Mono<AlbumImportResult> enqueueAlbum(EnqueueAlbumRequest request, String sessionId) {
+        return Mono.defer(() -> {
+            if (request == null || request.requestId() == null || request.requestId().length() > 80) {
+                return Mono.just(AlbumImportResult.failure(request, "无效的专辑添加请求"));
+            }
+            Optional<User> user = userService.getUser(sessionId);
+            if (user.isEmpty() || user.get().isGuest()) {
+                return Mono.just(AlbumImportResult.failure(request, "请先设置昵称并加入房间，再添加专辑"));
+            }
+            if (!"netease".equals(request.platform())) {
+                return Mono.just(AlbumImportResult.failure(request, "此音源暂不支持专辑"));
+            }
+            if (!appProperties.getNetease().isEnabled()) {
+                return Mono.just(AlbumImportResult.failure(request, "网易云音乐源已被禁用"));
+            }
+            return getApiService(request.platform()).getAlbum(request.albumId()).map(album -> {
+                Optional<User> current = userService.getUser(sessionId);
+                if (current.isEmpty() || current.get().isGuest()) {
+                    return AlbumImportResult.failure(request, "已离开房间，未添加专辑");
+                }
+                if (!appProperties.getNetease().isEnabled()) {
+                    return AlbumImportResult.failure(request, "网易云音乐源已被禁用");
+                }
+                User member = current.get();
+                UserSummary owner = new UserSummary(member.getToken(), member.getSessionId(), member.getName(), member.isGuest());
+                int added = 0, duplicates = 0, limited = 0;
+                synchronized (queueManager) {
+                    Set<String> existing = queueManager.getQueueSnapshot().stream()
+                            .map(item -> item.music().id()).collect(Collectors.toCollection(HashSet::new));
+                    long mine = queueManager.getQueueSnapshot().stream()
+                            .filter(item -> item.enqueuedBy().token().equals(owner.token())).count();
+                    int quota = Math.max(0, Math.min(appProperties.getPlayer().getMaxPlaylistImportSize(),
+                            appProperties.getQueue().getMaxUserSongs() - (int) mine));
+                    for (Music song : album.songs()) {
+                        if (existing.contains(song.id())) { duplicates++; continue; }
+                        if (added >= quota) { limited++; continue; }
+                        if (queueManager.add(song, owner, QueueItemStatus.READY) != null) {
+                            added++; existing.add(song.id());
+                        } else { limited++; }
+                    }
+                }
+                broadcastQueueUpdate();
+                String message = "《" + album.name() + "》：已添加 " + added + " 首，重复跳过 " + duplicates + " 首"
+                        + (limited > 0 ? "，受导入 / 点歌 / 队列上限限制 " + limited + " 首" : "");
+                return new AlbumImportResult(request.requestId(), album.id(), album.name(), album.trackCount(),
+                        added, duplicates, limited, message, false);
+            });
+        }).onErrorResume(error -> Mono.just(AlbumImportResult.failure(request,
+                error instanceof ApiRequestException ? error.getMessage() : "专辑添加失败，请稍后重试")));
+    }
+
     public synchronized void topSong(String queueId, String sessionId) {
         // 先调用 top 执行置顶操作
         TopResult result = queueManager.top(queueId, playMode.get());

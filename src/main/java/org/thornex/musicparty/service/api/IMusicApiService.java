@@ -1,14 +1,22 @@
 package org.thornex.musicparty.service.api;
 
+import org.thornex.musicparty.dto.AlbumInfo;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
+import org.thornex.musicparty.exception.ApiRequestException;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
 
 public interface IMusicApiService {
+    default Mono<AlbumInfo> getAlbumForSong(String musicId) {
+        return Mono.error(new ApiRequestException("此音源暂不支持专辑"));
+    }
+    default Mono<AlbumInfo> getAlbum(String albumId) {
+        return Mono.error(new ApiRequestException("此音源暂不支持专辑"));
+    }
     String getPlatformName();
     Mono<List<Music>> searchMusic(String keyword);
     Mono<PlayableMusic> getPlayableMusic(String musicId);

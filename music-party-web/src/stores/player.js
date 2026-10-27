@@ -64,6 +64,7 @@ export const usePlayerStore = defineStore('player', () => {
     });
 
     const userStore = useUserStore();
+    const albumRequests = new Map();
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
 
     // === 2. Logic ===
@@ -144,6 +145,14 @@ export const usePlayerStore = defineStore('player', () => {
 
         // 使用抽离出的订阅配置
         const subscriptions = createSocketSubscriptions();
+        subscriptions[WS_DEST.USER_ALBUM_IMPORT] = (result) => {
+            const pending = albumRequests.get(result.requestId);
+            if (!pending) return;
+            clearTimeout(pending.timer);
+            albumRequests.delete(result.requestId);
+            if (result.error) pending.reject(new Error(result.message));
+            else pending.resolve(result);
+        };
 
         // 补充 UserMe 的特殊处理 (因为它需要用到 renameUser，如果放在 socketHandler 会导致循环依赖)
         subscriptions[WS_DEST.USER_ME] = (me) => {
@@ -156,6 +165,15 @@ export const usePlayerStore = defineStore('player', () => {
         };
 
         const callbacks = createSocketCallbacks();
+        const onDisconnect = callbacks.onDisconnect;
+        callbacks.onDisconnect = () => {
+            for (const pending of albumRequests.values()) {
+                clearTimeout(pending.timer);
+                pending.reject(new Error('连接中断，请查看队列确认添加结果'));
+            }
+            albumRequests.clear();
+            onDisconnect?.();
+        };
 
         socketService.connect(authHeaders, callbacks, subscriptions);
     };
@@ -173,6 +191,22 @@ export const usePlayerStore = defineStore('player', () => {
 
     const enqueue = (platform, musicId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
     const enqueuePlaylist = (platform, playlistId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_PLAYLIST, { platform, playlistId });
+    const enqueueAlbum = (albumId) => {
+        if (!requireAuth()) return Promise.reject(new Error('请先设置昵称，再添加专辑'));
+        if (!connected.value || !socketService.connected) return Promise.reject(new Error('房间连接已断开，请连接后重试'));
+        // HTTP LAN deployments may not expose crypto.randomUUID.
+        const requestId = globalThis.crypto?.randomUUID?.()
+            || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                albumRequests.delete(requestId);
+                reject(new Error('等待添加结果超时，请先查看队列，避免重复操作'));
+            }, 20000);
+            albumRequests.set(requestId, { resolve, reject, timer });
+            try { socketService.send(WS_DEST.ENQUEUE_ALBUM, { platform: 'netease', albumId, requestId }); }
+            catch (error) { clearTimeout(timer); albumRequests.delete(requestId); reject(error); }
+        });
+    };
     const topSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_TOP, { queueId });
     const removeSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_REMOVE, { queueId });
 
@@ -216,7 +250,7 @@ export const usePlayerStore = defineStore('player', () => {
         isVoteSkipEnabled, voteSkipThreshold, voteSkipWaitTime, currentVotes, eligibleUsers,
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, cyclePlayMode,
-        enqueue, enqueuePlaylist, topSong, removeSong,
+        enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong,
         bindAccount, renameUser, sendChatMessage, sendLike
     };
 });

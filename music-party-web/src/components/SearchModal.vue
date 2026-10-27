@@ -189,9 +189,19 @@
                 </div>
                 <div v-if="isUnplayable(song)" class="ml-2 flex-shrink-0"><span class="px-1.5 py-0.5 text-[10px] font-mono font-bold text-medical-400 border border-medical-300 bg-medical-100 rounded-sm">>{{ (playerStore.config.bilibiliMaxDurationMinutes || 10) }}MIN</span></div>
 
+                <button v-if="platform === 'netease'"
+                    @click="selectedAlbumSong = song"
+                    :aria-label="'查看《' + song.name + '》所属专辑'"
+                    title="查看专辑并添加整张专辑"
+                    class="ml-2 px-2 py-2 flex-shrink-0 text-xs font-bold border border-medical-200 text-medical-500 hover:border-accent hover:text-accent transition-colors">
+                  专辑
+                </button>
+
                 <button
-                    v-else
+                    v-if="!isUnplayable(song)"
                     @click="handleAddClick(song)"
+                    :title="isInQueue(song.id) ? '已在队列' : '添加单曲'"
+                    :aria-label="(isInQueue(song.id) ? '已在队列：' : '添加单曲：') + song.name"
                     class="ml-2 p-2 flex-shrink-0 transition-all duration-300"
                     :class="[
                         isInQueue(song.id) ? 'text-green-500 cursor-default' :
@@ -221,6 +231,7 @@
         </div>
       </div>
     </div>
+    <AlbumModal v-if="selectedAlbumSong" :song-id="selectedAlbumSong.id" @close="selectedAlbumSong = null" />
   </div>
 </template>
 
@@ -232,10 +243,12 @@ import { usePlaylistLogic } from '../composables/usePlaylistLogic';
 import { useLikedSongs } from '../composables/useLikedSongs';
 import { X, Search, PlusCircle, ListPlus, Loader2, ArrowLeft, ChevronRight, Check, ExternalLink } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
+import AlbumModal from './AlbumModal.vue';
 
 const props = defineProps(['isOpen']);
 const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
+const selectedAlbumSong = ref(null);
 
 const isPlatformEnabled = (p) => {
   if (p === 'netease') return playerStore.config?.neteaseEnabled !== false;
@@ -361,5 +374,6 @@ watch(listMode, (m) => {
 
 watch(() => props.isOpen, (val) => {
   if (val) mobileView.value = 'playlists';
+  else selectedAlbumSong.value = null;
 });
 </script>
