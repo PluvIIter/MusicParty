@@ -1,5 +1,7 @@
 // WebSocket 目的地
 export const WS_DEST = {
+    QUEUE_CLEAR_MINE: '/app/queue/clear-mine',
+    USER_PLAYLIST_CLEAR: '/user/queue/playlist/clear',
     // 发送指令 (Publish)
     CHAT_SEND: '/app/chat',
     CHAT_HISTORY_FETCH: '/app/chat/history/fetch',

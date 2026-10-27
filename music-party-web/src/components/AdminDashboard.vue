@@ -62,6 +62,20 @@
                     </button>
                   </div>
 
+                  <div class="mt-4 p-3 bg-medical-50 border border-medical-200">
+                    <div class="flex justify-between items-center gap-3">
+                      <div>
+                        <div class="text-xs font-bold text-medical-800">播完保留歌单</div>
+                        <p class="text-[10px] text-medical-500 mt-1">开启后循环保留歌曲；公平随机时，每位成员自己的歌轮完再重复。关闭后按原规则取出已播歌曲，不会恢复已移除项。</p>
+                      </div>
+                      <button type="button" role="switch" aria-label="播完保留歌单" :aria-checked="!!playerStore.config.retainPlaylist"
+                          @click="updateInstantConfig({ retainPlaylist: !playerStore.config.retainPlaylist })"
+                          class="w-8 h-4 shrink-0 rounded-full relative transition-colors" :class="playerStore.config.retainPlaylist ? 'bg-accent' : 'bg-medical-300'">
+                        <div class="w-3 h-3 bg-white rounded-full absolute top-0.5 transition-all" :class="playerStore.config.retainPlaylist ? 'left-4' : 'left-0.5'"></div>
+                      </button>
+                    </div>
+                  </div>
+
                   <!-- Playback Core Settings (Shuffle & Vote Skip) -->
                   <div class="space-y-3 p-3 bg-medical-50 border border-medical-100 rounded-sm">
                     <!-- Shuffle Controls -->

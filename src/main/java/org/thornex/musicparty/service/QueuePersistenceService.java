@@ -49,17 +49,20 @@ public class QueuePersistenceService {
         saveData();
     }
 
+    public synchronized void saveNow() throws IOException {
+        File file = getPersistenceFile();
+        PersistentData data = new PersistentData();
+        data.setQueue(musicQueueManager.getQueueSnapshot());
+        data.setHistory(musicQueueManager.getHistorySnapshot());
+        data.setChatHistory(chatService.getHistoryFull());
+        data.setSettings(buildSettingsSnapshot());
+        objectMapper.writeValue(file, data);
+        log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
+    }
+
     synchronized void saveData() {
         try {
-            File file = getPersistenceFile();
-            PersistentData data = new PersistentData();
-            data.setQueue(musicQueueManager.getQueueSnapshot());
-            data.setHistory(musicQueueManager.getHistorySnapshot());
-            data.setChatHistory(chatService.getHistoryFull());
-            data.setSettings(buildSettingsSnapshot());
-
-            objectMapper.writeValue(file, data);
-            log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
+            saveNow();
         } catch (Exception e) {
             log.error("Failed to save persistence data", e);
         }
@@ -114,6 +117,7 @@ public class QueuePersistenceService {
 
         if (s.systemConfig() != null) {
             SettingsSnapshot.SystemConfigSettings cfg = s.systemConfig();
+            if (cfg.retainPlaylist() != null) appProperties.getQueue().setRetainPlaylist(cfg.retainPlaylist());
             if (cfg.maxQueueSize() != null) appProperties.getQueue().setMaxSize(cfg.maxQueueSize());
             if (cfg.maxHistorySize() != null) appProperties.getQueue().setHistorySize(cfg.maxHistorySize());
             if (cfg.maxUserSongs() != null) appProperties.getQueue().setMaxUserSongs(cfg.maxUserSongs());
@@ -150,7 +154,8 @@ public class QueuePersistenceService {
                         appProperties.getChat().getMinIntervalMs(),
                         appProperties.getNetease().isEnabled(),
                         appProperties.getBilibili().isEnabled(),
-                        appProperties.getBilibili().getMaxDurationMinutes()));
+                        appProperties.getBilibili().getMaxDurationMinutes(),
+                        appProperties.getQueue().isRetainPlaylist()));
     }
 
     private File getPersistenceFile() {
