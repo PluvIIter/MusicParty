@@ -26,11 +26,20 @@
               <div class="text-xs text-medical-500 truncate">{{ song.artists.join(' / ') }}</div>
             </div>
             <span v-if="inQueue(song.id)" class="flex-shrink-0 text-xs text-green-600">已在队列</span>
+            <button type="button" @click="addSong(song)"
+                :aria-label="(inQueue(song.id) ? '已在队列：' : '添加单曲：') + song.name"
+                :title="inQueue(song.id) ? '已在队列' : userStore.isGuest ? '请先设置昵称并加入房间' : '添加这首歌'"
+                :disabled="importing || pendingIds.has(song.id) || inQueue(song.id) || !playerStore.connected || userStore.isGuest || playerStore.config.neteaseEnabled === false"
+                class="p-2 flex-shrink-0 text-medical-500 hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed">
+              <Check v-if="inQueue(song.id)" class="w-5 h-5 text-green-600" />
+              <Loader2 v-else-if="pendingIds.has(song.id)" class="w-5 h-5 animate-spin text-accent" />
+              <PlusCircle v-else class="w-5 h-5" />
+            </button>
           </li>
         </ol>
       </div>
       <footer v-if="album" class="p-4 md:px-6 bg-white border-t border-medical-200 flex-shrink-0">
-        <p class="text-xs text-medical-500 mb-3">按专辑曲序添加，自动跳过队列中的歌曲；实际数量受房间导入、点歌和队列上限限制。</p>
+        <p class="text-xs text-medical-500 mb-3">点击歌曲右侧“＋”添加单曲，或按专辑曲序添加整张；自动跳过队列中的歌曲，实际数量受房间导入、点歌和队列上限限制。</p>
         <p v-if="feedback" :role="importError ? 'alert' : 'status'" class="text-sm mb-3 break-words" :class="importError ? 'text-red-600' : 'text-green-700'">{{ feedback }}</p>
         <button @click="importAlbum" :disabled="importing || allInQueue || !playerStore.connected" class="w-full flex justify-center items-center gap-2 px-4 py-3 bg-accent hover:bg-accent-hover text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed">
           <Loader2 v-if="importing" class="w-4 h-4 animate-spin" /><ListPlus v-else class="w-4 h-4" />
@@ -43,14 +52,18 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { X, ListPlus, Loader2 } from 'lucide-vue-next';
+import { X, ListPlus, Loader2, PlusCircle, Check } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { musicApi } from '../api/music';
 import { usePlayerStore } from '../stores/player';
+import { useUserStore } from '../stores/user';
 
 const props = defineProps({ songId: { type: String, required: true } });
 const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
+const userStore = useUserStore();
+const pendingIds = ref(new Set());
+const pendingTimers = new Set();
 const album = ref(null), loading = ref(true), loadError = ref('');
 const importing = ref(false), feedback = ref(''), importError = ref(false);
 let active = true;
@@ -65,6 +78,24 @@ const loadAlbum = async () => {
     if (active) loadError.value = error.response?.data?.message || error.message || '专辑读取失败，请稍后重试';
   } finally { if (active) loading.value = false; }
 };
+const addSong = (song) => {
+  if (importing.value || pendingIds.value.has(song.id) || inQueue(song.id)
+      || !playerStore.connected || userStore.isGuest || playerStore.config.neteaseEnabled === false) return;
+  pendingIds.value.add(song.id);
+  try {
+    // Use the existing single-song command; queue broadcasts confirm the result.
+    playerStore.enqueue('netease', song.id);
+    const timer = setTimeout(() => {
+      pendingTimers.delete(timer);
+      pendingIds.value.delete(song.id);
+    }, 2000);
+    pendingTimers.add(timer);
+  } catch (error) {
+    pendingIds.value.delete(song.id);
+    importError.value = true;
+    feedback.value = error.message || '单曲添加失败，请重试';
+  }
+};
 const importAlbum = async () => {
   if (importing.value || !album.value || allInQueue.value) return;
   importing.value = true; importError.value = false; feedback.value = '';
@@ -76,5 +107,9 @@ const importAlbum = async () => {
   } finally { if (active) importing.value = false; }
 };
 onMounted(loadAlbum);
-onUnmounted(() => { active = false; });
+onUnmounted(() => {
+  active = false;
+  pendingTimers.forEach(clearTimeout);
+  pendingTimers.clear();
+});
 </script>

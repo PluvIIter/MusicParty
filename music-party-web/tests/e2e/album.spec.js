@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 // HTTP and STOMP fixtures keep browser tests independent of accounts and music services.
-async function room(page, { failAlbumOnce = false } = {}) {
+async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
   const songs = [1, 2, 3, 4, 5].map(id => ({
     id: String(id), name: `Song ${id}`, artists: ['Artist'], duration: 180000,
     platform: 'netease', coverUrl: ''
@@ -77,8 +77,12 @@ async function room(page, { failAlbumOnce = false } = {}) {
         if (headers.destination === '/app/player/resync') update();
         if (headers.destination === '/app/enqueue') {
           const song = songs.find(song => song.id === body.musicId);
-          if (song && !queue.some(item => item.music.id === song.id)) add(song);
-          update();
+          const enqueue = () => {
+            if (song && !queue.some(item => item.music.id === song.id)) add(song);
+            update();
+          };
+          if (singleDelayMs) setTimeout(enqueue, singleDelayMs);
+          else enqueue();
         }
         if (headers.destination === '/app/enqueue/album') {
           let added = 0;
@@ -94,7 +98,7 @@ async function room(page, { failAlbumOnce = false } = {}) {
       }
     });
   });
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto('/', { waitUntil: 'commit' });
   await page.getByRole('button', { name: 'CONNECT', exact: true }).click();
   await page.locator('#tutorial-search').click();
   await page.getByPlaceholder('搜索音乐...').fill('test');
@@ -130,10 +134,22 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 320, height: 640 
     await albumButton.click();
     const dialog = page.getByRole('dialog', { name: 'Test album' });
     await expect(dialog.getByRole('listitem')).toHaveCount(5);
+    await expect(dialog.getByRole('button', { name: '已在队列：Song 1', exact: true })).toBeDisabled();
+    const albumSingle = dialog.getByRole('button', { name: '添加单曲：Song 4', exact: true });
+    await expect(albumSingle).toBeVisible();
+    const singleBounds = await albumSingle.boundingBox();
+    expect(singleBounds.x).toBeGreaterThanOrEqual(0);
+    expect(singleBounds.x + singleBounds.width).toBeLessThanOrEqual(viewport.width);
+    await albumSingle.click();
+    await expect(dialog.getByRole('button', { name: '已在队列：Song 4', exact: true })).toBeDisabled();
+    expect(server.queue.map(item => item.music.id)).toEqual(['1', '4']);
+    expect(server.sent.filter(item => item.destination === '/app/enqueue')).toHaveLength(2);
+    expect(server.sent.filter(item => item.destination === '/app/enqueue/album')).toHaveLength(0);
+    await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: /添加整张专辑/ }).click();
-    await expect(dialog.getByText('已添加 4 首，重复跳过 1 首')).toBeVisible();
+    await expect(dialog.getByText('已添加 3 首，重复跳过 2 首')).toBeVisible();
     await expect(dialog.getByRole('button', { name: '全部已在队列' })).toBeDisabled();
-    expect(server.queue.map(item => item.music.id)).toEqual(['1', '2', '3', '4', '5']);
+    expect(server.queue.map(item => item.music.id)).toEqual(['1', '4', '2', '3', '5']);
     expect(server.sent.filter(item => item.destination === '/app/enqueue/album')).toHaveLength(1);
     expect(server.sent.find(item => item.destination === '/app/enqueue/album').body.requestId).toBeTruthy();
   });
@@ -155,4 +171,20 @@ test('Bilibili keeps its single-song action and duration limit', async ({ page }
   await expect(page.getByRole('button', { name: '添加单曲：Short video', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '添加单曲：Long video', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /所属专辑/ })).toHaveCount(0);
+});
+
+test('album single-song button blocks rapid repeats while queue result is pending', async ({ page }) => {
+  const server = await room(page, { singleDelayMs: 600 });
+  await page.getByRole('button', { name: '查看《Song 1》所属专辑' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Test album' });
+  const single = dialog.getByRole('button', { name: '添加单曲：Song 3', exact: true });
+  await single.evaluate(button => { button.click(); button.click(); });
+  await expect(single).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: '已在队列：Song 3', exact: true })).toBeDisabled();
+  expect(server.queue.map(item => item.music.id)).toEqual(['3']);
+  expect(server.sent.filter(item => item.destination === '/app/enqueue')).toHaveLength(1);
+  expect(server.sent.filter(item => item.destination === '/app/enqueue/album')).toHaveLength(0);
+  await expect(dialog.getByRole('button', { name: /添加整张专辑/ })).toBeEnabled();
+  await dialog.getByRole('button', { name: '关闭专辑' }).click();
+  await expect(dialog).toHaveCount(0);
 });
