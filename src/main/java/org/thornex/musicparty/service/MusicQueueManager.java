@@ -220,6 +220,8 @@ public class MusicQueueManager {
 
     public synchronized void clearPlaybackFailure(MusicQueueItem item) {
         playbackRetryAt.remove(musicKey(item.music()));
+        // A failed attempt must not consume first-play priority.
+        if (appProperties.getQueue().isRetainPlaylist()) shuffleCycle.heard(item);
     }
 
     private static String musicKey(Music music) {
@@ -343,6 +345,23 @@ public class MusicQueueManager {
     }
     
     // ... (rest of methods)
+
+    public synchronized Set<String> getPlayedQueueIds() {
+        shuffleCycle.prune(new ArrayList<>(queue));
+        return shuffleCycle.heardSnapshot();
+    }
+
+    public synchronized void restorePlayedQueueIds(Set<String> ids) {
+        if (ids == null) {
+            // Old snapshots have no ledger. Migrate only songs known in saved history.
+            Set<String> history = new HashSet<>();
+            getHistorySnapshot().forEach(m -> history.add(musicKey(m)));
+            ids = queue.stream().filter(item -> history.contains(musicKey(item.music())))
+                    .map(MusicQueueItem::queueId).collect(Collectors.toSet());
+        }
+        shuffleCycle.restoreHeard(ids);
+        shuffleCycle.prune(new ArrayList<>(queue));
+    }
 
     private Optional<MusicQueueItem> findByQueueId(String queueId) {
         return queue.stream()

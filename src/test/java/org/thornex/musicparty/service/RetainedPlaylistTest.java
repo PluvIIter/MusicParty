@@ -31,7 +31,9 @@ class RetainedPlaylistTest {
     }
 
     private MusicQueueItem pick(boolean fair, Set<String> online) {
-        return queue.pollNext(PlayMode.SHUFFLE, fair, false, ready(), online);
+        MusicQueueItem item = queue.pollNext(PlayMode.SHUFFLE, fair, false, ready(), online);
+        if (item != null) queue.clearPlaybackFailure(item);
+        return item;
     }
 
     @Test void defaultConsumesAndTogglingDoesNotRebuildQueue() {
@@ -134,5 +136,60 @@ class RetainedPlaylistTest {
         props.getQueue().setRetainPlaylist(false);
         assertEquals(a, pick(true, Set.of("A")), "Disabling retention restores normal consumption");
         assertTrue(queue.getQueueSnapshot().isEmpty());
+    }
+
+    @Test void neverPlayedAdditionsWinEvenAfterOlderSongsStartAnotherRound() {
+        props.getQueue().setRetainPlaylist(true);
+        for (boolean fair : List.of(true, false)) for (int trial = 0; trial < 500; trial++) {
+            queue.clearAll();
+            for (int i = 0; i < 4; i++) add("old" + i, "A");
+            for (int i = 0; i < 5; i++) pick(fair, Set.of("A"));
+            add("new-a", "A"); add("new-b", "A");
+            Set<String> fresh = new HashSet<>();
+            for (int i = 0; i < 2; i++) {
+                MusicQueueItem item = pick(fair, Set.of("A"));
+                assertTrue(item.music().id().startsWith("new-"));
+                assertTrue(fresh.add(item.queueId()));
+            }
+        }
+    }
+
+    @Test void firstPlayPriorityDoesNotStealAnotherMembersTurn() {
+        props.getQueue().setRetainPlaylist(true);
+        add("old-a", "A"); add("old-b", "B");
+        pick(true, Set.of("A", "B")); pick(true, Set.of("A", "B"));
+        add("new-a", "A"); add("new-a2", "A");
+        assertTrue(pick(true, Set.of("A", "B")).music().id().startsWith("new-"));
+        assertEquals("B", pick(true, Set.of("A", "B")).enqueuedBy().token());
+        assertTrue(pick(true, Set.of("A", "B")).music().id().startsWith("new-"));
+    }
+
+    @Test void failedAttemptRemainsUnheardAndDeletedEntriesDoNotMarkReadditions() {
+        props.getQueue().setRetainPlaylist(true);
+        MusicQueueItem old = add("old", "A"); pick(true, Set.of("A"));
+        MusicQueueItem fresh = add("new", "A");
+        MusicQueueItem attempted = queue.pollNext(PlayMode.SHUFFLE, true, false, ready(), Set.of("A"));
+        assertEquals(fresh.queueId(), attempted.queueId());
+        queue.markPlaybackFailed(attempted);
+        assertFalse(queue.getPlayedQueueIds().contains(fresh.queueId()));
+        assertEquals(old.queueId(), pick(true, Set.of("A")).queueId());
+        queue.clearPlaybackFailure(fresh); // A later successful load ends the music-level cooldown.
+        queue.remove(fresh.queueId());
+        MusicQueueItem readded = add("new", "A");
+        assertNotEquals(fresh.queueId(), readded.queueId());
+        assertEquals(readded.queueId(), pick(true, Set.of("A")).queueId());
+    }
+
+    @Test void restoredLedgerWinsOverOldSongHistoryAndPrunesDeletedIds() {
+        props.getQueue().setRetainPlaylist(true);
+        MusicQueueItem old = add("old", "A");
+        MusicQueueItem fresh = add("new", "A");
+        queue.restore(queue.getQueueSnapshot(), List.of(old.music(), fresh.music()));
+        queue.restorePlayedQueueIds(Set.of(old.queueId(), "deleted-id"));
+        assertEquals(Set.of(old.queueId()), queue.getPlayedQueueIds());
+        assertEquals(fresh.queueId(), pick(true, Set.of("A")).queueId());
+        queue.restore(queue.getQueueSnapshot(), List.of(old.music()));
+        queue.restorePlayedQueueIds(null);
+        assertEquals(Set.of(old.queueId()), queue.getPlayedQueueIds());
     }
 }

@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -52,7 +53,10 @@ public class QueuePersistenceService {
     public synchronized void saveNow() throws IOException {
         File file = getPersistenceFile();
         PersistentData data = new PersistentData();
-        data.setQueue(musicQueueManager.getQueueSnapshot());
+        synchronized (musicQueueManager) {
+            data.setQueue(musicQueueManager.getQueueSnapshot());
+            data.setPlayedQueueIds(musicQueueManager.getPlayedQueueIds());
+        }
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
         data.setSettings(buildSettingsSnapshot());
@@ -82,6 +86,8 @@ public class QueuePersistenceService {
                 data.getQueue() != null ? data.getQueue() : Collections.emptyList(),
                 data.getHistory() != null ? data.getHistory() : Collections.emptyList()
             );
+
+            musicQueueManager.restorePlayedQueueIds(data.getPlayedQueueIds());
 
             chatService.restore(data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
 
@@ -170,6 +176,7 @@ public class QueuePersistenceService {
     @Data
     private static class PersistentData {
         private List<MusicQueueItem> queue;
+        private Set<String> playedQueueIds;
         private List<Music> history;
         private List<org.thornex.musicparty.dto.ChatMessage> chatHistory;
         private SettingsSnapshot settings;
