@@ -62,6 +62,20 @@
                     </button>
                   </div>
 
+                  <div class="p-3 bg-medical-50 border border-medical-200">
+                    <div class="flex justify-between items-center gap-3">
+                      <div>
+                        <div class="text-xs font-bold text-medical-800">允许认领离线成员歌单</div>
+                        <p class="text-[10px] text-medical-500 mt-1">成员可接收离线超过 10 秒的歌单，同时改成原主人的昵称；关闭后停止认领，已认领的歌保留。</p>
+                      </div>
+                      <button type="button" role="switch" aria-label="允许认领离线成员歌单" :aria-checked="!!playerStore.config.allowPlaylistClaim"
+                          @click="togglePlaylistClaim" :disabled="claimSettingsBusy"
+                          class="w-8 h-4 shrink-0 rounded-full relative transition-colors" :class="playerStore.config.allowPlaylistClaim ? 'bg-accent' : 'bg-medical-300'">
+                        <div class="w-3 h-3 bg-white rounded-full absolute top-0.5 transition-all" :class="playerStore.config.allowPlaylistClaim ? 'left-4' : 'left-0.5'"></div>
+                      </button>
+                    </div>
+                  </div>
+
                   <!-- Playback Core Settings (Shuffle & Vote Skip) -->
                   <div class="space-y-3 p-3 bg-medical-50 border border-medical-100 rounded-sm">
                     <!-- Shuffle Controls -->
@@ -300,6 +314,22 @@ import {
 const adminStore = useAdminStore();
 const playerStore = usePlayerStore();
 const { success, error, warning } = useToast();
+
+const claimSettingsBusy = ref(false);
+const togglePlaylistClaim = async () => {
+  if (claimSettingsBusy.value) return;
+  claimSettingsBusy.value = true;
+  try {
+    const response = await fetch('/api/admin/playlist-claim', {
+      method: 'POST', cache: 'no-store',
+      headers: { 'X-Admin-Password': adminStore.adminPassword, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allowPlaylistClaim: !playerStore.config.allowPlaylistClaim })
+    });
+    if (!response.ok) throw new Error('歌单认领设置保存失败');
+    success((await response.json()).message);
+  } catch (e) { error(e.message); }
+  finally { claimSettingsBusy.value = false; }
+};
 
 const roomPassword = ref('');
 

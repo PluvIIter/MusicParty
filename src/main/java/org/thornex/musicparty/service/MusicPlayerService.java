@@ -95,6 +95,10 @@ public class MusicPlayerService {
     // 当前播放段是否为 DJ 语音（语音段播完不进历史记录）
     private final AtomicBoolean currentIsVoice = new AtomicBoolean(false);
 
+    // Ownership overrides apply only to the currently pending playback request, never future enqueues.
+    private long claimedPlaybackVersion = -1;
+    private final Map<String, UserSummary> claimedPlaybackOwners = new HashMap<>();
+
     public MusicPlayerService(List<IMusicApiService> apiServices, UserService userService,
                               LocalCacheService localCacheService,
                               LiveStreamService liveStreamService,
@@ -411,7 +415,12 @@ public class MusicPlayerService {
         }
     }
 
-    private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
+    private synchronized void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
+        if (claimedPlaybackVersion == playHeadVersion.get()) {
+            UserSummary claimed = claimedPlaybackOwners.get(queueItem.enqueuedBy().token());
+            if (claimed != null) queueItem = new MusicQueueItem(queueItem.queueId(), queueItem.music(), claimed, queueItem.status(), queueItem.priority());
+        }
+        queueItem = queueManager.getItem(queueItem.queueId()).orElse(queueItem);
         currentLikedUserIds.clear();
         currentLikeMarkers.clear();
         skipVotes.clear(); // 切歌时清空投票
@@ -433,6 +442,18 @@ public class MusicPlayerService {
 
         // 发布开始播放事件 (用于聊天栏展示)
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().token(), queueItem.enqueuedBy().name(), music.name()));
+    }
+
+    synchronized void commitPlaylistClaim(String sourceToken, UserSummary member) {
+        long version = playHeadVersion.get();
+        if (claimedPlaybackVersion != version) {
+            claimedPlaybackOwners.clear();
+            claimedPlaybackVersion = version;
+        }
+        claimedPlaybackOwners.replaceAll((token, owner) -> owner.token().equals(member.token()) ? member : owner);
+        claimedPlaybackOwners.put(sourceToken, member);
+        if (currentEnqueuerId.compareAndSet(sourceToken, member.token()) || member.token().equals(currentEnqueuerId.get()))
+            currentEnqueuerName.set(member.name());
     }
 
     public PlayerState getCurrentPlayerState() {
@@ -495,7 +516,8 @@ public class MusicPlayerService {
                                 appProperties.getPrivateDj().isFillBlankEnabled(),
                                 appProperties.getPrivateDj().isJoinQueueEnabled(),
                                 appProperties.getPrivateDj().isCustodyEnabled()
-                        )
+                        ),
+                        appProperties.getQueue().isAllowPlaylistClaim()
                 )
         );
     }

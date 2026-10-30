@@ -18,6 +18,8 @@ import org.thornex.musicparty.service.stream.LiveStreamService;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.file.*;
 import java.util.Collections;
 import java.util.List;
 
@@ -51,18 +53,27 @@ public class QueuePersistenceService {
 
     synchronized void saveData() {
         try {
-            File file = getPersistenceFile();
-            PersistentData data = new PersistentData();
-            data.setQueue(musicQueueManager.getQueueSnapshot());
-            data.setHistory(musicQueueManager.getHistorySnapshot());
-            data.setChatHistory(chatService.getHistoryFull());
-            data.setSettings(buildSettingsSnapshot());
-
-            objectMapper.writeValue(file, data);
-            log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
+            saveQueueSnapshot(musicQueueManager.getQueueSnapshot());
+            log.debug("Queue, music history and chat history saved to {}", getPersistenceFile().getAbsolutePath());
         } catch (Exception e) {
             log.error("Failed to save persistence data", e);
         }
+    }
+
+    /** Persist a proposed queue before publishing its ownership to runtime state. Failure propagates to the caller. */
+    public synchronized void saveQueueSnapshot(List<MusicQueueItem> entries) throws IOException {
+        Path file = getPersistenceFile().toPath().toAbsolutePath().normalize();
+        PersistentData data = new PersistentData();
+        data.setQueue(List.copyOf(entries));
+        data.setHistory(musicQueueManager.getHistorySnapshot());
+        data.setChatHistory(chatService.getHistoryFull());
+        data.setSettings(buildSettingsSnapshot());
+        Path temporary = Files.createTempFile(file.getParent(), "queue-snapshot-", ".tmp");
+        try {
+            objectMapper.writeValue(temporary.toFile(), data);
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE)) { channel.force(true); }
+            Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally { Files.deleteIfExists(temporary); }
     }
 
     synchronized void loadData() {
@@ -122,6 +133,7 @@ public class QueuePersistenceService {
             if (cfg.minChatIntervalMs() != null) appProperties.getChat().setMinIntervalMs(cfg.minChatIntervalMs());
             if (cfg.neteaseEnabled() != null) appProperties.getNetease().setEnabled(cfg.neteaseEnabled());
             if (cfg.bilibiliEnabled() != null) appProperties.getBilibili().setEnabled(cfg.bilibiliEnabled());
+            if (cfg.allowPlaylistClaim() != null) appProperties.getQueue().setAllowPlaylistClaim(cfg.allowPlaylistClaim());
             if (cfg.bilibiliMaxDurationMinutes() != null) appProperties.getBilibili().setMaxDurationMinutes(cfg.bilibiliMaxDurationMinutes());
         }
 
@@ -150,7 +162,8 @@ public class QueuePersistenceService {
                         appProperties.getChat().getMinIntervalMs(),
                         appProperties.getNetease().isEnabled(),
                         appProperties.getBilibili().isEnabled(),
-                        appProperties.getBilibili().getMaxDurationMinutes()));
+                        appProperties.getBilibili().getMaxDurationMinutes(),
+                        appProperties.getQueue().isAllowPlaylistClaim()));
     }
 
     private File getPersistenceFile() {

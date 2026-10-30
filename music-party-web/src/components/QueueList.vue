@@ -1,7 +1,20 @@
 <template>
   <div id="tutorial-queue" class="h-full flex flex-col bg-white border-l border-medical-200">
-    <div class="p-4 bg-medical-50 border-b border-medical-200 flex justify-between items-center">
+    <div class="p-4 bg-medical-50 border-b border-medical-200 flex flex-wrap gap-2 justify-between items-center">
       <h3 class="text-sm font-bold text-medical-900">播放队列 <span class="text-accent text-xs">[{{ queue.length }}]</span></h3>
+    </div>
+
+    <div v-if="!(player.isShuffle && player.isFairShuffle) && claimableGroups.length"
+        class="p-2 border-b border-medical-200 space-y-2 max-h-44 overflow-y-auto">
+      <div class="text-[10px] text-medical-500">离线成员的歌单 · 认领后同时改名</div>
+      <div v-for="group in claimableGroups" :key="group.token" class="flex items-center gap-2 text-xs">
+        <span class="flex-1 min-w-0 break-words">{{ group.name }} · {{ group.totalCount }} 首</span>
+        <button type="button" @click="claimGroup(group)" :disabled="!!claiming || !player.connected"
+            :aria-label="`认领 ${group.name} 的歌单并改名`"
+            class="shrink-0 border border-accent/30 text-accent px-2 py-1 disabled:opacity-40">
+          {{ claiming === group.token ? '认领中…' : '认领并改名' }}
+        </button>
+      </div>
     </div>
 
     <!-- Conditional Rendering: Show empty message -->
@@ -31,25 +44,33 @@
       <!-- User Groups (Drawers) -->
       <div class="space-y-2">
         <div v-for="group in userGroups" :key="group.token" class="border border-medical-100 bg-white">
-          <button
+          <div class="flex items-center">
+          <button type="button"
               @click="toggleUser(group.token)"
-              class="w-full flex items-center justify-between p-3 hover:bg-medical-50 transition-colors"
+              class="min-w-0 flex-1 flex items-center justify-between p-3 hover:bg-medical-50 transition-colors"
           >
-            <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded bg-medical-100 flex items-center justify-center text-medical-500">
+            <div class="min-w-0 flex items-center gap-3">
+              <div class="shrink-0 w-8 h-8 rounded bg-medical-100 flex items-center justify-center text-medical-500">
                 <User class="w-4 h-4" />
               </div>
-              <div class="text-left">
-                <div class="text-sm font-bold text-medical-800">
+              <div class="min-w-0 text-left">
+                <div class="text-sm font-bold text-medical-800 break-words">
                   {{ userStore.resolveName(group.token, group.name) }}
                 </div>
                 <div class="text-[10px] text-medical-400 font-mono">
-                  {{ group.items.length }} SONGS
+                  {{ group.totalCount }} SONGS <span v-if="canClaim(group)">· 离线</span>
                 </div>
               </div>
             </div>
             <component :is="expandedUsers[group.token] ? ChevronDown : ChevronRight" class="w-4 h-4 text-medical-400" />
           </button>
+          <button v-if="canClaim(group)" type="button" @click="claimGroup(group)"
+              :disabled="!!claiming || !player.connected" :aria-label="`认领 ${group.name} 的歌单并改名`"
+              title="将这份歌单合并到自己名下，并改为原主人的昵称；刚断线需等 10 秒"
+              class="shrink-0 mr-2 border border-accent/30 text-accent text-xs px-2 py-1 disabled:opacity-40">
+            {{ claiming === group.token ? '认领中…' : '认领并改名' }}
+          </button>
+          </div>
 
           <!-- Drawer Content -->
           <div v-show="expandedUsers[group.token]" class="bg-medical-50/50 p-2 border-t border-medical-100">
@@ -84,10 +105,27 @@ import { usePlayerStore } from '../stores/player';
 import { Shuffle, ChevronDown, ChevronRight, User } from 'lucide-vue-next';
 import { useUserStore } from '../stores/user';
 import QueueItem from './QueueItem.vue';
+import { useToast } from '../composables/useToast';
 
 const player = usePlayerStore();
 const queue = computed(() => player.queue);
 const userStore = useUserStore();
+const claiming = ref('');
+const toast = useToast();
+const canClaim = (group) => player.config.allowPlaylistClaim === true && group.token !== userStore.userToken && group.token !== 'SYSTEM'
+  && !group.token?.startsWith('__') && !group.isGuest
+  && !userStore.onlineUsers.some(user => user.token === group.token);
+const claimableGroups = computed(() => userGroups.value.filter(canClaim));
+const claimGroup = async (group) => {
+  if (claiming.value || !canClaim(group)) return;
+  claiming.value = group.token;
+  try {
+    const result = await player.claimPlaylist(group.token);
+    expandedUsers.value = { ...expandedUsers.value, [userStore.userToken]: true };
+    toast.success(result.message);
+  } catch (error) { toast.error(error.message || '认领失败，请重试'); }
+  finally { claiming.value = ''; }
+};
 
 // Virtual List Setup (used for normal mode)
 const { list, containerProps, wrapperProps } = useVirtualList(queue, {
@@ -102,23 +140,27 @@ const topItems = computed(() => {
 });
 
 const userGroups = computed(() => {
-  const normalItems = queue.value.filter(item => item.priority !== 'GLOBAL_TOP');
   const groupsMap = new Map();
 
-  normalItems.forEach(item => {
+  queue.value.forEach(item => {
     const token = item.enqueuedBy.token;
     if (!groupsMap.has(token)) {
       groupsMap.set(token, {
         token: token,
         name: item.enqueuedBy.name,
+        isGuest: item.enqueuedBy.isGuest,
+        totalCount: 0,
         items: []
       });
     }
-    groupsMap.get(token).items.push(item);
+    const group = groupsMap.get(token);
+    group.totalCount++;
+    if (item.enqueuedBy.isGuest || item.music?.platform === 'netease-fm') group.isGuest = true;
+    if (item.priority !== 'GLOBAL_TOP') group.items.push(item);
   });
 
   // 对每个组内的歌曲进行排序：个人置顶 (USER_TOP) 放在最前面
-  return Array.from(groupsMap.values()).map(group => ({
+  return Array.from(groupsMap.values()).filter(group => group.items.length || canClaim(group)).map(group => ({
     ...group,
     items: [...group.items].sort((a, b) => {
       const aIsUserTop = a.priority === 'USER_TOP';

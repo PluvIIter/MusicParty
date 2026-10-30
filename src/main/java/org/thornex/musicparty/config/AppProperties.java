@@ -38,6 +38,8 @@ public class AppProperties {
         private int maxSize = 1000;
         private int historySize = 50;
         private int maxUserSongs = 100;
+        /** Room members may explicitly recover an absent owner's queued songs when enabled. */
+        private volatile boolean allowPlaylistClaim = false;
         private String persistenceFile = "data/queue-data.json";
         private long persistenceIntervalMs = 60000; // Default save every 1 minute
     }

@@ -367,7 +367,14 @@ public class MusicQueueManager {
                 });
     }
 
-    public List<MusicQueueItem> getQueueSnapshot() {
+    /** Apply a previously persisted claim while holding this queue's monitor. Stable IDs and order are preserved. */
+    synchronized void commitPlaylistClaim(List<MusicQueueItem> entries, String sourceToken, String targetToken) {
+        queue.clear();
+        queue.addAll(entries);
+        lastPlayedUserToken.compareAndSet(sourceToken, targetToken);
+    }
+
+    public synchronized List<MusicQueueItem> getQueueSnapshot() {
         return new ArrayList<>(queue);
     }
 
