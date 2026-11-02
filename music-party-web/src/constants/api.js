@@ -14,10 +14,14 @@ export const WS_DEST = {
     USER_BIND: '/app/user/bind',
     USER_RENAME: '/app/user/rename',
     RESYNC: '/app/player/resync',
+    COMPACT_RESYNC: '/app/player/compact-resync',
 
     // 订阅频道 (Subscribe)
     TOPIC_EVENTS: '/topic/player/events',
     TOPIC_STATE: '/topic/player/state',
+    TOPIC_COMPACT: '/topic/player/compact',
+    USER_COMPACT: '/user/queue/player/compact',
+    APP_COMPACT: '/app/player/compact',
     TOPIC_QUEUE: '/topic/player/queue',
     TOPIC_USERS: '/topic/users/online',
     TOPIC_CHAT: '/topic/chat',

@@ -283,3 +283,14 @@ docker run -d \
 ## License
 
 MIT License
+
+
+### 增量房间状态同步
+
+新页面首次加入或重连取得完整快照；之后每5秒只接收变化字段，未变的歌单、歌曲资料、在线成员和设置不重复传输。数组只在变化时整份替换，null显式清空字段。新通道包括版本、服务器 epoch 和前后序号；客户端缓冲乱序帧，缺口时只向自己补发完整状态，避免一个手机恢复连接使所有成员重收大歌单。
+
+快照订阅为 `/app/player/compact`，增量广播为 `/topic/player/compact`；`/app/player/compact-resync` 仅回复发起连接的 `/user/queue/player/compact`。新页面确认新通道可用后取消旧的状态、队列和成员订阅，重连重新协商。旧页面仍使用原完整状态通道；新页面连接旧服务器时沿用原同步。原播放时钟和纠偏算法保持。
+
+这是独立的协议传输优化，不包含本机热安装、部署工具、后台恢复、音频缓存或播放策略修改。稳定播放时的周期数据显著降低；初次/重连快照、歌单变化、封面和音频不属于该周期数据。
+
+验证：Java21下执行 `./mvnw test`；前端执行 `npm ci`、`npx playwright install chromium`、`npm run test:sync`、`npm run build`、`npm run test:e2e`。可设置 `PLAYWRIGHT_EXECUTABLE_PATH`。Java覆盖稀疏心跳、序号、null、队列事件、快照隔离和个人补全；Node契约覆盖乱序、漏包和重连；生产构建浏览器测试覆盖92首歌单、1280px/320px解码、配置与队列更新、暂停继续、丢包恢复、重连和旧服务器回退。测试无需真实账号。
