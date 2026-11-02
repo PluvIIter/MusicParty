@@ -283,3 +283,12 @@ docker run -d \
 ## License
 
 MIT License
+
+
+### 手机后台播放恢复
+
+此分支基于播放地址恢复 PR #25。手机切换应用后，新曲不再只等待 `canplay` 才尝试播放；临时 `AbortError` 最多做两次本机恢复，重新可见、`pageshow`、`resume` 和联网时检查暂停或未加载的本机媒体。健康播放不因回前台而重新加载。旧曲的播放 Promise 与当前曲目隔离，自动播放限制仍使用本机声音解锁，不暂停或切换整个房间。
+
+WebSocket 使用支持时的 Worker 心跳，保留自动重连；回前台若业务消息超过20秒未到且连接仍误报在线，最多每10秒替换一次旧传输。浏览器或系统完全冻结网页时，JavaScript 和 Worker 都无法保证后台连续切歌。此变更保留 #25 原有对齐策略，温和同步优化仍由独立 PR #24 提供。
+
+验证：在 `music-party-web` 执行 `npm ci`、`npx playwright install chromium`、`npm run build`、`npm run test:e2e`。可用 `PLAYWRIGHT_EXECUTABLE_PATH` 指定现有 Chromium/Edge。测试以本机生成音频和模拟 HTTP/STOMP 复现后台中断、前台恢复、重试边界、旧 Promise、假连接与全房暂停保护，不需要真实歌曲或账号。

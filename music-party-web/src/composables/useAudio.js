@@ -29,6 +29,9 @@ export function useAudio(audioRef, playerStore) {
     let recovering = false;
     let retryTimer = null;
     let refreshAbort = null;
+    let playAttempt = null;
+    let resumeAttempts = 0;
+    let resumeTimer = null;
     let initialAlignment = true;
     let lastAlignment = -Infinity;
     const alignToRoom = () => {
@@ -47,11 +50,13 @@ export function useAudio(audioRef, playerStore) {
         } else initialAlignment = false;
     };
 
-    // 请求唤醒锁 (防止 WebSocket 断连)
+    // Screen wake locks only apply while visible; they cannot keep a background tab alive.
     const requestWakeLock = async () => {
-        if ('wakeLock' in navigator) {
+        if ('wakeLock' in navigator && document.visibilityState === 'visible' && !wakeLock) {
             try {
                 wakeLock = await navigator.wakeLock.request('screen');
+                const acquired = wakeLock;
+                acquired.addEventListener('release', () => { if (wakeLock === acquired) wakeLock = null; });
                 console.log('Wake Lock active');
             } catch (err) {
                 console.warn('Wake Lock request failed:', err);
@@ -62,7 +67,7 @@ export function useAudio(audioRef, playerStore) {
     // 释放唤醒锁
     const releaseWakeLock = async () => {
         if (wakeLock !== null) {
-            await wakeLock.release();
+            await wakeLock.release().catch(() => {});
             wakeLock = null;
         }
     };
@@ -84,8 +89,13 @@ export function useAudio(audioRef, playerStore) {
 
         // 2. 注册控制事件 (关键：告诉系统我们支持后台控制)
         try {
-            navigator.mediaSession.setActionHandler('play', () => playerStore.togglePause());
-            navigator.mediaSession.setActionHandler('pause', () => playerStore.togglePause());
+            navigator.mediaSession.setActionHandler('play', () => {
+                if (playerStore.isPaused) playerStore.togglePause();
+                else resumeLocalPlayback();
+            });
+            navigator.mediaSession.setActionHandler('pause', () => {
+                if (!playerStore.isPaused) playerStore.togglePause();
+            });
             navigator.mediaSession.setActionHandler('previoustrack', null); // 暂不支持上一首
             navigator.mediaSession.setActionHandler('nexttrack', () => playerStore.playNext());
         } catch (e) {
@@ -110,22 +120,72 @@ export function useAudio(audioRef, playerStore) {
 
     // 尝试播放并处理浏览器拦截
     const safePlay = async () => {
-        if (!audioRef.value || !playerStore.nowPlaying) return;
-
+        const audio = audioRef.value;
+        if (!audio || !playerStore.nowPlaying || playerStore.isPaused || playAttempt) return;
+        const attempt = { generation };
+        playAttempt = attempt;
         try {
-            await audioRef.value.play();
+            await audio.play();
+            if (attempt.generation !== generation || playAttempt !== attempt) return;
             isErrorState.value = false;
             needsUserGesture.value = false;
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
             updateMediaSession();
             requestWakeLock();
         } catch (e) {
+            // A rejected promise belonging to the previous source must not block the new song.
+            if (attempt.generation !== generation || playAttempt !== attempt) return;
             if (e.name === 'NotAllowedError') {
                 needsUserGesture.value = true;
+                isBuffering.value = false;
+                clearTimeout(stallTimer);
                 console.warn("Autoplay blocked. User interaction required.");
+            } else if (e.name === 'AbortError') {
+                scheduleResume();
             } else if (e.name !== 'AbortError') {
                 console.warn("Play failed:", e);
+                handleError();
             }
+        } finally {
+            if (playAttempt === attempt) playAttempt = null;
         }
+    };
+
+    const scheduleResume = () => {
+        clearTimeout(resumeTimer);
+        if (playerStore.isPaused || needsUserGesture.value || isErrorState.value) return;
+        if (resumeAttempts >= 2) {
+            if (document.visibilityState === 'visible') needsUserGesture.value = true;
+            return;
+        }
+        const version = generation;
+        resumeTimer = setTimeout(() => {
+            if (version !== generation || playerStore.isPaused || !audioRef.value?.paused
+                || audioRef.value.ended || needsUserGesture.value || isErrorState.value) return;
+            resumeAttempts++;
+            safePlay();
+        }, 750);
+    };
+
+    const resumeLocalPlayback = () => {
+        const audio = audioRef.value;
+        if (!audio || !playerStore.nowPlaying || playerStore.isPaused || isErrorState.value) return;
+        if (!audio.paused && !audio.ended && audio.readyState >= 2 && !playAttempt) return;
+        resumeAttempts = 0;
+        clearTimeout(resumeTimer);
+        // A pending background play() can remain unresolved after the browser resumes.
+        playAttempt = null;
+        needsUserGesture.value = false;
+        if (audio.paused || audio.ended) initialAlignment = true;
+        if (audio.error) { handleError(); return; }
+        if (audio.readyState < 2) {
+            onWaiting();
+            if (audio.networkState === 0 || audio.networkState === 3) audio.load();
+        } else {
+            isBuffering.value = false;
+            alignToRoom();
+        }
+        safePlay();
     };
 
     // === 1. 监听资源加载 (canplay) ===
@@ -139,7 +199,7 @@ export function useAudio(audioRef, playerStore) {
 
         if (playerStore.isPaused) {
             audioRef.value.pause();
-        } else {
+        } else if (!needsUserGesture.value && !isErrorState.value) {
             safePlay();
         }
     };
@@ -164,8 +224,12 @@ export function useAudio(audioRef, playerStore) {
     watch(() => {
         const music = playerStore.nowPlaying?.music;
         return music ? `${music.platform}:${music.id}:${music.url}` : '';
-    }, () => {
+    }, async () => {
         generation++;
+        const version = generation;
+        playAttempt = null;
+        resumeAttempts = 0;
+        clearTimeout(resumeTimer);
         refreshAbort?.abort();
         refreshAbort = null;
         recovering = false;
@@ -194,6 +258,13 @@ export function useAudio(audioRef, playerStore) {
         isErrorState.value = false;
         updateMediaSession();
         notifyAndroidShell();
+        // Mobile browsers may defer loading a new source in the background until play().
+        // Do not depend exclusively on canplay, which may never arrive without this request.
+        await nextTick();
+        if (version === generation && playerStore.nowPlaying && !playerStore.isPaused) {
+            if (audioRef.value?.readyState < 2) onWaiting();
+            safePlay();
+        }
     });
 
     // === 4. 错误重试机制 ===
@@ -228,6 +299,7 @@ export function useAudio(audioRef, playerStore) {
             }
             if (version !== generation) return;
             isErrorState.value = false;
+            playAttempt = null;
             initialAlignment = true;
             await nextTick();
             // Also reload when the API legitimately returns the same URL.
@@ -255,7 +327,16 @@ export function useAudio(audioRef, playerStore) {
         retryTimer = setTimeout(recoverAudio, retryCount.value ? 5500 : 1000);
     };
     const retryLocally = () => {
-        if (needsUserGesture.value) { needsUserGesture.value = false; initialAlignment = true; checkAutoPlay(); return; }
+        if (needsUserGesture.value) {
+            needsUserGesture.value = false;
+            resumeAttempts = 0;
+            playAttempt = null;
+            initialAlignment = true;
+            if (audioRef.value?.readyState >= 2) alignToRoom();
+            else onWaiting();
+            safePlay();
+            return;
+        }
         retryCount.value = 0;
         isErrorState.value = false;
         recoverAudio();
@@ -283,7 +364,7 @@ export function useAudio(audioRef, playerStore) {
         isBuffering.value = true;
         clearTimeout(stallTimer);
         stallTimer = setTimeout(() => {
-            if (audioRef.value && !playerStore.isPaused) {
+            if (audioRef.value && !playerStore.isPaused && !needsUserGesture.value && !isErrorState.value) {
                 recoverAudio();
             }
         }, STALL_TIMEOUT);
@@ -294,20 +375,28 @@ export function useAudio(audioRef, playerStore) {
 
     const onPlaying = () => {
         isBuffering.value = false;
+        needsUserGesture.value = false;
+        resumeAttempts = 0;
+        clearTimeout(resumeTimer);
         clearTimeout(stallTimer);
     };
 
+    const onPause = () => {
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+        if (!playerStore.isPaused && !audioRef.value?.ended) scheduleResume();
+    };
+
     // 页面可见性变化监听
-    const handleVisibilityChange = async () => {
+    const handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
-            if (!playerStore.isPaused) {
-                await requestWakeLock();
-            }
             playerStore.tryReconnect();
             // Ask for fresh state; foregrounding must not force a media seek.
             socketService.send(WS_DEST.RESYNC);
+            resumeLocalPlayback();
+            if (!playerStore.isPaused) requestWakeLock();
         }
     };
+    const handlePageShow = () => handleVisibilityChange();
 
     // 网络状态监听
     const handleNetworkChange = () => {
@@ -315,6 +404,7 @@ export function useAudio(audioRef, playerStore) {
             console.log('[Network] Back online, checking socket...');
             playerStore.tryReconnect();
             socketService.send(WS_DEST.RESYNC);
+            resumeLocalPlayback();
         }
     };
 
@@ -322,6 +412,8 @@ export function useAudio(audioRef, playerStore) {
     onMounted(() => {
         document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('online', handleNetworkChange);
+        window.addEventListener('pageshow', handlePageShow);
+        document.addEventListener('resume', handlePageShow);
 
         // 注册通知栏媒体控制的 Web 端动作（由原生 evaluateJavascript 调用）
         if (typeof window !== 'undefined') {
@@ -369,11 +461,16 @@ export function useAudio(audioRef, playerStore) {
     });
 
     onUnmounted(() => {
+        generation++;
+        playAttempt = null;
+        clearTimeout(resumeTimer);
         if (typeof window !== 'undefined') {
             delete window.MusicPartyControl;
         }
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.removeEventListener('online', handleNetworkChange);
+        window.removeEventListener('pageshow', handlePageShow);
+        document.removeEventListener('resume', handlePageShow);
         clearInterval(syncTimer);
         clearTimeout(endedTimer);
         clearTimeout(stallTimer);
@@ -394,6 +491,7 @@ export function useAudio(audioRef, playerStore) {
         handleEnded,
         onWaiting,
         onPlaying,
+        onPause,
         onProgress,
         retryLocally
     };
