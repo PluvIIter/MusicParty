@@ -1109,20 +1109,26 @@ public class MusicPlayerService {
     }
 
     /**
-     * 定时清理长时间暂停的播放器状态
+     * 定时清理空房间中长时间暂停的媒体，保留暂停状态
      */
     @Scheduled(fixedRate = 600000) // 每10分钟检查一次
     public void cleanupIdlePlayer() {
-        if (isPaused.get() && currentMusic.get() != null) {
-            // 在暂停状态下，timestampAnchor 记录的是暂停开始的时间
-            long pausedDuration = System.currentTimeMillis() - timestampAnchor.get();
-            if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
-                log.info("Idle player timeout reached. Resetting now playing.");
-                currentMusic.set(null);
-                positionAnchor.set(0);
-                timestampAnchor.set(0);
-                isPaused.set(false);
-                broadcastFullPlayerState();
+        synchronized (this) {
+            if (!userService.getOnlineUserSummaries().isEmpty()
+                    || liveStreamService.getStreamConnectionCount() > 0) {
+                return;
+            }
+            if (isPaused.get() && currentMusic.get() != null) {
+                // 在暂停状态下，timestampAnchor 记录的是暂停开始的时间
+                long pausedDuration = System.currentTimeMillis() - timestampAnchor.get();
+                if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
+                    log.info("Empty idle room timeout reached. Clearing paused media without resuming.");
+                    currentMusic.set(null);
+                    positionAnchor.set(0);
+                    timestampAnchor.set(0);
+                    // Keep isPaused=true: cleanup must not make playerLoop start the next song.
+                    broadcastFullPlayerState();
+                }
             }
         }
     }
