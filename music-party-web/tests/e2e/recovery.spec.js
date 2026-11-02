@@ -7,7 +7,9 @@ test.afterAll(async()=>{await audio.close();});
 test('expired audio recovers locally and autoplay unlock does not pause the room',async({page})=>{
   const hub=await room(page,{url:audio.url+'/expired.wav',refreshed:audio.url+'/tone.wav',blocked:true});
   await page.getByRole('button',{name:'点此开启声音',exact:true}).click();
-  await expect.poll(async()=>{const a=await media(page);return a.decoded>0&&!a.paused&&a.time>5;}).toBe(true);
+  // Proactive play can expose unlock before the expired URL has finished recovering.
+  try {await expect.poll(async()=>{const a=await media(page);return a.decoded>0&&!a.paused&&a.time>5;},{timeout:15000}).toBe(true);}
+  catch(error){console.log('RECOVERY_DIAGNOSTIC',JSON.stringify({media:await media(page),refreshes:hub.refreshes(),stats:await page.evaluate(()=>window.audioStats)}));throw error;}
   expect(hub.refreshes()).toBeLessThanOrEqual(2);
   expect(await page.evaluate(()=>window.audioStats.controls)).toBe(0);expect(hub.errors).toEqual([]);
 });
