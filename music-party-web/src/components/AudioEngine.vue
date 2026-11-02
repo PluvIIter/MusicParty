@@ -19,6 +19,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
 import { useAudio } from '../composables/useAudio';
+import { cachedAudioSource } from '../services/audioCache';
 
 const player = usePlayerStore();
 const ui = useUiStore();
@@ -43,9 +44,9 @@ watch(() => player.nowPlaying?.music?.url, (url) => {
 
 const audioSrc = computed(() => {
   const current = player.nowPlaying?.music?.url;
-  if (current) return current;
+  if (current) return cachedAudioSource(player.nowPlaying.music, current);
   // 服务器仍在加载下一首：继续播上一首，避免间隙中断
-  if (player.isLoading && lastGoodUrl.value) return lastGoodUrl.value;
+  if (player.isLoading && lastGoodUrl.value) return audioRef.value?.getAttribute('src') || lastGoodUrl.value;
   // 服务器空闲：清空 src，音频自然停止
   return '';
 });
