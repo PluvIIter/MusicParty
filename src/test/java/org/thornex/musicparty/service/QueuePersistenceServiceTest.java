@@ -38,6 +38,7 @@ class QueuePersistenceServiceTest {
         props.getNetease().setEnabled(true);
         props.getBilibili().setEnabled(false);
         props.getQueue().setMaxSize(500);
+        props.getChat().setMaxMessageLength(512);
 
         MusicQueueManager qm = mock(MusicQueueManager.class);
         when(qm.getQueueSnapshot()).thenReturn(List.of());
@@ -66,6 +67,7 @@ class QueuePersistenceServiceTest {
         assertEquals("DJ", snap.privateDj().mode());
         assertTrue(snap.privateDj().fillBlankEnabled());
         assertEquals(500, snap.systemConfig().maxQueueSize());
+        assertEquals(512, snap.systemConfig().maxChatMessageLength());
         assertTrue(snap.systemConfig().neteaseEnabled());
         assertFalse(snap.systemConfig().bilibiliEnabled());
     }
@@ -193,4 +195,46 @@ class QueuePersistenceServiceTest {
         // 缺省 systemConfig → AppProperties 保持默认
         assertEquals(1000, props.getQueue().getMaxSize());
     }
+
+    @Test
+    void saveAndReloadRestoresChatMessageLength() throws Exception {
+        File tmp = File.createTempFile("queue-chat-length", ".json");
+        tmp.deleteOnExit();
+        AppProperties props = new AppProperties();
+        props.getQueue().setPersistenceFile(tmp.getAbsolutePath());
+        props.getChat().setMaxMessageLength(512);
+
+        MusicQueueManager queue = mock(MusicQueueManager.class);
+        when(queue.getQueueSnapshot()).thenReturn(List.of());
+        when(queue.getHistorySnapshot()).thenReturn(List.of());
+        ChatService chat = mock(ChatService.class);
+        when(chat.getHistoryFull()).thenReturn(List.of());
+        QueuePersistenceService persistence = build(queue, chat, props,
+                mock(MusicPlayerService.class), mock(AuthController.class), mock(LiveStreamService.class));
+
+        persistence.saveData();
+        props.getChat().setMaxMessageLength(200);
+        persistence.loadData();
+
+        assertEquals(512, props.getChat().getMaxMessageLength());
+    }
+
+    @Test
+    void oldSystemConfigKeepsConfiguredChatMessageLength() throws Exception {
+        File tmp = File.createTempFile("queue-old-chat-length", ".json");
+        tmp.deleteOnExit();
+        Files.writeString(tmp.toPath(),
+                "{\"queue\":[],\"history\":[],\"chatHistory\":[],"
+                + "\"settings\":{\"systemConfig\":{\"maxQueueSize\":500}}}");
+        AppProperties props = new AppProperties();
+        props.getQueue().setPersistenceFile(tmp.getAbsolutePath());
+        props.getChat().setMaxMessageLength(333);
+
+        build(mock(MusicQueueManager.class), mock(ChatService.class), props,
+                mock(MusicPlayerService.class), mock(AuthController.class), mock(LiveStreamService.class)).loadData();
+
+        assertEquals(500, props.getQueue().getMaxSize());
+        assertEquals(333, props.getChat().getMaxMessageLength());
+    }
+
 }

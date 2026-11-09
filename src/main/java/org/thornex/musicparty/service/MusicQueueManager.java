@@ -50,6 +50,15 @@ public class MusicQueueManager {
             return null;
         }
 
+        // Recheck the member quota while holding the same lock as insertion.
+        // API requests may have passed their earlier quota checks concurrently.
+        long userSongCount = queue.stream()
+                .filter(item -> item.enqueuedBy().token().equals(enqueuedBy.token()))
+                .count();
+        if (userSongCount >= appProperties.getQueue().getMaxUserSongs()) {
+            return null;
+        }
+
         MusicQueueItem newItem = new MusicQueueItem(
                 UUID.randomUUID().toString(),
                 music,
