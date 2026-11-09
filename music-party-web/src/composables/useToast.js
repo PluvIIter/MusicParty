@@ -21,6 +21,6 @@ export function useToast() {
         success,
         error,
         info,
-        warning
+        warning,
     };
 }

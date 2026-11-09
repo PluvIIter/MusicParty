@@ -1,25 +1,29 @@
 <template>
-  <div class="hidden">
-    <audio
-        ref="audioRef"
-        :src="audioSrc"
-        @error="handleError"
-        @waiting="onWaiting"
-        @playing="onPlaying"
-        @pause="onPause"
-        @progress="onProgress"
-        @canplay="onCanPlay"
-        @seeked="onCanPlay"
-        @ended="handleEnded"
-        referrerpolicy="no-referrer"
-        preload="auto"
-        playsinline
-    ></audio>
-  </div>
-  <button v-if="needsUserGesture || isErrorState" type="button" @click="retryLocally"
-      class="fixed bottom-28 left-1/2 -translate-x-1/2 z-[250] max-w-[90vw] px-5 py-3 bg-medical-900 text-white text-sm font-bold shadow-lg">
-    {{ needsUserGesture ? '点此开启声音' : '声音加载失败，点此重试' }}
-  </button>
+    <div class="hidden">
+        <audio
+            ref="audioRef"
+            :src="audioSrc"
+            @error="handleError"
+            @waiting="onWaiting"
+            @playing="onPlaying"
+            @pause="onPause"
+            @progress="onProgress"
+            @canplay="onCanPlay"
+            @seeked="onCanPlay"
+            @ended="handleEnded"
+            referrerpolicy="no-referrer"
+            preload="auto"
+            playsinline
+        ></audio>
+    </div>
+    <button
+        v-if="needsUserGesture || isErrorState"
+        type="button"
+        @click="retryLocally"
+        class="fixed bottom-28 left-1/2 -translate-x-1/2 z-[250] max-w-[90vw] px-5 py-3 bg-medical-900 text-white text-sm font-bold shadow-lg"
+    >
+        {{ needsUserGesture ? '点此开启声音' : '声音加载失败，点此重试' }}
+    </button>
 </template>
 
 <script setup>
@@ -34,63 +38,70 @@ const ui = useUiStore();
 const audioRef = ref(null);
 
 const {
-  localProgress,
-  isBuffering,
-  isErrorState,
-  needsUserGesture,
-  recoveredUrl,
-  handleError,
-  checkAutoPlay,
-  handleEnded,
-  onWaiting,
-  onPlaying,
-  onPause,
-  onProgress,
-  retryLocally
+    localProgress,
+    isBuffering,
+    isErrorState,
+    needsUserGesture,
+    recoveredUrl,
+    handleError,
+    checkAutoPlay,
+    handleEnded,
+    onWaiting,
+    onPlaying,
+    onPause,
+    onProgress,
+    retryLocally,
 } = useAudio(audioRef, player);
 
 // 记住最后一首有效 URL：服务器拉取下一首（nowPlaying=null）的间隙不硬断
 const lastGoodUrl = ref('');
-watch(() => player.nowPlaying?.music?.url, (url) => {
-  if (url) lastGoodUrl.value = url;
-});
+watch(
+    () => player.nowPlaying?.music?.url,
+    (url) => {
+        if (url) lastGoodUrl.value = url;
+    }
+);
 
 const audioSrc = computed(() => {
-  const current = player.nowPlaying?.music?.url;
-  // 刷新后的地址优先（#25），再交给分块缓存路由（#28）
-  if (current) return cachedAudioSource(player.nowPlaying.music, recoveredUrl.value || current);
-  // 服务器仍在加载下一首：继续播上一首，避免间隙中断
-  if (player.isLoading && lastGoodUrl.value) return audioRef.value?.getAttribute('src') || lastGoodUrl.value;
-  // 服务器空闲：清空 src，音频自然停止
-  return '';
+    const current = player.nowPlaying?.music?.url;
+    // 刷新后的地址优先（#25），再交给分块缓存路由（#28）
+    if (current) return cachedAudioSource(player.nowPlaying.music, recoveredUrl.value || current);
+    // 服务器仍在加载下一首：继续播上一首，避免间隙中断
+    if (player.isLoading && lastGoodUrl.value) return audioRef.value?.getAttribute('src') || lastGoodUrl.value;
+    // 服务器空闲：清空 src，音频自然停止
+    return '';
 });
 
 // 同步状态到 playerStore
 watch(localProgress, (val) => {
-  player.localProgress = val;
+    player.localProgress = val;
 });
 watch(isBuffering, (val) => {
-  player.isBuffering = val;
+    player.isBuffering = val;
 });
 watch(isErrorState, (val) => {
-  player.isErrorState = val;
+    player.isErrorState = val;
 });
 
 // 监听音量
-watch(() => ui.volume, (newVol) => {
-  if (audioRef.value) {
-    audioRef.value.volume = newVol;
-  }
-}, { immediate: true });
+watch(
+    () => ui.volume,
+    (newVol) => {
+        if (audioRef.value) {
+            audioRef.value.volume = newVol;
+        }
+    },
+    { immediate: true }
+);
 
 const onCanPlay = () => {
-  player.isBuffering = false;
-  checkAutoPlay();
+    player.isBuffering = false;
+    checkAutoPlay();
 };
 
 onMounted(() => {
-  if (audioRef.value) {
-    audioRef.value.volume = ui.volume;
-  }
+    if (audioRef.value) {
+        audioRef.value.volume = ui.volume;
+    }
 });
 </script>

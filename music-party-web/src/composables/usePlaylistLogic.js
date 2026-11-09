@@ -22,7 +22,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
     const offset = ref(0);
     const hasMore = ref(true);
     const isLoadingMore = ref(false);
-    const limit = computed(() => platformRef.value === 'bilibili' ? 20 : 50);
+    const limit = computed(() => (platformRef.value === 'bilibili' ? 20 : 50));
 
     const bindings = computed(() => userStore.bindings);
 
@@ -94,7 +94,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
                 if (rawSongs.length < limit.value) hasMore.value = false;
             }
 
-            const validSongs = rawSongs.filter(s => s.id !== 'INVALID_SKIP');
+            const validSongs = rawSongs.filter((s) => s.id !== 'INVALID_SKIP');
             songsRef.value.push(...validSongs);
 
             // 贪婪加载：如果有效数据太少，自动加载下一页
@@ -105,9 +105,8 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
 
             // 兜底
             if (rawSongs.length === 0) isLoadingMore.value = false;
-
         } catch (e) {
-            console.error("Fetch songs failed", e);
+            console.error('Fetch songs failed', e);
             hasMore.value = false;
         }
     };
@@ -146,9 +145,13 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
     }, 200);
 
     // 监听平台切换 -> 刷新歌单列表
-    watch([platformRef, bindings], () => {
-        fetchPlaylists();
-    }, { immediate: true });
+    watch(
+        [platformRef, bindings],
+        () => {
+            fetchPlaylists();
+        },
+        { immediate: true }
+    );
 
     return {
         playlists,
@@ -163,6 +166,6 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         searchUser,
         bindUser,
         loadPlaylist,
-        handleScroll
+        handleScroll,
     };
 }

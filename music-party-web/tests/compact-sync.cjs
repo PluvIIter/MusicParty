@@ -4,13 +4,36 @@ const path = require('node:path');
 
 (async () => {
     const source = fs.readFileSync(path.join(__dirname, '../src/services/compactSync.js'), 'utf8');
-    const { createCompactReceiver, mergeState } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-    const first = { queue: [{ id: 1 }], nowPlaying: { music: { id: 1, url: 'fixture' }, currentPosition: 10 }, isPaused: false, config: { a: 1, b: 2 } };
-    let applied = [], requests = 0, activations = 0, time = 0;
-    const receiver = createCompactReceiver({ apply: s => applied.push(s), requestSnapshot: () => requests++, activated: () => activations++, now: () => time });
-    const frame = (seq, state, full = false, epoch = 'fixture') => ({ v: 1, epoch, base: full ? seq : seq - 1, seq, full, state });
+    const { createCompactReceiver, mergeState } = await import(
+        'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
+    );
+    const first = {
+        queue: [{ id: 1 }],
+        nowPlaying: { music: { id: 1, url: 'fixture' }, currentPosition: 10 },
+        isPaused: false,
+        config: { a: 1, b: 2 },
+    };
+    let applied = [],
+        requests = 0,
+        activations = 0,
+        time = 0;
+    const receiver = createCompactReceiver({
+        apply: (s) => applied.push(s),
+        requestSnapshot: () => requests++,
+        activated: () => activations++,
+        now: () => time,
+    });
+    const frame = (seq, state, full = false, epoch = 'fixture') => ({
+        v: 1,
+        epoch,
+        base: full ? seq : seq - 1,
+        seq,
+        full,
+        state,
+    });
     receiver.receive(frame(2, { nowPlaying: { currentPosition: 20 } }));
-    assert.equal(applied.length, 0); assert.equal(requests, 1);
+    assert.equal(applied.length, 0);
+    assert.equal(requests, 1);
     receiver.receive(frame(1, first, true));
     assert.equal(applied.at(-1).nowPlaying.currentPosition, 20);
     assert.equal(applied.at(-1).nowPlaying.music.url, 'fixture');
@@ -29,7 +52,8 @@ const path = require('node:path');
     receiver.receive(frame(5, {}));
     assert.equal(applied.at(-1).isPaused, true, 'duplicate delta must be ignored');
     receiver.receive(frame(6, { nowPlaying: null, queue: [] }));
-    assert.equal(applied.at(-1).nowPlaying, null); assert.deepEqual(applied.at(-1).queue, []);
+    assert.equal(applied.at(-1).nowPlaying, null);
+    assert.deepEqual(applied.at(-1).queue, []);
     receiver.receive(frame(7, { nowPlaying: { music: { id: 2 }, currentPosition: 0 } }));
     assert.equal(applied.at(-1).nowPlaying.music.id, 2);
     const before = applied.length;
@@ -39,12 +63,16 @@ const path = require('node:path');
     receiver.receive(frame(1, { ...first, isPaused: true }, true, 'new-server'));
     assert.equal(applied.at(-1).isPaused, true);
     assert.equal(applied.at(-1).queue.length, 1);
-    receiver.reset(); assert.equal(receiver.isActive(), false);
+    receiver.reset();
+    assert.equal(receiver.isActive(), false);
     const count = applied.length;
     receiver.receive({ v: 9, state: {} });
     receiver.receive(frame(1, { queue: [] }, true));
     assert.equal(applied.length, count);
     const malicious = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}}}');
-    mergeState({}, malicious); assert.equal({}.polluted, undefined);
-    console.log('PASS compact sync: bootstrap races, sparse merges, stable queue identity, gaps/reordering, stale snapshots, duplicates, explicit clears, epoch changes, reset, invalid payloads');
+    mergeState({}, malicious);
+    assert.equal({}.polluted, undefined);
+    console.log(
+        'PASS compact sync: bootstrap races, sparse merges, stable queue identity, gaps/reordering, stale snapshots, duplicates, explicit clears, epoch changes, reset, invalid payloads'
+    );
 })();

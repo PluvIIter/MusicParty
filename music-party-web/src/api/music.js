@@ -1,15 +1,21 @@
 import client from './client';
-import { STORAGE_KEYS } from '../constants/keys';
+import { STORAGE_KEYS } from '../constants/storage';
 const roomHeaders = () => ({ 'X-Room-Password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '' });
 
 export const musicApi = {
-    getAlbum: albumId => client.get(`/api/album/netease/detail/${encodeURIComponent(albumId)}`, { timeout: 20000, headers: roomHeaders() }),
-    getSavedAlbums: (offset, limit) => client.get('/api/user/albums/netease', { params: { offset, limit }, timeout: 15000, headers: roomHeaders() }),
+    getAlbum: (albumId) =>
+        client.get(`/api/album/netease/detail/${encodeURIComponent(albumId)}`, {
+            timeout: 20000,
+            headers: roomHeaders(),
+        }),
+    getSavedAlbums: (offset, limit) =>
+        client.get('/api/user/albums/netease', { params: { offset, limit }, timeout: 15000, headers: roomHeaders() }),
     // 搜索歌曲
     search: (platform, keyword) => client.get(`/api/search/${platform}/${keyword}`),
 
     // 获取歌曲所属专辑及完整曲目
-    getSongAlbum: (songId) => client.get(`/api/album/netease/by-song/${encodeURIComponent(songId)}`, { timeout: 20000 }),
+    getSongAlbum: (songId) =>
+        client.get(`/api/album/netease/by-song/${encodeURIComponent(songId)}`, { timeout: 20000 }),
 
     // 获取歌词
     getLyric: (platform, songId) => client.get(`/api/music/lyric/${platform}/${songId}`),
@@ -22,5 +28,5 @@ export const musicApi = {
         client.get(`/api/playlist/songs/${platform}/${playlistId}`, { params: { offset, limit } }),
 
     // 搜索用户
-    searchUser: (platform, keyword) => client.get(`/api/user/search/${platform}/${keyword}`)
+    searchUser: (platform, keyword) => client.get(`/api/user/search/${platform}/${keyword}`),
 };
