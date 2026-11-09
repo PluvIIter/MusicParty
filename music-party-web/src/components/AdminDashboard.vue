@@ -621,6 +621,7 @@ import { useAdminStore } from '../stores/admin';
 import { usePlayerStore } from '../stores/player';
 import { adminApi } from '../api/admin';
 import { useToast } from '../composables/useToast';
+import { toAdminConfigPayload } from '../domain/adminConfig';
 import {
     Settings,
     X,
@@ -692,7 +693,7 @@ watch(
 
 const saveSystemConfig = async () => {
     try {
-        const data = await adminApi.updateConfig(adminStore.adminPassword, configProxy.value);
+        const data = await adminApi.updateConfig(adminStore.adminPassword, toAdminConfigPayload(configProxy.value));
         success(data.message);
     } catch (e) {
         error('配置同步失败');
@@ -701,7 +702,7 @@ const saveSystemConfig = async () => {
 
 const updateInstantConfig = async (update) => {
     try {
-        const data = await adminApi.updateConfig(adminStore.adminPassword, update);
+        const data = await adminApi.updateConfig(adminStore.adminPassword, toAdminConfigPayload(update));
         success(data.message);
     } catch (e) {
         error('配置同步失败');
@@ -827,7 +828,7 @@ const togglePlatform = async (platformId) => {
     const current = playerStore.config[`${platformId}Enabled`];
     const update = { [`${platformId}Enabled`]: !current };
     try {
-        const data = await adminApi.updateConfig(adminStore.adminPassword, update);
+        const data = await adminApi.updateConfig(adminStore.adminPassword, toAdminConfigPayload(update));
         success(data.message);
     } catch (e) {
         error('平台状态切换失败');

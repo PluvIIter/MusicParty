@@ -122,6 +122,7 @@ import { Shuffle, ChevronDown, ChevronRight, User } from 'lucide-vue-next';
 import { useUserStore } from '../stores/user';
 import QueueItem from './QueueItem.vue';
 import { useToast } from '../composables/useToast';
+import { splitQueue } from '../domain/queueRules';
 
 const player = usePlayerStore();
 const queue = computed(() => player.queue);
@@ -172,44 +173,9 @@ const { list, containerProps, wrapperProps } = useVirtualList(queue, {
 
 // --- Shuffle Mode Logic ---
 
-const topItems = computed(() => {
-    return queue.value.filter((item) => item.priority === 'GLOBAL_TOP');
-});
-
-const userGroups = computed(() => {
-    const groupsMap = new Map();
-
-    queue.value.forEach((item) => {
-        const token = item.enqueuedBy.token;
-        if (!groupsMap.has(token)) {
-            groupsMap.set(token, {
-                token: token,
-                name: item.enqueuedBy.name,
-                isGuest: item.enqueuedBy.isGuest,
-                totalCount: 0,
-                items: [],
-            });
-        }
-        const group = groupsMap.get(token);
-        group.totalCount++;
-        if (item.enqueuedBy.isGuest || item.music?.platform === 'netease-fm') group.isGuest = true;
-        if (item.priority !== 'GLOBAL_TOP') group.items.push(item);
-    });
-
-    // 对每个组内的歌曲进行排序：个人置顶 (USER_TOP) 放在最前面
-    return Array.from(groupsMap.values())
-        .filter((group) => group.items.length || canClaim(group))
-        .map((group) => ({
-            ...group,
-            items: [...group.items].sort((a, b) => {
-                const aIsUserTop = a.priority === 'USER_TOP';
-                const bIsUserTop = b.priority === 'USER_TOP';
-                if (aIsUserTop && !bIsUserTop) return -1;
-                if (!aIsUserTop && bIsUserTop) return 1;
-                return 0; // 保持原有相对顺序
-            }),
-        }));
-});
+const queueGroups = computed(() => splitQueue(queue.value, (group) => group.items.length > 0 || canClaim(group)));
+const topItems = computed(() => queueGroups.value.topItems);
+const userGroups = computed(() => queueGroups.value.userGroups);
 
 const expandedUsers = ref({});
 
