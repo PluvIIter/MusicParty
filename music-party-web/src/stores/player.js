@@ -8,6 +8,7 @@ import { createSocketSubscriptions, createSocketCallbacks } from '../services/so
 import { musicApi } from '../api/music';
 import { WS_DEST } from '../constants/api';
 import { STORAGE_KEYS } from '../constants/keys';
+import { createRoomClock } from '../services/playbackSync';
 
 export const usePlayerStore = defineStore('player', () => {
     // === 1. State ===
@@ -28,7 +29,7 @@ export const usePlayerStore = defineStore('player', () => {
     const streamListenerCount = ref(0);
     const streamActive = ref(false);
     const lastControlTime = ref(0);
-    const remotePosition = ref(0);
+    const roomClock = createRoomClock();
     const lastSyncTime = ref(0);
     const localProgress = ref(0);
     const isBuffering = ref(false);
@@ -42,6 +43,7 @@ export const usePlayerStore = defineStore('player', () => {
     const eligibleUsers = ref(0);
 
     const config = ref({
+        retainPlaylist: false,
         maxQueueSize: 1000,
         maxHistorySize: 50,
         maxUserSongs: 100,
@@ -55,6 +57,7 @@ export const usePlayerStore = defineStore('player', () => {
         voteSkipThreshold: 0.5,
         voteSkipWaitTime: 15,
         neteaseCookieConfigured: false,
+        allowPlaylistClaim: false,
         privateDj: {
             mode: 'OFF',
             fillBlankEnabled: false,
@@ -65,18 +68,14 @@ export const usePlayerStore = defineStore('player', () => {
 
     const userStore = useUserStore();
     const albumRequests = new Map();
+    const claimRequests = new Map();
+    const clearRequests = new Map();
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
 
     // === 2. Logic ===
-    const getCurrentProgress = () => {
-        if (!nowPlaying.value) return 0;
-        if (isPaused.value) {
-            return remotePosition.value;
-        } else {
-            // 本地简单的推算：服务器给的进度 + (当前时间 -收到包的时间)
-            return remotePosition.value + (Date.now() - lastSyncTime.value);
-        }
-    };
+    const getCurrentProgress = () => nowPlaying.value ? roomClock.position() : 0;
+    const getSyncStatus = () => roomClock.status();
+    watch(connected, value => { if (!value) roomClock.expectReconnect(); }, { flush: 'sync' });
 
     const requireAuth = () => {
         if (userStore.isGuest) {
@@ -99,6 +98,7 @@ export const usePlayerStore = defineStore('player', () => {
     // === 3. Actions ===
 
     const syncState = (state) => {
+        roomClock.sample(state);
         nowPlaying.value = state.nowPlaying;
         queue.value = state.queue;
         isPaused.value = state.isPaused;
@@ -119,13 +119,7 @@ export const usePlayerStore = defineStore('player', () => {
         currentVotes.value = state.currentVotes || 0;
         eligibleUsers.value = state.eligibleUsers || 0;
 
-        // 记录服务器发来的进度和收到包的时间
-        if (state.nowPlaying) {
-            remotePosition.value = state.nowPlaying.currentPosition;
-            lastSyncTime.value = Date.now();
-        } else {
-            remotePosition.value = 0;
-        }
+        lastSyncTime.value = Date.now(); // Diagnostic wall time only.
 
         if (state.onlineUsers) {
             userStore.setOnlineUsers(state.onlineUsers);
@@ -154,6 +148,18 @@ export const usePlayerStore = defineStore('player', () => {
             else pending.resolve(result);
         };
 
+        subscriptions[WS_DEST.USER_PLAYLIST_CLAIM] = (result) => {
+            const pending = claimRequests.get(result.requestId);
+            if (!pending) return;
+            clearTimeout(pending.timer);
+            claimRequests.delete(result.requestId);
+            if (result.error) pending.reject(new Error(result.message));
+            else {
+                if (result.member) userStore.initUser(result.member.sessionId, result.member.name, result.member.isGuest);
+                pending.resolve(result);
+            }
+        };
+
         // 补充 UserMe 的特殊处理 (因为它需要用到 renameUser，如果放在 socketHandler 会导致循环依赖)
         subscriptions[WS_DEST.USER_ME] = (me) => {
             // me: { token, sessionId, name, isGuest }
@@ -164,6 +170,15 @@ export const usePlayerStore = defineStore('player', () => {
             userStore.initUser(me.sessionId, me.name, me.isGuest);
         };
 
+        subscriptions[WS_DEST.USER_PLAYLIST_CLEAR] = (result) => {
+            const pending = clearRequests.get(result.requestId);
+            if (!pending) return;
+            clearTimeout(pending.timer);
+            clearRequests.delete(result.requestId);
+            if (result.error) pending.reject(new Error(result.message));
+            else pending.resolve(result);
+        };
+
         const callbacks = createSocketCallbacks();
         const onDisconnect = callbacks.onDisconnect;
         callbacks.onDisconnect = () => {
@@ -172,6 +187,16 @@ export const usePlayerStore = defineStore('player', () => {
                 pending.reject(new Error('连接中断，请查看队列确认添加结果'));
             }
             albumRequests.clear();
+            for (const pending of claimRequests.values()) {
+                clearTimeout(pending.timer);
+                pending.reject(new Error('连接中断，请重连后查看昵称和歌单，确认认领结果'));
+            }
+            claimRequests.clear();
+            for (const pending of clearRequests.values()) {
+                clearTimeout(pending.timer);
+                pending.reject(new Error('连接中断，请查看歌单确认清空结果'));
+            }
+            clearRequests.clear();
             onDisconnect?.();
         };
 
@@ -179,9 +204,7 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const tryReconnect = () => {
-        if (!connected.value) {
-            socketService.forceReconnect();
-        }
+        socketService.forceReconnect();
     };
 
     // --- 指令发送 ---
@@ -210,9 +233,38 @@ export const usePlayerStore = defineStore('player', () => {
     const topSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_TOP, { queueId });
     const removeSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_REMOVE, { queueId });
 
+    const clearMyPlaylist = () => {
+        if (!requireAuth()) return Promise.reject(new Error('请先设置昵称并加入房间'));
+        if (!connected.value || !socketService.connected) return Promise.reject(new Error('房间连接已断开，请重连后再试'));
+        const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                clearRequests.delete(requestId);
+                reject(new Error('等待清空结果超时，请先查看歌单'));
+            }, 10000);
+            clearRequests.set(requestId, { resolve, reject, timer });
+            try { socketService.send(WS_DEST.QUEUE_CLEAR_MINE, { requestId }); }
+            catch (error) { clearTimeout(timer); clearRequests.delete(requestId); reject(error); }
+        });
+    };
+
     const bindAccount = (platform, accountId) => {
         socketService.send(WS_DEST.USER_BIND, { platform, accountId });
         userStore.updateBinding(platform, accountId);
+    };
+
+    const claimPlaylist = (sourceToken) => {
+        if (!connected.value || !socketService.connected) return Promise.reject(new Error('房间连接已断开，请重连后再试'));
+        const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                claimRequests.delete(requestId);
+                reject(new Error('等待认领结果超时，请先查看昵称和歌单'));
+            }, 15000);
+            claimRequests.set(requestId, { resolve, reject, timer });
+            try { socketService.send(WS_DEST.QUEUE_CLAIM, { sourceToken, requestId }); }
+            catch (error) { clearTimeout(timer); claimRequests.delete(requestId); reject(error); }
+        });
     };
 
     const renameUser = (newName) => {
@@ -248,9 +300,9 @@ export const usePlayerStore = defineStore('player', () => {
         isPauseLocked, isSkipLocked, isPlayModeLocked, connected, isLoading, lyricText,
         localProgress, isBuffering, isErrorState, streamListenerCount, streamActive,
         isVoteSkipEnabled, voteSkipThreshold, voteSkipWaitTime, currentVotes, eligibleUsers,
-        connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
+        connect, tryReconnect, getCurrentProgress, getSyncStatus, syncState, // 导出 syncState
         playNext, togglePause, cyclePlayMode,
-        enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong,
+        enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, claimPlaylist, clearMyPlaylist,
         bindAccount, renameUser, sendChatMessage, sendLike
     };
 });

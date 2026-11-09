@@ -408,7 +408,7 @@ onMounted(() => {
   updateInterval = setInterval(() => {
     // 歌词进度更新
     if (player.nowPlaying && !player.isPaused && parsedLyrics.value.length > 0) {
-      const currentTime = player.getCurrentProgress();
+      const currentTime = player.localProgress;
       let activeIdx = -1;
       for (let i = 0; i < parsedLyrics.value.length; i++) {
         if (currentTime >= parsedLyrics.value[i].time) activeIdx = i;
