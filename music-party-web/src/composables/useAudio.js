@@ -1,13 +1,14 @@
 // src/composables/useAudio.js
 
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { socketService } from '../services/socket';
 import { WS_DEST } from '../constants/api';
+import { STORAGE_KEYS } from '../constants/keys';
 import { createMediaSynchronizer } from '../services/playbackSync';
 
 // 阈值常量
 const ENDED_RESYNC_DELAY = 2500;       // 当前曲播完但服务器未推新曲时，等待多久后主动重同步
-const STALL_TIMEOUT = 8000;            // 持续缓冲超时（ms），超时后重载 + 重同步
+const STALL_TIMEOUT = 15000;           // Only recover after data stops arriving; slow downloads may keep buffering.
 const POSITION_STATE_INTERVAL = 1000;  // setPositionState 节流间隔（ms）
 const SHELL_NOTIFY_INTERVAL = 15000;   // 安卓原生壳通知栏进度刷新间隔（ms）
 
@@ -16,6 +17,8 @@ export function useAudio(audioRef, playerStore) {
     const isBuffering = ref(false);
     const retryCount = ref(0);
     const isErrorState = ref(false);
+    const needsUserGesture = ref(false);
+    const recoveredUrl = ref('');
     let syncTimer = null;
     let wakeLock = null;
     let endedTimer = null;
@@ -23,12 +26,16 @@ export function useAudio(audioRef, playerStore) {
     let stallTimer = null;
     let lastPositionStateAt = 0;
     let lastShellNotifyAt = 0;
-
+    let generation = 0;
+    let recovering = false;
+    let retryTimer = null;
+    let refreshAbort = null;
     const synchronizer = createMediaSynchronizer();
 
     const alignToRoom = () => {
         const audio = audioRef.value;
-        if (!audio || !playerStore.nowPlaying) return;
+        // 自动播放被拦截时音频不会走，纠偏/变速都无意义（#25 的守卫）
+        if (!audio || !playerStore.nowPlaying || needsUserGesture.value) return;
         const duration = Number.isFinite(audio.duration) ? audio.duration : playerStore.nowPlaying.music.duration / 1000;
         if (!duration || duration <= 0) return;
         const target = Math.max(0, Math.min(playerStore.getCurrentProgress() / 1000, duration - 0.05));
@@ -122,10 +129,12 @@ export function useAudio(audioRef, playerStore) {
         try {
             await audioRef.value.play();
             isErrorState.value = false;
+            needsUserGesture.value = false;
             updateMediaSession();
             requestWakeLock();
         } catch (e) {
             if (e.name === 'NotAllowedError') {
+                needsUserGesture.value = true;
                 console.warn("Autoplay blocked. User interaction required.");
             } else if (e.name !== 'AbortError') {
                 console.warn("Play failed:", e);
@@ -139,6 +148,7 @@ export function useAudio(audioRef, playerStore) {
         isBuffering.value = false;
         clearTimeout(endedTimer);   // 新曲已到位，取消 ended 重同步等待
         clearTimeout(stallTimer);
+        alignToRoom();
 
         alignToRoom();
         if (playerStore.isPaused) {
@@ -169,10 +179,19 @@ export function useAudio(audioRef, playerStore) {
         const music = playerStore.nowPlaying?.music;
         return music ? `${music.platform}:${music.id}:${music.url}` : '';
     }, () => {
+        // #25：切歌时作废在途的地址刷新与重试
+        generation++;
+        refreshAbort?.abort();
+        refreshAbort = null;
+        recovering = false;
+        recoveredUrl.value = '';
+        clearTimeout(retryTimer);
+        // #24：复位同步器，新曲需要重新对齐
         synchronizer.resetMedia();
-        localProgress.value = 0;
-        isBuffering.value = false;
         clearTimeout(stallTimer);
+        isBuffering.value = false;
+        needsUserGesture.value = false;
+        localProgress.value = 0;
         // 服务器已推新曲（或清空），取消 ended 重同步等待
         clearTimeout(endedTimer);
         endedTrackId = null;
@@ -194,24 +213,74 @@ export function useAudio(audioRef, playerStore) {
     });
 
     // === 4. 错误重试机制 ===
-    const handleError = () => {
+    const recoverAudio = async () => {
         if (!playerStore.nowPlaying?.music?.url) return;
-
-        if (audioRef.value && audioRef.value.error && audioRef.value.error.code === 20) return;
-
-        isBuffering.value = false;
-        if (retryCount.value >= 3) {
+        if (recovering) return;
+        if (retryCount.value >= 2) {
+            isBuffering.value = false;
             isErrorState.value = true;
             return;
         }
-
+        const version = generation;
+        const music = playerStore.nowPlaying.music;
+        recovering = true;
+        isBuffering.value = true;
+        clearTimeout(stallTimer);
         retryCount.value++;
-        console.log(`Retry audio (${retryCount.value})...`);
-        setTimeout(() => {
-            if (audioRef.value) {
-                audioRef.value.load();
+        refreshAbort = new AbortController();
+        const controller = refreshAbort;
+        const timeout = setTimeout(() => controller.abort(), 14000);
+        try {
+            if (music.platform === 'netease') {
+                const response = await fetch(`/api/music/refresh/netease/${encodeURIComponent(music.id)}`, {
+                    headers: { 'X-Room-Password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '' },
+                    cache: 'no-store', signal: controller.signal
+                });
+                if (!response.ok) throw new Error('播放地址刷新失败');
+                const fresh = await response.json();
+                if (version !== generation) return;
+                if (fresh.id !== music.id || fresh.platform !== music.platform || !fresh.url) throw new Error('曲目已切换');
+                recoveredUrl.value = fresh.url;
             }
-        }, 1500);
+            if (version !== generation) return;
+            isErrorState.value = false;
+            // 换了新地址后需要重新对齐一次（等价于 #25 原来的 initialAlignment = true）
+            synchronizer.resetMedia();
+            await nextTick();
+            // Also reload when the API legitimately returns the same URL.
+            audioRef.value?.load();
+        } catch {
+            if (version !== generation) return;
+            isBuffering.value = false;
+            if (retryCount.value >= 2) isErrorState.value = true;
+            else retryTimer = setTimeout(recoverAudio, 1500);
+        } finally {
+            clearTimeout(timeout);
+            if (version === generation) { recovering = false; refreshAbort = null; }
+        }
+    };
+    const handleError = () => {
+        if (!playerStore.nowPlaying?.music?.url) return;
+        clearTimeout(stallTimer);
+        clearTimeout(retryTimer);
+        if (retryCount.value >= 2) {
+            isBuffering.value = false;
+            isErrorState.value = true;
+            return;
+        }
+        // Let the shared short-lived link cache expire before asking again.
+        retryTimer = setTimeout(recoverAudio, retryCount.value ? 5500 : 1000);
+    };
+    const retryLocally = () => {
+        if (needsUserGesture.value) {
+            needsUserGesture.value = false;
+            synchronizer.resetMedia();
+            checkAutoPlay();
+            return;
+        }
+        retryCount.value = 0;
+        isErrorState.value = false;
+        recoverAudio();
     };
 
     // === 5. 音频自然结束兜底：服务器没推新曲就主动重同步 ===
@@ -237,12 +306,12 @@ export function useAudio(audioRef, playerStore) {
         clearTimeout(stallTimer);
         stallTimer = setTimeout(() => {
             if (audioRef.value && !playerStore.isPaused) {
-                console.warn('[Stall] Buffer timeout, reloading audio...');
-                audioRef.value.load();
-                playerStore.tryReconnect();
-                socketService.send(WS_DEST.RESYNC);
+                recoverAudio();
             }
         }, STALL_TIMEOUT);
+    };
+    const onProgress = () => {
+        if (isBuffering.value && !recovering) onWaiting();
     };
 
     const onPlaying = () => {
@@ -257,7 +326,7 @@ export function useAudio(audioRef, playerStore) {
                 await requestWakeLock();
             }
             playerStore.tryReconnect();
-            // 回到前台无条件重同步，立即对齐服务器进度
+            // Ask for fresh state; foregrounding must not force a media seek.
             socketService.send(WS_DEST.RESYNC);
         }
     };
@@ -290,6 +359,8 @@ export function useAudio(audioRef, playerStore) {
                 return;
             }
 
+            // 2. 更新 UI 绑定值 (localProgress)
+            // UI follows decoded media, including failures/autoplay blocks; never alternate with a phantom clock.
             alignToRoom();
             if (audioRef.value?.readyState >= 2 && !audioRef.value.seeking) {
                 localProgress.value = audioRef.value.currentTime * 1000;
@@ -328,6 +399,8 @@ export function useAudio(audioRef, playerStore) {
         clearInterval(syncTimer);
         clearTimeout(endedTimer);
         clearTimeout(stallTimer);
+        clearTimeout(retryTimer);
+        refreshAbort?.abort();
         releaseWakeLock();
     });
 
@@ -335,11 +408,15 @@ export function useAudio(audioRef, playerStore) {
         localProgress,
         isBuffering,
         isErrorState,
+        needsUserGesture,
+        recoveredUrl,
         retryCount,
         handleError,
         checkAutoPlay,
         handleEnded,
         onWaiting,
-        onPlaying
+        onPlaying,
+        onProgress,
+        retryLocally
     };
 }
