@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { STORAGE_KEYS } from '../constants/keys';
+import { STORAGE_KEYS } from '../constants/storage';
 
 const generateToken = () => {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -29,7 +29,7 @@ export const useUserStore = defineStore('user', () => {
     const isAuthPassed = ref(false);
 
     // 启动时：严格从 LocalStorage 读取，默认值只在这里设定一次
-    const storageName = localStorage.getItem('mp_username');
+    const storageName = localStorage.getItem(STORAGE_KEYS.USERNAME);
     const currentUser = ref({
         name: storageName || '游客',
         sessionId: '',

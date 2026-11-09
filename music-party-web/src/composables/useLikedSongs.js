@@ -2,7 +2,7 @@
 // 点赞歌曲列表：仅存于本机 localStorage，不涉及服务器。
 // 模块级单例：点赞页（CenterConsole）与搜索页（SearchModal）共享同一份响应式状态。
 import { ref } from 'vue';
-import { STORAGE_KEYS } from '../constants/keys';
+import { STORAGE_KEYS } from '../constants/storage';
 
 const likedSongs = ref([]);
 let loaded = false;

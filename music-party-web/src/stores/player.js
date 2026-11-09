@@ -7,7 +7,7 @@ import { socketService } from '../services/socket';
 import { createSocketSubscriptions, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
 import { musicApi } from '../api/music';
 import { WS_DEST } from '../constants/api';
-import { STORAGE_KEYS } from '../constants/keys';
+import { STORAGE_KEYS } from '../constants/storage';
 import { createRoomClock } from '../services/playbackSync';
 
 export const usePlayerStore = defineStore('player', () => {
