@@ -8,6 +8,7 @@ import { createSocketSubscriptions, createSocketCallbacks } from '../services/so
 import { musicApi } from '../api/music';
 import { WS_DEST } from '../constants/api';
 import { STORAGE_KEYS } from '../constants/keys';
+import { createRoomClock } from '../services/playbackSync';
 
 export const usePlayerStore = defineStore('player', () => {
     // === 1. State ===
@@ -28,7 +29,7 @@ export const usePlayerStore = defineStore('player', () => {
     const streamListenerCount = ref(0);
     const streamActive = ref(false);
     const lastControlTime = ref(0);
-    const remotePosition = ref(0);
+    const roomClock = createRoomClock();
     const lastSyncTime = ref(0);
     const localProgress = ref(0);
     const isBuffering = ref(false);
@@ -67,15 +68,9 @@ export const usePlayerStore = defineStore('player', () => {
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
 
     // === 2. Logic ===
-    const getCurrentProgress = () => {
-        if (!nowPlaying.value) return 0;
-        if (isPaused.value) {
-            return remotePosition.value;
-        } else {
-            // 本地简单的推算：服务器给的进度 + (当前时间 -收到包的时间)
-            return remotePosition.value + (Date.now() - lastSyncTime.value);
-        }
-    };
+    const getCurrentProgress = () => nowPlaying.value ? roomClock.position() : 0;
+    const getSyncStatus = () => roomClock.status();
+    watch(connected, value => { if (!value) roomClock.expectReconnect(); }, { flush: 'sync' });
 
     const requireAuth = () => {
         if (userStore.isGuest) {
@@ -98,6 +93,7 @@ export const usePlayerStore = defineStore('player', () => {
     // === 3. Actions ===
 
     const syncState = (state) => {
+        roomClock.sample(state);
         nowPlaying.value = state.nowPlaying;
         queue.value = state.queue;
         isPaused.value = state.isPaused;
@@ -118,13 +114,7 @@ export const usePlayerStore = defineStore('player', () => {
         currentVotes.value = state.currentVotes || 0;
         eligibleUsers.value = state.eligibleUsers || 0;
 
-        // 记录服务器发来的进度和收到包的时间
-        if (state.nowPlaying) {
-            remotePosition.value = state.nowPlaying.currentPosition;
-            lastSyncTime.value = Date.now();
-        } else {
-            remotePosition.value = 0;
-        }
+        lastSyncTime.value = Date.now(); // Diagnostic wall time only.
 
         if (state.onlineUsers) {
             userStore.setOnlineUsers(state.onlineUsers);
@@ -214,7 +204,7 @@ export const usePlayerStore = defineStore('player', () => {
         isPauseLocked, isSkipLocked, isPlayModeLocked, connected, isLoading, lyricText,
         localProgress, isBuffering, isErrorState, streamListenerCount, streamActive,
         isVoteSkipEnabled, voteSkipThreshold, voteSkipWaitTime, currentVotes, eligibleUsers,
-        connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
+        connect, tryReconnect, getCurrentProgress, getSyncStatus, syncState, // 导出 syncState
         playNext, togglePause, cyclePlayMode,
         enqueue, enqueuePlaylist, topSong, removeSong,
         bindAccount, renameUser, sendChatMessage, sendLike
