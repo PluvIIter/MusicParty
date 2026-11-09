@@ -1,10 +1,13 @@
-import { Client } from '@stomp/stompjs';
+import { Client, TickerStrategy } from '@stomp/stompjs';
 
 class SocketService {
     constructor() {
         this.client = null;
         this.connected = false;
         this.stompConfig = null;
+        this.lastMessageAt = 0;
+        this.lastReconnectAt = 0;
+        this.callbacks = null;
     }
 
     /**
@@ -19,7 +22,7 @@ class SocketService {
     connect(authHeaders, callbacks, subscriptions) {
         // 避免重复连接
         if (this.client && this.client.active) return;
-
+        this.callbacks = callbacks;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const brokerURL = `${protocol}//${window.location.host}/ws`;
 
@@ -28,16 +31,20 @@ class SocketService {
             connectHeaders: authHeaders,
             heartbeatIncoming: 10000,
             heartbeatOutgoing: 10000,
+            heartbeatStrategy: typeof Worker === 'undefined' ? TickerStrategy.Interval : TickerStrategy.Worker,
+            connectionTimeout: 10000,
+            discardWebsocketOnCommFailure: true,
             reconnectDelay: 2000,
 
             onConnect: (frame) => {
                 this.connected = true;
+                this.lastMessageAt = Date.now();
 
                 // 1. 注册所有订阅
                 Object.entries(subscriptions).forEach(([topic, handler]) => {
                     this.client.subscribe(topic, (message) => {
-                        const body = JSON.parse(message.body);
-                        handler(body);
+                        this.lastMessageAt = Date.now();
+                        handler(JSON.parse(message.body));
                     });
                 });
 
@@ -84,9 +91,18 @@ class SocketService {
      * 强制重连 (用于网络恢复或从后台切回时)
      */
     forceReconnect() {
-        if (this.client && !this.client.active) {
+        if (!this.client) return;
+        if (!this.client.active) {
             console.log('Force reconnecting socket...');
             this.client.activate();
+        } else if (this.client.connected && Date.now() - this.lastMessageAt > 20000
+            && Date.now() - this.lastReconnectAt > 10000) {
+            // active means reconnect is enabled, not that the existing transport is healthy.
+            // A suspended phone can return with a half-open socket still marked connected.
+            this.lastReconnectAt = Date.now();
+            this.connected = false;
+            this.callbacks?.onDisconnect?.();
+            this.client.forceDisconnect();
         }
     }
 
