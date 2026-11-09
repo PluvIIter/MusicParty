@@ -252,6 +252,8 @@ public class MusicPlayerService {
                                 }
                             },
                             error -> {
+                        // An earlier request may fail after skip/reset has started a new load.
+                        if (playHeadVersion.get() != currentVersion) return;
                         log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
                         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
                         isLoading.set(false);
@@ -1001,6 +1003,7 @@ public class MusicPlayerService {
 
     public void resetSystem() {
         log.warn("!!!SYSTEM RESET INITIATED!!!");
+        playHeadVersion.incrementAndGet();
         currentMusic.set(null);
         positionAnchor.set(0);
         timestampAnchor.set(0);
