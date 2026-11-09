@@ -24,6 +24,7 @@ class AdminControllerPrivateDjTest {
     private NeteaseMusicApiService api;
     private PrivateDjService djService;
     private AdminController controller;
+    private org.thornex.musicparty.service.QueuePersistenceService persistence;
 
     @BeforeEach
     void setUp() {
@@ -32,9 +33,22 @@ class AdminControllerPrivateDjTest {
         player = mock(MusicPlayerService.class);
         api = mock(NeteaseMusicApiService.class);
         djService = mock(PrivateDjService.class);
+        persistence = mock(org.thornex.musicparty.service.QueuePersistenceService.class);
         controller = new AdminController(player,
                 mock(ChatService.class), props, mock(AuthController.class),
-                api, mock(BilibiliMusicApiService.class), mock(LiveStreamService.class), djService);
+                api, mock(BilibiliMusicApiService.class), mock(LiveStreamService.class), djService, persistence);
+    }
+
+    @Test
+    void retentionUpdateRequiresAdminAndSavesImmediately() throws Exception {
+        var request = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                "{\"retainPlaylist\":true}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class);
+        assertEquals(HttpStatus.FORBIDDEN, controller.updateConfig("wrong", request).getStatusCode());
+        verifyNoInteractions(player, persistence);
+        assertEquals(HttpStatus.OK, controller.updateConfig("pw", request).getStatusCode());
+        var order = inOrder(player, persistence);
+        order.verify(player).updateConfig(request);
+        order.verify(persistence).saveNow();
     }
 
     @Test

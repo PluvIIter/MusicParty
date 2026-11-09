@@ -7,8 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:e2e": "node tests/browser.cjs",
-    "test:sync": "node tests/compact-sync.cjs"
+    "test:e2e": "playwright test",
+    "test:sync": "node tests/playback-sync.cjs",
+    "test:compact": "node tests/compact-sync.cjs",
+    "test:browser": "node tests/browser.cjs"
   },
   "dependencies": {
     "@stomp/stompjs": "^7.2.1",

@@ -14,6 +14,20 @@ import static org.mockito.Mockito.*;
 
 class MusicPlayerServiceSettingsTest {
 
+    @Test
+    void retentionAdminUpdatesArePartialAndAppearInSharedState() throws Exception {
+        MusicPlayerService service = build();
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertFalse(service.getCurrentPlayerState().config().retainPlaylist());
+        service.updateConfig(mapper.readValue("{\"retainPlaylist\":true}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
+        assertTrue(service.getCurrentPlayerState().config().retainPlaylist());
+        service.updateConfig(mapper.readValue("{\"maxUserSongs\":55}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
+        assertTrue(service.getCurrentPlayerState().config().retainPlaylist());
+        assertEquals(55, service.getCurrentPlayerState().config().maxUserSongs());
+        service.updateConfig(mapper.readValue("{\"retainPlaylist\":false}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
+        assertFalse(service.getCurrentPlayerState().config().retainPlaylist());
+    }
+
     private MusicPlayerService build() {
         return new MusicPlayerService(
                 List.of(),

@@ -38,6 +38,22 @@ build/
 /scripts/publish-image.ps1
 /data/queue-data.json
 
+/docs/
+/secrets/
+/.frontend-audit/
+/.superpowers/
+*.jks
+*.keystore
+
+/music-party-web/dist/
+/android/.gradle/
+/android/build/
+/android/app/build/
+/repro-freeze/
+*.apk
+*.aab
+*.class
+
 ### 运行时产物 ###
 # B站音频本地缓存
 /cached_media/

@@ -1,4 +1,4 @@
-import { Client } from '@stomp/stompjs';
+import { Client, TickerStrategy } from '@stomp/stompjs';
 import { WS_DEST } from '../constants/api';
 import { createCompactReceiver } from './compactSync';
 
@@ -7,6 +7,8 @@ class SocketService {
         this.client = null;
         this.connected = false;
         this.stompConfig = null;
+        this.lastMessageAt = 0;
+        this.lastReconnectAt = 0;
         this.callbacks = null;
         this.subscriptionHandles = new Map();
         this.compact = null;
@@ -45,14 +47,18 @@ class SocketService {
             connectHeaders: authHeaders,
             heartbeatIncoming: 10000,
             heartbeatOutgoing: 10000,
+            heartbeatStrategy: typeof Worker === 'undefined' ? TickerStrategy.Interval : TickerStrategy.Worker,
+            connectionTimeout: 10000,
+            discardWebsocketOnCommFailure: true,
             reconnectDelay: 2000,
 
             onConnect: (frame) => {
                 this.connected = true;
+                this.lastMessageAt = Date.now();
                 this.compact.reset();
                 this.subscriptionHandles.clear();
 
-                // 1. 注册所有订阅
+                // 1. 注册所有订阅（compact 通道优先；其激活后忽略对应的 legacy 主题）
                 const compactHandler = frame => this.compact.receive(frame);
                 const allSubscriptions = {
                     [WS_DEST.TOPIC_COMPACT]: compactHandler,
@@ -62,6 +68,8 @@ class SocketService {
                 };
                 Object.entries(allSubscriptions).forEach(([topic, handler]) => {
                     const subscription = this.client.subscribe(topic, (message) => {
+                        // 心跳/半开连接检测：任何入站消息都算作链路活动的证据
+                        this.lastMessageAt = Date.now();
                         const body = JSON.parse(message.body);
                         if (this.compact.isActive() && legacyTopics.includes(topic)) return;
                         handler(body);
@@ -119,9 +127,18 @@ class SocketService {
      * 强制重连 (用于网络恢复或从后台切回时)
      */
     forceReconnect() {
-        if (this.client && !this.client.active) {
+        if (!this.client) return;
+        if (!this.client.active) {
             console.log('Force reconnecting socket...');
             this.client.activate();
+        } else if (this.client.connected && Date.now() - this.lastMessageAt > 20000
+            && Date.now() - this.lastReconnectAt > 10000) {
+            // active means reconnect is enabled, not that the existing transport is healthy.
+            // A suspended phone can return with a half-open socket still marked connected.
+            this.lastReconnectAt = Date.now();
+            this.connected = false;
+            this.callbacks?.onDisconnect?.();
+            this.client.forceDisconnect();
         }
     }
 

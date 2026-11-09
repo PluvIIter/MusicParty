@@ -32,6 +32,9 @@ public record SettingsSnapshot(
             Integer maxPlaylistImportSize, Integer maxChatHistorySize,
             Long minChatIntervalMs,
             Boolean neteaseEnabled, Boolean bilibiliEnabled,
-            Integer bilibiliMaxDurationMinutes
+            Integer bilibiliMaxDurationMinutes,
+            Integer maxChatMessageLength,
+            Boolean retainPlaylist,
+            Boolean allowPlaylistClaim
     ) {}
 }
