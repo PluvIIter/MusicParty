@@ -11,6 +11,7 @@ export const WS_DEST = {
     PLAYER_LIKE: '/app/control/like',
     ENQUEUE: '/app/enqueue',
     ENQUEUE_PLAYLIST: '/app/enqueue/playlist',
+    ENQUEUE_ALBUM: '/app/enqueue/album',
     QUEUE_TOP: '/app/queue/top',
     QUEUE_REMOVE: '/app/queue/remove',
     QUEUE_CLAIM: '/app/queue/claim',
@@ -32,6 +33,7 @@ export const WS_DEST = {
     USER_STATE: '/user/queue/player/state',
     USER_CHAT_HISTORY: '/user/queue/chat/history',
     USER_EVENTS: '/user/queue/events',
+    USER_ALBUM_IMPORT: '/user/queue/album/import',
     USER_PLAYLIST_CLAIM: '/user/queue/playlist/claim',
     USER_PRIVATE_CHAT: '/user/queue/chat/private'
 };

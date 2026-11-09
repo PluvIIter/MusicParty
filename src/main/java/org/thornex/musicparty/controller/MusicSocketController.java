@@ -49,6 +49,13 @@ public class MusicSocketController {
         musicPlayerService.enqueuePlaylist(request, sessionId);
     }
 
+    @MessageMapping("/enqueue/album")
+    public void enqueueAlbum(EnqueueAlbumRequest request, @Header("simpSessionId") String sessionId) {
+        musicPlayerService.enqueueAlbum(request, sessionId).subscribe(result ->
+                messagingTemplate.convertAndSendToUser(sessionId, "/queue/album/import", result,
+                        createSessionHeaders(sessionId)));
+    }
+
     @MessageMapping("/control/next")
     public void nextSong(@Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
