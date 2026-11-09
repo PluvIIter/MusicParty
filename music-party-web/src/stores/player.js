@@ -151,9 +151,7 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const tryReconnect = () => {
-        if (!connected.value) {
-            socketService.forceReconnect();
-        }
+        socketService.forceReconnect();
     };
 
     // --- 指令发送 ---
