@@ -254,7 +254,10 @@ public class MusicPlayerService {
                                 }
                             },
                             error -> {
-                        if (playHeadVersion.get() == currentVersion) queueManager.markPlaybackFailed(nextItem);
+                        // 过期请求（切歌/重置已开始新的加载）的失败直接丢弃（#21）；
+                        // 当前请求失败则标记该曲目，避免反复重试同一首（#23）
+                        if (playHeadVersion.get() != currentVersion) return;
+                        queueManager.markPlaybackFailed(nextItem);
                         log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
                         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
                         isLoading.set(false);
@@ -1011,6 +1014,7 @@ public class MusicPlayerService {
 
     public void resetSystem() {
         log.warn("!!!SYSTEM RESET INITIATED!!!");
+        playHeadVersion.incrementAndGet();
         currentMusic.set(null);
         positionAnchor.set(0);
         timestampAnchor.set(0);

@@ -200,34 +200,41 @@ public class NeteaseMusicApiService implements IMusicApiService {
      * 部署环境的 api-enhanced 若 xeapi 公钥未就绪，/song/url/v1 会一律 404，这里自动降级不影响播放。
      */
     private Mono<String> resolveSongUrl(String musicId) {
-        return xeapiSongUrl(musicId)
-                .flatMap(url -> StringUtils.hasText(url)
-                        ? Mono.just(url)
-                        : Mono.error(new ApiRequestException("xeapi song url empty, falling back to eapi")))
-                .onErrorResume(e -> {
-                    log.debug("xeapi /song/url/v1 failed ({}), falling back to eapi /song/url", e.getMessage());
-                    return eapiSongUrl(musicId);
+        return resolveSongUrl(musicId, null);
+    }
+
+    public Mono<String> refreshSongUrl(String musicId) {
+        return Mono.defer(() -> {
+            if (musicId == null || !musicId.matches("[1-9][0-9]{0,19}")) {
+                return Mono.error(new ApiRequestException("无效的歌曲 ID"));
+            }
+            return resolveSongUrl(musicId, System.currentTimeMillis());
+        }).map(this::upgradeToHttps)
+          .timeout(java.time.Duration.ofSeconds(10))
+          .onErrorMap(error -> new ApiRequestException("播放地址刷新失败，请检查音乐接口后重试"));
+    }
+
+    private Mono<String> resolveSongUrl(String musicId, Long timestamp) {
+        return requestSongUrl(musicId, true, timestamp)
+                .onErrorResume(error -> {
+                    log.debug("Primary song URL unavailable; trying the existing bitrate fallback");
+                    return requestSongUrl(musicId, false, timestamp);
                 });
     }
 
-    private Mono<String> xeapiSongUrl(String musicId) {
+    private Mono<String> requestSongUrl(String musicId, boolean v1, Long timestamp) {
         ensureConfigured();
-        return webClient.get()
-                .uri(baseUrl + "/song/url/v1?id={musicId}&level={quality}&cookie={cookie}", musicId, quality, getCookie())
+        String route = v1 ? "/song/url/v1?id={id}&level={quality}&cookie={cookie}"
+                : "/song/url?id={id}&br={quality}&cookie={cookie}";
+        if (timestamp != null) route += "&timestamp=" + timestamp;
+        return webClient.get().uri(baseUrl + route, musicId, v1 ? quality : resolveBr(quality), getCookie())
                 .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL", response))
+                .onStatus(HttpStatusCode::isError, response -> response.releaseBody()
+                        .then(Mono.error(new ApiRequestException("播放地址暂不可用"))))
                 .bodyToMono(JsonNode.class)
-                .map(jsonNode -> jsonNode.path("data").get(0).path("url").asText());
-    }
-
-    private Mono<String> eapiSongUrl(String musicId) {
-        ensureConfigured();
-        return webClient.get()
-                .uri(baseUrl + "/song/url?id={musicId}&br={br}&cookie={cookie}", musicId, resolveBr(quality), getCookie())
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL (eapi fallback)", response))
-                .bodyToMono(JsonNode.class)
-                .map(jsonNode -> jsonNode.path("data").get(0).path("url").asText());
+                .map(json -> json.path("data").path(0).path("url").asText(""))
+                .flatMap(url -> url.startsWith("http://") || url.startsWith("https://")
+                        ? Mono.just(url) : Mono.error(new ApiRequestException("无有效播放地址")));
     }
 
     /** 将 level 音质档位映射为 eapi /song/url 的 br 码率（exhigh≈320k 高音质） */
