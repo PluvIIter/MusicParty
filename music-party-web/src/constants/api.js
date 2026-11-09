@@ -1,5 +1,7 @@
 // WebSocket 目的地
 export const WS_DEST = {
+    QUEUE_CLEAR_MINE: '/app/queue/clear-mine',
+    USER_PLAYLIST_CLEAR: '/user/queue/playlist/clear',
     // 发送指令 (Publish)
     CHAT_SEND: '/app/chat',
     CHAT_HISTORY_FETCH: '/app/chat/history/fetch',
@@ -9,15 +11,21 @@ export const WS_DEST = {
     PLAYER_LIKE: '/app/control/like',
     ENQUEUE: '/app/enqueue',
     ENQUEUE_PLAYLIST: '/app/enqueue/playlist',
+    ENQUEUE_ALBUM: '/app/enqueue/album',
     QUEUE_TOP: '/app/queue/top',
     QUEUE_REMOVE: '/app/queue/remove',
+    QUEUE_CLAIM: '/app/queue/claim',
     USER_BIND: '/app/user/bind',
     USER_RENAME: '/app/user/rename',
     RESYNC: '/app/player/resync',
+    COMPACT_RESYNC: '/app/player/compact-resync',
 
     // 订阅频道 (Subscribe)
     TOPIC_EVENTS: '/topic/player/events',
     TOPIC_STATE: '/topic/player/state',
+    TOPIC_COMPACT: '/topic/player/compact',
+    USER_COMPACT: '/user/queue/player/compact',
+    APP_COMPACT: '/app/player/compact',
     TOPIC_QUEUE: '/topic/player/queue',
     TOPIC_USERS: '/topic/users/online',
     TOPIC_CHAT: '/topic/chat',
@@ -29,5 +37,7 @@ export const WS_DEST = {
     USER_STATE: '/user/queue/player/state',
     USER_CHAT_HISTORY: '/user/queue/chat/history',
     USER_EVENTS: '/user/queue/events',
+    USER_ALBUM_IMPORT: '/user/queue/album/import',
+    USER_PLAYLIST_CLAIM: '/user/queue/playlist/claim',
     USER_PRIVATE_CHAT: '/user/queue/chat/private'
 };

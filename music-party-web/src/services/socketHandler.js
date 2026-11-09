@@ -136,7 +136,7 @@ export const createSocketCallbacks = () => {
             playerStore.connected = true;
             // 发起同步
             setTimeout(() => {
-                socketService.send(WS_DEST.RESYNC);
+                if (!socketService.hasCompactSync()) socketService.send(WS_DEST.RESYNC);
             }, 300);
             // 恢复绑定
             Object.entries(userStore.bindings).forEach(([platform, id]) => {
