@@ -46,6 +46,8 @@
         <div v-else class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
       </div>
 
+      <AudioCacheSettings />
+
       <!-- 其他人 -->
       <div
           v-for="u in others"
@@ -106,6 +108,7 @@ import { ref, computed, watch } from 'vue';
 import { useUserStore } from '../stores/user';
 import { usePlayerStore } from '../stores/player';
 import { Zap } from 'lucide-vue-next';
+import AudioCacheSettings from './AudioCacheSettings.vue';
 
 const userStore = useUserStore();
 const playerStore = usePlayerStore();

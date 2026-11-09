@@ -40,7 +40,8 @@ public record PlayerState(
             int voteSkipWaitTime,
             boolean neteaseCookieConfigured,
             PrivateDjConfigSummary privateDj,
-            boolean allowPlaylistClaim
+            boolean allowPlaylistClaim,
+            boolean retainPlaylist
     ) {
         public record PrivateDjConfigSummary(
                 String mode,
