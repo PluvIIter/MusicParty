@@ -18,11 +18,12 @@ export class AudioVisualizer {
         // 状态标记
         this.isPlaying = false;
 
-        // 设计分辨率与渲染缩放 (物理分辨率 = 逻辑 × PIXEL_RATIO。
-        // Firefox 的 canvas 光栅化为软件实现, 半分辨率渲染使其面积降至 1/4,
-        // 放大显示由合成器 (GPU) 完成, 半透明流动效果在放大后无可见损失)
+        // 设计分辨率与渲染缩放 (物理分辨率 = 逻辑 × PIXEL_RATIO)。
+        // 降级只在 Firefox 上生效：其 canvas 光栅化是软件实现，半分辨率让面积降到 1/4，
+        // 放大交给合成器 (GPU)；其他浏览器保持 1200 原生分辨率与原有观感。
         this.LOGICAL_SIZE = 1200;
-        this.PIXEL_RATIO = 0.5;
+        this.isFirefox = typeof navigator !== 'undefined' && /Firefox\//.test(navigator.userAgent);
+        this.PIXEL_RATIO = this.isFirefox ? 0.5 : 1;
         this.lastFrameTime = 0;
 
         // 爆发控制变量
@@ -112,7 +113,8 @@ export class AudioVisualizer {
 
             // 播放时 60fps, 暂停时 10fps (暂停状态下动画几乎静止, 无交互时无需满帧渲染)。
             // 动画速度在 draw 内按帧间隔换算, 与 60fps 基准完全一致
-            const minInterval = this.isPlaying ? 16.67 : 100;
+            // 暂停降帧同样只在 Firefox 上启用；其他浏览器保持 60fps 的原观感
+            const minInterval = this.isPlaying || !this.isFirefox ? 16.67 : 100;
             if (now - lastDraw >= minInterval) {
                 lastDraw = now;
                 this.draw(now);
@@ -174,9 +176,15 @@ export class AudioVisualizer {
         // --- 2. 绘制橙色流体圆环 ---
         ctx.save();
         ctx.globalCompositeOperation = 'screen';
+        if (!this.isFirefox) {
+            // shadowBlur 是 Firefox 的主要光栅化热点，故只在 Firefox 关闭；其他浏览器保留原光晕
+            ctx.shadowBlur = 50;
+            ctx.shadowColor = '#F97316';
+        }
 
         this.rings.forEach((ring) => {
-            const count = 60; // 波形点数 (3~5 段波, 每段 12~20 点, 运动+半透明下无可见棱角)
+            // 波形点数：Firefox 减半以降低光栅化成本，其他浏览器保持 120 点
+            const count = this.isFirefox ? 60 : 120;
             const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
 
             // 预计算一圈的波形点，内外圈共享 (原来内外圈各算一遍三角函数)
