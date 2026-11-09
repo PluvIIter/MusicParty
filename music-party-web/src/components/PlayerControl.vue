@@ -240,7 +240,8 @@ import { ref, computed, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
-import { formatDuration } from '../utils/format';
+import { formatDuration } from '../domain/time';
+import * as voteRules from '../domain/voteRules';
 import {
     Download,
     ListOrdered,
@@ -261,6 +262,7 @@ import { useToast } from '../composables/useToast';
 
 const player = usePlayerStore();
 const ui = useUiStore();
+const userStore = useUserStore();
 const volumeTrackRef = ref(null);
 const { info, error } = useToast();
 
@@ -281,28 +283,33 @@ const modeTitle = computed(() => {
 });
 
 // 投票切歌相关计算
-const waitTimeLeft = computed(() => {
-    if (!player.isVoteSkipEnabled || !nowPlaying.value) return 0;
-    const elapsedSec = Math.floor(player.localProgress / 1000);
-    return Math.max(0, player.voteSkipWaitTime - elapsedSec);
-});
+const hasTrack = computed(() => !!nowPlaying.value);
 
-const isSkipDisabled = computed(() => {
-    if (player.isSkipLocked) return true;
-    if (player.isVoteSkipEnabled) {
-        // 如果是点歌者（不可投票者），允许直接切歌，不受 15s 限制
-        if (!canVote.value) return false;
-        // 投票模式下：只有在等待时间结束后才能点击
-        return waitTimeLeft.value > 0;
-    }
-    return false;
-});
+const canVote = computed(() =>
+    voteRules.canVote({
+        hasTrack: hasTrack.value,
+        enqueuedById: nowPlaying.value?.enqueuedById,
+        userToken: userStore.userToken,
+    })
+);
 
-const canVote = computed(() => {
-    // 只有非点歌者能投票
-    const userStore = useUserStore();
-    return nowPlaying.value && nowPlaying.value.enqueuedById !== userStore.userToken;
-});
+const waitTimeLeft = computed(() =>
+    voteRules.waitTimeLeft({
+        isVoteSkipEnabled: player.isVoteSkipEnabled,
+        hasTrack: hasTrack.value,
+        localProgressMs: player.localProgress,
+        voteSkipWaitTime: player.voteSkipWaitTime,
+    })
+);
+
+const isSkipDisabled = computed(() =>
+    voteRules.isSkipDisabled({
+        isSkipLocked: player.isSkipLocked,
+        isVoteSkipEnabled: player.isVoteSkipEnabled,
+        canVote: canVote.value,
+        waitTimeLeft: waitTimeLeft.value,
+    })
+);
 
 const skipBtnTitle = computed(() => {
     if (player.isSkipLocked) return '切歌功能已被锁定';

@@ -294,7 +294,7 @@ import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useEventListener, useWindowSize } from '@vueuse/core';
-import { parseLyrics } from '../utils/parser';
+import { parseLyrics } from '../domain/lyricParser';
 import { AudioVisualizer } from '../logic/AudioVisualizer';
 import { useUiStore } from '../stores/ui';
 import { useLikedSongs } from '../composables/useLikedSongs';
