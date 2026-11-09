@@ -46,5 +46,9 @@ jobs:
           cache-dependency-path: music-party-web/package-lock.json
       - name: 安装依赖
         run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: 单元测试
+        run: npm run test:run
       - name: 构建
         run: npm run build
