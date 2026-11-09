@@ -18,6 +18,28 @@ import static org.mockito.Mockito.*;
 
 class QueuePersistenceServiceTest {
 
+    @Test
+    void retentionRoundTripsAndMissingLegacyFieldKeepsConfiguredValue() throws Exception {
+        File tmp = File.createTempFile("retention", ".json");
+        tmp.deleteOnExit();
+        AppProperties props = new AppProperties();
+        props.getQueue().setPersistenceFile(tmp.getAbsolutePath());
+        QueuePersistenceService persistence = build(mock(MusicQueueManager.class), mock(ChatService.class),
+                props, mock(MusicPlayerService.class), mock(AuthController.class), mock(LiveStreamService.class));
+        for (boolean enabled : new boolean[]{true, false}) {
+            props.getQueue().setRetainPlaylist(enabled);
+            persistence.saveNow();
+            props.getQueue().setRetainPlaylist(!enabled);
+            persistence.loadData();
+            assertEquals(enabled, props.getQueue().isRetainPlaylist());
+        }
+        props.getQueue().setRetainPlaylist(true);
+        Files.writeString(tmp.toPath(), "{\"queue\":[],\"settings\":{\"systemConfig\":{\"maxQueueSize\":77}}}");
+        persistence.loadData();
+        assertTrue(props.getQueue().isRetainPlaylist());
+        assertEquals(77, props.getQueue().getMaxSize());
+    }
+
     // 生产 ObjectMapper 关闭 FAIL_ON_UNKNOWN_PROPERTIES，测试显式对齐
     private final ObjectMapper mapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);

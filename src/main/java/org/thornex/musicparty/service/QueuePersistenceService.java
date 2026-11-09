@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -49,17 +50,23 @@ public class QueuePersistenceService {
         saveData();
     }
 
+    public synchronized void saveNow() throws IOException {
+        File file = getPersistenceFile();
+        PersistentData data = new PersistentData();
+        synchronized (musicQueueManager) {
+            data.setQueue(musicQueueManager.getQueueSnapshot());
+            data.setPlayedQueueIds(musicQueueManager.getPlayedQueueIds());
+        }
+        data.setHistory(musicQueueManager.getHistorySnapshot());
+        data.setChatHistory(chatService.getHistoryFull());
+        data.setSettings(buildSettingsSnapshot());
+        objectMapper.writeValue(file, data);
+        log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
+    }
+
     synchronized void saveData() {
         try {
-            File file = getPersistenceFile();
-            PersistentData data = new PersistentData();
-            data.setQueue(musicQueueManager.getQueueSnapshot());
-            data.setHistory(musicQueueManager.getHistorySnapshot());
-            data.setChatHistory(chatService.getHistoryFull());
-            data.setSettings(buildSettingsSnapshot());
-
-            objectMapper.writeValue(file, data);
-            log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
+            saveNow();
         } catch (Exception e) {
             log.error("Failed to save persistence data", e);
         }
@@ -79,6 +86,8 @@ public class QueuePersistenceService {
                 data.getQueue() != null ? data.getQueue() : Collections.emptyList(),
                 data.getHistory() != null ? data.getHistory() : Collections.emptyList()
             );
+
+            musicQueueManager.restorePlayedQueueIds(data.getPlayedQueueIds());
 
             chatService.restore(data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
 
@@ -114,6 +123,7 @@ public class QueuePersistenceService {
 
         if (s.systemConfig() != null) {
             SettingsSnapshot.SystemConfigSettings cfg = s.systemConfig();
+            if (cfg.retainPlaylist() != null) appProperties.getQueue().setRetainPlaylist(cfg.retainPlaylist());
             if (cfg.maxQueueSize() != null) appProperties.getQueue().setMaxSize(cfg.maxQueueSize());
             if (cfg.maxHistorySize() != null) appProperties.getQueue().setHistorySize(cfg.maxHistorySize());
             if (cfg.maxUserSongs() != null) appProperties.getQueue().setMaxUserSongs(cfg.maxUserSongs());
@@ -152,7 +162,8 @@ public class QueuePersistenceService {
                         appProperties.getNetease().isEnabled(),
                         appProperties.getBilibili().isEnabled(),
                         appProperties.getBilibili().getMaxDurationMinutes(),
-                        appProperties.getChat().getMaxMessageLength()));
+                        appProperties.getChat().getMaxMessageLength(),
+                        appProperties.getQueue().isRetainPlaylist()));
     }
 
     private File getPersistenceFile() {
@@ -167,6 +178,7 @@ public class QueuePersistenceService {
     @Data
     private static class PersistentData {
         private List<MusicQueueItem> queue;
+        private Set<String> playedQueueIds;
         private List<Music> history;
         private List<org.thornex.musicparty.dto.ChatMessage> chatHistory;
         private SettingsSnapshot settings;
