@@ -7,6 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest",
+    "test:run": "vitest run",
     "test:e2e": "playwright test",
     "test:sync": "node tests/playback-sync.cjs",
     "test:compact": "node tests/compact-sync.cjs",
@@ -22,11 +26,19 @@
     "vue": "^3.5.24"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@playwright/test": "1.64.1",
     "@vitejs/plugin-vue": "^6.0.1",
     "autoprefixer": "^10.4.23",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.12.0",
+    "globals": "^14.0.0",
+    "jsdom": "^26.1.0",
     "postcss": "^8.5.6",
+    "prettier": "^3.9.10",
     "tailwindcss": "^3.4.17",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^4.1.12"
   }
 }
