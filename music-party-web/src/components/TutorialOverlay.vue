@@ -65,6 +65,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useWindowSize } from '@vueuse/core';
+import { STORAGE_KEYS } from '../constants/storage';
 
 const isActive = ref(false);
 const currentStepIndex = ref(0);
@@ -74,7 +75,7 @@ const isUsingMobileTarget = ref(false);
 
 const { width, height } = useWindowSize();
 
-const STORAGE_KEY = 'mp_tutorial_done_v1';
+const STORAGE_KEY = STORAGE_KEYS.TUTORIAL_DONE;
 
 const steps = [
     {

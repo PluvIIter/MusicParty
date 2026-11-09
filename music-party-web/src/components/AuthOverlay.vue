@@ -74,7 +74,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { authApi } from '../api/auth';
-import { STORAGE_KEYS } from '../constants/keys';
+import { STORAGE_KEYS } from '../constants/storage';
 
 const emit = defineEmits(['unlocked']);
 

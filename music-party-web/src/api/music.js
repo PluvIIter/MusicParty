@@ -1,5 +1,5 @@
 import client from './client';
-import { STORAGE_KEYS } from '../constants/keys';
+import { STORAGE_KEYS } from '../constants/storage';
 const roomHeaders = () => ({ 'X-Room-Password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '' });
 
 export const musicApi = {

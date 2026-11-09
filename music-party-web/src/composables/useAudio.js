@@ -3,7 +3,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { socketService } from '../services/socket';
 import { WS_DEST } from '../constants/api';
-import { STORAGE_KEYS } from '../constants/keys';
+import { STORAGE_KEYS } from '../constants/storage';
 import { createMediaSynchronizer } from '../services/playbackSync';
 
 // 阈值常量

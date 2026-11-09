@@ -57,6 +57,7 @@ import { useUserStore } from './stores/user';
 import { useUiStore } from './stores/ui';
 import { useAdminStore } from './stores/admin';
 import { useToast } from './composables/useToast';
+import { STORAGE_KEYS } from './constants/storage';
 
 // Components
 import MainLayout from './components/layout/MainLayout.vue';
@@ -89,10 +90,10 @@ const startGame = () => {
 
 const maybeShowPwaHint = () => {
     try {
-        if (localStorage.getItem('mp_pwa_hint_shown')) return;
+        if (localStorage.getItem(STORAGE_KEYS.PWA_HINT_SHOWN)) return;
         if (window.matchMedia('(display-mode: standalone)').matches) return; // 已安装 PWA
         if (!/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return; // 仅移动端
-        localStorage.setItem('mp_pwa_hint_shown', '1');
+        localStorage.setItem(STORAGE_KEYS.PWA_HINT_SHOWN, '1');
         info('想稳定后台播放？点浏览器菜单 → 添加到主屏幕');
     } catch (e) {
         /* localStorage 不可用时忽略 */

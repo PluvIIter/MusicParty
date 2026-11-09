@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { STORAGE_KEYS } from '../constants/keys';
+import { STORAGE_KEYS } from '../constants/storage';
 
 export const useAdminStore = defineStore('admin', () => {
     const adminPassword = ref(localStorage.getItem(STORAGE_KEYS.ADMIN_PASSWORD) || '');
