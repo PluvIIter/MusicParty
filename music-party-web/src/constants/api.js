@@ -1,5 +1,7 @@
 // WebSocket 目的地
 export const WS_DEST = {
+    QUEUE_CLEAR_MINE: '/app/queue/clear-mine',
+    USER_PLAYLIST_CLEAR: '/user/queue/playlist/clear',
     // 发送指令 (Publish)
     CHAT_SEND: '/app/chat',
     CHAT_HISTORY_FETCH: '/app/chat/history/fetch',
@@ -12,6 +14,7 @@ export const WS_DEST = {
     ENQUEUE_ALBUM: '/app/enqueue/album',
     QUEUE_TOP: '/app/queue/top',
     QUEUE_REMOVE: '/app/queue/remove',
+    QUEUE_CLAIM: '/app/queue/claim',
     USER_BIND: '/app/user/bind',
     USER_RENAME: '/app/user/rename',
     RESYNC: '/app/player/resync',
@@ -31,5 +34,6 @@ export const WS_DEST = {
     USER_CHAT_HISTORY: '/user/queue/chat/history',
     USER_EVENTS: '/user/queue/events',
     USER_ALBUM_IMPORT: '/user/queue/album/import',
+    USER_PLAYLIST_CLAIM: '/user/queue/playlist/claim',
     USER_PRIVATE_CHAT: '/user/queue/chat/private'
 };
