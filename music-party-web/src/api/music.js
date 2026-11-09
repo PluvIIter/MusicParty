@@ -4,6 +4,9 @@ export const musicApi = {
     // 搜索歌曲
     search: (platform, keyword) => client.get(`/api/search/${platform}/${keyword}`),
 
+    // 获取歌曲所属专辑及完整曲目
+    getSongAlbum: (songId) => client.get(`/api/album/netease/by-song/${encodeURIComponent(songId)}`, { timeout: 20000 }),
+
     // 获取歌词
     getLyric: (platform, songId) => client.get(`/api/music/lyric/${platform}/${songId}`),
 

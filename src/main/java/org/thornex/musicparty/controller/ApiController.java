@@ -2,6 +2,7 @@ package org.thornex.musicparty.controller;
 
 import org.springframework.web.bind.annotation.*;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.dto.AlbumInfo;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
@@ -52,6 +53,12 @@ public class ApiController {
     @GetMapping("/search/{platform}/{keyword}")
     public Mono<List<Music>> searchMusic(@PathVariable String platform, @PathVariable String keyword) {
         return getService(platform).searchMusic(keyword);
+    }
+
+    @GetMapping("/album/{platform}/by-song/{musicId}")
+    public Mono<AlbumInfo> getSongAlbum(@PathVariable String platform,
+                                                                 @PathVariable String musicId) {
+        return getService(platform).getAlbumForSong(musicId);
     }
 
     @GetMapping("/user/playlists/{platform}/{userId}")
