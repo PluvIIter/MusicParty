@@ -33,6 +33,7 @@ public record SettingsSnapshot(
             Long minChatIntervalMs,
             Boolean neteaseEnabled, Boolean bilibiliEnabled,
             Integer bilibiliMaxDurationMinutes,
+            Integer maxChatMessageLength,
             Boolean retainPlaylist
     ) {}
 }
