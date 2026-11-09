@@ -58,7 +58,7 @@ import { musicApi } from '../api/music';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 
-const props = defineProps({ songId: { type: String, required: true } });
+const props = defineProps({ songId: { type: String, default: '' }, albumId: { type: String, default: '' } });
 const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
@@ -72,7 +72,7 @@ const allInQueue = computed(() => album.value?.songs.length > 0 && album.value.s
 const loadAlbum = async () => {
   loading.value = true; loadError.value = '';
   try {
-    const result = await musicApi.getSongAlbum(props.songId);
+    const result = await (props.albumId ? musicApi.getAlbum(props.albumId) : musicApi.getSongAlbum(props.songId));
     if (active) album.value = result;
   } catch (error) {
     if (active) loadError.value = error.response?.data?.message || error.message || '专辑读取失败，请稍后重试';
