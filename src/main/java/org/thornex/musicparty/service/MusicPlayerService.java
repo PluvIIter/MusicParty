@@ -225,6 +225,7 @@ public class MusicPlayerService {
             // B站下载失败不直接跳过：getPlayableMusic 会尝试 html5 直连兜底，
             // 兜底也失败时再由下方 getPlayableMusic 的错误处理器跳过该曲。
             if (!"bilibili".equalsIgnoreCase(nextItem.music().platform())) {
+                queueManager.markPlaybackFailed(nextItem);
                 log.warn("Skipping failed song: {}", nextItem.music().name());
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
                 playNextInQueue(); // Recursively try next
@@ -250,12 +251,17 @@ public class MusicPlayerService {
                                 // 检查版本号是否匹配
                                 // 如果在请求期间执行了 skip/stop，版本号会变，这里就应该丢弃结果
                                 if (playHeadVersion.get() == currentVersion) {
+                                    queueManager.clearPlaybackFailure(nextItem);
                                     applyNewSong(playableMusic, nextItem);
                                 } else {
                                     log.info("Discarded stale play result for {}", nextItem.music().name());
                                 }
                             },
                             error -> {
+                        // 过期请求（切歌/重置已开始新的加载）的失败直接丢弃（#21）；
+                        // 当前请求失败则标记该曲目，避免反复重试同一首（#23）
+                        if (playHeadVersion.get() != currentVersion) return;
+                        queueManager.markPlaybackFailed(nextItem);
                         log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
                         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
                         isLoading.set(false);
@@ -263,6 +269,7 @@ public class MusicPlayerService {
                         playNextInQueue();
                     });
         } catch (Exception e) {
+            queueManager.markPlaybackFailed(nextItem);
             log.error("Unexpected error in playNextInQueue", e);
             isLoading.set(false);
             broadcastFullPlayerState();
@@ -517,7 +524,8 @@ public class MusicPlayerService {
                                 appProperties.getPrivateDj().isJoinQueueEnabled(),
                                 appProperties.getPrivateDj().isCustodyEnabled()
                         ),
-                        appProperties.getQueue().isAllowPlaylistClaim()
+                        appProperties.getQueue().isAllowPlaylistClaim(),
+                        appProperties.getQueue().isRetainPlaylist()
                 )
         );
     }
@@ -889,6 +897,11 @@ public class MusicPlayerService {
     }
 
     public void updateConfig(AdminConfigUpdateRequest request) {
+        if (request.retainPlaylist() != null) {
+            synchronized (queueManager) {
+                appProperties.getQueue().setRetainPlaylist(request.retainPlaylist());
+            }
+        }
         StringBuilder logMsg = new StringBuilder("System configuration updated: ");
         
         if (request.maxSize() != null) {
@@ -1023,6 +1036,7 @@ public class MusicPlayerService {
 
     public void resetSystem() {
         log.warn("!!!SYSTEM RESET INITIATED!!!");
+        playHeadVersion.incrementAndGet();
         currentMusic.set(null);
         positionAnchor.set(0);
         timestampAnchor.set(0);
