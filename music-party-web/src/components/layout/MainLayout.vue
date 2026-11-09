@@ -5,6 +5,7 @@ import { Search, Users, ListMusic, X, Minimize2, Maximize2, Volume2, Activity } 
 import UserList from '../UserList.vue';
 import QueueList from '../QueueList.vue';
 import CoverImage from '../CoverImage.vue';
+import AudioCacheSettings from '../AudioCacheSettings.vue';
 import { useUserStore } from '../../stores/user';
 import { useUiStore } from '../../stores/ui';
 import { usePlayerStore } from '../../stores/player';
@@ -201,6 +202,7 @@ const handleSearchClick = () => {
         </label>
 
         <!-- 退出动作 -->
+        <AudioCacheSettings />
         <button
             @click="uiStore.toggleLiteMode"
             class="w-full bg-medical-900 text-white font-black py-4 flex items-center justify-center gap-4 transition-all hover:bg-accent hover:tracking-[0.2em] active:scale-[0.98] group shadow-xl"
