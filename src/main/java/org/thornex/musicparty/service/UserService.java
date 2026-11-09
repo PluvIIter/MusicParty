@@ -45,7 +45,7 @@ public class UserService {
      * @param nameFront 前端传来的名字 (可能为空)
      * @return 最终确定的 User 对象
      */
-    public User handleConnect(String sessionId, String tokenFront, String nameFront) {
+    public synchronized User handleConnect(String sessionId, String tokenFront, String nameFront) {
         User user;
 
         // 1. 尝试找回老用户
@@ -89,7 +89,7 @@ public class UserService {
         return user;
     }
 
-    public Optional<User> disconnectUser(String sessionId) {
+    public synchronized Optional<User> disconnectUser(String sessionId) {
         String token = sessionToToken.remove(sessionId);
         if (token == null) return Optional.empty();
 
@@ -134,7 +134,7 @@ public class UserService {
     }
 
     // 🟢 改名逻辑：增加查重
-    public boolean renameUser(String sessionId, String newName) {
+    public synchronized boolean renameUser(String sessionId, String newName) {
         return getUserBySession(sessionId).map(user -> {
             String rawName = newName.trim();
             // 使用一个新的变量 finalName，确保它不被修改
@@ -218,7 +218,7 @@ public class UserService {
     }
 
     @Scheduled(fixedRate = 3600000)
-    public void cleanupExpiredUsers() {
+    public synchronized void cleanupExpiredUsers() {
         long now = System.currentTimeMillis();
         int initialSize = usersByToken.size();
 
@@ -239,6 +239,33 @@ public class UserService {
         if (initialSize != finalSize) {
             log.info("Cleanup Complete. Removed {} expired users. Current memory users: {}", (initialSize - finalSize), finalSize);
         }
+    }
+
+    /** Caller holds this monitor through durable queue commit and completePlaylistClaim. */
+    UserSummary preparePlaylistClaim(String sessionId, String sourceToken, String name) {
+        User target = getUser(sessionId).filter(u -> sessionId.equals(u.getSessionId()))
+                .orElseThrow(() -> new IllegalArgumentException("连接已失效，请重新连接房间"));
+        if (sourceToken.equals(target.getToken())) throw new IllegalArgumentException("这已经是你的歌单");
+        User source = usersByToken.get(sourceToken);
+        if (source != null && (source.getSessionId() != null
+                || System.currentTimeMillis() - source.getLastActiveTime() < 10_000L
+                || getRecentlyActiveUserTokens().contains(sourceToken)))
+            throw new IllegalArgumentException("原主人在线或刚刚断线，请稍后再认领");
+        if (usersByToken.values().stream().anyMatch(u -> !sourceToken.equals(u.getToken())
+                && !target.getToken().equals(u.getToken()) && name.equalsIgnoreCase(u.getName())))
+            throw new IllegalArgumentException("原歌单名称已被其他成员使用，暂时无法认领");
+        return new UserSummary(target.getToken(), sessionId, name, false);
+    }
+
+    void completePlaylistClaim(String sourceToken, UserSummary member) {
+        User target = usersByToken.get(member.token());
+        usersByToken.remove(sourceToken);
+        ScheduledFuture<?> leave = pendingLeaveEvents.remove(sourceToken);
+        if (leave != null) leave.cancel(false);
+        target.setName(member.name());
+        target.setGuest(false);
+        target.setLastActiveTime(System.currentTimeMillis());
+        usersByToken.put(target.getToken(), target);
     }
 
     public Optional<User> getUserByToken(String token) {
