@@ -45,7 +45,7 @@ export class AudioVisualizer {
         this.rings = [
             { radius: 450, baseWidth: 5, maxWidth: 150, speed: -0.015, offset: 0, segments: 3 },
             { radius: 450, baseWidth: 10, maxWidth: 100, speed: 0.02, offset: 2, segments: 4 },
-            { radius: 450, baseWidth: 8, maxWidth: 80, speed: 0.03, offset: 4, segments: 5 }
+            { radius: 450, baseWidth: 8, maxWidth: 80, speed: 0.03, offset: 4, segments: 5 },
         ];
     }
 
@@ -92,7 +92,7 @@ export class AudioVisualizer {
             rings: this.rings.length,
             bars: this.breatheBars,
             active: this.isPlaying,
-            alpha: this.smoothAlpha.toFixed(2)
+            alpha: this.smoothAlpha.toFixed(2),
         };
     }
 
@@ -100,8 +100,8 @@ export class AudioVisualizer {
     impulse() {
         // 设置峰值作为目标值 + 进入 attack：由 draw() 里的 lerp 平滑爬升，
         // 避免瞬间拉高导致点赞那一下"突然波动"不平滑
-        this.speedTarget = 6.0;    // 速度峰值 6 倍
-        this.widthTarget = 2.0;    // 宽度峰值 2 倍
+        this.speedTarget = 6.0; // 速度峰值 6 倍
+        this.widthTarget = 2.0; // 宽度峰值 2 倍
         this.roughnessTarget = 1.5; // 波动幅度峰值 1.5 倍
         this.impulseActive = true;
     }
@@ -135,17 +135,19 @@ export class AudioVisualizer {
         // 相比原"瞬间拉高"，这里用 lerp 让点赞波动平滑展开而不是突然跳变。
         // followFactor 乘以 frameScale：暂停降帧 (10fps) 时平滑爬升/回落
         // 速率与 60fps 基准保持一致（半分辨率渲染提交引入的换算方式）
-        const followFactor = (this.impulseActive ? 0.20 : 0.005) * frameScale;
+        const followFactor = (this.impulseActive ? 0.2 : 0.005) * frameScale;
 
         this.speedMultiplier += (this.speedTarget - this.speedMultiplier) * followFactor;
         this.widthMultiplier += (this.widthTarget - this.widthMultiplier) * followFactor;
         this.roughnessMultiplier += (this.roughnessTarget - this.roughnessMultiplier) * followFactor;
 
         // 三个倍率都逼近峰值后，目标复位为 1.0，进入缓慢回落（延续原长尾效果）
-        if (this.impulseActive
-                && Math.abs(this.speedMultiplier - this.speedTarget) < 0.15
-                && Math.abs(this.widthMultiplier - this.widthTarget) < 0.1
-                && Math.abs(this.roughnessMultiplier - this.roughnessTarget) < 0.1) {
+        if (
+            this.impulseActive &&
+            Math.abs(this.speedMultiplier - this.speedTarget) < 0.15 &&
+            Math.abs(this.widthMultiplier - this.widthTarget) < 0.1 &&
+            Math.abs(this.roughnessMultiplier - this.roughnessTarget) < 0.1
+        ) {
             this.impulseActive = false;
             this.speedTarget = 1.0;
             this.widthTarget = 1.0;
@@ -195,7 +197,7 @@ export class AudioVisualizer {
                 pts.push({
                     x: Math.cos(angle),
                     y: Math.sin(angle),
-                    w: ring.baseWidth + ((wave + 1) / 2) * currentMaxWidth
+                    w: ring.baseWidth + ((wave + 1) / 2) * currentMaxWidth,
                 });
             }
 

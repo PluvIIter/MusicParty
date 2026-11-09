@@ -62,8 +62,8 @@ export const usePlayerStore = defineStore('player', () => {
             mode: 'OFF',
             fillBlankEnabled: false,
             joinQueueEnabled: false,
-            custodyEnabled: false
-        }
+            custodyEnabled: false,
+        },
     });
 
     const userStore = useUserStore();
@@ -73,9 +73,15 @@ export const usePlayerStore = defineStore('player', () => {
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
 
     // === 2. Logic ===
-    const getCurrentProgress = () => nowPlaying.value ? roomClock.position() : 0;
+    const getCurrentProgress = () => (nowPlaying.value ? roomClock.position() : 0);
     const getSyncStatus = () => roomClock.status();
-    watch(connected, value => { if (!value) roomClock.expectReconnect(); }, { flush: 'sync' });
+    watch(
+        connected,
+        (value) => {
+            if (!value) roomClock.expectReconnect();
+        },
+        { flush: 'sync' }
+    );
 
     const requireAuth = () => {
         if (userStore.isGuest) {
@@ -134,7 +140,7 @@ export const usePlayerStore = defineStore('player', () => {
         const authHeaders = {
             'user-name': localStorage.getItem(STORAGE_KEYS.USERNAME) || '游客',
             'user-token': userStore.userToken,
-            'room-password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || ''
+            'room-password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '',
         };
 
         // 使用抽离出的订阅配置
@@ -155,7 +161,8 @@ export const usePlayerStore = defineStore('player', () => {
             claimRequests.delete(result.requestId);
             if (result.error) pending.reject(new Error(result.message));
             else {
-                if (result.member) userStore.initUser(result.member.sessionId, result.member.name, result.member.isGuest);
+                if (result.member)
+                    userStore.initUser(result.member.sessionId, result.member.name, result.member.isGuest);
                 pending.resolve(result);
             }
         };
@@ -213,21 +220,28 @@ export const usePlayerStore = defineStore('player', () => {
     const cyclePlayMode = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_SHUFFLE);
 
     const enqueue = (platform, musicId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
-    const enqueuePlaylist = (platform, playlistId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_PLAYLIST, { platform, playlistId });
+    const enqueuePlaylist = (platform, playlistId) =>
+        requireAuth() && socketService.send(WS_DEST.ENQUEUE_PLAYLIST, { platform, playlistId });
     const enqueueAlbum = (albumId) => {
         if (!requireAuth()) return Promise.reject(new Error('请先设置昵称，再添加专辑'));
-        if (!connected.value || !socketService.connected) return Promise.reject(new Error('房间连接已断开，请连接后重试'));
+        if (!connected.value || !socketService.connected)
+            return Promise.reject(new Error('房间连接已断开，请连接后重试'));
         // HTTP LAN deployments may not expose crypto.randomUUID.
-        const requestId = globalThis.crypto?.randomUUID?.()
-            || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        const requestId =
+            globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 albumRequests.delete(requestId);
                 reject(new Error('等待添加结果超时，请先查看队列，避免重复操作'));
             }, 20000);
             albumRequests.set(requestId, { resolve, reject, timer });
-            try { socketService.send(WS_DEST.ENQUEUE_ALBUM, { platform: 'netease', albumId, requestId }); }
-            catch (error) { clearTimeout(timer); albumRequests.delete(requestId); reject(error); }
+            try {
+                socketService.send(WS_DEST.ENQUEUE_ALBUM, { platform: 'netease', albumId, requestId });
+            } catch (error) {
+                clearTimeout(timer);
+                albumRequests.delete(requestId);
+                reject(error);
+            }
         });
     };
     const topSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_TOP, { queueId });
@@ -235,16 +249,23 @@ export const usePlayerStore = defineStore('player', () => {
 
     const clearMyPlaylist = () => {
         if (!requireAuth()) return Promise.reject(new Error('请先设置昵称并加入房间'));
-        if (!connected.value || !socketService.connected) return Promise.reject(new Error('房间连接已断开，请重连后再试'));
-        const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        if (!connected.value || !socketService.connected)
+            return Promise.reject(new Error('房间连接已断开，请重连后再试'));
+        const requestId =
+            globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 clearRequests.delete(requestId);
                 reject(new Error('等待清空结果超时，请先查看歌单'));
             }, 10000);
             clearRequests.set(requestId, { resolve, reject, timer });
-            try { socketService.send(WS_DEST.QUEUE_CLEAR_MINE, { requestId }); }
-            catch (error) { clearTimeout(timer); clearRequests.delete(requestId); reject(error); }
+            try {
+                socketService.send(WS_DEST.QUEUE_CLEAR_MINE, { requestId });
+            } catch (error) {
+                clearTimeout(timer);
+                clearRequests.delete(requestId);
+                reject(error);
+            }
         });
     };
 
@@ -254,16 +275,23 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const claimPlaylist = (sourceToken) => {
-        if (!connected.value || !socketService.connected) return Promise.reject(new Error('房间连接已断开，请重连后再试'));
-        const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        if (!connected.value || !socketService.connected)
+            return Promise.reject(new Error('房间连接已断开，请重连后再试'));
+        const requestId =
+            globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 claimRequests.delete(requestId);
                 reject(new Error('等待认领结果超时，请先查看昵称和歌单'));
             }, 15000);
             claimRequests.set(requestId, { resolve, reject, timer });
-            try { socketService.send(WS_DEST.QUEUE_CLAIM, { sourceToken, requestId }); }
-            catch (error) { clearTimeout(timer); claimRequests.delete(requestId); reject(error); }
+            try {
+                socketService.send(WS_DEST.QUEUE_CLAIM, { sourceToken, requestId });
+            } catch (error) {
+                clearTimeout(timer);
+                claimRequests.delete(requestId);
+                reject(error);
+            }
         });
     };
 
@@ -283,26 +311,65 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     // 歌词监听
-    watch(() => nowPlaying.value?.music?.id, async (newId) => {
-        lyricText.value = '';
-        if (!newId) return;
-        try {
-            const platform = nowPlaying.value.music.platform;
-            const data = await musicApi.getLyric(platform, newId);
-            lyricText.value = data || '';
-        } catch (e) {
-            console.error("Lyrics Error", e);
+    watch(
+        () => nowPlaying.value?.music?.id,
+        async (newId) => {
+            lyricText.value = '';
+            if (!newId) return;
+            try {
+                const platform = nowPlaying.value.music.platform;
+                const data = await musicApi.getLyric(platform, newId);
+                lyricText.value = data || '';
+            } catch (e) {
+                console.error('Lyrics Error', e);
+            }
         }
-    });
+    );
 
     return {
-        nowPlaying, queue, isPaused, playMode, isShuffle, isRepeatOne, isFairShuffle, allowOfflineShuffle, config,
-        isPauseLocked, isSkipLocked, isPlayModeLocked, connected, isLoading, lyricText,
-        localProgress, isBuffering, isErrorState, streamListenerCount, streamActive,
-        isVoteSkipEnabled, voteSkipThreshold, voteSkipWaitTime, currentVotes, eligibleUsers,
-        connect, tryReconnect, getCurrentProgress, getSyncStatus, syncState, // 导出 syncState
-        playNext, togglePause, cyclePlayMode,
-        enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, claimPlaylist, clearMyPlaylist,
-        bindAccount, renameUser, sendChatMessage, sendLike
+        nowPlaying,
+        queue,
+        isPaused,
+        playMode,
+        isShuffle,
+        isRepeatOne,
+        isFairShuffle,
+        allowOfflineShuffle,
+        config,
+        isPauseLocked,
+        isSkipLocked,
+        isPlayModeLocked,
+        connected,
+        isLoading,
+        lyricText,
+        localProgress,
+        isBuffering,
+        isErrorState,
+        streamListenerCount,
+        streamActive,
+        isVoteSkipEnabled,
+        voteSkipThreshold,
+        voteSkipWaitTime,
+        currentVotes,
+        eligibleUsers,
+        connect,
+        tryReconnect,
+        getCurrentProgress,
+        getSyncStatus,
+        syncState, // 导出 syncState
+        playNext,
+        togglePause,
+        cyclePlayMode,
+        enqueue,
+        enqueuePlaylist,
+        enqueueAlbum,
+        topSong,
+        removeSong,
+        claimPlaylist,
+        clearMyPlaylist,
+        bindAccount,
+        renameUser,
+        sendChatMessage,
+        sendLike,
     };
 });

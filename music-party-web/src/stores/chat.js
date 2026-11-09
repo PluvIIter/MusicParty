@@ -51,7 +51,7 @@ export const useChatStore = defineStore('chat', () => {
         // 发送 WebSocket 请求
         socketService.send(WS_DEST.CHAT_HISTORY_FETCH, {
             offset: currentCount,
-            limit: LIMIT_PER_PAGE
+            limit: LIMIT_PER_PAGE,
         });
     };
 
@@ -86,6 +86,6 @@ export const useChatStore = defineStore('chat', () => {
         toggleChat,
         setHistory,
         loadMoreHistory,
-        prependHistory
+        prependHistory,
     };
 });
