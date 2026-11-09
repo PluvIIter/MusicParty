@@ -38,6 +38,8 @@ public class AppProperties {
         private int maxSize = 1000;
         private int historySize = 50;
         private int maxUserSongs = 100;
+        /** Room members may explicitly recover an absent owner's queued songs when enabled. */
+        private volatile boolean allowPlaylistClaim = false;
         // Opt in to a reusable playlist; false preserves queue consumption.
         private volatile boolean retainPlaylist = false;
         private String persistenceFile = "data/queue-data.json";
