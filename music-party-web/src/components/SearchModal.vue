@@ -28,6 +28,11 @@
           >
             {{ p }}
           </button>
+          <button @click="mode = 'savedalbums'" :disabled="!isPlatformEnabled('netease')"
+              class="px-4 md:px-6 py-2 text-sm font-bold transition-all disabled:opacity-30"
+              :class="mode === 'savedalbums' ? 'bg-accent text-white' : 'bg-medical-200 text-medical-500 hover:bg-medical-300'">
+            收藏专辑
+          </button>
           <!-- 本地点赞列表标签（仅本地缓存，不上报服务器） -->
           <button
               @click="mode = 'likesong'"
@@ -39,7 +44,7 @@
         </div>
 
         <!-- 搜索框 -->
-        <div class="flex gap-2">
+        <div v-if="mode !== 'savedalbums'" class="flex gap-2">
           <input
               v-model="keyword"
               @keyup.enter="handleSearchAction"
@@ -57,6 +62,8 @@
 
       <!-- 内容区 -->
       <div class="flex-1 overflow-hidden flex flex-col md:flex-row relative">
+
+        <SavedAlbums v-if="mode === 'savedalbums'" />
 
         <!-- LikeSong：本地点赞歌曲列表（仅本地缓存，不上报服务器） -->
         <div v-if="mode === 'likesong'" class="flex-1 bg-medical-50 flex-col min-h-0 flex">
@@ -106,7 +113,7 @@
 
         <!-- 左侧：我的歌单 / 绑定 -->
         <div class="md:w-1/3 md:h-auto flex-shrink-0 border-b md:border-b-0 md:border-r border-medical-200 flex-col bg-white transition-all"
-             :class="mode === 'likesong' ? 'hidden' : (mobileView === 'playlists' ? 'flex w-full h-full' : 'hidden md:flex')"
+             :class="mode !== 'search' ? 'hidden' : (mobileView === 'playlists' ? 'flex w-full h-full' : 'hidden md:flex')"
         >
           <div class="p-2 md:p-3 bg-medical-100 text-xs font-bold text-medical-500 flex justify-between items-center font-sans">
             <span>用户歌单</span>
@@ -154,7 +161,7 @@
         </div>
 
         <!-- 右侧：歌曲列表 -->
-        <div class="md:flex-1 bg-medical-50 flex-col min-h-0" :class="mode === 'likesong' ? 'hidden' : (mobileView === 'songs' ? 'flex w-full h-full' : 'hidden md:flex')">
+        <div class="md:flex-1 bg-medical-50 flex-col min-h-0" :class="mode !== 'search' ? 'hidden' : (mobileView === 'songs' ? 'flex w-full h-full' : 'hidden md:flex')">
           <!-- 移动端返回条 -->
           <div class="md:hidden flex items-center gap-2 p-3 bg-white border-b border-medical-200 flex-shrink-0">
             <button @click="mobileView = 'playlists'" class="p-1 -ml-1 text-medical-500 hover:text-medical-900"><ArrowLeft class="w-5 h-5" /></button>
@@ -244,6 +251,7 @@ import { useLikedSongs } from '../composables/useLikedSongs';
 import { X, Search, PlusCircle, ListPlus, Loader2, ArrowLeft, ChevronRight, Check, ExternalLink } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import AlbumModal from './AlbumModal.vue';
+import SavedAlbums from './SavedAlbums.vue';
 
 const props = defineProps(['isOpen']);
 const emit = defineEmits(['close']);

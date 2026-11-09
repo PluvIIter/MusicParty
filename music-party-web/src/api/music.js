@@ -1,6 +1,10 @@
 import client from './client';
+import { STORAGE_KEYS } from '../constants/keys';
+const roomHeaders = () => ({ 'X-Room-Password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '' });
 
 export const musicApi = {
+    getAlbum: albumId => client.get(`/api/album/netease/detail/${encodeURIComponent(albumId)}`, { timeout: 20000, headers: roomHeaders() }),
+    getSavedAlbums: (offset, limit) => client.get('/api/user/albums/netease', { params: { offset, limit }, timeout: 15000, headers: roomHeaders() }),
     // 搜索歌曲
     search: (platform, keyword) => client.get(`/api/search/${platform}/${keyword}`),
 
