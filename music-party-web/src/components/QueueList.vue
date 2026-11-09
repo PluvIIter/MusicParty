@@ -1,7 +1,12 @@
 <template>
   <div id="tutorial-queue" class="h-full flex flex-col bg-white border-l border-medical-200">
-    <div class="p-4 bg-medical-50 border-b border-medical-200 flex justify-between items-center">
+    <div class="p-4 bg-medical-50 border-b border-medical-200 flex flex-wrap gap-2 justify-between items-center">
       <h3 class="text-sm font-bold text-medical-900">播放队列 <span class="text-accent text-xs">[{{ queue.length }}]</span></h3>
+      <button type="button" @click="clearMine" :disabled="clearing || !player.connected || userStore.isGuest || mineCount === 0"
+          class="text-xs font-bold border border-medical-200 px-2 py-1 text-medical-600 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          title="只清空自己点的歌，其他成员的歌保留；正在播放的歌先播完">
+        {{ clearing ? '正在清空…' : `清空我的歌单（${mineCount}）` }}
+      </button>
     </div>
 
     <!-- Conditional Rendering: Show empty message -->
@@ -84,10 +89,23 @@ import { usePlayerStore } from '../stores/player';
 import { Shuffle, ChevronDown, ChevronRight, User } from 'lucide-vue-next';
 import { useUserStore } from '../stores/user';
 import QueueItem from './QueueItem.vue';
+import { useToast } from '../composables/useToast';
 
 const player = usePlayerStore();
 const queue = computed(() => player.queue);
 const userStore = useUserStore();
+const clearing = ref(false);
+const mineCount = computed(() => queue.value.filter(item => item.enqueuedBy.token === userStore.userToken).length);
+const toast = useToast();
+const clearMine = async () => {
+  if (clearing.value || !mineCount.value) return;
+  clearing.value = true;
+  try {
+    const result = await player.clearMyPlaylist();
+    toast.success(result.message);
+  } catch (error) { toast.error(error.message || '清空失败，请重试'); }
+  finally { clearing.value = false; }
+};
 
 // Virtual List Setup (used for normal mode)
 const { list, containerProps, wrapperProps } = useVirtualList(queue, {
