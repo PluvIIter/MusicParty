@@ -26,6 +26,6 @@ export const useAdminStore = defineStore('admin', () => {
         showDashboard,
         isVerified,
         setAdminPassword,
-        logout
+        logout,
     };
 });

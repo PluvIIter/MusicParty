@@ -29,14 +29,14 @@ class SocketService {
         this.callbacks = callbacks;
         const legacyTopics = [WS_DEST.TOPIC_STATE, WS_DEST.USER_STATE, WS_DEST.TOPIC_QUEUE, WS_DEST.TOPIC_USERS];
         this.compact = createCompactReceiver({
-            apply: state => subscriptions[WS_DEST.TOPIC_STATE]?.(state),
+            apply: (state) => subscriptions[WS_DEST.TOPIC_STATE]?.(state),
             requestSnapshot: () => this.send(WS_DEST.COMPACT_RESYNC),
             activated: () => {
                 for (const topic of legacyTopics) {
                     this.subscriptionHandles.get(topic)?.unsubscribe();
                     this.subscriptionHandles.delete(topic);
                 }
-            }
+            },
         });
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -59,12 +59,12 @@ class SocketService {
                 this.subscriptionHandles.clear();
 
                 // 1. 注册所有订阅（compact 通道优先；其激活后忽略对应的 legacy 主题）
-                const compactHandler = frame => this.compact.receive(frame);
+                const compactHandler = (frame) => this.compact.receive(frame);
                 const allSubscriptions = {
                     [WS_DEST.TOPIC_COMPACT]: compactHandler,
                     [WS_DEST.USER_COMPACT]: compactHandler,
                     ...subscriptions,
-                    [WS_DEST.APP_COMPACT]: compactHandler
+                    [WS_DEST.APP_COMPACT]: compactHandler,
                 };
                 Object.entries(allSubscriptions).forEach(([topic, handler]) => {
                     const subscription = this.client.subscribe(topic, (message) => {
@@ -99,7 +99,7 @@ class SocketService {
             onStompError: (frame) => {
                 console.error('STOMP Error:', frame.body);
                 if (callbacks.onStompError) callbacks.onStompError(frame);
-            }
+            },
         });
 
         this.client.activate();
@@ -131,8 +131,11 @@ class SocketService {
         if (!this.client.active) {
             console.log('Force reconnecting socket...');
             this.client.activate();
-        } else if (this.client.connected && Date.now() - this.lastMessageAt > 20000
-            && Date.now() - this.lastReconnectAt > 10000) {
+        } else if (
+            this.client.connected &&
+            Date.now() - this.lastMessageAt > 20000 &&
+            Date.now() - this.lastReconnectAt > 10000
+        ) {
             // active means reconnect is enabled, not that the existing transport is healthy.
             // A suspended phone can return with a half-open socket still marked connected.
             this.lastReconnectAt = Date.now();

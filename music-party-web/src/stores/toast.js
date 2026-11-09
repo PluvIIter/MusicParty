@@ -12,7 +12,7 @@ export const useToastStore = defineStore('toast', () => {
             title: options.title || 'SYSTEM NOTICE',
             message: options.message,
             type: options.type || 'info', // success, error, info, warning
-            duration: options.duration || 3000
+            duration: options.duration || 3000,
         };
 
         toasts.value.push(toast);
@@ -25,7 +25,7 @@ export const useToastStore = defineStore('toast', () => {
     };
 
     const remove = (id) => {
-        const index = toasts.value.findIndex(t => t.id === id);
+        const index = toasts.value.findIndex((t) => t.id === id);
         if (index !== -1) toasts.value.splice(index, 1);
     };
 
@@ -41,6 +41,6 @@ export const useToastStore = defineStore('toast', () => {
         success,
         error,
         info,
-        warning
+        warning,
     };
 });

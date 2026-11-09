@@ -46,6 +46,6 @@ export const useUiStore = defineStore('ui', () => {
         autoLiteMode,
         authorName,
         backWords,
-        fetchConfig
+        fetchConfig,
     };
 });

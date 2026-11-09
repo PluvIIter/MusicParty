@@ -3,8 +3,9 @@ import { ref } from 'vue';
 export const audioCacheStatus = ref('starting');
 let initialization;
 let selection = null;
-const ourWorker = () => navigator.serviceWorker?.controller
-    && new URL(navigator.serviceWorker.controller.scriptURL).pathname === '/audio-cache-sw.js';
+const ourWorker = () =>
+    navigator.serviceWorker?.controller &&
+    new URL(navigator.serviceWorker.controller.scriptURL).pathname === '/audio-cache-sw.js';
 
 export function initializeAudioCache() {
     if (initialization) return initialization;
@@ -12,16 +13,20 @@ export function initializeAudioCache() {
         audioCacheStatus.value = 'unavailable';
         return Promise.resolve();
     }
-    initialization = new Promise(resolve => {
+    initialization = new Promise((resolve) => {
         const ready = () => {
             if (!ourWorker()) return;
             audioCacheStatus.value = 'ready';
             resolve();
         };
         navigator.serviceWorker.addEventListener('controllerchange', ready);
-        navigator.serviceWorker.register('/audio-cache-sw.js', {scope:'/', updateViaCache:'none'})
+        navigator.serviceWorker
+            .register('/audio-cache-sw.js', { scope: '/', updateViaCache: 'none' })
             .then(ready)
-            .catch(() => { audioCacheStatus.value = 'unavailable'; resolve(); });
+            .catch(() => {
+                audioCacheStatus.value = 'unavailable';
+                resolve();
+            });
         setTimeout(() => {
             if (audioCacheStatus.value !== 'ready') audioCacheStatus.value = 'unavailable';
             resolve();
@@ -38,23 +43,39 @@ export function cachedAudioSource(music, source) {
     if (audioCacheStatus.value === 'ready') {
         try {
             const url = new URL(source);
-            if (/^[\w-]{1,100}$/.test(music.id) && url.protocol === 'https:' && !url.port && !url.username && !url.password
-                && (url.hostname.endsWith('.music.126.net') || url.hostname.endsWith('.music.163.com'))
-                && /^[\w.-]{8,160}\.(flac|mp3|m4a|aac|wav|ogg)$/i.test(url.pathname.split('/').pop())) {
+            if (
+                /^[\w-]{1,100}$/.test(music.id) &&
+                url.protocol === 'https:' &&
+                !url.port &&
+                !url.username &&
+                !url.password &&
+                (url.hostname.endsWith('.music.126.net') || url.hostname.endsWith('.music.163.com')) &&
+                /^[\w.-]{8,160}\.(flac|mp3|m4a|aac|wav|ogg)$/i.test(url.pathname.split('/').pop())
+            ) {
                 result = `/__mp_audio_cache/v1/${encodeURIComponent(music.id)}?source=${encodeURIComponent(source)}`;
             }
-        } catch { /* Preserve native media URLs that cannot be cached. */ }
+        } catch {
+            /* Preserve native media URLs that cannot be cached. */
+        }
     }
-    selection = {id:music.id, source, result};
+    selection = { id: music.id, source, result };
     return result;
 }
 
 export function requestAudioCache(action = 'stats') {
-    if (audioCacheStatus.value !== 'ready' || !ourWorker()) return Promise.resolve({available:false, bytes:0, files:0});
+    if (audioCacheStatus.value !== 'ready' || !ourWorker())
+        return Promise.resolve({ available: false, bytes: 0, files: 0 });
     return new Promise((resolve, reject) => {
         const channel = new MessageChannel();
-        const timer = setTimeout(() => { channel.port1.close(); reject(new Error('读取音乐缓存超时，请稍后重试')); }, 10000);
-        channel.port1.onmessage = event => { clearTimeout(timer); channel.port1.close(); resolve(event.data); };
-        navigator.serviceWorker.controller.postMessage({type:'mp-audio-cache', action}, [channel.port2]);
+        const timer = setTimeout(() => {
+            channel.port1.close();
+            reject(new Error('读取音乐缓存超时，请稍后重试'));
+        }, 10000);
+        channel.port1.onmessage = (event) => {
+            clearTimeout(timer);
+            channel.port1.close();
+            resolve(event.data);
+        };
+        navigator.serviceWorker.controller.postMessage({ type: 'mp-audio-cache', action }, [channel.port2]);
     });
 }

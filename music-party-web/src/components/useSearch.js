@@ -26,7 +26,7 @@ export function useSearchLogic(emit) {
                 await authApi.adminSetPassword(pwd, adminCommandArg.value);
                 success('ROOM PASSWORD UPDATED');
             } else if (adminCommandType.value === 'OPEN') {
-                await authApi.adminSetPassword(pwd, "");
+                await authApi.adminSetPassword(pwd, '');
                 success('ROOM IS NOW PUBLIC');
             }
             emit('close');
@@ -92,6 +92,6 @@ export function useSearchLogic(emit) {
         loading,
         listMode,
         isAdminMode,
-        doSearch
+        doSearch,
     };
 }
