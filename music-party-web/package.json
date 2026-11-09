@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:sync": "node tests/playback-sync.cjs",
+    "test:compact": "node tests/compact-sync.cjs",
     "test:browser": "node tests/browser.cjs"
   },
   "dependencies": {
