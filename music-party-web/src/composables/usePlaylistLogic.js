@@ -27,16 +27,22 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
     const bindings = computed(() => userStore.bindings);
 
     // 获取用户歌单
-    const fetchPlaylists = async () => {
+
+// 每个「平台 + 绑定用户」缓存一份歌单：来回切源直接复用，避免重复请求
+const playlistCache = new Map();
+const cacheKey = () => `${platformRef.value}:${bindings.value[platformRef.value] || ''}`;
+const fetchPlaylists = async () => {
         const uid = bindings.value[platformRef.value];
         if (!uid) {
             playlists.value = [];
+            playlistCache.delete(cacheKey());
             return;
         }
         isPlaylistsLoading.value = true;
         try {
             const data = await musicApi.getUserPlaylists(platformRef.value, uid);
             playlists.value = data;
+            playlistCache.set(cacheKey(), data);
         } catch (e) {
             console.error(e);
             playlists.value = [];
@@ -146,12 +152,18 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
 
     // 监听平台切换 -> 刷新歌单列表
     watch(
-        [platformRef, bindings],
-        () => {
+    [platformRef, bindings],
+    () => {
+        const cached = playlistCache.get(cacheKey());
+        if (cached) {
+            // 命中缓存：切回同一平台不再重复请求
+            playlists.value = cached;
+        } else {
             fetchPlaylists();
-        },
-        { immediate: true }
-    );
+        }
+    },
+    { immediate: true }
+);
 
     return {
         playlists,
