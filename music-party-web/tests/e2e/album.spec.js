@@ -170,6 +170,12 @@ for (const viewport of [
         const albumButton = page.getByRole('button', { name: '查看《Song 1》所属专辑', exact: true });
         await expect(single).toBeVisible();
         await expect(albumButton).toBeVisible();
+        await expect(albumButton).toHaveAttribute('title', '点击封面查看所属专辑');
+        await expect(albumButton.locator('.lucide-image-off')).toHaveCount(1);
+        await expect(page.getByRole('button', { name: '专辑', exact: true })).toHaveCount(0);
+        const coverBounds = await albumButton.boundingBox();
+        expect(coverBounds.width).toBeGreaterThanOrEqual(44);
+        expect(coverBounds.height).toBeGreaterThanOrEqual(44);
         for (const button of [single, albumButton]) {
             const bounds = await button.boundingBox();
             expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -180,7 +186,12 @@ for (const viewport of [
         expect(server.queue.map((item) => item.music.id)).toEqual(['1']);
         expect(server.sent.filter((item) => item.destination === '/app/enqueue')).toHaveLength(1);
 
-        await albumButton.click();
+        if (viewport.width === 1280) {
+            await albumButton.focus();
+            await page.keyboard.press('Enter');
+        } else {
+            await albumButton.click();
+        }
         const dialog = page.getByRole('dialog', { name: 'Test album' });
         await expect(dialog.getByRole('listitem')).toHaveCount(5);
         await expect(dialog.getByRole('button', { name: '已在队列：Song 1', exact: true })).toBeDisabled();
@@ -207,7 +218,7 @@ for (const viewport of [
 test('album read error can be retried without adding songs', async ({ page }) => {
     const server = await room(page, { failAlbumOnce: true });
     await page.getByRole('button', { name: '查看《Song 1》所属专辑' }).click();
-    await expect(page.getByRole('alert')).toContainText('Album temporarily unavailable');
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Album temporarily unavailable');
     expect(server.queue).toHaveLength(0);
     await page.getByRole('button', { name: '重新读取' }).click();
     await expect(page.getByRole('dialog', { name: 'Test album' }).getByRole('listitem')).toHaveCount(5);
