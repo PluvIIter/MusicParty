@@ -1,6 +1,8 @@
 // src/stores/ui.js
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { THEMES } from '../constants/themes';
+import { applyTheme, readThemePreference } from '../domain/theme';
 import { STORAGE_KEYS } from '../constants/storage';
 import client from '../api/client';
 
@@ -11,17 +13,14 @@ export const useUiStore = defineStore('ui', () => {
     const authorName = ref('ThorNex');
     const backWords = ref('THORNEX');
 
-    // 外观：用户本地偏好，存 localStorage；首次访问跟随系统 prefers-color-scheme。
-    const storedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
-    const prefersDark = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-    const isDarkMode = ref(storedTheme ? storedTheme === 'dark' : prefersDark);
+    const themeId = ref(readThemePreference());
+    const isDarkMode = computed(() => THEMES.find((theme) => theme.id === themeId.value)?.mode === 'dark');
+    const setTheme = (id) => {
+        if (THEMES.some((theme) => theme.id === id)) themeId.value = id;
+    };
 
     const toggleLiteMode = () => {
         isLiteMode.value = !isLiteMode.value;
-    };
-
-    const toggleDarkMode = () => {
-        isDarkMode.value = !isDarkMode.value;
     };
 
     const setVolume = (val) => {
@@ -47,16 +46,17 @@ export const useUiStore = defineStore('ui', () => {
         localStorage.setItem(STORAGE_KEYS.AUTO_LITE_MODE, newVal.toString());
     });
 
-    // 主题切换：写入 <html data-theme>，令牌在 style.css 里随属性切换
     watch(
-        isDarkMode,
-        (dark) => {
-            if (typeof document !== 'undefined') {
-                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        themeId,
+        (id) => {
+            applyTheme(id);
+            try {
+                localStorage.setItem(STORAGE_KEYS.THEME, id);
+            } catch {
+                /* Keep the applied theme even if the browser refuses persistence. */
             }
-            localStorage.setItem(STORAGE_KEYS.THEME, dark ? 'dark' : 'light');
         },
-        { immediate: true }
+        { immediate: true, flush: 'sync' }
     );
 
     return {
@@ -69,6 +69,7 @@ export const useUiStore = defineStore('ui', () => {
         backWords,
         fetchConfig,
         isDarkMode,
-        toggleDarkMode,
+        themeId,
+        setTheme,
     };
 });

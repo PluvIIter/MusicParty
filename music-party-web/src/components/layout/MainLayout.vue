@@ -1,7 +1,8 @@
 <!-- src/components/layout/MainLayout.vue -->
 <script setup>
 import { ref, onMounted } from 'vue';
-import { Search, Users, ListMusic, X, Minimize2, Maximize2, Volume2, Activity, Sun, Moon } from 'lucide-vue-next';
+import { Search, Users, ListMusic, X, Minimize2, Maximize2, Volume2, Activity } from 'lucide-vue-next';
+import ThemePicker from '../ThemePicker.vue';
 import UserList from '../UserList.vue';
 import QueueList from '../QueueList.vue';
 import CoverImage from '../CoverImage.vue';
@@ -75,16 +76,7 @@ const handleSearchClick = () => {
                     <Users class="w-5 h-5 relative z-10" />
                 </button>
 
-                <!-- 外观：浅色 / 黑夜（用户本地偏好） -->
-                <button
-                    @click="uiStore.toggleDarkMode"
-                    class="flex items-center justify-center w-9 h-9 md:w-10 md:h-9 border border-line bg-surface hover:bg-surface-sunken text-ink-muted transition-all rounded-sm"
-                    :title="uiStore.isDarkMode ? '切换到浅色' : '切换到黑夜模式'"
-                    :aria-label="uiStore.isDarkMode ? '切换到浅色' : '切换到黑夜模式'"
-                >
-                    <Sun v-if="uiStore.isDarkMode" class="w-4 h-4" />
-                    <Moon v-else class="w-4 h-4" />
-                </button>
+                <ThemePicker />
 
                 <!-- 精简模式按钮 -->
                 <button
@@ -269,7 +261,7 @@ const handleSearchClick = () => {
                 </label>
 
                 <!-- 退出动作 -->
-                                <button
+                <button
                     @click="uiStore.toggleLiteMode"
                     class="w-full bg-brand text-ink-inverse font-black py-4 flex items-center justify-center gap-4 transition-all hover:bg-accent hover:text-accent-contrast hover:tracking-[0.2em] active:scale-[0.98] group shadow-xl"
                 >
@@ -307,7 +299,7 @@ input[type='range']::-webkit-slider-thumb {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 input[type='range']:hover::-webkit-slider-thumb {
-    background: #ff5722; /* accent */
+    background: rgb(var(--mp-accent));
 }
 input[type='range']::-webkit-slider-runnable-track {
     width: 100%;
