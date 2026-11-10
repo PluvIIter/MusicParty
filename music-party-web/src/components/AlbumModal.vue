@@ -85,9 +85,6 @@
                 </ol>
             </div>
             <footer v-if="album" class="p-4 md:px-6 bg-surface-raised border-t border-line flex-shrink-0">
-                <p class="text-xs text-ink-muted mb-3">
-                    点击歌曲右侧“＋”添加单曲，或按专辑曲序添加整张；自动跳过队列中的歌曲，实际数量受房间导入、点歌和队列上限限制。
-                </p>
                 <p
                     v-if="feedback"
                     :role="importError ? 'alert' : 'status'"
