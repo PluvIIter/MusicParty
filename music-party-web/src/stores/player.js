@@ -234,8 +234,9 @@ export const usePlayerStore = defineStore('player', () => {
     };
     const reorderSong = (queueId, beforeQueueId) => {
         if (!canSendQueueControl()) return;
-        if (!isValidReorder(queue.value, userStore.userToken, queueId, beforeQueueId)) return;
-        socketService.send(WS_DEST.QUEUE_REORDER, { queueId, beforeQueueId });
+        if (!isPlayMode(playMode.value)) return;
+        if (!isValidReorder(queue.value, userStore.userToken, queueId, beforeQueueId, playMode.value)) return;
+        socketService.send(WS_DEST.QUEUE_REORDER, { queueId, beforeQueueId, playMode: playMode.value });
     };
     const seekTo = (positionMs, expectedPlaybackId = playbackId.value) => {
         if (!Number.isFinite(positionMs) || positionMs < 0) return;

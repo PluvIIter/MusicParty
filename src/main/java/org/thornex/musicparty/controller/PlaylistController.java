@@ -51,7 +51,9 @@ public class PlaylistController {
                 ? "已清空我的歌单，移除 " + removed + " 首"
                 : "已移除 " + removed + " 首，但保存失败；请检查存储后重试", !saved));
     }
-    public record ReorderRequest(String queueId, String beforeQueueId) {}
+    public record ReorderRequest(String queueId, String beforeQueueId, String playMode) {
+        public ReorderRequest(String queueId, String beforeQueueId) { this(queueId, beforeQueueId, null); }
+    }
     public record MemberShuffleRequest(Boolean shuffle) {}
 
     @MessageMapping("/queue/member-shuffle")
@@ -79,19 +81,26 @@ public class PlaylistController {
         if (request == null || request.queueId() == null || request.queueId().length() > 80
                 || (request.beforeQueueId() != null && request.beforeQueueId().length() > 80)) return;
         synchronized (persistence) {
-            synchronized (queue) {
-                var member = users.getUser(sessionId);
-                if (member.isEmpty() || member.get().isGuest()) return;
-                var previous = queue.getQueueSnapshot();
-                if (!queue.reorder(request.queueId(), request.beforeQueueId(), member.get().getToken())) {
-                    error(sessionId, "排序未应用：只能拖动自己的普通歌曲，请刷新队列后重试");
+            synchronized (player) {
+                var mode = player.getPlayMode();
+                if (mode == null || !mode.name().equals(request.playMode())) {
+                    error(sessionId, "播放模式已变化，请按当前模式重新排序");
                     return;
                 }
-                try { persistence.saveQueueSnapshot(queue.getQueueSnapshot()); }
-                catch (IOException failure) {
-                    queue.restoreQueueOrder(previous);
-                    error(sessionId, "排序保存失败，已保留原顺序");
-                    return;
+                synchronized (queue) {
+                    var member = users.getUser(sessionId);
+                    if (member.isEmpty() || member.get().isGuest()) return;
+                    var previous = queue.getQueueSnapshot();
+                    if (!queue.reorder(request.queueId(), request.beforeQueueId(), member.get().getToken(), mode)) {
+                        error(sessionId, "排序未应用：顺序模式可调整全局普通歌曲，其他模式仅可调整自己的普通歌曲");
+                        return;
+                    }
+                    try { persistence.saveQueueSnapshot(queue.getQueueSnapshot()); }
+                    catch (IOException failure) {
+                        queue.restoreQueueOrder(previous);
+                        error(sessionId, "排序保存失败，已保留原顺序");
+                        return;
+                    }
                 }
             }
         }

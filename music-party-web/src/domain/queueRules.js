@@ -57,16 +57,20 @@ export const splitQueue = (queue, keepGroup = (group) => group.items.length > 0)
     return { topItems, userGroups };
 };
 
-export const canReorderItem = (item, token) =>
-    !!token &&
-    item?.enqueuedBy?.token === token &&
+const isMemberToken = (token) =>
+    typeof token === 'string' && !!token.trim() && !['SYSTEM', 'ADMIN'].includes(token) && !token.startsWith('__');
+
+export const canReorderItem = (item, token, mode) =>
+    isMemberToken(token) &&
+    isMemberToken(item?.enqueuedBy?.token) &&
+    (mode === 'SEQUENTIAL' || item.enqueuedBy.token === token) &&
     item.priority === 'REGULAR' &&
     item.music?.platform !== 'netease-fm';
 
-export const reorderableItems = (queue, token) => queue.filter((item) => canReorderItem(item, token));
+export const reorderableItems = (queue, token, mode) => queue.filter((item) => canReorderItem(item, token, mode));
 
-export const isValidReorder = (queue, token, queueId, beforeQueueId) => {
-    const items = reorderableItems(queue, token);
+export const isValidReorder = (queue, token, queueId, beforeQueueId, mode) => {
+    const items = reorderableItems(queue, token, mode);
     const from = items.findIndex((item) => item.queueId === queueId);
     if (from < 0 || queueId === beforeQueueId) return false;
     const to = beforeQueueId === null ? items.length : items.findIndex((item) => item.queueId === beforeQueueId);

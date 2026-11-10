@@ -4,7 +4,7 @@ import { usePlayerStore } from '../../src/stores/player';
 import { socketService } from '../../src/services/socket';
 import { WS_DEST } from '../../src/constants/api';
 import { PLAY_MODES } from '../../src/domain/playModes';
-import { canReorderItem, isValidReorder } from '../../src/domain/queueRules';
+import { canReorderItem, isValidReorder, reorderableItems } from '../../src/domain/queueRules';
 
 const { user } = vi.hoisted(() => ({ user: { userToken: 'mine', isGuest: false, showNameModal: false } }));
 vi.mock('../../src/stores/user', () => ({ useUserStore: () => user }));
@@ -85,13 +85,14 @@ describe('explicit playback controls', () => {
         player.setMemberShuffle(false);
         expect(socketService.send).toHaveBeenCalledTimes(2);
     });
-    it('sends own reorder targets or null without changing any queue entry', () => {
+    it.each(PLAY_MODES)('sends $value with reorder targets without changing the queue', ({ value }) => {
+        player.playMode = value;
         const snapshot = structuredClone(queue());
         player.reorderSong('c', 'a');
         player.reorderSong('a', null);
         expect(socketService.send.mock.calls).toEqual([
-            [WS_DEST.QUEUE_REORDER, { queueId: 'c', beforeQueueId: 'a' }],
-            [WS_DEST.QUEUE_REORDER, { queueId: 'a', beforeQueueId: null }],
+            [WS_DEST.QUEUE_REORDER, { queueId: 'c', beforeQueueId: 'a', playMode: value }],
+            [WS_DEST.QUEUE_REORDER, { queueId: 'a', beforeQueueId: null, playMode: value }],
         ]);
         expect(player.queue).toEqual(snapshot);
     });
@@ -106,14 +107,58 @@ describe('explicit playback controls', () => {
         ['a', 'a'],
         ['a', 'b'],
         ['c', null],
-    ])('rejects invalid/no-op reorder %s before %s', (from, before) => {
+    ])('rejects invalid/no-op personal reorder %s before %s', (from, before) => {
+        player.playMode = 'ROUND_ROBIN';
         player.reorderSong(from, before);
         expect(socketService.send).not.toHaveBeenCalled();
     });
-    it('checks the exact REGULAR ownership invariant for both endpoints', () => {
-        expect(canReorderItem(item('a'), 'mine')).toBe(true);
-        expect(canReorderItem(item('a', 'mine', 'GLOBAL_TOP'), 'mine')).toBe(false);
-        expect(isValidReorder(queue(), 'mine', 'c', 'a')).toBe(true);
-        expect(isValidReorder(queue(), 'other', 'c', 'a')).toBe(false);
+    it('allows sequential cross-member sources and targets with the current mode payload', () => {
+        player.reorderSong('other', 'a');
+        player.reorderSong('c', 'other');
+        expect(socketService.send.mock.calls).toEqual([
+            [WS_DEST.QUEUE_REORDER, { queueId: 'other', beforeQueueId: 'a', playMode: 'SEQUENTIAL' }],
+            [WS_DEST.QUEUE_REORDER, { queueId: 'c', beforeQueueId: 'other', playMode: 'SEQUENTIAL' }],
+        ]);
+        player.playMode = 'ROUND_ROBIN';
+        player.reorderSong('other', 'a');
+        player.reorderSong('c', 'other');
+        expect(socketService.send).toHaveBeenCalledTimes(2);
+    });
+    it.each(['ROUND_ROBIN', 'SHUFFLE', 'REPEAT_ONE'])('keeps personal endpoints in %s', (mode) => {
+        expect(canReorderItem(item('a'), 'mine', mode)).toBe(true);
+        expect(canReorderItem(item('a', 'mine', 'GLOBAL_TOP'), 'mine', mode)).toBe(false);
+        expect(isValidReorder(queue(), 'mine', 'c', 'a', mode)).toBe(true);
+        expect(isValidReorder(queue(), 'other', 'c', 'a', mode)).toBe(false);
+        player.playMode = mode;
+        player.reorderSong('other', 'a');
+        player.reorderSong('c', 'other');
+        expect(socketService.send).not.toHaveBeenCalled();
+    });
+    it.each(PLAY_MODES)('rejects fixed entries as either endpoint in $value', ({ value }) => {
+        player.playMode = value;
+        player.queue.push(item('system', 'SYSTEM'), item('admin', 'ADMIN'), item('reserved', '__FM__'));
+        for (const id of ['pinned', 'fm', 'system', 'admin', 'reserved']) {
+            player.reorderSong(id, 'a');
+            player.reorderSong('c', id);
+        }
+        expect(socketService.send).not.toHaveBeenCalled();
+    });
+    it('selects all real member regular entries only in sequential mode', () => {
+        const entries = [...queue(), item('system', 'SYSTEM'), item('admin', 'ADMIN'), item('marker', '__FM__')];
+        expect(reorderableItems(entries, 'mine', 'SEQUENTIAL').map(({ queueId }) => queueId)).toEqual([
+            'a',
+            'other',
+            'b',
+            'c',
+        ]);
+        expect(isValidReorder(entries, 'mine', 'a', 'other', 'SEQUENTIAL')).toBe(false);
+        expect(isValidReorder(entries, 'mine', 'a', 'b', 'SEQUENTIAL')).toBe(true);
+        for (const token of ['', ' ', null, 'SYSTEM', 'ADMIN', '__FM__']) {
+            expect(canReorderItem(item('a', token), 'mine', 'SEQUENTIAL')).toBe(false);
+            expect(canReorderItem(item('a'), token, 'SEQUENTIAL')).toBe(false);
+        }
+        player.playMode = 'UNKNOWN';
+        player.reorderSong('c', 'a');
+        expect(socketService.send).not.toHaveBeenCalled();
     });
 });

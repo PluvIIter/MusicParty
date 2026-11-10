@@ -15,7 +15,7 @@
             type="button"
             :disabled="!player.connected || userStore.isGuest"
             :aria-label="`调整 ${item.music.name} 的顺序`"
-            title="拖动排序；方向键上/下移动自己的歌曲"
+            :title="reorderTooltip"
             class="shrink-0 p-1 touch-none cursor-grab active:cursor-grabbing text-ink-subtle hover:text-accent disabled:opacity-40 disabled:cursor-not-allowed"
             @pointerdown="reorder?.start(item, $event)"
             @keydown="reorder?.keyboard(item, $event)"
@@ -109,5 +109,12 @@ const player = usePlayerStore();
 const userStore = useUserStore();
 const isFmMarker = computed(() => props.item.music.platform === 'netease-fm');
 const reorder = inject('queueReorder', null);
-const isReorderable = computed(() => canReorderItem(props.item, userStore.userToken));
+const isReorderable = computed(() => canReorderItem(props.item, userStore.userToken, player.playMode));
+const reorderTooltip = computed(() => {
+    if (player.playMode === 'SEQUENTIAL')
+        return '拖动或方向键上/下调整所有成员普通歌曲的全局顺序；置顶、FM 和系统条目位置不变';
+    if (player.playMode === 'ROUND_ROBIN')
+        return '拖动或方向键上/下调整自己歌单的普通歌曲；仅交换自己的槽位，其他成员和置顶、FM 条目不变';
+    return '当前模式仅可拖动或用方向键上/下调整自己的普通歌曲，不能移动其他成员歌曲；不改变随机选曲或单曲循环规则';
+});
 </script>

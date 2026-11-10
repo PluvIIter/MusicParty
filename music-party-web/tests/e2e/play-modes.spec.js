@@ -2,7 +2,15 @@ import { test, expect } from '@playwright/test';
 
 async function room(
     page,
-    { mode = 'SEQUENTIAL', guest = false, locked = false, reject = false, admin = false, long = false } = {}
+    {
+        mode = 'SEQUENTIAL',
+        guest = false,
+        locked = false,
+        reject = false,
+        admin = false,
+        long = false,
+        fixed = false,
+    } = {}
 ) {
     const member = { token: 'mine', sessionId: 'mine-session', name: 'Alice', isGuest: guest };
     const other = { token: 'other', sessionId: 'other-session', name: 'Bob', isGuest: false };
@@ -20,6 +28,15 @@ async function room(
             coverUrl: '',
         },
     }));
+    if (fixed) {
+        const pinned = { ...queue[0], queueId: 'pin', priority: 'USER_TOP' };
+        const fm = { ...queue[5], queueId: 'fixed-fm' };
+        const system = { ...queue[0], queueId: 'system', enqueuedBy: { token: 'SYSTEM', name: 'System' } };
+        const reserved = { ...system, queueId: 'reserved', enqueuedBy: { token: '__FM__', name: 'Reserved' } };
+        queue.splice(1, 0, pinned);
+        queue.splice(3, 0, fm);
+        queue.splice(5, 0, system, reserved);
+    }
     if (long) {
         queue = Array.from({ length: 90 }, (_, index) => ({
             ...queue[0],
@@ -118,32 +135,36 @@ async function room(
                     broadcast();
                 }
                 if (headers.destination === '/app/queue/reorder') {
-                    if (reject) sendEvent('排序失败，请重试');
-                    else {
-                        const own = queue.filter(
-                            (item) =>
-                                item.enqueuedBy.token === 'mine' &&
-                                item.priority === 'REGULAR' &&
-                                item.music.platform !== 'netease-fm'
-                        );
-                        const moving = own.splice(
-                            own.findIndex((item) => item.queueId === body.queueId),
-                            1
-                        )[0];
-                        own.splice(
-                            body.beforeQueueId === null
-                                ? own.length
-                                : own.findIndex((item) => item.queueId === body.beforeQueueId),
-                            0,
-                            moving
-                        );
-                        queue = queue.map((item) =>
-                            item.enqueuedBy.token === 'mine' &&
+                    const eligible = (item) => {
+                        const token = item.enqueuedBy.token;
+                        return (
+                            typeof token === 'string' &&
+                            !!token.trim() &&
+                            !['SYSTEM', 'ADMIN'].includes(token) &&
+                            !token.startsWith('__') &&
+                            (mode === 'SEQUENTIAL' || token === 'mine') &&
                             item.priority === 'REGULAR' &&
                             item.music.platform !== 'netease-fm'
-                                ? own.shift()
-                                : item
                         );
+                    };
+                    const entries = queue.filter(eligible);
+                    const from = entries.findIndex((item) => item.queueId === body.queueId);
+                    if (
+                        reject ||
+                        guest ||
+                        body.playMode !== mode ||
+                        from < 0 ||
+                        (body.beforeQueueId !== null && !entries.some((item) => item.queueId === body.beforeQueueId))
+                    ) {
+                        sendEvent('排序失败，请重试');
+                    } else if (body.queueId !== body.beforeQueueId) {
+                        const [moving] = entries.splice(from, 1);
+                        const to =
+                            body.beforeQueueId === null
+                                ? entries.length
+                                : entries.findIndex((item) => item.queueId === body.beforeQueueId);
+                        entries.splice(to, 0, moving);
+                        queue = queue.map((item) => (eligible(item) ? entries.shift() : item));
                         broadcast();
                     }
                 }
@@ -153,7 +174,18 @@ async function room(
     await page.goto('/', { waitUntil: 'commit' });
     await page.getByRole('button', { name: 'CONNECT', exact: true }).click();
     await expect(page.locator('#tutorial-random:visible, #tutorial-random-mobile:visible')).toBeVisible();
-    return { sent, adminActions, errors, push: () => broadcast(), disconnect: () => disconnect(), queue: () => queue };
+    return {
+        sent,
+        adminActions,
+        errors,
+        push: () => broadcast(),
+        setMode: (value) => {
+            mode = value;
+            broadcast();
+        },
+        disconnect: () => disconnect(),
+        queue: () => queue,
+    };
 }
 
 for (const mobile of [false, true]) {
@@ -213,11 +245,11 @@ test('round-robin personal preference defaults random and sends specified boolea
 });
 
 for (const mode of ['SEQUENTIAL', 'ROUND_ROBIN'])
-    test(`${mode} keyboard and touch drag reorder only own regular songs`, async ({ page }) => {
+    test(`${mode} keyboard and touch drag use global or owned slots`, async ({ page }) => {
         const fixture = await room(page, { mode });
         if (mode === 'ROUND_ROBIN') await page.getByRole('button', { name: 'Alice 5 SONGS', exact: true }).click();
         const queue = page.locator('#tutorial-queue:visible');
-        await expect(queue.getByRole('button', { name: /^调整 / })).toHaveCount(3);
+        await expect(queue.getByRole('button', { name: /^调整 / })).toHaveCount(mode === 'SEQUENTIAL' ? 4 : 3);
         const handle = queue.getByRole('button', { name: '调整 Song 3 的顺序', exact: true });
         await handle.press('ArrowUp');
         await expect
@@ -247,14 +279,20 @@ for (const mode of ['SEQUENTIAL', 'ROUND_ROBIN'])
         });
         await expect
             .poll(() => fixture.queue().map(({ queueId }) => queueId))
-            .toEqual(['q2', 'q1', 'q0', 'q3', 'q4', 'q5']);
+            .toEqual(
+                mode === 'SEQUENTIAL' ? ['q2', 'q0', 'q1', 'q3', 'q4', 'q5'] : ['q2', 'q1', 'q0', 'q3', 'q4', 'q5']
+            );
+        expect(fixture.sent.filter(({ destination }) => destination === '/app/queue/reorder')).toEqual([
+            { destination: '/app/queue/reorder', body: { queueId: 'q3', beforeQueueId: 'q2', playMode: mode } },
+            { destination: '/app/queue/reorder', body: { queueId: 'q2', beforeQueueId: 'q0', playMode: mode } },
+        ]);
         expect(fixture.errors).toEqual([]);
     });
 
 for (const input of ['mouse', 'touch']) {
-    test(`real ${input} gesture reorders own entries without shifting another member`, async ({ page }) => {
+    test(`real ${input} gesture moves another member song in sequential mode`, async ({ page }) => {
         const fixture = await room(page);
-        const handle = page.getByRole('button', { name: '调整 Song 3 的顺序', exact: true });
+        const handle = page.getByRole('button', { name: '调整 Song 1 的顺序', exact: true });
         const source = await handle.boundingBox();
         const target = await page.locator('[data-queue-id="q0"]').boundingBox();
         const start = { x: source.x + source.width / 2, y: source.y + source.height / 2 };
@@ -273,11 +311,70 @@ for (const input of ['mouse', 'touch']) {
         }
         await expect
             .poll(() => fixture.queue().map((item) => item.queueId))
-            .toEqual(['q3', 'q1', 'q0', 'q2', 'q4', 'q5']);
-        expect(fixture.sent.filter((item) => item.destination === '/app/queue/reorder')).toHaveLength(1);
+            .toEqual(['q1', 'q0', 'q2', 'q3', 'q4', 'q5']);
+        expect(fixture.sent.filter((item) => item.destination === '/app/queue/reorder')).toEqual([
+            { destination: '/app/queue/reorder', body: { queueId: 'q1', beforeQueueId: 'q0', playMode: 'SEQUENTIAL' } },
+        ]);
         expect(fixture.errors).toEqual([]);
     });
 }
+
+test('sequential global movement preserves pinned, FM and reserved slots', async ({ page }) => {
+    const fixture = await room(page, { fixed: true });
+    await expect(page.getByRole('button', { name: /^调整 / })).toHaveCount(4);
+    const handle = page.getByRole('button', { name: '调整 Song 1 的顺序', exact: true });
+    await expect(handle).toHaveAttribute('title', /所有成员.*全局顺序/);
+    await handle.press('ArrowUp');
+    await expect
+        .poll(() => fixture.queue().map(({ queueId }) => queueId))
+        .toEqual(['q1', 'pin', 'q0', 'fixed-fm', 'q2', 'system', 'reserved', 'q3', 'q4', 'q5']);
+});
+
+test('round-robin cannot drag another member or drop onto their song', async ({ page }) => {
+    const fixture = await room(page, { mode: 'ROUND_ROBIN' });
+    await page.getByRole('button', { name: 'Alice 5 SONGS', exact: true }).click();
+    await page.getByRole('button', { name: 'Bob 1 SONGS', exact: true }).click();
+    await expect(page.getByRole('button', { name: '调整 Song 1 的顺序', exact: true })).toHaveCount(0);
+    const source = page.getByRole('button', { name: '调整 Song 3 的顺序', exact: true });
+    await expect(source).toHaveAttribute('title', /仅交换自己的槽位/);
+    const target = page.locator('[data-queue-id="q1"]');
+    await target.scrollIntoViewIfNeeded();
+    const from = await source.boundingBox();
+    const to = await target.boundingBox();
+    await page.mouse.move(from.x + 8, from.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(to.x + 20, to.y + 8, { steps: 8 });
+    await page.mouse.up();
+    expect(fixture.sent.filter(({ destination }) => destination === '/app/queue/reorder')).toEqual([]);
+    expect(fixture.queue().map(({ queueId }) => queueId)).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
+});
+
+for (const mode of ['SHUFFLE', 'REPEAT_ONE']) {
+    test(`${mode} retains personal-only reorder handles and explains the limit`, async ({ page }) => {
+        await room(page, { mode });
+        await expect(page.getByRole('button', { name: /^调整 / })).toHaveCount(3);
+        await expect(page.getByRole('button', { name: '调整 Song 1 的顺序', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: '调整 Song 3 的顺序', exact: true })).toHaveAttribute(
+            'title',
+            /不能移动其他成员歌曲.*不改变随机选曲或单曲循环规则/
+        );
+    });
+}
+
+test('mode change cancels an active sequential cross-member drag', async ({ page }) => {
+    const fixture = await room(page);
+    const source = await page.getByRole('button', { name: '调整 Song 1 的顺序', exact: true }).boundingBox();
+    const target = await page.locator('[data-queue-id="q0"]').boundingBox();
+    await page.mouse.move(source.x + 8, source.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(target.x + 20, target.y + 8, { steps: 8 });
+    await expect(page.locator('[data-queue-id="q1"]')).toHaveClass(/opacity-50/);
+    fixture.setMode('ROUND_ROBIN');
+    await expect(page.locator('#tutorial-random')).toHaveAttribute('aria-label', '播放模式：轮询播放');
+    await page.mouse.up();
+    expect(fixture.sent.filter(({ destination }) => destination === '/app/queue/reorder')).toEqual([]);
+    expect(fixture.queue().map(({ queueId }) => queueId)).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
+});
 
 test('long virtual queue keeps scrolling past foreign rows after the source unmounts', async ({ page }) => {
     await room(page, { long: true });

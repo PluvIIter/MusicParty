@@ -5,7 +5,7 @@ export function useQueueReorder(player, userStore) {
     const drag = ref(null);
     const announcement = ref('');
     const enabled = computed(() => player.connected && !userStore.isGuest);
-    const items = computed(() => reorderableItems(player.queue, userStore.userToken));
+    const items = computed(() => reorderableItems(player.queue, userStore.userToken, player.playMode));
     let scrollFrame;
     const autoScroll = () => {
         const current = drag.value;
@@ -58,7 +58,13 @@ export function useQueueReorder(player, userStore) {
         const rect = row.getBoundingClientRect();
         const before = current.y < rect.top + rect.height / 2;
         current.beforeQueueId = before ? row.dataset.queueId : (items.value[targetIndex + 1]?.queueId ?? null);
-        current.hasTarget = isValidReorder(player.queue, userStore.userToken, current.queueId, current.beforeQueueId);
+        current.hasTarget = isValidReorder(
+            player.queue,
+            userStore.userToken,
+            current.queueId,
+            current.beforeQueueId,
+            player.playMode
+        );
     };
     const move = (event) => {
         const current = drag.value;

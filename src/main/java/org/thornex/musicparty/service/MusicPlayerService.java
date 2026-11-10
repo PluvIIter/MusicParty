@@ -1105,6 +1105,8 @@ public class MusicPlayerService {
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserToken(sessionId), null));
     }
 
+    public PlayMode getPlayMode() { return playMode.get(); }
+
     public synchronized void cyclePlayMode(String sessionId) {
         PlayMode next = switch (playMode.get()) {
             case SEQUENTIAL -> PlayMode.SHUFFLE;

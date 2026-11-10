@@ -150,6 +150,43 @@ class MusicQueueManagerReorderTest {
     }
 
     @Test
+    void sequentialMovesAnyMembersSongGloballyAndSelectsTheNewHead() {
+        var a1 = add("a1", "A"); var b = add("b", "B"); var a2 = add("a2", "A"); var c = add("c", "C");
+        assertTrue(queue.reorder(c.queueId(), a1.queueId(), "A", PlayMode.SEQUENTIAL));
+        assertEquals(List.of(c.queueId(), a1.queueId(), b.queueId(), a2.queueId()), ids());
+        assertEquals(c.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, false, true, ready(), Set.of()).queueId());
+        assertTrue(queue.reorder(a1.queueId(), null, "C", PlayMode.SEQUENTIAL));
+        assertEquals(List.of(b.queueId(), a2.queueId(), a1.queueId()), ids());
+    }
+
+    @Test
+    void globalReorderPreservesPinFmSystemSlotsAndHeardLedger() {
+        var a = add("a", "A"); var b = add("b", "B"); var system = add("system", "SYSTEM");
+        var pin = add("pin", "C").withPriority(Priority.GLOBAL_TOP);
+        queue.restore(List.of(a, pin, b, system), List.of());
+        queue.ensureFmMarker();
+        var fm = queue.getQueueSnapshot().getLast();
+        queue.restorePlayedQueueIds(Set.of(a.queueId()));
+        assertTrue(queue.reorder(b.queueId(), a.queueId(), "C", PlayMode.SEQUENTIAL));
+        assertEquals(List.of(b, pin, a, system, fm), queue.getQueueSnapshot());
+        assertEquals(Set.of(a.queueId()), queue.getPlayedQueueIds());
+        for (var fixed : List.of(pin, system, fm)) {
+            assertFalse(queue.reorder(fixed.queueId(), a.queueId(), "A", PlayMode.SEQUENTIAL));
+            assertFalse(queue.reorder(a.queueId(), fixed.queueId(), "A", PlayMode.SEQUENTIAL));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PlayMode.class, names = {"ROUND_ROBIN", "SHUFFLE", "REPEAT_ONE"})
+    void nonSequentialCannotReorderForeignEntries(PlayMode mode) {
+        var a1 = add("a1", "A"); var b = add("b", "B"); var a2 = add("a2", "A");
+        assertFalse(queue.reorder(b.queueId(), a1.queueId(), "A", mode));
+        assertFalse(queue.reorder(a2.queueId(), b.queueId(), "A", mode));
+        assertTrue(queue.reorder(a2.queueId(), a1.queueId(), "A", mode));
+        assertEquals(List.of(a2, b, a1), queue.getQueueSnapshot());
+    }
+
+    @Test
     void failedReorderDoesNotResetPlaybackLedgerOrConsumePins() {
         properties.getQueue().setRetainPlaylist(true);
         MusicQueueItem heard = add("heard", "A");

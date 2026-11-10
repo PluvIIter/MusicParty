@@ -366,17 +366,19 @@ public class MusicQueueManager {
     }
 
     public synchronized boolean reorder(String queueId, String beforeQueueId, String actorToken) {
-        if (!isMemberToken(actorToken)) return false;
+        return reorder(queueId, beforeQueueId, actorToken, PlayMode.ROUND_ROBIN);
+    }
+
+    public synchronized boolean reorder(String queueId, String beforeQueueId, String actorToken, PlayMode mode) {
+        if (!isMemberToken(actorToken) || mode == null) return false;
         List<MusicQueueItem> reordered = new ArrayList<>(queue);
         MusicQueueItem item = reordered.stream().filter(entry -> entry.queueId().equals(queueId))
                 .findFirst().orElse(null);
-        if (item == null || !actorToken.equals(item.enqueuedBy().token())
-                || item.priority() != Priority.REGULAR || FM_MARKER_ID.equals(item.music().platform())) {
+        if (item == null || !isReorderable(item, actorToken, mode)) {
             return false;
         }
         List<MusicQueueItem> owned = reordered.stream()
-                .filter(entry -> actorToken.equals(entry.enqueuedBy().token()) && entry.priority() == Priority.REGULAR
-                        && !FM_MARKER_ID.equals(entry.music().platform()))
+                .filter(entry -> isReorderable(entry, actorToken, mode))
                 .collect(Collectors.toCollection(ArrayList::new));
         if (beforeQueueId != null && owned.stream().noneMatch(entry -> entry.queueId().equals(beforeQueueId))) return false;
         if (Objects.equals(queueId, beforeQueueId)) return true;
@@ -385,12 +387,17 @@ public class MusicQueueManager {
                 .filter(index -> owned.get(index).queueId().equals(beforeQueueId)).findFirst().orElseThrow();
         owned.add(targetIndex, item);
         Iterator<MusicQueueItem> replacement = owned.iterator();
-        // Preserve everyone else's slots, including pins and the synthetic FM entry.
-        reordered.replaceAll(entry -> actorToken.equals(entry.enqueuedBy().token()) && entry.priority() == Priority.REGULAR
-                && !FM_MARKER_ID.equals(entry.music().platform()) ? replacement.next() : entry);
+        // Pins/FM keep their slots; non-sequential modes also preserve other members' slots.
+        reordered.replaceAll(entry -> isReorderable(entry, actorToken, mode) ? replacement.next() : entry);
         queue.clear();
         queue.addAll(reordered);
         return true;
+    }
+
+    private static boolean isReorderable(MusicQueueItem item, String actorToken, PlayMode mode) {
+        return isMemberToken(item.enqueuedBy().token()) && item.priority() == Priority.REGULAR
+                && !FM_MARKER_ID.equals(item.music().platform())
+                && (mode == PlayMode.SEQUENTIAL || actorToken.equals(item.enqueuedBy().token()));
     }
 
     public synchronized void restoreQueueOrder(List<MusicQueueItem> entries) {

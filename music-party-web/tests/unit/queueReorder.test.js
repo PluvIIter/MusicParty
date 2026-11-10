@@ -58,19 +58,50 @@ describe('pointer and keyboard queue reorder', () => {
         expect(player.reorderSong).toHaveBeenCalledExactlyOnceWith('c', 'a');
         expect(player.queue.map(({ queueId }) => queueId)).toEqual(['a', 'other', 'b', 'c']);
     });
-    it('drops after the last own song with a null target', () => {
+    it('moves another member song before an owned target in sequential mode', () => {
+        reorder.start(player.queue[1], pointer());
+        target('a');
+        reorder.finish(pointer(30));
+        expect(player.reorderSong).toHaveBeenCalledExactlyOnceWith('other', 'a');
+    });
+    it('uses another member row as a sequential pointer target', () => {
+        reorder.start(player.queue[3], pointer());
+        target('other');
+        reorder.finish(pointer(30));
+        expect(player.reorderSong).toHaveBeenCalledExactlyOnceWith('c', 'other');
+    });
+    it('arrow keys navigate all member regular songs in sequential mode', () => {
+        reorder.keyboard(player.queue[2], { key: 'ArrowUp', preventDefault: vi.fn() });
+        reorder.keyboard(player.queue[1], { key: 'ArrowDown', preventDefault: vi.fn() });
+        expect(player.reorderSong.mock.calls).toEqual([
+            ['b', 'other'],
+            ['other', 'c'],
+        ]);
+    });
+    it('drops after the last eligible song with a null target', () => {
         reorder.start(player.queue[0], pointer());
         target('c');
         reorder.move(pointer(80));
         reorder.finish(pointer(80));
         expect(player.reorderSong).toHaveBeenCalledExactlyOnceWith('a', null);
     });
-    it('ignores a different pointer and invalid/other-member targets', () => {
+    it('ignores a different pointer and other-member targets in round-robin', () => {
+        player.playMode = 'ROUND_ROBIN';
         reorder.start(player.queue[0], pointer());
         target('other');
         reorder.move(pointer(30));
         reorder.finish(pointer(30, 2));
         expect(reorder.drag.value).not.toBeNull();
+        reorder.finish(pointer(30));
+        expect(player.reorderSong).not.toHaveBeenCalled();
+    });
+    it('cancels a cross-member drag before releasing in a different mode', () => {
+        reorder.start(player.queue[1], pointer());
+        target('a');
+        reorder.move(pointer(30));
+        expect(reorder.drag.value.hasTarget).toBe(true);
+        player.playMode = 'ROUND_ROBIN';
+        expect(reorder.drag.value).toBeNull();
         reorder.finish(pointer(30));
         expect(player.reorderSong).not.toHaveBeenCalled();
     });
@@ -122,7 +153,8 @@ describe('pointer and keyboard queue reorder', () => {
         vi.unstubAllGlobals();
     });
 
-    it('arrow keys move among own regular songs, skipping all other entries', () => {
+    it.each(['ROUND_ROBIN', 'SHUFFLE', 'REPEAT_ONE'])('arrow keys keep personal targets in %s', (mode) => {
+        player.playMode = mode;
         reorder.keyboard(player.queue[2], { key: 'ArrowUp', preventDefault: vi.fn() });
         reorder.keyboard(player.queue[0], { key: 'ArrowDown', preventDefault: vi.fn() });
         reorder.keyboard(player.queue[2], { key: 'ArrowDown', preventDefault: vi.fn() });
@@ -132,7 +164,8 @@ describe('pointer and keyboard queue reorder', () => {
             ['b', null],
         ]);
     });
-    it('does not start for pinned/FM/other items or disconnected guests', () => {
+    it('does not start for pinned/FM/other items in round-robin or disconnected guests', () => {
+        player.playMode = 'ROUND_ROBIN';
         for (const entry of [
             item('p', 'mine', 'GLOBAL_TOP'),
             item('f', 'mine', 'REGULAR', 'netease-fm'),
