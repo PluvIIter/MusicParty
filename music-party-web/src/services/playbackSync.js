@@ -11,6 +11,8 @@ export function createRoomClock(now = () => performance.now()) {
         revision = 0,
         reason = 'track';
     let reconnect = false;
+    /** 服务端 seekNonce：变化即代表「房间被主动拖动过」，必须重锚（含向后拖）。 */
+    let lastSeekNonce = null;
 
     const position = (at = now()) => (key ? Math.max(0, anchor + (paused ? 0 : at - anchorAt)) : 0);
     const sample = (state) => {
@@ -31,10 +33,15 @@ export function createRoomClock(now = () => performance.now()) {
         const nextPaused = !!state.isPaused;
         const changedTrack = nextKey !== key;
         const transport = !changedTrack && nextPaused !== paused;
+        // 房间级拖动进度：nonce 变化就是显式跳转信号，不能被「迟到包不回退」的规则吃掉
+        const nonce = Number(state.seekNonce);
+        const seeked = Number.isFinite(nonce) && lastSeekNonce !== null && nonce !== lastSeekNonce;
+        if (Number.isFinite(nonce)) lastSeekNonce = nonce;
         // Same URL/id can start another pass (repeat-one or a one-track retained playlist).
         const repeat =
             !changedTrack &&
             !transport &&
+            !seeked &&
             !nextPaused &&
             duration > 0 &&
             position(at) >= duration - 1000 &&
@@ -42,15 +49,15 @@ export function createRoomClock(now = () => performance.now()) {
             raw < Math.min(10000, duration * 0.2) &&
             raw + 1000 < lastRaw;
 
-        if (changedTrack || transport || repeat || reconnect) {
+        if (changedTrack || transport || seeked || repeat || reconnect) {
             anchor = raw;
             anchorAt = at;
             lastRaw = raw;
             sampleAt = at;
             sampleId++;
-            if (changedTrack || transport || repeat) {
+            if (changedTrack || transport || seeked || repeat) {
                 revision++;
-                reason = changedTrack ? 'track' : repeat ? 'repeat' : 'transport';
+                reason = changedTrack ? 'track' : seeked ? 'seek' : repeat ? 'repeat' : 'transport';
             }
             key = nextKey;
             paused = nextPaused;

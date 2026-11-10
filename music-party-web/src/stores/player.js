@@ -218,6 +218,16 @@ export const usePlayerStore = defineStore('player', () => {
     const playNext = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_NEXT);
     const togglePause = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_PAUSE);
     const cyclePlayMode = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_SHUFFLE);
+    /**
+     * 拖动进度条：把房间的播放位置跳到 positionMs。
+     * 是否生效由服务端判定（管理面板的 allowSeek 开关），这里只负责下发。
+     */
+    const seekTo = (positionMs) => {
+        if (!Number.isFinite(positionMs) || positionMs < 0) return;
+        if (!requireAuth()) return;
+        if (!checkCooldown()) return;
+        socketService.send(WS_DEST.PLAYER_SEEK, { positionMs: Math.round(positionMs) });
+    };
 
     const enqueue = (platform, musicId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
     const enqueuePlaylist = (platform, playlistId) =>
@@ -360,6 +370,7 @@ export const usePlayerStore = defineStore('player', () => {
         playNext,
         togglePause,
         cyclePlayMode,
+        seekTo,
         enqueue,
         enqueuePlaylist,
         enqueueAlbum,
