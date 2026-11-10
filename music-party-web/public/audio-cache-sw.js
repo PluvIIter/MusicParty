@@ -323,32 +323,3 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(audioResponse(event.request));
     }
 });
-
-self.addEventListener('message', (event) => {
-    if (event.data?.type !== 'mp-audio-cache' || !event.ports[0]) return;
-    event.waitUntil(
-        (async () => {
-            try {
-                if (event.data.action === 'clear') {
-                    epoch++;
-                    await serial(async () => {
-                        await caches.delete(DATA_CACHE);
-                        await caches.delete(META_CACHE);
-                    });
-                }
-                await writes;
-                const entries = await metadata();
-                event.ports[0].postMessage({
-                    available: true,
-                    files: entries.length,
-                    bytes: entries.reduce(
-                        (sum, item) => sum + Object.values(item.chunks).reduce((n, size) => n + size, 0),
-                        0
-                    ),
-                });
-            } catch {
-                event.ports[0].postMessage({ available: false, error: '浏览器暂时无法保存音乐缓存' });
-            }
-        })()
-    );
-});

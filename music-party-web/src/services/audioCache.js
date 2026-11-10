@@ -62,20 +62,4 @@ export function cachedAudioSource(music, source) {
     return result;
 }
 
-export function requestAudioCache(action = 'stats') {
-    if (audioCacheStatus.value !== 'ready' || !ourWorker())
-        return Promise.resolve({ available: false, bytes: 0, files: 0 });
-    return new Promise((resolve, reject) => {
-        const channel = new MessageChannel();
-        const timer = setTimeout(() => {
-            channel.port1.close();
-            reject(new Error('读取音乐缓存超时，请稍后重试'));
-        }, 10000);
-        channel.port1.onmessage = (event) => {
-            clearTimeout(timer);
-            channel.port1.close();
-            resolve(event.data);
-        };
-        navigator.serviceWorker.controller.postMessage({ type: 'mp-audio-cache', action }, [channel.port2]);
-    });
-}
+

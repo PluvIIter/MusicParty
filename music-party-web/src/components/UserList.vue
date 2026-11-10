@@ -1,7 +1,7 @@
 <template>
     <div class="p-4">
         <div class="mb-4 flex items-center justify-between">
-            <h3 class="text-sm font-bold text-medical-400">在线成员</h3>
+            <h3 class="text-sm font-bold text-ink-subtle">在线成员</h3>
             <div class="text-xs font-mono bg-accent/10 text-accent px-1">{{ users.length }}</div>
         </div>
 
@@ -9,7 +9,7 @@
             <!-- 自己 -->
             <div
                 id="tutorial-rename"
-                class="flex items-center gap-3 pb-3 border-b border-medical-200 border-dashed transition-all duration-300 p-2 -mx-2 rounded"
+                class="flex items-center gap-3 pb-3 border-b border-line border-dashed transition-all duration-300 p-2 -mx-2 rounded"
                 :class="[
                     isEnqueuerById(userStore.userToken)
                         ? 'bg-accent/10 border-accent/30 shadow-sm'
@@ -22,14 +22,14 @@
                     class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors rounded-none"
                     :class="[
                         isEnqueuerById(userStore.userToken)
-                            ? 'bg-accent text-white'
+                            ? 'bg-accent text-ink-inverse'
                             : isLikedUser(userStore.userToken)
-                              ? 'bg-accent text-white'
-                              : 'bg-medical-900 text-white',
+                              ? 'bg-accent text-ink-inverse'
+                              : 'bg-brand text-ink-inverse',
                     ]"
                 >
                     <span v-if="isEnqueuerById(userStore.userToken)">DJ</span>
-                    <Zap v-else-if="isLikedUser(userStore.userToken)" class="w-4 h-4 fill-white text-white" />
+                    <Zap v-else-if="isLikedUser(userStore.userToken)" class="w-4 h-4 fill-ink-inverse text-ink-inverse" />
                     <span v-else>ME</span>
                 </div>
                 <div class="flex-1 min-w-0">
@@ -38,7 +38,7 @@
                         @blur="doRename"
                         @keyup.enter="doRename"
                         class="w-full bg-transparent border-b border-transparent focus:border-accent outline-none text-sm font-bold"
-                        :class="isEnqueuerById(userStore.userToken) ? 'text-accent' : 'text-medical-900'"
+                        :class="isEnqueuerById(userStore.userToken) ? 'text-accent' : 'text-ink'"
                     />
                 </div>
 
@@ -51,8 +51,6 @@
                 <div v-else class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
             </div>
 
-            <AudioCacheSettings />
-
             <!-- 其他人 -->
             <div
                 v-for="u in others"
@@ -64,19 +62,19 @@
                     class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors rounded-none"
                     :class="[
                         isEnqueuerById(u.token)
-                            ? 'bg-accent text-white'
+                            ? 'bg-accent text-ink-inverse'
                             : isLikedUser(u.token)
-                              ? 'bg-accent text-white'
-                              : 'bg-medical-200 text-medical-500',
+                              ? 'bg-accent text-ink-inverse'
+                              : 'bg-line text-ink-muted',
                     ]"
                 >
                     <span v-if="isEnqueuerById(u.token)">DJ</span>
-                    <Zap v-else-if="isLikedUser(u.token)" class="w-4 h-4 fill-white text-white" />
+                    <Zap v-else-if="isLikedUser(u.token)" class="w-4 h-4 fill-ink-inverse text-ink-inverse" />
                     <span v-else>OP</span>
                 </div>
                 <div
                     class="text-sm font-bold truncate flex-1"
-                    :class="isEnqueuerById(u.token) ? 'text-accent' : 'text-medical-900'"
+                    :class="isEnqueuerById(u.token) ? 'text-accent' : 'text-ink'"
                 >
                     {{ u.name }}
                 </div>
@@ -92,16 +90,16 @@
         </div>
 
         <!-- 直播流人数 -->
-        <div v-if="playerStore.streamListenerCount > 0" class="mt-4 pt-3 border-t border-medical-200 border-dashed">
+        <div v-if="playerStore.streamListenerCount > 0" class="mt-4 pt-3 border-t border-line border-dashed">
             <div class="flex items-center gap-3 p-2 -mx-2 opacity-60">
                 <div
-                    class="w-8 h-8 flex items-center justify-center bg-medical-200 text-medical-500 font-bold text-[10px] rounded-none"
+                    class="w-8 h-8 flex items-center justify-center bg-line text-ink-muted font-bold text-[10px] rounded-none"
                 >
                     LIVE
                 </div>
-                <div class="text-xs font-bold text-medical-800">流在线 [{{ playerStore.streamListenerCount }}]</div>
+                <div class="text-xs font-bold text-ink">流在线 [{{ playerStore.streamListenerCount }}]</div>
                 <div class="flex-1"></div>
-                <div class="w-2 h-2 bg-medical-400 rounded-full animate-pulse"></div>
+                <div class="w-2 h-2 bg-line-strong rounded-full animate-pulse"></div>
             </div>
         </div>
     </div>
@@ -112,7 +110,6 @@ import { ref, computed, watch } from 'vue';
 import { useUserStore } from '../stores/user';
 import { usePlayerStore } from '../stores/player';
 import { Zap } from 'lucide-vue-next';
-import AudioCacheSettings from './AudioCacheSettings.vue';
 
 const userStore = useUserStore();
 const playerStore = usePlayerStore();
