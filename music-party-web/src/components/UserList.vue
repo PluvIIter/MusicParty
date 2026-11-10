@@ -22,14 +22,14 @@
                     class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors rounded-none"
                     :class="[
                         isEnqueuerById(userStore.userToken)
-                            ? 'bg-accent text-ink-inverse'
+                            ? 'bg-accent text-accent-contrast'
                             : isLikedUser(userStore.userToken)
-                              ? 'bg-accent text-ink-inverse'
+                              ? 'bg-accent text-accent-contrast'
                               : 'bg-brand text-ink-inverse',
                     ]"
                 >
                     <span v-if="isEnqueuerById(userStore.userToken)">DJ</span>
-                    <Zap v-else-if="isLikedUser(userStore.userToken)" class="w-4 h-4 fill-ink-inverse text-ink-inverse" />
+                    <Zap v-else-if="isLikedUser(userStore.userToken)" class="w-4 h-4 fill-current text-accent-contrast" />
                     <span v-else>ME</span>
                 </div>
                 <div class="flex-1 min-w-0">
@@ -62,14 +62,14 @@
                     class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors rounded-none"
                     :class="[
                         isEnqueuerById(u.token)
-                            ? 'bg-accent text-ink-inverse'
+                            ? 'bg-accent text-accent-contrast'
                             : isLikedUser(u.token)
-                              ? 'bg-accent text-ink-inverse'
+                              ? 'bg-accent text-accent-contrast'
                               : 'bg-line text-ink-muted',
                     ]"
                 >
                     <span v-if="isEnqueuerById(u.token)">DJ</span>
-                    <Zap v-else-if="isLikedUser(u.token)" class="w-4 h-4 fill-ink-inverse text-ink-inverse" />
+                    <Zap v-else-if="isLikedUser(u.token)" class="w-4 h-4 fill-current text-accent-contrast" />
                     <span v-else>OP</span>
                 </div>
                 <div

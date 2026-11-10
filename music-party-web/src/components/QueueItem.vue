@@ -14,7 +14,7 @@
                 <div class="text-sm font-bold text-ink truncate">{{ item.music.name }}</div>
                 <span
                     v-if="isFmMarker"
-                    class="ml-1 flex-shrink-0 px-1 bg-accent text-ink-inverse text-[8px] font-mono font-bold"
+                    class="ml-1 flex-shrink-0 px-1 bg-accent text-accent-contrast text-[8px] font-mono font-bold"
                     >FM</span
                 >
             </div>

@@ -147,7 +147,7 @@
                     <!-- Badge -->
                     <div
                         v-if="player.isVoteSkipEnabled && canVote && player.currentVotes > 0"
-                        class="absolute -top-1 -right-1 bg-accent text-ink-inverse text-[8px] font-bold px-1 min-w-[12px] h-3 flex items-center justify-center rounded-sm shadow-sm"
+                        class="absolute -top-1 -right-1 bg-accent text-accent-contrast text-[8px] font-bold px-1 min-w-[12px] h-3 flex items-center justify-center rounded-sm shadow-sm"
                     >
                         {{ player.currentVotes }}
                     </div>
@@ -185,9 +185,9 @@
                     id="tutorial-pause"
                     @click="player.togglePause"
                     :disabled="player.isPauseLocked && !player.isPaused"
-                    class="w-10 h-10 bg-brand text-ink-inverse flex items-center justify-center hover:bg-accent transition-colors chamfer-tl disabled:opacity-50 disabled:hover:bg-brand disabled:cursor-not-allowed"
+                    class="w-10 h-10 bg-brand text-ink-inverse flex items-center justify-center hover:bg-accent hover:text-accent-contrast transition-colors chamfer-tl disabled:opacity-50 disabled:hover:bg-brand disabled:hover:text-ink-inverse disabled:cursor-not-allowed"
                 >
-                    <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-ink-inverse" />
+                    <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4" />
                     <template v-else>
                         <Play v-if="player.isPaused" class="w-4 h-4 fill-current" />
                         <Pause v-else class="w-4 h-4 fill-current" />
@@ -204,7 +204,7 @@
                     <!-- Badge -->
                     <div
                         v-if="player.isVoteSkipEnabled && canVote && player.currentVotes > 0"
-                        class="absolute -top-1 -right-1 bg-accent text-ink-inverse text-[10px] font-bold px-1 min-w-[14px] h-3.5 flex items-center justify-center rounded-sm shadow-sm"
+                        class="absolute -top-1 -right-1 bg-accent text-accent-contrast text-[10px] font-bold px-1 min-w-[14px] h-3.5 flex items-center justify-center rounded-sm shadow-sm"
                     >
                         {{ player.currentVotes }}
                     </div>

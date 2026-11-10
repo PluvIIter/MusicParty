@@ -96,7 +96,7 @@
                 <button
                     @click="importAlbum"
                     :disabled="importing || allInQueue || !playerStore.connected"
-                    class="w-full flex justify-center items-center gap-2 px-4 py-3 bg-accent hover:bg-accent-hover text-ink-inverse font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="w-full flex justify-center items-center gap-2 px-4 py-3 bg-accent hover:bg-accent-hover text-accent-contrast font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     <Loader2 v-if="importing" class="w-4 h-4 animate-spin" /><ListPlus v-else class="w-4 h-4" />
                     {{

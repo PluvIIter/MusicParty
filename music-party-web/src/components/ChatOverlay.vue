@@ -168,7 +168,7 @@
                     />
                     <button
                         @click="send"
-                        class="bg-accent hover:bg-accent-hover text-ink-inverse px-3 py-1.5 transition-colors rounded-sm flex items-center justify-center shadow-sm shadow-accent/20"
+                        class="bg-accent hover:bg-accent-hover text-accent-contrast px-3 py-1.5 transition-colors rounded-sm flex items-center justify-center shadow-sm shadow-accent/20"
                     >
                         <Send class="w-4 h-4" />
                     </button>
@@ -193,7 +193,7 @@
             class="pointer-events-auto w-10 h-10 border flex items-center justify-center transition-all cursor-move select-none rounded-sm relative overflow-hidden"
             :class="
                 chatStore.unreadCount > 0
-                    ? 'bg-accent border-accent text-ink-inverse shadow-[0_0_15px_rgba(249,115,22,0.6)] scale-110'
+                    ? 'bg-accent border-accent text-accent-contrast shadow-[0_0_15px_rgba(249,115,22,0.6)] dark:shadow-none scale-110'
                     : 'bg-surface-raised border-line text-ink-muted shadow-lg hover:text-ink hover:border-line-strong'
             "
         >

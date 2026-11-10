@@ -109,7 +109,7 @@
                                             class="flex items-center justify-center gap-2 py-2 px-1 border transition-all text-[9px] font-bold font-mono"
                                             :class="
                                                 lock.value
-                                                    ? 'bg-red-50 border-red-200 text-red-500'
+                                                    ? 'bg-red-50 border-red-200 text-red-500 dark:bg-red-400/10 dark:border-red-400/30 dark:text-red-300'
                                                     : 'bg-surface-raised border-line text-ink-subtle hover:border-accent hover:text-accent'
                                             "
                                         >
@@ -356,7 +356,7 @@
                                                 class="py-1.5 text-[10px] font-bold transition-colors"
                                                 :class="
                                                     privateDj.mode === 'FM'
-                                                        ? 'bg-accent text-ink-inverse'
+                                                        ? 'bg-accent text-accent-contrast'
                                                         : 'text-ink-muted hover:bg-line'
                                                 "
                                             >
@@ -367,7 +367,7 @@
                                                 class="py-1.5 text-[10px] font-bold transition-colors"
                                                 :class="
                                                     privateDj.mode === 'DJ'
-                                                        ? 'bg-accent text-ink-inverse'
+                                                        ? 'bg-accent text-accent-contrast'
                                                         : 'text-ink-muted hover:bg-line'
                                                 "
                                             >
@@ -435,7 +435,7 @@
                                             />
                                             <button
                                                 @click="updateRoomPassword"
-                                                class="bg-brand text-ink-inverse px-3 py-1.5 text-[10px] font-bold hover:bg-accent"
+                                                class="bg-brand text-ink-inverse px-3 py-1.5 text-[10px] font-bold hover:bg-accent hover:text-accent-contrast"
                                             >
                                                 设置
                                             </button>
@@ -472,19 +472,19 @@
                                             <div class="flex flex-col gap-1 w-full">
                                                 <button
                                                     @click="clearData('QUEUE')"
-                                                    class="w-full py-1 border border-line text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all"
+                                                    class="w-full py-1 border border-line text-[8px] font-bold hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-400/10 dark:hover:text-red-300 transition-all"
                                                 >
                                                     清理播放队列
                                                 </button>
                                                 <button
                                                     @click="clearData('OFFLINE')"
-                                                    class="w-full py-1 border border-line text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all"
+                                                    class="w-full py-1 border border-line text-[8px] font-bold hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-400/10 dark:hover:text-red-300 transition-all"
                                                 >
                                                     清理不在线成员歌曲
                                                 </button>
                                                 <button
                                                     @click="clearData('CHAT')"
-                                                    class="w-full py-1 border border-line text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all"
+                                                    class="w-full py-1 border border-line text-[8px] font-bold hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-400/10 dark:hover:text-red-300 transition-all"
                                                 >
                                                     清理聊天记录
                                                 </button>
@@ -517,7 +517,7 @@
 
                                     <button
                                         @click="saveSystemConfig"
-                                        class="w-full bg-brand text-ink-inverse py-2 text-xs font-bold hover:bg-accent transition-colors flex items-center justify-center gap-2"
+                                        class="w-full bg-brand text-ink-inverse py-2 text-xs font-bold hover:bg-accent hover:text-accent-contrast transition-colors flex items-center justify-center gap-2"
                                     >
                                         <Save class="w-4 h-4" /> 应用并保存所有更改
                                     </button>
@@ -567,7 +567,7 @@
                                             />
                                             <button
                                                 @click="updateCookie(plat.id, plat.value)"
-                                                class="bg-brand text-ink-inverse px-3 font-bold text-[10px] hover:bg-accent transition-colors"
+                                                class="bg-brand text-ink-inverse px-3 font-bold text-[10px] hover:bg-accent hover:text-accent-contrast transition-colors"
                                             >
                                                 更新
                                             </button>

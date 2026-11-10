@@ -35,7 +35,7 @@
                 </button>
                 <button
                     @click="confirm"
-                    class="flex-1 bg-brand text-ink-inverse font-bold py-3 hover:bg-accent transition-colors"
+                    class="flex-1 bg-brand text-ink-inverse font-bold py-3 hover:bg-accent hover:text-accent-contrast transition-colors"
                 >
                     CONFIRM
                 </button>

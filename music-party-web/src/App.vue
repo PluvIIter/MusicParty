@@ -18,7 +18,7 @@
             <div class="font-mono text-xs text-ink-subtle tracking-widest">SYSTEM READY</div>
             <button
                 @click="startGame"
-                class="px-12 py-4 bg-brand text-ink-inverse font-bold text-xl hover:bg-accent transition-colors chamfer-br"
+                class="px-12 py-4 bg-brand text-ink-inverse font-bold text-xl hover:bg-accent hover:text-accent-contrast transition-colors chamfer-br"
             >
                 CONNECT
             </button>

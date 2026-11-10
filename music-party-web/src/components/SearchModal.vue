@@ -31,7 +31,7 @@
                         class="px-4 md:px-6 py-2 text-sm font-bold uppercase transition-all"
                         :class="[
                             mode === 'search' && platform === p
-                                ? 'bg-accent text-ink-inverse'
+                                ? 'bg-accent text-accent-contrast'
                                 : 'bg-line text-ink-muted hover:bg-line-strong',
                             !isPlatformEnabled(p) ? 'opacity-30 cursor-not-allowed grayscale' : '',
                         ]"
@@ -44,7 +44,7 @@
                         class="px-4 md:px-6 py-2 text-sm font-bold transition-all"
                         :class="
                             mode === 'likesong'
-                                ? 'bg-accent text-ink-inverse'
+                                ? 'bg-accent text-accent-contrast'
                                 : 'bg-line text-ink-muted hover:bg-line-strong'
                         "
                     >
@@ -62,7 +62,7 @@
                     />
                     <button
                         @click="handleSearchAction"
-                        class="text-ink-inverse px-3 md:px-6 py-2 font-bold transition-colors text-xs md:text-base flex-shrink-0 font-sans bg-accent hover:bg-accent-hover"
+                        class="text-accent-contrast px-3 md:px-6 py-2 font-bold transition-colors text-xs md:text-base flex-shrink-0 font-sans bg-accent hover:bg-accent-hover"
                     >
                         SEARCH
                     </button>
@@ -174,7 +174,7 @@
                                     @click="searchUser"
                                     class="bg-accent hover:bg-accent-hover p-1 transition-colors"
                                 >
-                                    <Search class="w-4 h-4 text-ink-inverse" />
+                                    <Search class="w-4 h-4 text-accent-contrast" />
                                 </button>
                             </div>
                             <!-- 搜索结果列表 -->
@@ -274,7 +274,7 @@
                             </div>
                             <button
                                 @click="handleImportPlaylist"
-                                class="bg-brand text-ink-inverse px-4 py-2 text-sm font-bold hover:bg-accent transition-colors flex items-center gap-2 font-sans"
+                                class="bg-brand text-ink-inverse px-4 py-2 text-sm font-bold hover:bg-accent hover:text-accent-contrast transition-colors flex items-center gap-2 font-sans"
                             >
                                 <ListPlus class="w-4 h-4" /> <span class="hidden sm:inline">导入全部</span>
                             </button>
