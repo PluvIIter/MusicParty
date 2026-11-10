@@ -9,27 +9,22 @@
     >
         <div
             v-if="adminStore.showDashboard"
-            class="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-medical-900/40 backdrop-blur-md"
+            class="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-brand/40 backdrop-blur-md"
         >
             <div
-                class="w-full max-w-5xl h-[90vh] bg-medical-50 shadow-2xl border border-medical-200 flex flex-col chamfer-br overflow-hidden"
+                class="w-full max-w-5xl h-[90vh] bg-surface shadow-2xl border border-line flex flex-col chamfer-br overflow-hidden"
             >
                 <!-- Header -->
                 <div
-                    class="p-4 md:p-6 bg-white border-b border-medical-200 flex justify-between items-center flex-shrink-0"
+                    class="px-4 py-3 md:px-6 md:py-4 bg-surface-raised border-b border-line flex justify-between items-center flex-shrink-0"
                 >
-                    <div>
-                        <h2 class="text-2xl font-black font-mono text-medical-900 flex items-center gap-3">
-                            <Settings class="w-6 h-6 text-accent animate-spin-slow" /> 管理终端
-                        </h2>
-                        <p class="text-[10px] font-mono text-medical-400 mt-1 uppercase tracking-[0.2em]">
-                            > 系统控制接口 / SYSTEM_CONTROL_INTERFACE
-                        </p>
-                    </div>
+                    <h2 class="text-xl font-black font-sans text-ink flex items-center gap-3">
+                        <Settings class="w-5 h-5 text-accent animate-spin-slow" /> 管理终端
+                    </h2>
                     <div class="flex items-center gap-4">
                         <button
                             @click="adminStore.showDashboard = false"
-                            class="p-2 bg-medical-100 hover:bg-medical-200 text-medical-900 transition-colors"
+                            class="p-2 bg-surface-sunken hover:bg-line text-ink transition-colors"
                         >
                             <X class="w-6 h-6" />
                         </button>
@@ -37,27 +32,26 @@
                 </div>
 
                 <!-- Content Area -->
-                <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scroll bg-medical-50/50">
+                <div class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 space-y-6 custom-scroll">
                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
                         <!-- Left Column: Playback & Parameters (7 cols) -->
                         <div class="lg:col-span-7 space-y-6">
                             <!-- Section: Playback Mastery -->
-                            <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
-                                <div class="p-3 bg-medical-900 text-white flex items-center justify-between">
+                            <div class="bg-surface-raised border border-line shadow-sm overflow-hidden chamfer-br">
+                                <div class="p-3 bg-brand text-ink-inverse flex items-center justify-between">
                                     <div class="flex items-center gap-2">
                                         <PlayCircle class="w-4 h-4 text-accent" />
                                         <span class="text-xs font-bold uppercase tracking-widest font-mono"
-                                            >播放核心 / Playback_Core</span
+                                            >播放核心</span
                                         >
                                     </div>
-                                    <span class="text-[9px] font-mono opacity-60">IDLE_STATE_MONITOR</span>
                                 </div>
                                 <div class="p-4 space-y-4">
                                     <!-- Control Grid -->
                                     <div class="grid grid-cols-3 gap-3">
                                         <button
                                             @click="execPlayerAction('PAUSE')"
-                                            class="flex flex-col items-center justify-center p-4 bg-medical-50 border border-medical-200 hover:border-accent hover:text-accent transition-all group"
+                                            class="flex flex-col items-center justify-center p-4 bg-surface border border-line hover:border-accent hover:text-accent transition-all group"
                                         >
                                             <Pause
                                                 v-if="!playerStore.isPaused"
@@ -73,7 +67,7 @@
                                         </button>
                                         <button
                                             @click="execPlayerAction('SKIP')"
-                                            class="flex flex-col items-center justify-center p-4 bg-medical-50 border border-medical-200 hover:border-accent hover:text-accent transition-all group"
+                                            class="flex flex-col items-center justify-center p-4 bg-surface border border-line hover:border-accent hover:text-accent transition-all group"
                                         >
                                             <SkipForward
                                                 class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform"
@@ -82,7 +76,7 @@
                                         </button>
                                         <button
                                             @click="execPlayerAction('SHUFFLE')"
-                                            class="flex flex-col items-center justify-center p-4 bg-medical-50 border border-medical-200 hover:border-accent hover:text-accent transition-all group"
+                                            class="flex flex-col items-center justify-center p-4 bg-surface border border-line hover:border-accent hover:text-accent transition-all group"
                                         >
                                             <ListOrdered
                                                 v-if="playerStore.playMode === 'SEQUENTIAL'"
@@ -106,95 +100,48 @@
                                         </button>
                                     </div>
 
-                                    <div class="p-3 bg-medical-50 border border-medical-200">
-                                        <div class="flex justify-between items-center gap-3">
-                                            <div>
-                                                <div class="text-xs font-bold text-medical-800">
-                                                    允许认领离线成员歌单
-                                                </div>
-                                                <p class="text-[10px] text-medical-500 mt-1">
-                                                    成员可接收离线超过 10
-                                                    秒的歌单，同时改成原主人的昵称；关闭后停止认领，已认领的歌保留。
-                                                </p>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                role="switch"
-                                                aria-label="允许认领离线成员歌单"
-                                                :aria-checked="!!playerStore.config.allowPlaylistClaim"
-                                                @click="togglePlaylistClaim"
-                                                :disabled="claimSettingsBusy"
-                                                class="w-8 h-4 shrink-0 rounded-full relative transition-colors"
-                                                :class="
-                                                    playerStore.config.allowPlaylistClaim
-                                                        ? 'bg-accent'
-                                                        : 'bg-medical-300'
-                                                "
-                                            >
-                                                <div
-                                                    class="w-3 h-3 bg-white rounded-full absolute top-0.5 transition-all"
-                                                    :class="
-                                                        playerStore.config.allowPlaylistClaim ? 'left-4' : 'left-0.5'
-                                                    "
-                                                ></div>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-4 p-3 bg-medical-50 border border-medical-200">
-                                        <div class="flex justify-between items-center gap-3">
-                                            <div>
-                                                <div class="text-xs font-bold text-medical-800">播完保留歌单</div>
-                                                <p class="text-[10px] text-medical-500 mt-1">
-                                                    开启后循环保留歌曲；公平随机时，每位成员自己的歌轮完再重复。关闭后按原规则取出已播歌曲，不会恢复已移除项。
-                                                </p>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                role="switch"
-                                                aria-label="播完保留歌单"
-                                                :aria-checked="!!playerStore.config.retainPlaylist"
-                                                @click="
-                                                    updateInstantConfig({
-                                                        retainPlaylist: !playerStore.config.retainPlaylist,
-                                                    })
-                                                "
-                                                class="w-8 h-4 shrink-0 rounded-full relative transition-colors"
-                                                :class="
-                                                    playerStore.config.retainPlaylist ? 'bg-accent' : 'bg-medical-300'
-                                                "
-                                            >
-                                                <div
-                                                    class="w-3 h-3 bg-white rounded-full absolute top-0.5 transition-all"
-                                                    :class="playerStore.config.retainPlaylist ? 'left-4' : 'left-0.5'"
-                                                ></div>
-                                            </button>
-                                        </div>
+                                    <!-- Permission Locks -->
+                                    <div class="grid grid-cols-3 gap-2">
+                                        <button
+                                            v-for="lock in locks"
+                                            :key="lock.key"
+                                            @click="toggleLock(lock.key, !lock.value)"
+                                            class="flex items-center justify-center gap-2 py-2 px-1 border transition-all text-[9px] font-bold font-mono"
+                                            :class="
+                                                lock.value
+                                                    ? 'bg-red-50 border-red-200 text-red-500'
+                                                    : 'bg-surface-raised border-line text-ink-subtle hover:border-accent hover:text-accent'
+                                            "
+                                        >
+                                            <Lock v-if="lock.value" class="w-3 h-3" />
+                                            <Unlock v-else class="w-3 h-3" />
+                                            {{ lock.cnLabel }}
+                                        </button>
                                     </div>
 
                                     <!-- Playback Core Settings (Shuffle & Vote Skip) -->
-                                    <div class="space-y-3 p-3 bg-medical-50 border border-medical-100 rounded-sm">
+                                    <div class="space-y-3 p-3 bg-surface border border-line rounded-sm">
                                         <!-- Shuffle Controls -->
                                         <div
                                             v-if="playerStore.isShuffle"
-                                            class="grid grid-cols-2 gap-3 pb-3 border-b border-medical-100"
+                                            class="grid grid-cols-2 gap-3 pb-3 border-b border-line"
                                         >
                                             <div class="flex items-center justify-between">
                                                 <div class="flex flex-col">
-                                                    <span class="text-[10px] font-bold text-medical-800">{{
+                                                    <span class="text-[10px] font-bold text-ink">{{
                                                         playerStore.isFairShuffle ? '公平模式' : '全部随机'
                                                     }}</span>
-                                                    <span class="text-[8px] text-medical-400 font-mono uppercase"
+                                                    <span class="text-[8px] text-ink-subtle font-mono uppercase"
                                                         >算法类型</span
                                                     >
                                                 </div>
                                                 <button
                                                     @click="execPlayerAction('TOGGLE_FAIR_SHUFFLE')"
                                                     class="w-8 h-4 rounded-full relative transition-colors"
-                                                    :class="playerStore.isFairShuffle ? 'bg-accent' : 'bg-medical-300'"
+                                                    :class="playerStore.isFairShuffle ? 'bg-accent' : 'bg-line-strong'"
                                                 >
                                                     <div
-                                                        class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300"
+                                                        class="absolute top-0.5 left-0.5 w-3 h-3 bg-surface-raised rounded-full transition-transform duration-300"
                                                         :style="{
                                                             transform: playerStore.isFairShuffle
                                                                 ? 'translateX(16px)'
@@ -203,14 +150,12 @@
                                                     ></div>
                                                 </button>
                                             </div>
-                                            <div
-                                                class="flex items-center justify-between border-l border-medical-100 pl-3"
-                                            >
+                                            <div class="flex items-center justify-between border-l border-line pl-3">
                                                 <div class="flex flex-col">
-                                                    <span class="text-[10px] font-bold text-medical-800">{{
+                                                    <span class="text-[10px] font-bold text-ink">{{
                                                         playerStore.allowOfflineShuffle ? '含离线' : '仅在线'
                                                     }}</span>
-                                                    <span class="text-[8px] text-medical-400 font-mono uppercase"
+                                                    <span class="text-[8px] text-ink-subtle font-mono uppercase"
                                                         >曲库范围</span
                                                     >
                                                 </div>
@@ -218,11 +163,11 @@
                                                     @click="execPlayerAction('TOGGLE_ALLOW_OFFLINE')"
                                                     class="w-8 h-4 rounded-full relative transition-colors"
                                                     :class="
-                                                        playerStore.allowOfflineShuffle ? 'bg-accent' : 'bg-medical-300'
+                                                        playerStore.allowOfflineShuffle ? 'bg-accent' : 'bg-line-strong'
                                                     "
                                                 >
                                                     <div
-                                                        class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300"
+                                                        class="absolute top-0.5 left-0.5 w-3 h-3 bg-surface-raised rounded-full transition-transform duration-300"
                                                         :style="{
                                                             transform: playerStore.allowOfflineShuffle
                                                                 ? 'translateX(16px)'
@@ -237,11 +182,9 @@
                                         <div class="space-y-3">
                                             <div class="flex items-center justify-between">
                                                 <div class="flex flex-col">
-                                                    <span class="text-[10px] font-bold text-medical-800"
-                                                        >投票切歌模式</span
-                                                    >
-                                                    <span class="text-[8px] text-medical-400 font-mono uppercase"
-                                                        >VOTE_SKIP_MODE</span
+                                                    <span class="text-[10px] font-bold text-ink">投票切歌模式</span>
+                                                    <span class="text-[8px] text-ink-subtle font-mono uppercase"
+                                                        >达到比例后自动切歌；关闭则仅管理员可切</span
                                                     >
                                                 </div>
                                                 <button
@@ -254,11 +197,11 @@
                                                     :class="
                                                         playerStore.config.voteSkipEnabled
                                                             ? 'bg-accent'
-                                                            : 'bg-medical-300'
+                                                            : 'bg-line-strong'
                                                     "
                                                 >
                                                     <div
-                                                        class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300"
+                                                        class="absolute top-0.5 left-0.5 w-3 h-3 bg-surface-raised rounded-full transition-transform duration-300"
                                                         :style="{
                                                             transform: playerStore.config.voteSkipEnabled
                                                                 ? 'translateX(16px)'
@@ -269,10 +212,10 @@
                                             </div>
                                             <div
                                                 v-if="playerStore.config.voteSkipEnabled"
-                                                class="grid grid-cols-2 gap-3 pt-1 border-t border-medical-100"
+                                                class="grid grid-cols-2 gap-3 pt-1 border-t border-line"
                                             >
                                                 <div class="space-y-1">
-                                                    <label class="block text-[8px] font-bold text-medical-400 uppercase"
+                                                    <label class="block text-[8px] font-bold text-ink-subtle uppercase"
                                                         >比例 (0.1-1.0)</label
                                                     >
                                                     <input
@@ -287,11 +230,11 @@
                                                         step="0.1"
                                                         min="0.1"
                                                         max="1.0"
-                                                        class="w-full bg-white border border-medical-200 px-2 py-1 text-[10px] outline-none focus:border-accent"
+                                                        class="w-full bg-surface-raised border border-line px-2 py-1 text-[10px] outline-none focus:border-accent"
                                                     />
                                                 </div>
                                                 <div class="space-y-1">
-                                                    <label class="block text-[8px] font-bold text-medical-400 uppercase"
+                                                    <label class="block text-[8px] font-bold text-ink-subtle uppercase"
                                                         >等待时间 (秒)</label
                                                     >
                                                     <input
@@ -304,56 +247,117 @@
                                                         "
                                                         type="number"
                                                         min="0"
-                                                        class="w-full bg-white border border-medical-200 px-2 py-1 text-[10px] outline-none focus:border-accent"
+                                                        class="w-full bg-surface-raised border border-line px-2 py-1 text-[10px] outline-none focus:border-accent"
                                                     />
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-
-                                    <!-- Permission Locks -->
-                                    <div class="grid grid-cols-3 gap-2">
-                                        <button
-                                            v-for="lock in locks"
-                                            :key="lock.key"
-                                            @click="toggleLock(lock.key, !lock.value)"
-                                            class="flex items-center justify-center gap-2 py-2 px-1 border transition-all text-[9px] font-bold font-mono"
-                                            :class="
-                                                lock.value
-                                                    ? 'bg-red-50 border-red-200 text-red-500'
-                                                    : 'bg-white border-medical-200 text-medical-400 hover:border-accent hover:text-accent'
-                                            "
-                                        >
-                                            <Lock v-if="lock.value" class="w-3 h-3" />
-                                            <Unlock v-else class="w-3 h-3" />
-                                            {{ lock.cnLabel }}
-                                        </button>
+                                        <div class="flex items-center justify-between gap-3 pt-3 border-t border-line">
+                                            <div class="flex flex-col">
+                                                <span class="text-[10px] font-bold text-ink">允许认领离线成员歌单</span>
+                                                <span class="text-[8px] text-ink-subtle"
+                                                    >成员离线超过 10
+                                                    秒后歌单可被接管；关闭后停止认领，已认领的保留</span
+                                                >
+                                            </div>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-label="允许认领离线成员歌单"
+                                                :aria-checked="!!playerStore.config.allowPlaylistClaim"
+                                                @click="togglePlaylistClaim"
+                                                :disabled="claimSettingsBusy"
+                                                class="w-8 h-4 shrink-0 rounded-full relative transition-colors"
+                                                :class="
+                                                    playerStore.config.allowPlaylistClaim
+                                                        ? 'bg-accent'
+                                                        : 'bg-line-strong'
+                                                "
+                                            >
+                                                <div
+                                                    class="w-3 h-3 bg-surface-raised rounded-full absolute top-0.5 transition-all"
+                                                    :class="
+                                                        playerStore.config.allowPlaylistClaim ? 'left-4' : 'left-0.5'
+                                                    "
+                                                ></div>
+                                            </button>
+                                        </div>
+                                        <div class="flex items-center justify-between gap-3 pt-3 border-t border-line">
+                                            <div class="flex flex-col">
+                                                <span class="text-[10px] font-bold text-ink">播完保留歌单</span>
+                                                <span class="text-[8px] text-ink-subtle"
+                                                    >循环保留已播歌曲；公平随机时每位成员轮完再重复</span
+                                                >
+                                            </div>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-label="播完保留歌单"
+                                                :aria-checked="!!playerStore.config.retainPlaylist"
+                                                @click="
+                                                    updateInstantConfig({
+                                                        retainPlaylist: !playerStore.config.retainPlaylist,
+                                                    })
+                                                "
+                                                class="w-8 h-4 shrink-0 rounded-full relative transition-colors"
+                                                :class="
+                                                    playerStore.config.retainPlaylist ? 'bg-accent' : 'bg-line-strong'
+                                                "
+                                            >
+                                                <div
+                                                    class="w-3 h-3 bg-surface-raised rounded-full absolute top-0.5 transition-all"
+                                                    :class="playerStore.config.retainPlaylist ? 'left-4' : 'left-0.5'"
+                                                ></div>
+                                            </button>
+                                        </div>
+                                        <div class="flex items-center justify-between gap-3 pt-3 border-t border-line">
+                                            <div class="flex flex-col">
+                                                <span class="text-[10px] font-bold text-ink">允许拖动进度条</span>
+                                                <span class="text-[8px] text-ink-subtle"
+                                                    >成员可拖动进度跳转，房间内所有人同步跟随（默认关闭）</span
+                                                >
+                                            </div>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-label="允许拖动进度条"
+                                                :aria-checked="!!playerStore.config.allowSeek"
+                                                @click="
+                                                    updateInstantConfig({ allowSeek: !playerStore.config.allowSeek })
+                                                "
+                                                class="w-8 h-4 shrink-0 rounded-full relative transition-colors"
+                                                :class="playerStore.config.allowSeek ? 'bg-accent' : 'bg-line-strong'"
+                                            >
+                                                <div
+                                                    class="w-3 h-3 bg-surface-raised rounded-full absolute top-0.5 transition-all"
+                                                    :class="playerStore.config.allowSeek ? 'left-4' : 'left-0.5'"
+                                                ></div>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             <!-- Section: Private Radio -->
-                            <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
-                                <div class="p-3 bg-medical-700 text-white flex items-center gap-2">
+                            <div class="bg-surface-raised border border-line shadow-sm overflow-hidden chamfer-br">
+                                <div class="p-3 bg-brand text-ink-inverse flex items-center gap-2">
                                     <Radio class="w-4 h-4" />
-                                    <span class="text-xs font-bold uppercase tracking-widest font-mono"
-                                        >私人电台 / Private_Radio</span
-                                    >
+                                    <span class="text-xs font-bold uppercase tracking-widest font-mono">私人电台</span>
                                 </div>
                                 <div class="p-4 space-y-4">
                                     <!-- 模式开关（两个开关都是"点选开启、再点关闭"；全关即整体关闭，无需独立"关闭"按钮） -->
                                     <div class="space-y-1">
-                                        <span class="text-[9px] font-bold text-medical-400 font-mono uppercase"
+                                        <span class="text-[9px] font-bold text-ink-subtle font-mono uppercase"
                                             >模式 · 开关</span
                                         >
-                                        <div class="grid grid-cols-2 gap-1 p-1 bg-medical-50 border border-medical-100">
+                                        <div class="grid grid-cols-2 gap-1 p-1 bg-surface border border-line">
                                             <button
                                                 @click="setPrivateDjMode(privateDj.mode === 'FM' ? 'OFF' : 'FM')"
                                                 class="py-1.5 text-[10px] font-bold transition-colors"
                                                 :class="
                                                     privateDj.mode === 'FM'
-                                                        ? 'bg-accent text-white'
-                                                        : 'text-medical-500 hover:bg-medical-200'
+                                                        ? 'bg-accent text-ink-inverse'
+                                                        : 'text-ink-muted hover:bg-line'
                                                 "
                                             >
                                                 私人FM
@@ -363,14 +367,14 @@
                                                 class="py-1.5 text-[10px] font-bold transition-colors"
                                                 :class="
                                                     privateDj.mode === 'DJ'
-                                                        ? 'bg-accent text-white'
-                                                        : 'text-medical-500 hover:bg-medical-200'
+                                                        ? 'bg-accent text-ink-inverse'
+                                                        : 'text-ink-muted hover:bg-line'
                                                 "
                                             >
                                                 私人DJ
                                             </button>
                                         </div>
-                                        <p class="text-[8px] text-medical-400">
+                                        <p class="text-[8px] text-ink-subtle">
                                             点选即开启，再点已选中的模式即关闭；私人DJ模式=先播语音再播歌；加入队列功能固定为私人FM
                                         </p>
                                     </div>
@@ -380,24 +384,22 @@
                                         <div
                                             v-for="sw in privateDjSwitches"
                                             :key="sw.field"
-                                            class="flex items-center justify-between p-2 bg-medical-50 border border-medical-100"
+                                            class="flex items-center justify-between p-2 bg-surface border border-line"
                                         >
                                             <div class="flex flex-col">
-                                                <span class="text-[10px] font-bold text-medical-800">{{
-                                                    sw.label
-                                                }}</span>
-                                                <span class="text-[8px] text-medical-400 font-mono uppercase">{{
+                                                <span class="text-[10px] font-bold text-ink">{{ sw.label }}</span>
+                                                <span class="text-[8px] text-ink-subtle font-mono uppercase">{{
                                                     sw.hint
                                                 }}</span>
                                             </div>
                                             <button
                                                 @click="togglePrivateDjSwitch(sw.field)"
                                                 class="w-8 h-4 rounded-full relative transition-colors disabled:opacity-40"
-                                                :class="privateDj[sw.field] ? 'bg-accent' : 'bg-medical-300'"
+                                                :class="privateDj[sw.field] ? 'bg-accent' : 'bg-line-strong'"
                                                 :disabled="privateDj.mode === 'OFF'"
                                             >
                                                 <div
-                                                    class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300"
+                                                    class="absolute top-0.5 left-0.5 w-3 h-3 bg-surface-raised rounded-full transition-transform duration-300"
                                                     :style="{
                                                         transform: privateDj[sw.field]
                                                             ? 'translateX(16px)'
@@ -409,65 +411,31 @@
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- Section: System Parameters -->
-                            <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
-                                <div class="p-3 bg-medical-700 text-white flex items-center gap-2">
-                                    <Sliders class="w-4 h-4" />
-                                    <span class="text-xs font-bold uppercase tracking-widest font-mono"
-                                        >系统参数 / System_Parameters</span
-                                    >
-                                </div>
-                                <div class="p-4 space-y-4">
-                                    <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-                                        <div v-for="(val, key) in systemFields" :key="key" class="space-y-1">
-                                            <label
-                                                class="block text-[9px] font-bold text-medical-400 font-mono uppercase"
-                                                >{{ key }}</label
-                                            >
-                                            <input
-                                                v-model.number="configProxy[val.field]"
-                                                type="number"
-                                                class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-xs outline-none focus:border-accent font-mono"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        @click="saveSystemConfig"
-                                        class="w-full bg-medical-900 text-white py-2 text-xs font-bold hover:bg-accent transition-colors flex items-center justify-center gap-2"
-                                    >
-                                        <Save class="w-4 h-4" /> 应用并保存所有更改
-                                    </button>
-                                </div>
-                            </div>
                         </div>
 
                         <!-- Right Column: Environment & Danger Zone (5 cols) -->
                         <div class="lg:col-span-5 space-y-6">
                             <!-- Section: Room Environment -->
-                            <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
-                                <div class="p-3 bg-medical-800 text-white flex items-center gap-2">
+                            <div class="bg-surface-raised border border-line shadow-sm overflow-hidden chamfer-br">
+                                <div class="p-3 bg-brand text-ink-inverse flex items-center gap-2">
                                     <Globe class="w-4 h-4" />
-                                    <span class="text-xs font-bold uppercase tracking-widest font-mono"
-                                        >环境配置 / Environment</span
-                                    >
+                                    <span class="text-xs font-bold uppercase tracking-widest font-mono">环境配置</span>
                                 </div>
                                 <div class="p-4 space-y-4">
                                     <!-- Password -->
                                     <div class="space-y-2">
-                                        <label class="block text-[10px] font-bold text-medical-400 uppercase font-mono"
+                                        <label class="block text-[10px] font-bold text-ink-subtle uppercase font-mono"
                                             >房间进入密码</label
                                         >
                                         <div class="flex gap-2">
                                             <input
                                                 v-model="roomPassword"
                                                 placeholder="留空则设为公开"
-                                                class="flex-1 bg-medical-50 border border-medical-200 px-3 py-1.5 text-xs outline-none focus:border-accent"
+                                                class="flex-1 bg-surface border border-line px-3 py-1.5 text-xs outline-none focus:border-accent"
                                             />
                                             <button
                                                 @click="updateRoomPassword"
-                                                class="bg-medical-900 text-white px-3 py-1.5 text-[10px] font-bold hover:bg-accent"
+                                                class="bg-brand text-ink-inverse px-3 py-1.5 text-[10px] font-bold hover:bg-accent"
                                             >
                                                 设置
                                             </button>
@@ -476,18 +444,18 @@
                                     <!-- Toggles -->
                                     <div class="grid grid-cols-2 gap-3">
                                         <div
-                                            class="p-3 bg-medical-50 border border-medical-100 flex flex-col items-center gap-2 rounded-sm"
+                                            class="p-3 bg-surface border border-line flex flex-col items-center gap-2 rounded-sm"
                                         >
-                                            <span class="text-[9px] font-bold text-medical-400 uppercase font-mono"
+                                            <span class="text-[9px] font-bold text-ink-subtle uppercase font-mono"
                                                 >直播推流</span
                                             >
                                             <button
                                                 @click="toggleStream"
                                                 class="w-10 h-5 rounded-full relative transition-colors"
-                                                :class="playerStore.streamActive ? 'bg-accent' : 'bg-medical-300'"
+                                                :class="playerStore.streamActive ? 'bg-accent' : 'bg-line-strong'"
                                             >
                                                 <div
-                                                    class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-300"
+                                                    class="absolute top-0.5 left-0.5 w-4 h-4 bg-surface-raised rounded-full transition-transform duration-300"
                                                     :style="{
                                                         transform: playerStore.streamActive
                                                             ? 'translateX(20px)'
@@ -496,29 +464,27 @@
                                                 ></div>
                                             </button>
                                         </div>
-                                        <div
-                                            class="p-3 bg-medical-50 border border-medical-100 flex flex-col gap-2 rounded-sm"
-                                        >
+                                        <div class="p-3 bg-surface border border-line flex flex-col gap-2 rounded-sm">
                                             <span
-                                                class="text-[9px] font-bold text-medical-400 uppercase font-mono text-center"
+                                                class="text-[9px] font-bold text-ink-subtle uppercase font-mono text-center"
                                                 >数据清理</span
                                             >
                                             <div class="flex flex-col gap-1 w-full">
                                                 <button
                                                     @click="clearData('QUEUE')"
-                                                    class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all"
+                                                    class="w-full py-1 border border-line text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all"
                                                 >
                                                     清理播放队列
                                                 </button>
                                                 <button
                                                     @click="clearData('OFFLINE')"
-                                                    class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all"
+                                                    class="w-full py-1 border border-line text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all"
                                                 >
                                                     清理不在线成员歌曲
                                                 </button>
                                                 <button
                                                     @click="clearData('CHAT')"
-                                                    class="w-full py-1 border border-medical-200 text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all"
+                                                    class="w-full py-1 border border-line text-[8px] font-bold hover:bg-red-50 hover:text-red-500 transition-all"
                                                 >
                                                     清理聊天记录
                                                 </button>
@@ -528,23 +494,50 @@
                                 </div>
                             </div>
 
-                            <!-- Section: Credentials -->
-                            <div class="bg-white border border-medical-200 shadow-sm overflow-hidden chamfer-br">
-                                <div class="p-3 bg-medical-600 text-white flex items-center gap-2">
-                                    <Database class="w-4 h-4" />
-                                    <span class="text-xs font-bold uppercase tracking-widest font-mono"
-                                        >平台凭据 / Credentials</span
+                            <!-- Section: System Parameters -->
+                            <div class="bg-surface-raised border border-line shadow-sm overflow-hidden chamfer-br">
+                                <div class="p-3 bg-brand text-ink-inverse flex items-center gap-2">
+                                    <Sliders class="w-4 h-4" />
+                                    <span class="text-xs font-bold uppercase tracking-widest font-mono">系统参数</span>
+                                </div>
+                                <div class="p-4 space-y-4">
+                                    <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+                                        <div v-for="(val, key) in systemFields" :key="key" class="space-y-1">
+                                            <label
+                                                class="block text-[9px] font-bold text-ink-subtle font-mono uppercase"
+                                                >{{ key }}</label
+                                            >
+                                            <input
+                                                v-model.number="configProxy[val.field]"
+                                                type="number"
+                                                class="w-full bg-surface border border-line px-2 py-1.5 text-xs outline-none focus:border-accent font-mono"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        @click="saveSystemConfig"
+                                        class="w-full bg-brand text-ink-inverse py-2 text-xs font-bold hover:bg-accent transition-colors flex items-center justify-center gap-2"
                                     >
+                                        <Save class="w-4 h-4" /> 应用并保存所有更改
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- Section: Credentials -->
+                            <div class="bg-surface-raised border border-line shadow-sm overflow-hidden chamfer-br">
+                                <div class="p-3 bg-brand text-ink-inverse flex items-center gap-2">
+                                    <Database class="w-4 h-4" />
+                                    <span class="text-xs font-bold uppercase tracking-widest font-mono">平台凭据</span>
                                 </div>
                                 <div class="p-4 space-y-4">
                                     <div
                                         v-for="plat in platforms"
                                         :key="plat.id"
-                                        class="space-y-2 border-b border-medical-50 pb-3 last:border-0 last:pb-0"
+                                        class="space-y-2 border-b border-line pb-3 last:border-0 last:pb-0"
                                     >
                                         <div class="flex justify-between items-center">
-                                            <span class="text-[10px] font-bold text-medical-600 font-mono"
-                                                >{{ plat.name }} // {{ plat.tokenName }}</span
+                                            <span class="text-[10px] font-bold text-ink-muted font-mono"
+                                                >{{ plat.name }}{{ plat.tokenName }}</span
                                             >
                                             <button
                                                 @click="togglePlatform(plat.id)"
@@ -552,11 +545,11 @@
                                                 :class="
                                                     playerStore.config[`${plat.id}Enabled`]
                                                         ? 'bg-accent'
-                                                        : 'bg-medical-300'
+                                                        : 'bg-line-strong'
                                                 "
                                             >
                                                 <div
-                                                    class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300"
+                                                    class="absolute top-0.5 left-0.5 w-3 h-3 bg-surface-raised rounded-full transition-transform duration-300"
                                                     :style="{
                                                         transform: playerStore.config[`${plat.id}Enabled`]
                                                             ? 'translateX(16px)'
@@ -570,11 +563,11 @@
                                                 type="password"
                                                 v-model="plat.value"
                                                 :placeholder="'输入新 ' + plat.tokenName + '...'"
-                                                class="flex-1 bg-medical-50 border border-medical-200 px-3 py-2 text-[10px] outline-none focus:border-accent font-mono"
+                                                class="flex-1 bg-surface border border-line px-3 py-2 text-[10px] outline-none focus:border-accent font-mono"
                                             />
                                             <button
                                                 @click="updateCookie(plat.id, plat.value)"
-                                                class="bg-medical-900 text-white px-3 font-bold text-[10px] hover:bg-accent transition-colors"
+                                                class="bg-brand text-ink-inverse px-3 font-bold text-[10px] hover:bg-accent transition-colors"
                                             >
                                                 更新
                                             </button>
@@ -582,34 +575,10 @@
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- Danger Zone -->
-                            <div class="p-4 bg-red-50 border border-red-100 chamfer-br flex flex-col gap-3">
-                                <h4
-                                    class="text-red-600 text-[10px] font-black flex items-center gap-2 uppercase tracking-tighter"
-                                >
-                                    <AlertTriangle class="w-4 h-4" /> 危险区域 / DANGER_ZONE.SH
-                                </h4>
-                                <button
-                                    @click="handleReset"
-                                    class="w-full py-2 bg-red-600 text-white font-bold text-[10px] hover:bg-red-700 transition-all uppercase tracking-widest shadow-sm"
-                                >
-                                    全系统重置 (慎用)
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Footer -->
-                <div
-                    class="p-3 bg-medical-100 border-t border-medical-200 flex justify-between items-center text-[9px] font-mono text-medical-400"
-                >
-                    <span class="flex items-center gap-1"
-                        ><ShieldCheck class="w-3 h-3 text-green-500" /> 安全连接: AES-256-GCM</span
-                    >
-                    <span>管理员哈希: {{ adminStore.adminPassword.substring(0, 4).toUpperCase() }}****</span>
-                </div>
             </div>
         </div>
     </Transition>
@@ -640,7 +609,6 @@ import {
     Database,
     Globe,
     Sliders,
-    ShieldCheck,
     Radio,
 } from 'lucide-vue-next';
 
@@ -834,16 +802,6 @@ const togglePlatform = async (platformId) => {
         error('平台状态切换失败');
     }
 };
-
-const handleReset = async () => {
-    if (!confirm('!!! 警告 !!! \n这将重置整个系统。 \n你确定要继续吗？')) return;
-    try {
-        const data = await adminApi.resetSystem(adminStore.adminPassword);
-        warning(data.message);
-    } catch (e) {
-        error('系统重置失败');
-    }
-};
 </script>
 
 <style scoped>
@@ -865,9 +823,9 @@ const handleReset = async () => {
     background: transparent;
 }
 .custom-scroll::-webkit-scrollbar-thumb {
-    @apply bg-medical-200 rounded-full;
+    @apply bg-line rounded-full;
 }
 .custom-scroll::-webkit-scrollbar-thumb:hover {
-    @apply bg-medical-300;
+    @apply bg-line-strong;
 }
 </style>
