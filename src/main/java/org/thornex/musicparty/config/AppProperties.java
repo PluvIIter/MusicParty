@@ -49,6 +49,8 @@ public class AppProperties {
     @Data
     public static class PlayerConfig {
         private int maxPlaylistImportSize = 100;
+        /** 是否允许房间成员拖动进度条（默认关闭：同步听歌有意对齐同一进度）。 */
+        private volatile boolean allowSeek = false;
         private boolean voteSkipEnabled = false;
         private double voteSkipThreshold = 0.5;
         private int voteSkipWaitTime = 15;

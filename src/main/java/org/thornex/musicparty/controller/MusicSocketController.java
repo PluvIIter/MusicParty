@@ -74,6 +74,14 @@ public class MusicSocketController {
         musicPlayerService.togglePause(sessionId);
     }
 
+    /** 拖动进度条（房间级 seek，是否允许由管理面板的 allowSeek 决定）。 */
+    @MessageMapping("/control/seek")
+    public void seek(SeekRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
+        if (request == null) return;
+        musicPlayerService.seekTo(sessionId, request.positionMs());
+    }
+
     @MessageMapping("/queue/top")
     public void topSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;

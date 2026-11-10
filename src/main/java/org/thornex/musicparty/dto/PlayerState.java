@@ -22,6 +22,8 @@ public record PlayerState(
         int voteSkipWaitTime,
         int currentVotes,
         int eligibleUsers,
+        /** 每次房间级 seek 自增；客户端据此重锚本地时钟（否则回退会被当成迟到包忽略）。 */
+        long seekNonce,
         AppConfigSummary config
 ) {
     public record AppConfigSummary(
@@ -41,7 +43,9 @@ public record PlayerState(
             boolean neteaseCookieConfigured,
             PrivateDjConfigSummary privateDj,
             boolean allowPlaylistClaim,
-            boolean retainPlaylist
+            boolean retainPlaylist,
+            /** 是否允许拖动进度条（管理面板开关，默认关闭）。 */
+            boolean allowSeek
     ) {
         public record PrivateDjConfigSummary(
                 String mode,
