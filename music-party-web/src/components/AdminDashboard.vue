@@ -172,6 +172,35 @@
                                         </div>
                                     </div>
 
+                                    <div class="mt-4 p-3 bg-medical-50 border border-medical-200">
+                                        <div class="flex justify-between items-center gap-3">
+                                            <div>
+                                                <div class="text-xs font-bold text-medical-800">允许拖动进度条</div>
+                                                <p class="text-[10px] text-medical-500 mt-1">
+                                                    开启后成员可拖动进度条跳转，房间内所有人同步跟随；关闭后进度条只作展示（默认关闭）。
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-label="允许拖动进度条"
+                                                :aria-checked="!!playerStore.config.allowSeek"
+                                                @click="
+                                                    updateInstantConfig({
+                                                        allowSeek: !playerStore.config.allowSeek,
+                                                    })
+                                                "
+                                                class="w-8 h-4 shrink-0 rounded-full relative transition-colors"
+                                                :class="playerStore.config.allowSeek ? 'bg-accent' : 'bg-medical-300'"
+                                            >
+                                                <div
+                                                    class="w-3 h-3 bg-white rounded-full absolute top-0.5 transition-all"
+                                                    :class="playerStore.config.allowSeek ? 'left-4' : 'left-0.5'"
+                                                ></div>
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <!-- Playback Core Settings (Shuffle & Vote Skip) -->
                                     <div class="space-y-3 p-3 bg-medical-50 border border-medical-100 rounded-sm">
                                         <!-- Shuffle Controls -->

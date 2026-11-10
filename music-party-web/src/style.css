@@ -39,3 +39,136 @@ body {
     /* 背景图片很小，repeat 之后移动背景位置就能产生流动感 */
     animation: scan 1s linear infinite;
 }
+
+/* ==========================================================================
+ * 黑夜模式（用户本地偏好：html.dark 由 ui store / main.js 切换）
+ *
+ * 不整体翻转调色板——那会让 `bg-medical-900 text-white` 这类「深底浅字」组件
+ * 反过来失配。这里按用途逐类覆盖：
+ *   · 浅色表面压暗（bg-white / bg-medical-50~200）
+ *   · 深色文字提亮（text-medical-300~900）
+ *   · 本就用作深色块的 bg-medical-700~900 只略微提亮，保持与页面的层次
+ * ========================================================================== */
+.dark {
+    color-scheme: dark;
+}
+
+.dark body {
+    background-color: #0a0f1c;
+    color: #d9dfec;
+}
+
+/* 表面 */
+.dark .bg-white {
+    background-color: #111827;
+}
+.dark .bg-medical-50 {
+    background-color: #0a0f1c;
+}
+.dark .bg-medical-100 {
+    background-color: #131b2c;
+}
+.dark .bg-medical-200 {
+    background-color: #1e293b;
+}
+.dark .bg-medical-300 {
+    background-color: #334155;
+}
+
+/* 深色块在暗底上略微提亮 */
+.dark .bg-medical-700 {
+    background-color: #1f2a3d;
+}
+.dark .bg-medical-800 {
+    background-color: #232f45;
+}
+.dark .bg-medical-900 {
+    background-color: #1a2333;
+}
+
+/* 文字 */
+.dark .text-medical-900 {
+    color: #eef2fb;
+}
+.dark .text-medical-800 {
+    color: #dfe5f1;
+}
+.dark .text-medical-700 {
+    color: #cbd4e4;
+}
+.dark .text-medical-600 {
+    color: #aab6cc;
+}
+.dark .text-medical-500 {
+    color: #8b99b3;
+}
+.dark .text-medical-400 {
+    color: #7a879e;
+}
+.dark .text-medical-300 {
+    color: #64748b;
+}
+
+/* 边框 */
+.dark .border-medical-100 {
+    border-color: #1c2436;
+}
+.dark .border-medical-200 {
+    border-color: #263144;
+}
+.dark .border-medical-300 {
+    border-color: #334155;
+}
+
+/* 半透明变体（bg-medical-50/50 这类 Tailwind 生成类） */
+.dark [class*='bg-medical-50/'] {
+    background-color: rgb(10 15 28 / 0.85);
+}
+.dark [class*='bg-medical-100/'] {
+    background-color: rgb(19 27 44 / 0.85);
+}
+.dark [class*='bg-medical-900/'] {
+    background-color: rgb(10 15 28 / 0.6);
+}
+.dark [class*='text-medical-800/'] {
+    color: rgb(223 229 241 / 0.7);
+}
+.dark [class*='text-medical-500/'] {
+    color: rgb(139 153 179 / 0.8);
+}
+
+/* 表单控件与占位符 */
+.dark input,
+.dark textarea,
+.dark select {
+    color: #e5e9f2;
+}
+.dark ::placeholder {
+    color: #64748b;
+}
+
+/* 滚动条 */
+.dark ::-webkit-scrollbar-thumb {
+    background-color: #263144;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+    background-color: #334155;
+}
+
+/* 半透明白色面板（`bg-white/80` 这类）在暗色下会变成刺眼的亮块 */
+.dark [class*='bg-white/'] {
+    background-color: rgb(17 24 39 / 0.85);
+}
+
+/* 进度条可拖动时的键盘焦点提示（role=slider + tabindex） */
+.mp-seek:focus-visible {
+    outline: 2px solid #f97316;
+    outline-offset: 3px;
+}
+/* 视觉器背景网格线：浅色下是极淡的深色线，暗色下改成极淡的亮色线 */
+:root {
+    --mp-grid-line: rgba(17, 24, 39, 0.03);
+}
+.dark {
+    --mp-grid-line: rgba(148, 163, 184, 0.08);
+}

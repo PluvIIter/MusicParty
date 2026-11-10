@@ -35,6 +35,7 @@ public record SettingsSnapshot(
             Integer bilibiliMaxDurationMinutes,
             Integer maxChatMessageLength,
             Boolean retainPlaylist,
-            Boolean allowPlaylistClaim
+            Boolean allowPlaylistClaim,
+            Boolean allowSeek
     ) {}
 }

@@ -14,5 +14,6 @@ public record AdminConfigUpdateRequest(
     Boolean voteSkipEnabled,
     Double voteSkipThreshold,
     Integer voteSkipWaitTime,
-        Boolean retainPlaylist
+        Boolean retainPlaylist,
+    Boolean allowSeek
 ) {}

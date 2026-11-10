@@ -4,7 +4,7 @@
         <!-- LAYER 0: 静态背景层 (最底层) -->
         <div class="absolute inset-0 z-0 pointer-events-none">
             <div
-                class="absolute inset-0 bg-[linear-gradient(rgba(17,24,39,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(17,24,39,0.03)_1px,transparent_1px)] bg-[size:40px_40px]"
+                class="absolute inset-0 bg-[linear-gradient(var(--mp-grid-line)_1px,transparent_1px),linear-gradient(90deg,var(--mp-grid-line)_1px,transparent_1px)] bg-[size:40px_40px]"
             ></div>
             <div
                 class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[12vw] font-black text-medical-200/40 select-none whitespace-nowrap tracking-tighter blur-sm"

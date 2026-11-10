@@ -58,6 +58,8 @@ public class MusicPlayerService {
     // 核心计时逻辑
     private final AtomicLong positionAnchor = new AtomicLong(0); // 上一次更新状态时的进度(ms)
     private final AtomicLong timestampAnchor = new AtomicLong(0); // 上一次更新状态时的系统时间(ms)
+    /** 每次房间级 seek 自增，客户端据此重锚本地时钟。 */
+    private final AtomicLong seekNonce = new AtomicLong(0);
 
 
     private final AtomicBoolean isShuffle = new AtomicBoolean(false);
@@ -503,6 +505,7 @@ public class MusicPlayerService {
                 voteSkipWaitTime.get(),
                 currentVoteCount,
                 eligibleCount,
+                seekNonce.get(),
                 new PlayerState.AppConfigSummary(
                         appProperties.getQueue().getMaxSize(),
                         appProperties.getQueue().getHistorySize(),
@@ -525,7 +528,8 @@ public class MusicPlayerService {
                                 appProperties.getPrivateDj().isCustodyEnabled()
                         ),
                         appProperties.getQueue().isAllowPlaylistClaim(),
-                        appProperties.getQueue().isRetainPlaylist()
+                        appProperties.getQueue().isRetainPlaylist(),
+                        appProperties.getPlayer().isAllowSeek()
                 )
         );
     }
@@ -953,6 +957,10 @@ public class MusicPlayerService {
                 appProperties.getQueue().setRetainPlaylist(request.retainPlaylist());
             }
         }
+        if (request.allowSeek() != null) {
+            appProperties.getPlayer().setAllowSeek(request.allowSeek());
+            broadcastFullPlayerState();
+        }
         StringBuilder logMsg = new StringBuilder("System configuration updated: ");
         
         if (request.maxSize() != null) {
@@ -1017,6 +1025,50 @@ public class MusicPlayerService {
         }
 
         broadcastFullPlayerState();
+    }
+
+    /**
+     * 房间级拖动进度：把共享播放位置跳到 positionMs。
+     *
+     * <p>仅在管理员开启 allowSeek（或系统调用）时生效；跳转后自增 seekNonce，
+     * 客户端据此重锚本地时钟——否则「向后拖」会被当成迟到的旧状态包而忽略。
+     */
+    public void seekTo(String sessionId, long positionMs) {
+        PlayableMusic music = currentMusic.get();
+        if (music == null) return;
+        boolean system = "SYSTEM".equals(sessionId);
+        if (!system && !appProperties.getPlayer().isAllowSeek()) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
+                    PlayerAction.SYSTEM_MESSAGE, getUserToken(sessionId), "当前不允许拖动进度条"));
+            return;
+        }
+        // 注意：这里刻意不检查 isSkipLocked。锁定切歌只约束「换歌」，
+        // 拖动进度条仍允许（管理员已单独用 allowSeek 授权进度控制）。
+        if (!system && isRateLimited(sessionId)) return;
+
+        long duration = music.duration();
+        long target = clampSeek(positionMs, duration);
+        positionAnchor.set(target);
+        timestampAnchor.set(System.currentTimeMillis());
+        seekNonce.incrementAndGet();
+        broadcastFullPlayerState();
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
+                PlayerAction.SYSTEM_MESSAGE, getUserToken(sessionId), "已跳转到 " + formatSeekTime(target)));
+    }
+
+    private static String formatSeekTime(long ms) {
+        long totalSeconds = Math.max(0, ms) / 1000;
+        return String.format("%d:%02d", totalSeconds / 60, totalSeconds % 60);
+    }
+
+    /**
+     * 把目标位置裁到合法区间 [0, duration-500]；duration 未知（<=0）时只保证非负。
+     * 留 500ms 余量，避免拖到末尾直接触发 ended。
+     */
+    static long clampSeek(long positionMs, long duration) {
+        long target = Math.max(0, positionMs);
+        if (duration <= 0) return target;
+        return Math.min(target, Math.max(0, duration - 500));
     }
 
     public void togglePause(String sessionId) {

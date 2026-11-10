@@ -64,8 +64,24 @@
                 </div>
             </div>
 
-            <!-- 进度条 -->
-            <div class="h-1 bg-medical-200 w-full relative">
+            <!-- 进度条（管理面板开启 allowSeek 后可拖动，房间内所有人同步跳转） -->
+            <div
+                ref="barRef"
+                class="h-1 bg-medical-200 w-full relative touch-none"
+                :class="canSeek ? 'cursor-pointer mp-seek' : ''"
+                :role="canSeek ? 'slider' : undefined"
+                :tabindex="canSeek ? 0 : undefined"
+                :aria-label="canSeek ? '播放进度' : undefined"
+                :aria-valuemin="canSeek ? 0 : undefined"
+                :aria-valuemax="canSeek ? Math.round((nowPlaying?.music?.duration || 0) / 1000) : undefined"
+                :aria-valuenow="canSeek ? Math.round(dragging ? dragPercent : progressPercent) : undefined"
+                :title="canSeek ? '拖动可跳转（房间同步）；方向键 ±5 秒，Shift ±15 秒' : ''"
+                @pointerdown="onSeekPointerDown"
+                @pointermove="onSeekPointerMove"
+                @pointerup="onSeekPointerUp"
+                @pointercancel="onSeekPointerCancel"
+                @keydown="onSeekKeydown"
+            >
                 <div
                     v-for="(marker, index) in likeMarkers"
                     :key="index"
@@ -76,13 +92,17 @@
                 </div>
 
                 <div
-                    class="h-full transition-all duration-300 ease-linear relative"
-                    :class="player.isErrorState ? 'bg-red-500' : 'bg-accent'"
-                    :style="{ width: progressPercent + '%' }"
+                    class="h-full relative"
+                    :class="[
+                        player.isErrorState ? 'bg-red-500' : 'bg-accent',
+                        dragging ? '' : 'transition-all duration-300 ease-linear',
+                    ]"
+                    :style="{ width: (dragging ? dragPercent : progressPercent) + '%' }"
                 >
                     <div
                         v-if="!player.isErrorState"
-                        class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 transition-all duration-300 bg-accent"
+                        class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-accent"
+                        :class="dragging ? 'scale-150' : 'transition-all duration-300'"
                     ></div>
                 </div>
             </div>
@@ -326,6 +346,99 @@ const progressPercent = computed(() => {
     if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
     return Math.min(100, (player.localProgress / nowPlaying.value.music.duration) * 100);
 });
+
+// --- 拖动进度条（房间级 seek） ---
+// 只有管理员在控制台开启 allowSeek 时才可拖；拖动过程只改本地预览，
+// 松手才发一次指令，避免拖动途中刷屏。
+const canSeek = computed(
+    () =>
+        player.config?.allowSeek === true &&
+        !!nowPlaying.value &&
+        (nowPlaying.value.music?.duration || 0) > 0 &&
+        !player.isErrorState
+    // 不检查 isSkipLocked（锁切歌只约束换歌，进度仍可调）；
+    // 也不检查 streamActive（网页听众听的仍是点播源，拖动同样有效）
+);
+const barRef = ref(null);
+const dragging = ref(false);
+const dragPercent = ref(0);
+let dragPointerId = null;
+
+/** 指针位置 → 0~1 的比例 */
+const seekRatioFromEvent = (event) => {
+    const rect = barRef.value?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return 0;
+    return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+};
+
+const endDrag = () => {
+    const el = barRef.value;
+    if (el?.releasePointerCapture && dragPointerId !== null) {
+        try {
+            el.releasePointerCapture(dragPointerId);
+        } catch {
+            /* 指针已释放时忽略 */
+        }
+    }
+    dragPointerId = null;
+};
+
+const onSeekPointerDown = (event) => {
+    if (!canSeek.value) return;
+    dragging.value = true;
+    dragPointerId = event.pointerId;
+    dragPercent.value = seekRatioFromEvent(event) * 100;
+    try {
+        barRef.value?.setPointerCapture?.(event.pointerId);
+    } catch {
+        /* 不支持指针捕获时退化为普通事件处理 */
+    }
+};
+
+const onSeekPointerMove = (event) => {
+    if (!dragging.value || event.pointerId !== dragPointerId) return;
+    dragPercent.value = seekRatioFromEvent(event) * 100;
+};
+
+const onSeekPointerUp = (event) => {
+    if (!dragging.value || event.pointerId !== dragPointerId) return;
+    const ratio = seekRatioFromEvent(event);
+    dragging.value = false;
+    endDrag();
+    const duration = nowPlaying.value?.music?.duration || 0;
+    if (duration > 0) player.seekTo(ratio * duration);
+};
+
+const onSeekPointerCancel = () => {
+    dragging.value = false;
+    endDrag();
+};
+
+/** 键盘微调：当前进度（或拖动预览）基础上平移 deltaMs，并交给服务端裁剪 */
+const seekByStep = (deltaMs) => {
+    const duration = nowPlaying.value?.music?.duration || 0;
+    if (duration <= 0) return;
+    const base = dragging.value ? (dragPercent.value / 100) * duration : player.localProgress;
+    player.seekTo(Math.max(0, Math.min(duration, base + deltaMs)));
+};
+
+const onSeekKeydown = (event) => {
+    if (!canSeek.value) return;
+    const step = event.shiftKey ? 15000 : 5000;
+    if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        seekByStep(-step);
+    } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        seekByStep(step);
+    } else if (event.key === 'Home') {
+        event.preventDefault();
+        player.seekTo(0);
+    } else if (event.key === 'End') {
+        event.preventDefault();
+        player.seekTo((nowPlaying.value?.music?.duration || 0) - 500);
+    }
+};
 
 // --- 音量逻辑 ---
 const lastVolume = ref(0.5);

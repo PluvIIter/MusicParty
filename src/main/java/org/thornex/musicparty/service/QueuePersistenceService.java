@@ -152,6 +152,7 @@ public class QueuePersistenceService {
             if (cfg.neteaseEnabled() != null) appProperties.getNetease().setEnabled(cfg.neteaseEnabled());
             if (cfg.bilibiliEnabled() != null) appProperties.getBilibili().setEnabled(cfg.bilibiliEnabled());
             if (cfg.allowPlaylistClaim() != null) appProperties.getQueue().setAllowPlaylistClaim(cfg.allowPlaylistClaim());
+            if (cfg.allowSeek() != null) appProperties.getPlayer().setAllowSeek(cfg.allowSeek());
             if (cfg.bilibiliMaxDurationMinutes() != null) appProperties.getBilibili().setMaxDurationMinutes(cfg.bilibiliMaxDurationMinutes());
         }
 
@@ -183,7 +184,8 @@ public class QueuePersistenceService {
                         appProperties.getBilibili().getMaxDurationMinutes(),
                         appProperties.getChat().getMaxMessageLength(),
                         appProperties.getQueue().isRetainPlaylist(),
-                        appProperties.getQueue().isAllowPlaylistClaim()));
+                        appProperties.getQueue().isAllowPlaylistClaim(),
+                        appProperties.getPlayer().isAllowSeek()));
     }
 
     private File getPersistenceFile() {

@@ -18,6 +18,8 @@ export const ADMIN_CONFIG_PAYLOAD_FIELDS = new Set([
     'voteSkipWaitTime',
     // 队列策略开关（#23 引入；allowPlaylistClaim 由 PlaylistClaimSettingsController 专用端点处理，不走这里）
     'retainPlaylist',
+    // 进度条拖动权限（默认关闭，见 PlayerConfig.allowSeek）
+    'allowSeek',
 ]);
 
 /**
