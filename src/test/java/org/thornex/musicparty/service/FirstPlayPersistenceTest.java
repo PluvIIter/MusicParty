@@ -39,7 +39,7 @@ class FirstPlayPersistenceTest {
         MusicQueueManager restored = new MusicQueueManager(props);
         persistence(restored, props).loadData();
         assertEquals(Set.of(old.queueId()), restored.getPlayedQueueIds());
-        assertEquals(fresh.queueId(), restored.pollNext(PlayMode.SHUFFLE, true, false,
+        assertEquals(fresh.queueId(), restored.pollNext(PlayMode.ROUND_ROBIN, true, false,
                 Map.of("old", QueueItemStatus.READY, "new", QueueItemStatus.READY), Set.of("A")).queueId());
     }
     @Test void oldSnapshotMigratesOnlyKnownHistoryAndEmptyLedgerIsAuthoritative() throws Exception {

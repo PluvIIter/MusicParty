@@ -57,7 +57,7 @@ class MusicQueueManagerFmMarkerTest {
         qm.ensureFmMarker();
         Map<String, QueueItemStatus> statusMap = new HashMap<>();
         statusMap.put(MusicQueueManager.FM_MARKER_ID, QueueItemStatus.READY);
-        MusicQueueItem picked = qm.pollNext(PlayMode.SHUFFLE, true, false, statusMap, Collections.emptySet());
+        MusicQueueItem picked = qm.pollNext(PlayMode.ROUND_ROBIN, true, false, statusMap, Collections.emptySet());
         assertNotNull(picked, "默认离线过滤下公平随机也应能选中FM标记");
         assertEquals(MusicQueueManager.FM_MARKER_ID, picked.music().platform());
     }
@@ -84,7 +84,7 @@ class MusicQueueManagerFmMarkerTest {
         Map<String, QueueItemStatus> statusMap = new HashMap<>();
         statusMap.put("1", QueueItemStatus.READY);
 
-        MusicQueueItem picked = qm.pollNext(PlayMode.SHUFFLE, true, false, statusMap, Collections.singleton("online-token"));
+        MusicQueueItem picked = qm.pollNext(PlayMode.ROUND_ROBIN, true, false, statusMap, Collections.singleton("online-token"));
         assertNotNull(picked, "没有在线用户点歌时，公平随机应回退播放离线用户的歌");
         assertEquals("1", picked.music().id());
     }
@@ -111,7 +111,7 @@ class MusicQueueManagerFmMarkerTest {
         statusMap.put("1", QueueItemStatus.READY);
         statusMap.put("2", QueueItemStatus.READY);
 
-        MusicQueueItem picked = qm.pollNext(PlayMode.SHUFFLE, true, false, statusMap, Collections.singleton("online-token"));
+        MusicQueueItem picked = qm.pollNext(PlayMode.ROUND_ROBIN, true, false, statusMap, Collections.singleton("online-token"));
         assertEquals("2", picked.music().id(), "在线用户有点歌时，公平随机仍应排除离线、优先在线用户的歌");
     }
 }

@@ -2,6 +2,8 @@ package org.thornex.musicparty.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.context.ApplicationEventPublisher;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.Music;
@@ -45,11 +47,12 @@ class MusicPlayerServiceJoinQueueTest {
         );
     }
 
-    @Test
-    void fmMarkerOnlyWhenShuffleModeOnAndJoinQueue() {
+    @ParameterizedTest
+    @EnumSource(value = PlayMode.class, names = {"SHUFFLE", "ROUND_ROBIN"})
+    void fmMarkerOnlyWhenRandomFamilyModeOnAndJoinQueue(PlayMode mode) {
         props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setJoinQueueEnabled(true);
-        service.setPlayModeForTest(PlayMode.SHUFFLE);
+        service.setPlayModeForTest(mode);
         service.syncFmMarkerForTest();
         verify(queueManager).ensureFmMarker();
         verify(queueManager, never()).removeFmMarker();
@@ -60,22 +63,24 @@ class MusicPlayerServiceJoinQueueTest {
         verify(queueManager).removeFmMarker(); // 退出随机后移除陈旧标记
     }
 
-    @Test
-    void custodySuppressesFmMarker() {
+    @ParameterizedTest
+    @EnumSource(value = PlayMode.class, names = {"SHUFFLE", "ROUND_ROBIN"})
+    void custodySuppressesFmMarker(PlayMode mode) {
         props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setJoinQueueEnabled(true);
         props.getPrivateDj().setCustodyEnabled(true);
-        service.setPlayModeForTest(PlayMode.SHUFFLE);
+        service.setPlayModeForTest(mode);
         service.syncFmMarkerForTest();
         verify(queueManager, never()).ensureFmMarker(); // 托管忽略队列
         verify(queueManager).removeFmMarker(); // 托管时标记不应存在
     }
 
-    @Test
-    void modeOffRemovesFmMarker() {
+    @ParameterizedTest
+    @EnumSource(value = PlayMode.class, names = {"SHUFFLE", "ROUND_ROBIN"})
+    void modeOffRemovesFmMarker(PlayMode mode) {
         props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setJoinQueueEnabled(true);
-        service.setPlayModeForTest(PlayMode.SHUFFLE);
+        service.setPlayModeForTest(mode);
         service.syncFmMarkerForTest();
         verify(queueManager).ensureFmMarker();
 
@@ -85,11 +90,12 @@ class MusicPlayerServiceJoinQueueTest {
         verify(queueManager, times(1)).ensureFmMarker(); // 不再添加
     }
 
-    @Test
-    void fmMarkerReplenishedImmediatelyWhenSelected() {
+    @ParameterizedTest
+    @EnumSource(value = PlayMode.class, names = {"SHUFFLE", "ROUND_ROBIN"})
+    void fmMarkerReplenishedImmediatelyWhenSelected(PlayMode mode) {
         props.getPrivateDj().setMode("FM");
         props.getPrivateDj().setJoinQueueEnabled(true);
-        service.setPlayModeForTest(PlayMode.SHUFFLE);
+        service.setPlayModeForTest(mode);
         when(djService.nextFmSegment()).thenReturn(Mono.empty());
 
         Music fmMusic = new Music(MusicQueueManager.FM_MARKER_ID, "私人FM", List.of("私人FM"), 0L,

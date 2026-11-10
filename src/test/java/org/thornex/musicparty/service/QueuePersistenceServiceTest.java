@@ -154,7 +154,7 @@ class QueuePersistenceServiceTest {
 
         // 播放设置回填
         verify(player).applyPlayerSettings(argThat(p ->
-                "SHUFFLE".equals(p.playMode()) && p.fairShuffle() && p.voteSkipEnabled()
+                "ROUND_ROBIN".equals(p.playMode()) && p.fairShuffle() && p.voteSkipEnabled()
                         && p.pauseLocked() && p.playModeLocked()));
 
         // 房间密码 / 直播开关

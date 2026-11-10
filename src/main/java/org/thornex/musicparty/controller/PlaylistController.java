@@ -51,6 +51,62 @@ public class PlaylistController {
                 ? "已清空我的歌单，移除 " + removed + " 首"
                 : "已移除 " + removed + " 首，但保存失败；请检查存储后重试", !saved));
     }
+    public record ReorderRequest(String queueId, String beforeQueueId) {}
+    public record MemberShuffleRequest(Boolean shuffle) {}
+
+    @MessageMapping("/queue/member-shuffle")
+    public void memberShuffle(@Payload MemberShuffleRequest request, @Header("simpSessionId") String sessionId) {
+        if (request == null || request.shuffle() == null) return;
+        synchronized (persistence) {
+            synchronized (queue) {
+                var member = users.getUser(sessionId);
+                if (member.isEmpty() || member.get().isGuest()) return;
+                var previous = queue.getMemberShufflePreferences();
+                queue.setMemberShuffle(member.get().getToken(), request.shuffle());
+                try { persistence.saveQueueSnapshot(queue.getQueueSnapshot()); }
+                catch (IOException error) {
+                    queue.restoreMemberShufflePreferences(previous);
+                    error(sessionId, "歌曲选择偏好保存失败，请重试");
+                    return;
+                }
+            }
+        }
+        player.broadcastFullPlayerState();
+    }
+
+    @MessageMapping("/queue/reorder")
+    public void reorder(@Payload ReorderRequest request, @Header("simpSessionId") String sessionId) {
+        if (request == null || request.queueId() == null || request.queueId().length() > 80
+                || (request.beforeQueueId() != null && request.beforeQueueId().length() > 80)) return;
+        synchronized (persistence) {
+            synchronized (queue) {
+                var member = users.getUser(sessionId);
+                if (member.isEmpty() || member.get().isGuest()) return;
+                var previous = queue.getQueueSnapshot();
+                if (!queue.reorder(request.queueId(), request.beforeQueueId(), member.get().getToken())) {
+                    error(sessionId, "排序未应用：只能拖动自己的普通歌曲，请刷新队列后重试");
+                    return;
+                }
+                try { persistence.saveQueueSnapshot(queue.getQueueSnapshot()); }
+                catch (IOException failure) {
+                    queue.restoreQueueOrder(previous);
+                    error(sessionId, "排序保存失败，已保留原顺序");
+                    return;
+                }
+            }
+        }
+        player.broadcastQueueUpdate();
+    }
+
+    private void error(String sessionId, String message) {
+        var headers = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+        headers.setSessionId(sessionId);
+        headers.setLeaveMutable(true);
+        messages.convertAndSendToUser(sessionId, "/queue/events",
+                new org.thornex.musicparty.dto.PlayerEvent("ERROR", "QUEUE_UPDATE_FAILED", sessionId, message, null),
+                headers.getMessageHeaders());
+    }
+
     private void reply(String sessionId, ClearResult result) {
         var headers = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
         headers.setSessionId(sessionId);
