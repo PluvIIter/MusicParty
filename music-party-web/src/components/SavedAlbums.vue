@@ -25,7 +25,7 @@
             <div
                 v-if="error"
                 role="alert"
-                class="p-4 mb-3 bg-surface-raised border border-red-200 text-sm text-red-600"
+                class="p-4 mb-3 bg-surface-raised border border-danger/30 text-sm text-danger"
             >
                 <p>{{ error }}</p>
                 <button

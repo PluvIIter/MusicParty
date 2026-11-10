@@ -126,13 +126,15 @@ const handleSearchClick = () => {
             <Transition name="slide-fade">
                 <div
                     v-if="mobileQueueOpen"
-                    class="md:hidden absolute inset-0 bg-surface-raised z-30 pt-4 overflow-y-auto overscroll-contain"
+                    class="md:hidden absolute inset-0 bg-surface-raised z-30 pt-4 flex flex-col overflow-hidden"
                 >
-                    <div class="px-4 pb-2 border-b border-line mb-2 flex justify-between">
+                    <div class="px-4 pb-2 border-b border-line mb-2 flex justify-between flex-shrink-0">
                         <span class="text-xs font-mono text-ink-subtle">QUEUE</span>
                         <button @click="mobileQueueOpen = false"><X class="w-4 h-4" /></button>
                     </div>
-                    <QueueList />
+                    <div class="flex-1 min-h-0">
+                        <QueueList />
+                    </div>
                 </div>
             </Transition>
 

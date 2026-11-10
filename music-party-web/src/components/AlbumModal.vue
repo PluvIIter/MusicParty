@@ -39,7 +39,7 @@
                     <Loader2 class="w-5 h-5 animate-spin" />正在读取专辑…
                 </div>
                 <div v-else-if="loadError" role="alert" class="py-8 text-center">
-                    <p class="text-sm text-red-600">{{ loadError }}</p>
+                    <p class="text-sm text-danger">{{ loadError }}</p>
                     <button @click="loadAlbum" class="mt-4 px-4 py-2 bg-brand text-ink-inverse text-sm">
                         重新读取
                     </button>
@@ -55,7 +55,7 @@
                             <div class="text-sm font-bold break-words">{{ song.name }}</div>
                             <div class="text-xs text-ink-muted truncate">{{ song.artists.join(' / ') }}</div>
                         </div>
-                        <span v-if="inQueue(song.id)" class="flex-shrink-0 text-xs text-green-600">已在队列</span>
+                        <span v-if="inQueue(song.id)" class="flex-shrink-0 text-xs text-success">已在队列</span>
                         <button
                             type="button"
                             @click="addSong(song)"
@@ -77,7 +77,7 @@
                             "
                             class="p-2 flex-shrink-0 text-ink-muted hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <Check v-if="inQueue(song.id)" class="w-5 h-5 text-green-600" />
+                            <Check v-if="inQueue(song.id)" class="w-5 h-5 text-success" />
                             <Loader2 v-else-if="pendingIds.has(song.id)" class="w-5 h-5 animate-spin text-accent" />
                             <PlusCircle v-else class="w-5 h-5" />
                         </button>
@@ -89,7 +89,7 @@
                     v-if="feedback"
                     :role="importError ? 'alert' : 'status'"
                     class="text-sm mb-3 break-words"
-                    :class="importError ? 'text-red-600' : 'text-green-700'"
+                    :class="importError ? 'text-danger' : 'text-success'"
                 >
                     {{ feedback }}
                 </p>

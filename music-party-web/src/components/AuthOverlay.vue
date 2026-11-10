@@ -64,7 +64,7 @@
                 </button>
             </div>
 
-            <div v-if="errorMsg" class="mt-4 text-center text-red-500 font-mono text-xs animate-pulse">
+            <div v-if="errorMsg" class="mt-4 text-center text-danger font-mono text-xs animate-pulse">
                 > ERROR: {{ errorMsg }}
             </div>
         </div>

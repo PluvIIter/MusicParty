@@ -7,13 +7,15 @@
             aria-label="切换主题"
             :aria-expanded="isOpen"
             :aria-controls="panelId"
-            class="theme-picker-button flex h-9 w-9 items-center justify-center border transition-colors hover:border-accent hover:bg-surface-sunken hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            class="flex items-center justify-center w-9 h-9 md:w-10 md:h-9 border transition-all rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             :class="
-                isOpen ? 'bg-surface-sunken border-accent text-ink' : 'bg-surface-raised border-line text-ink-muted'
+                isOpen
+                    ? 'bg-surface-sunken border-line text-ink'
+                    : 'bg-surface border-line text-ink-muted hover:bg-surface-sunken'
             "
             @click="togglePicker"
         >
-            <Palette class="h-[18px] w-[18px]" aria-hidden="true" />
+            <Palette class="w-4 h-4" aria-hidden="true" />
         </button>
 
         <div

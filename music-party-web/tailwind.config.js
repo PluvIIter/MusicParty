@@ -30,6 +30,10 @@ export default {
                 },
                 // 装饰图形独立于正文，避免深色模式出现纯黑断层。
                 graphic: 'rgb(var(--mp-graphic) / <alpha-value>)',
+                // 语义状态色：随主题切换，避免组件里写死 red/green/amber
+                danger: 'rgb(var(--mp-danger) / <alpha-value>)',
+                success: 'rgb(var(--mp-success) / <alpha-value>)',
+                warning: 'rgb(var(--mp-warning) / <alpha-value>)',
                 accent: {
                     DEFAULT: 'rgb(var(--mp-accent) / <alpha-value>)',
                     hover: 'rgb(var(--mp-accent-hover) / <alpha-value>)',

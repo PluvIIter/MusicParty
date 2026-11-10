@@ -38,10 +38,10 @@ const getTypeClass = (type) => {
         case 'success':
             return 'border-accent';
         case 'error':
-            return 'border-red-500';
+            return 'border-danger';
         case 'warning':
         case 'warn':
-            return 'border-yellow-500';
+            return 'border-warning';
         default:
             return 'border-line-strong';
     }

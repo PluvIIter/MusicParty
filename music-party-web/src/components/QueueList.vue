@@ -6,32 +6,14 @@
             </h3>
             <button
                 type="button"
-                @click="clearMine"
+                @click="askClear"
                 :disabled="clearing || !player.connected || userStore.isGuest || mineCount === 0"
-                class="text-xs font-bold border border-line px-2 py-1 text-ink-muted hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
-                title="只清空自己点的歌，其他成员的歌保留；正在播放的歌先播完"
+                aria-label="清空我的歌单"
+                title="清空我的歌单（只移除自己点的歌）"
+                class="p-1.5 border border-line text-ink-muted hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-                {{ clearing ? '正在清空…' : '清空我的歌单' }}
+                <Trash2 class="w-4 h-4" />
             </button>
-        </div>
-
-        <div
-            v-if="!(player.isShuffle && player.isFairShuffle) && claimableGroups.length"
-            class="p-2 border-b border-line space-y-2 max-h-44 overflow-y-auto"
-        >
-            <div class="text-[10px] text-ink-muted">离线成员的歌单 · 认领后同时改名</div>
-            <div v-for="group in claimableGroups" :key="group.token" class="flex items-center gap-2 text-xs">
-                <span class="flex-1 min-w-0 break-words">{{ group.name }} · {{ group.totalCount }} 首</span>
-                <button
-                    type="button"
-                    @click="claimGroup(group)"
-                    :disabled="!!claiming || !player.connected"
-                    :aria-label="`认领 ${group.name} 的歌单并改名`"
-                    class="shrink-0 border border-accent/30 text-accent px-2 py-1 disabled:opacity-40"
-                >
-                    {{ claiming === group.token ? '认领中…' : '认领并改名' }}
-                </button>
-            </div>
         </div>
 
         <!-- Conditional Rendering: Show empty message -->
@@ -59,10 +41,13 @@
             <div class="space-y-2">
                 <div v-for="group in userGroups" :key="group.token" class="border border-line bg-surface-raised">
                     <div class="flex items-center">
-                        <button
-                            type="button"
+                        <div
+                            role="button"
+                            tabindex="0"
                             @click="toggleUser(group.token)"
-                            class="min-w-0 flex-1 flex items-center justify-between p-3 hover:bg-surface transition-colors"
+                            @keydown.enter="toggleUser(group.token)"
+                            @keydown.space.prevent="toggleUser(group.token)"
+                            class="min-w-0 flex-1 flex items-center justify-between p-3 hover:bg-surface transition-colors cursor-pointer"
                         >
                             <div class="min-w-0 flex items-center gap-3">
                                 <div
@@ -75,7 +60,19 @@
                                         {{ userStore.resolveName(group.token, group.name) }}
                                     </div>
                                     <div class="text-[10px] text-ink-subtle font-mono">
-                                        {{ group.totalCount }} SONGS <span v-if="canClaim(group)">· 离线</span>
+                                        {{ group.totalCount }} SONGS
+                                        <template v-if="canClaim(group)">
+                                            ·
+                                            <button
+                                                type="button"
+                                                @click.stop="askClaim(group)"
+                                                :disabled="!!claiming || !player.connected"
+                                                :aria-label="`认领 ${group.name} 的歌单`"
+                                                class="text-accent hover:underline disabled:opacity-40"
+                                            >
+                                                {{ claiming === group.token ? '认领中…' : '离线·点击认领' }}
+                                            </button>
+                                        </template>
                                     </div>
                                 </div>
                             </div>
@@ -83,18 +80,7 @@
                                 :is="expandedUsers[group.token] ? ChevronDown : ChevronRight"
                                 class="w-4 h-4 text-ink-subtle"
                             />
-                        </button>
-                        <button
-                            v-if="canClaim(group)"
-                            type="button"
-                            @click="claimGroup(group)"
-                            :disabled="!!claiming || !player.connected"
-                            :aria-label="`认领 ${group.name} 的歌单并改名`"
-                            title="将这份歌单合并到自己名下，并改为原主人的昵称；刚断线需等 10 秒"
-                            class="shrink-0 mr-2 border border-accent/30 text-accent text-xs px-2 py-1 disabled:opacity-40"
-                        >
-                            {{ claiming === group.token ? '认领中…' : '认领并改名' }}
-                        </button>
+                        </div>
                     </div>
 
                     <!-- Drawer Content -->
@@ -111,6 +97,130 @@
                 <QueueItem v-for="{ data: item, index } in list" :key="item.queueId" :item="item" :index="index" />
             </div>
         </div>
+
+        <!-- 离线歌单：默认收起，放到底部，避免占据队列主区域 -->
+        <div
+            v-if="!(player.isShuffle && player.isFairShuffle) && claimableGroups.length"
+            class="flex-shrink-0 border-t border-line bg-surface"
+        >
+            <button
+                type="button"
+                @click="claimPanelOpen = !claimPanelOpen"
+                :aria-expanded="claimPanelOpen"
+                class="w-full flex items-center justify-between gap-2 px-3 py-2 text-[10px] font-mono text-ink-subtle hover:text-ink transition-colors"
+            >
+                <span class="flex items-center gap-1.5">
+                    <User class="w-3 h-3" />
+                    离线歌单
+                    <span class="text-accent">[{{ claimableGroups.length }}]</span>
+                </span>
+                <span class="flex items-center gap-1.5">
+                    {{ claimPanelOpen ? '收起' : '点击认领' }}
+                    <component :is="claimPanelOpen ? ChevronDown : ChevronRight" class="w-3 h-3" />
+                </span>
+            </button>
+
+            <div v-if="claimPanelOpen" class="max-h-44 overflow-y-auto border-t border-line">
+                <button
+                    v-for="group in claimableGroups"
+                    :key="group.token"
+                    type="button"
+                    @click="askClaim(group)"
+                    :disabled="!!claiming || !player.connected"
+                    :aria-label="`认领 ${group.name} 的歌单`"
+                    class="w-full flex items-center gap-3 px-3 py-2 text-left border-b border-line last:border-b-0 hover:bg-surface-sunken disabled:opacity-40 transition-colors group"
+                >
+                    <div class="shrink-0 w-7 h-7 bg-surface-sunken flex items-center justify-center text-ink-muted">
+                        <User class="w-3.5 h-3.5" />
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-xs font-bold text-ink truncate">{{ group.name }}</div>
+                        <div class="text-[10px] font-mono text-ink-subtle">{{ group.totalCount }} SONGS · 离线</div>
+                    </div>
+                    <span class="shrink-0 text-[10px] font-bold text-accent group-hover:underline">{{
+                        claiming === group.token ? '认领中…' : '认领'
+                    }}</span>
+                </button>
+            </div>
+        </div>
+        <!-- 认领确认 -->
+        <Teleport to="body">
+            <div
+                v-if="pendingClaim"
+                class="fixed inset-0 z-[300] bg-brand/40 flex items-center justify-center p-4"
+                @click.self="pendingClaim = null"
+            >
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="确认认领歌单"
+                    class="w-full max-w-sm bg-surface-raised border border-line shadow-xl p-5 space-y-4"
+                >
+                    <h3 class="font-bold text-ink">认领歌单</h3>
+                    <p class="text-xs text-ink-muted leading-relaxed">
+                        将 <span class="font-bold text-ink">{{ pendingClaim.name }}</span> 的歌单（{{
+                            pendingClaim.totalCount
+                        }}
+                        首）合并到自己名下，同时更改为此昵称。
+                    </p>
+                    <div class="flex justify-end gap-2">
+                        <button
+                            type="button"
+                            @click="pendingClaim = null"
+                            class="px-3 py-1.5 text-xs border border-line text-ink-muted hover:text-ink transition-colors"
+                        >
+                            取消
+                        </button>
+                        <button
+                            type="button"
+                            @click="confirmClaim"
+                            :disabled="!!claiming"
+                            class="px-3 py-1.5 text-xs font-bold bg-accent text-accent-contrast disabled:opacity-40 transition-colors"
+                        >
+                            {{ claiming ? '认领中…' : '确认认领' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- 清空确认 -->
+        <Teleport to="body">
+            <div
+                v-if="pendingClear"
+                class="fixed inset-0 z-[300] bg-brand/40 flex items-center justify-center p-4"
+                @click.self="pendingClear = false"
+            >
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="确认清空我的歌单"
+                    class="w-full max-w-sm bg-surface-raised border border-line shadow-xl p-5 space-y-4"
+                >
+                    <h3 class="font-bold text-ink">清空我的歌单</h3>
+                    <p class="text-xs text-ink-muted leading-relaxed">
+                        将自己点的 {{ mineCount }} 首歌曲从播放列表移除。
+                    </p>
+                    <div class="flex justify-end gap-2">
+                        <button
+                            type="button"
+                            @click="pendingClear = false"
+                            class="px-3 py-1.5 text-xs border border-line text-ink-muted hover:text-ink transition-colors"
+                        >
+                            取消
+                        </button>
+                        <button
+                            type="button"
+                            @click="confirmClear"
+                            :disabled="clearing"
+                            class="px-3 py-1.5 text-xs font-bold bg-accent text-accent-contrast hover:bg-accent-hover disabled:opacity-40 transition-colors"
+                        >
+                            {{ clearing ? '正在清空…' : '确认清空' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
     </div>
 </template>
 
@@ -118,7 +228,7 @@
 import { computed, ref } from 'vue';
 import { useVirtualList } from '@vueuse/core';
 import { usePlayerStore } from '../stores/player';
-import { Shuffle, ChevronDown, ChevronRight, User } from 'lucide-vue-next';
+import { Shuffle, ChevronDown, ChevronRight, User, Trash2 } from 'lucide-vue-next';
 import { useUserStore } from '../stores/user';
 import QueueItem from './QueueItem.vue';
 import { useToast } from '../composables/useToast';
@@ -139,6 +249,30 @@ const canClaim = (group) =>
     !group.isGuest &&
     !userStore.onlineUsers.some((user) => user.token === group.token);
 const claimableGroups = computed(() => userGroups.value.filter(canClaim));
+// 离线歌单默认收起：认领不是高频操作，不该占据队列主区域
+const claimPanelOpen = ref(false);
+// 点击「离线·点击认领」先弹确认，避免误触把别人的歌单并过来
+const pendingClaim = ref(null);
+const askClaim = (group) => {
+    if (claiming.value || !player.connected || !canClaim(group)) return;
+    pendingClaim.value = group;
+};
+const confirmClaim = async () => {
+    const group = pendingClaim.value;
+    if (!group) return;
+    await claimGroup(group);
+    pendingClaim.value = null;
+};
+// 清空自己的歌单：先确认再执行
+const pendingClear = ref(false);
+const askClear = () => {
+    if (clearing.value || !mineCount.value) return;
+    pendingClear.value = true;
+};
+const confirmClear = async () => {
+    await clearMine();
+    pendingClear.value = false;
+};
 const claimGroup = async (group) => {
     if (claiming.value || !canClaim(group)) return;
     claiming.value = group.token;

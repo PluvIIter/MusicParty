@@ -32,7 +32,7 @@
                 </div>
 
                 <!-- 失败状态 -->
-                <div v-else-if="item.status === 'FAILED'" class="text-xs font-mono font-bold text-red-500">
+                <div v-else-if="item.status === 'FAILED'" class="text-xs font-mono font-bold text-danger">
                     DOWNLOAD FAILED
                 </div>
                 <div class="text-[10px] text-ink-subtle bg-surface px-1 border border-line">
@@ -49,7 +49,7 @@
             <button @click="player.topSong(item.queueId)" title="Top" class="p-1 hover:text-accent">
                 <ArrowUpToLine class="w-4 h-4" />
             </button>
-            <button @click="player.removeSong(item.queueId)" title="Remove" class="p-1 hover:text-red-500">
+            <button @click="player.removeSong(item.queueId)" title="Remove" class="p-1 hover:text-danger">
                 <Trash2 class="w-4 h-4" />
             </button>
         </div>

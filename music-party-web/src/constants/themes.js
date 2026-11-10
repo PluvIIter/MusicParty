@@ -24,6 +24,9 @@ export const THEMES = [
         accent: '#F97316',
         'accent-hover': '#EA580C',
         'on-accent': '#FFFFFF',
+        danger: '#DC2626',
+        success: '#16A34A',
+        warning: '#D97706',
     }),
     palette('light-platinum', '雾银', 'light', {
         surface: '#F2F4F7',
@@ -42,6 +45,9 @@ export const THEMES = [
         accent: '#45658A',
         'accent-hover': '#365475',
         'on-accent': '#FFFFFF',
+        danger: '#DC2626',
+        success: '#16A34A',
+        warning: '#D97706',
     }),
     palette('light-iris', '鸢尾白', 'light', {
         surface: '#F6F3FA',
@@ -60,6 +66,9 @@ export const THEMES = [
         accent: '#745B91',
         'accent-hover': '#654D82',
         'on-accent': '#FFFFFF',
+        danger: '#DC2626',
+        success: '#16A34A',
+        warning: '#D97706',
     }),
     palette('light-jade', '青瓷', 'light', {
         surface: '#F1F6F3',
@@ -78,6 +87,9 @@ export const THEMES = [
         accent: '#42745F',
         'accent-hover': '#335F4C',
         'on-accent': '#FFFFFF',
+        danger: '#DC2626',
+        success: '#16A34A',
+        warning: '#D97706',
     }),
     palette('dark-platinum', '铂银', 'dark', {
         surface: '#151719',
@@ -96,6 +108,9 @@ export const THEMES = [
         accent: '#BCC9DA',
         'accent-hover': '#D1DCE9',
         'on-accent': '#18202A',
+        danger: '#F87171',
+        success: '#34D399',
+        warning: '#FBBF24',
     }),
     palette('dark-iris', '鸢尾雾紫', 'dark', {
         surface: '#141821',
@@ -114,6 +129,9 @@ export const THEMES = [
         accent: '#B3A5D9',
         'accent-hover': '#C8BCE8',
         'on-accent': '#201A30',
+        danger: '#F87171',
+        success: '#34D399',
+        warning: '#FBBF24',
     }),
     palette('dark-champagne', '香槟暖黑', 'dark', {
         surface: '#1B1917',
@@ -132,6 +150,9 @@ export const THEMES = [
         accent: '#C8B78E',
         'accent-hover': '#DBCCA8',
         'on-accent': '#272015',
+        danger: '#F87171',
+        success: '#34D399',
+        warning: '#FBBF24',
     }),
     palette('dark-jade', '海玻璃青', 'dark', {
         surface: '#121B1A',
@@ -150,5 +171,8 @@ export const THEMES = [
         accent: '#8BBEAE',
         'accent-hover': '#A8D2C4',
         'on-accent': '#142A23',
+        danger: '#F87171',
+        success: '#34D399',
+        warning: '#FBBF24',
     }),
 ];

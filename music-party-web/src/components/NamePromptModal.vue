@@ -22,7 +22,7 @@
                 autofocus
             />
 
-            <div v-if="errorMsg || userStore.renameError" class="text-xs text-red-500 font-bold mb-4 animate-pulse">
+            <div v-if="errorMsg || userStore.renameError" class="text-xs text-danger font-bold mb-4 animate-pulse">
                 {{ errorMsg || userStore.renameError }}
             </div>
 

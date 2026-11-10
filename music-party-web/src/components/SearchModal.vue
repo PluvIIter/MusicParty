@@ -48,7 +48,7 @@
                                 : 'bg-line text-ink-muted hover:bg-line-strong'
                         "
                     >
-                        LIKESONG
+                        点赞的音乐
                     </button>
                 </div>
 
@@ -76,7 +76,7 @@
                     <div
                         class="flex items-center justify-between p-3 bg-surface-raised border-b border-line flex-shrink-0"
                     >
-                        <span class="font-bold text-sm text-ink font-mono">LIKESONG</span>
+                        <span class="font-bold text-sm text-ink">点赞的音乐</span>
                         <span class="text-[10px] font-mono text-ink-subtle">{{ likedSongs.length }} LIKED</span>
                     </div>
                     <div class="flex-1 overflow-y-auto overscroll-contain p-2 md:p-4">
@@ -109,7 +109,7 @@
                                     class="ml-2 p-2 flex-shrink-0 transition-all duration-300"
                                     :class="[
                                         isInQueue(song.id)
-                                            ? 'text-green-500 cursor-default'
+                                            ? 'text-success cursor-default'
                                             : pendingIds.has(song.id)
                                               ? 'text-accent cursor-wait'
                                               : 'text-ink-subtle hover:text-accent',
@@ -203,7 +203,7 @@
                                 <span class="text-[10px] font-mono text-ink-subtle">ID: {{ bindings[platform] }}</span>
                                 <button
                                     @click="playerStore.bindAccount(platform, '')"
-                                    class="text-[10px] text-red-400 hover:underline"
+                                    class="text-[10px] text-danger hover:underline"
                                 >
                                     UNLINK
                                 </button>
@@ -338,7 +338,7 @@
                                     class="ml-2 p-2 flex-shrink-0 transition-all duration-300"
                                     :class="[
                                         isInQueue(song.id)
-                                            ? 'text-green-500 cursor-default'
+                                            ? 'text-success cursor-default'
                                             : pendingIds.has(song.id)
                                               ? 'text-accent cursor-wait'
                                               : 'text-ink-subtle hover:text-accent',

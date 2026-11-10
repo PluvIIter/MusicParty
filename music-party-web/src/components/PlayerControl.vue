@@ -27,7 +27,7 @@
                     <!-- 标题显示逻辑与样式 -->
                     <h2
                         class="text-lg font-bold truncate leading-tight transition-colors duration-300"
-                        :class="!player.connected ? 'text-orange-600 animate-pulse' : 'text-ink'"
+                        :class="!player.connected ? 'text-warning animate-pulse' : 'text-ink'"
                     >
                         {{
                             !player.connected
@@ -41,7 +41,7 @@
                     <!-- 副标题显示逻辑与样式 -->
                     <p
                         class="text-xs font-sans truncate transition-colors duration-300"
-                        :class="!player.connected ? 'text-orange-500 animate-pulse' : 'text-ink/60'"
+                        :class="!player.connected ? 'text-warning animate-pulse' : 'text-ink/60'"
                     >
                         {{
                             !player.connected
@@ -94,7 +94,7 @@
                 <div
                     class="h-full relative"
                     :class="[
-                        player.isErrorState ? 'bg-red-500' : 'bg-accent',
+                        player.isErrorState ? 'bg-danger/100' : 'bg-accent',
                         dragging ? '' : 'transition-all duration-300 ease-linear',
                     ]"
                     :style="{ width: (dragging ? dragPercent : progressPercent) + '%' }"
