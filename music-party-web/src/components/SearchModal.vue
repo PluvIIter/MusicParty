@@ -299,7 +299,21 @@
                                 "
                             >
                                 <div class="flex-1 w-0 flex items-center gap-3">
-                                    <div class="w-8 h-8 bg-line flex-shrink-0 relative overflow-hidden">
+                                    <button
+                                        v-if="platform === 'netease'"
+                                        type="button"
+                                        @click="selectedAlbumSong = song"
+                                        :aria-label="'查看《' + song.name + '》所属专辑'"
+                                        title="点击封面查看所属专辑"
+                                        class="w-11 h-11 -m-1.5 p-1.5 flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+                                    >
+                                        <CoverImage
+                                            :src="song.coverUrl"
+                                            class="w-full h-full transition-shadow hover:ring-2 hover:ring-accent"
+                                            :scanline="false"
+                                        />
+                                    </button>
+                                    <div v-else class="w-8 h-8 bg-line flex-shrink-0 relative overflow-hidden">
                                         <CoverImage :src="song.coverUrl" class="w-full h-full" :scanline="false" />
                                     </div>
                                     <div class="min-w-0 flex-1">
@@ -315,16 +329,6 @@
                                         >>{{ playerStore.config.bilibiliMaxDurationMinutes || 10 }}MIN</span
                                     >
                                 </div>
-
-                                <button
-                                    v-if="platform === 'netease'"
-                                    @click="selectedAlbumSong = song"
-                                    :aria-label="'查看《' + song.name + '》所属专辑'"
-                                    title="查看专辑并添加整张专辑"
-                                    class="ml-2 px-2 py-2 flex-shrink-0 text-xs font-bold border border-line text-ink-muted hover:border-accent hover:text-accent transition-colors"
-                                >
-                                    专辑
-                                </button>
 
                                 <button
                                     v-if="!isUnplayable(song)"
@@ -454,7 +458,7 @@ const {
     bindUser,
     loadPlaylist,
     handleScroll,
-fetchPlaylists,
+    fetchPlaylists,
 } = usePlaylistLogic(platform, songs, listMode, loading);
 
 // 3. UI 状态
@@ -465,7 +469,6 @@ const isUnplayable = (song) => {
     const maxMin = playerStore.config.bilibiliMaxDurationMinutes || 10;
     return platform.value === 'bilibili' && song.duration > maxMin * 60 * 1000;
 };
-
 
 // 侧栏刷新：用户歌单 + 收藏专辑一起拉
 const savedAlbumsRef = ref(null);
