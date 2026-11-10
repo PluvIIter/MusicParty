@@ -68,6 +68,14 @@ public class MusicSocketController {
         musicPlayerService.cyclePlayMode(sessionId);
     }
 
+    public record PlayModeRequest(String playMode) {}
+
+    @MessageMapping("/control/play-mode")
+    public void setPlayMode(PlayModeRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId) || request == null) return;
+        musicPlayerService.setPlayMode(sessionId, request.playMode());
+    }
+
     @MessageMapping("/control/toggle-pause")
     public void togglePause(@Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;

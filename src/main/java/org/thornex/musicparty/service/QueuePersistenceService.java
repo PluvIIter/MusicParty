@@ -23,6 +23,7 @@ import java.nio.file.*;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -60,10 +61,12 @@ public class QueuePersistenceService {
         synchronized (musicQueueManager) {
             data.setQueue(musicQueueManager.getQueueSnapshot());
             data.setPlayedQueueIds(musicQueueManager.getPlayedQueueIds());
+            data.setMemberShufflePreferences(musicQueueManager.getMemberShufflePreferences());
         }
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
         data.setSettings(buildSettingsSnapshot());
+        data.setPlaybackModeVersion(2);
         objectMapper.writeValue(file, data);
         log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
     }
@@ -86,10 +89,17 @@ public class QueuePersistenceService {
             // Filter a copy: a failed proposed snapshot must not prune the live first-play ledger.
             playedQueueIds.retainAll(data.getQueue().stream().map(MusicQueueItem::queueId).collect(Collectors.toSet()));
             data.setPlayedQueueIds(playedQueueIds);
+            var preferences = new java.util.HashMap<>(musicQueueManager.getMemberShufflePreferences());
+            Set<String> proposedOwners = entries.stream().map(item -> item.enqueuedBy().token()).collect(Collectors.toSet());
+            Set<String> removedOwners = musicQueueManager.getQueueSnapshot().stream()
+                    .map(item -> item.enqueuedBy().token()).filter(token -> !proposedOwners.contains(token)).collect(Collectors.toSet());
+            preferences.keySet().removeAll(removedOwners);
+            data.setMemberShufflePreferences(preferences);
         }
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
         data.setSettings(buildSettingsSnapshot());
+        data.setPlaybackModeVersion(2);
         Path temporary = Files.createTempFile(file.getParent(), "queue-snapshot-", ".tmp");
         try {
             objectMapper.writeValue(temporary.toFile(), data);
@@ -114,6 +124,17 @@ public class QueuePersistenceService {
             );
 
             musicQueueManager.restorePlayedQueueIds(data.getPlayedQueueIds());
+            musicQueueManager.restoreMemberShufflePreferences(data.getMemberShufflePreferences());
+            if (data.getPlaybackModeVersion() == null && data.getSettings() != null && data.getSettings().player() != null) {
+                SettingsSnapshot old = data.getSettings();
+                SettingsSnapshot.PlayerSettings p = old.player();
+                if ("SHUFFLE".equals(p.playMode()) && !Boolean.FALSE.equals(p.fairShuffle())) {
+                    data.setSettings(new SettingsSnapshot(new SettingsSnapshot.PlayerSettings("ROUND_ROBIN", true,
+                            p.allowOfflineShuffle(), p.voteSkipEnabled(), p.voteSkipThreshold(), p.voteSkipWaitTime(),
+                            p.pauseLocked(), p.skipLocked(), p.playModeLocked()), old.roomPassword(), old.streamEnabled(),
+                            old.privateDj(), old.systemConfig()));
+                }
+            }
 
             chatService.restore(data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
 
@@ -212,5 +233,7 @@ public class QueuePersistenceService {
         private List<Music> history;
         private List<org.thornex.musicparty.dto.ChatMessage> chatHistory;
         private SettingsSnapshot settings;
+        private Integer playbackModeVersion;
+        private Map<String, Boolean> memberShufflePreferences;
     }
 }

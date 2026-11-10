@@ -31,7 +31,7 @@ class RetainedPlaylistTest {
     }
 
     private MusicQueueItem pick(boolean fair, Set<String> online) {
-        MusicQueueItem item = queue.pollNext(PlayMode.SHUFFLE, fair, false, ready(), online);
+        MusicQueueItem item = queue.pollNext(fair ? PlayMode.ROUND_ROBIN : PlayMode.SHUFFLE, fair, false, ready(), online);
         if (item != null) queue.clearPlaybackFailure(item);
         return item;
     }
@@ -117,7 +117,7 @@ class RetainedPlaylistTest {
         MusicQueueItem heard = pick(true, Set.of("A", "B"));
         for (int i = 0; i < 4; i++) assertEquals("B", pick(true, Set.of("B")).enqueuedBy().token());
         assertNotEquals(heard.queueId(), pick(true, Set.of("A", "B")).queueId());
-        queue.top(heard.queueId(), PlayMode.SHUFFLE);
+        queue.top(heard.queueId(), PlayMode.ROUND_ROBIN);
         pick(true, Set.of("A", "B")); // B's turn
         assertEquals(heard.queueId(), pick(true, Set.of("A", "B")).queueId());
         assertEquals(Priority.REGULAR, queue.getItem(heard.queueId()).orElseThrow().priority());
@@ -168,7 +168,7 @@ class RetainedPlaylistTest {
         props.getQueue().setRetainPlaylist(true);
         MusicQueueItem old = add("old", "A"); pick(true, Set.of("A"));
         MusicQueueItem fresh = add("new", "A");
-        MusicQueueItem attempted = queue.pollNext(PlayMode.SHUFFLE, true, false, ready(), Set.of("A"));
+        MusicQueueItem attempted = queue.pollNext(PlayMode.ROUND_ROBIN, true, false, ready(), Set.of("A"));
         assertEquals(fresh.queueId(), attempted.queueId());
         queue.markPlaybackFailed(attempted);
         assertFalse(queue.getPlayedQueueIds().contains(fresh.queueId()));

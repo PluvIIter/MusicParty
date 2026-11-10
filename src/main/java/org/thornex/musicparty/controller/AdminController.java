@@ -96,6 +96,7 @@ public class AdminController {
                 musicPlayerService.cyclePlayMode("SYSTEM");
                 yield "播放模式已切换";
             }
+            case "SET_PLAY_MODE" -> musicPlayerService.setPlayMode("SYSTEM", request.playMode()) ? "播放模式已切换" : null;
             case "TOGGLE_FAIR_SHUFFLE" -> {
                 musicPlayerService.toggleFairShuffle("SYSTEM");
                 yield "随机算法已切换";

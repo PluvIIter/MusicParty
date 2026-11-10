@@ -70,8 +70,8 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
             send('/topic/player/state', {
                 nowPlaying: null,
                 queue,
-                playMode: 'SHUFFLE',
-                isFairShuffle: true,
+                playMode: 'ROUND_ROBIN',
+                memberShufflePreferences: {},
                 isPaused: false,
                 onlineUsers: [owner, other],
                 config,
@@ -145,6 +145,7 @@ for (const mobile of [false, true])
         const fixture = await room(page);
         if (mobile) await page.locator('#tutorial-queue-mobile').click();
         await page.getByRole('button', { name: '清空我的歌单', exact: true }).click();
+        await page.getByRole('button', { name: '确认清空', exact: true }).click();
         await expect(page.getByText('已清空我的歌单，移除 2 首', { exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: '清空我的歌单', exact: true })).toBeDisabled();
         const queue = page.locator('#tutorial-queue:visible');
@@ -160,6 +161,7 @@ test('server rejection keeps playlist and enables retry', async ({ page }) => {
     const fixture = await room(page, { rejectClear: true });
     const clear = page.getByRole('button', { name: '清空我的歌单', exact: true });
     await clear.click();
+    await page.getByRole('button', { name: '确认清空', exact: true }).click();
     await expect(page.getByText('请先设置昵称并加入房间', { exact: true })).toBeVisible();
     await expect(clear).toBeEnabled();
     expect(fixture.sent.filter((item) => item.destination === '/app/queue/clear-mine')).toHaveLength(1);

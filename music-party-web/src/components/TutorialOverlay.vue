@@ -34,9 +34,7 @@
                 <span class="text-xs font-mono font-bold text-accent"
                     >TUTORIAL_SYSTEM // {{ currentStepIndex + 1 }}/{{ steps.length }}</span
                 >
-                <button @click="skipTutorial" class="text-xs text-ink-subtle hover:text-ink font-mono">
-                    [SKIP]
-                </button>
+                <button @click="skipTutorial" class="text-xs text-ink-subtle hover:text-ink font-mono">[SKIP]</button>
             </div>
 
             <div class="text-sm font-bold text-ink leading-relaxed">
@@ -111,7 +109,8 @@ const steps = [
     {
         targetId: 'tutorial-random',
         mobileTargetId: 'tutorial-random-mobile',
-        content: '随机播放模式采用“公平随机”算法，确保每个人点的歌都有均等的机会被播放。',
+        content:
+            '点击向上展开播放模式。随机播放从歌曲池选曲；轮询播放按成员轮流，并可单独设置自己的歌曲按顺序或随机播放。',
     },
     {
         targetId: 'tutorial-chat',

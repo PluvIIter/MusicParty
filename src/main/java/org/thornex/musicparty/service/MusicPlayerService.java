@@ -335,7 +335,7 @@ public class MusicPlayerService {
     void syncFmMarker() {
         AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
         boolean shouldPresent = !"OFF".equals(c.getMode()) && c.isJoinQueueEnabled()
-                && !c.isCustodyEnabled() && playMode.get() == PlayMode.SHUFFLE;
+                && !c.isCustodyEnabled() && (playMode.get() == PlayMode.SHUFFLE || playMode.get() == PlayMode.ROUND_ROBIN);
         if (shouldPresent) {
             queueManager.ensureFmMarker();
         } else {
@@ -496,8 +496,8 @@ public class MusicPlayerService {
                 infoToSend,
                 getQueueWithUpdatedStatus(),
                 currentPlayMode.name(),
-                currentPlayMode == PlayMode.SHUFFLE,
-                isFairShuffle.get(),
+                currentPlayMode == PlayMode.SHUFFLE || currentPlayMode == PlayMode.ROUND_ROBIN,
+                currentPlayMode == PlayMode.ROUND_ROBIN,
                 allowOfflineShuffle.get(),
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
@@ -538,7 +538,8 @@ public class MusicPlayerService {
                         appProperties.getQueue().isAllowPlaylistClaim(),
                         appProperties.getQueue().isRetainPlaylist(),
                         appProperties.getPlayer().isAllowSeek()
-                )
+                ),
+                queueManager.getMemberShufflePreferences()
         );
     }
 
@@ -553,17 +554,7 @@ public class MusicPlayerService {
     }
 
     public void toggleFairShuffle(String sessionId) {
-        if (isRateLimited(sessionId)) return;
-        boolean current;
-        boolean newState;
-        do {
-            current = isFairShuffle.get();
-            newState = !current;
-        } while (!isFairShuffle.compareAndSet(current, newState));
-
-        log.info("Fair shuffle mode set to {} by {}", newState, getUserName(sessionId));
-        broadcastFullPlayerState();
-        broadcastQueueUpdate(); // 可能会影响前端展示
+        setPlayMode(sessionId, playMode.get() == PlayMode.ROUND_ROBIN ? "SHUFFLE" : "ROUND_ROBIN");
     }
 
     public void toggleAllowOfflineShuffle(String sessionId) {
@@ -1114,35 +1105,41 @@ public class MusicPlayerService {
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserToken(sessionId), null));
     }
 
-    public void cyclePlayMode(String sessionId) {
-        if (isRateLimited(sessionId)) return;
-        if (isPlayModeLocked.get() && !"SYSTEM".equals(sessionId)) return;
+    public PlayMode getPlayMode() { return playMode.get(); }
 
-        PlayMode current;
+    public synchronized void cyclePlayMode(String sessionId) {
+        PlayMode next = switch (playMode.get()) {
+            case SEQUENTIAL -> PlayMode.SHUFFLE;
+            case SHUFFLE -> PlayMode.ROUND_ROBIN;
+            case ROUND_ROBIN -> PlayMode.REPEAT_ONE;
+            case REPEAT_ONE -> PlayMode.SEQUENTIAL;
+        };
+        setPlayMode(sessionId, next.name());
+    }
+
+    public synchronized boolean setPlayMode(String sessionId, String requested) {
+        if (!"SYSTEM".equals(sessionId) && userService.getUser(sessionId).map(User::isGuest).orElse(true)) return false;
         PlayMode next;
-        do {
-            current = playMode.get();
-            next = switch (current) {
-                case SEQUENTIAL -> PlayMode.SHUFFLE;
-                case SHUFFLE -> PlayMode.REPEAT_ONE;
-                case REPEAT_ONE -> PlayMode.SEQUENTIAL;
-            };
-        } while (!playMode.compareAndSet(current, next));
-
-        // 同步 isShuffle 以保持向后兼容
-        isShuffle.set(next == PlayMode.SHUFFLE);
-
-        log.info("Play mode cycled to {} by {}", next, getUserName(sessionId));
+        try { next = PlayMode.valueOf(requested); }
+        catch (IllegalArgumentException | NullPointerException error) { return false; }
+        if (isPlayModeLocked.get() && !"SYSTEM".equals(sessionId)) return false;
+        if (playMode.get() == next) return true;
+        if (!"SYSTEM".equals(sessionId) && isRateLimited(sessionId)) return false;
+        playMode.set(next);
+        isShuffle.set(next == PlayMode.SHUFFLE || next == PlayMode.ROUND_ROBIN);
+        isFairShuffle.set(next == PlayMode.ROUND_ROBIN);
+        syncFmMarker();
         broadcastFullPlayerState();
-
-        // 统一格式的通知：MessageFormatter 格式化为 "XXX 切换到了[模式]"
+        broadcastQueueUpdate();
         String modeName = switch (next) {
             case SEQUENTIAL -> "顺序播放";
             case SHUFFLE -> "随机播放";
+            case ROUND_ROBIN -> "轮询播放";
             case REPEAT_ONE -> "单曲循环";
         };
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
                 PlayerAction.MODE_CHANGE, getUserToken(sessionId), modeName));
+        return true;
     }
 
     public synchronized void resetSystem() {

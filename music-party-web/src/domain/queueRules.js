@@ -12,7 +12,7 @@ export const sortGroupItems = (items) =>
     });
 
 /**
- * 公平随机模式下的队列视图切分：
+ * 轮询模式下的队列视图切分：
  * - topItems：全局置顶（GLOBAL_TOP）单独置顶展示，不进入分组
  * - userGroups：其余项按点歌者 token 分组，组的顺序按 token 首次出现；
  *   组内应用 USER_TOP 排序
@@ -55,4 +55,24 @@ export const splitQueue = (queue, keepGroup = (group) => group.items.length > 0)
         .map((group) => ({ ...group, items: sortGroupItems(group.items) }));
 
     return { topItems, userGroups };
+};
+
+const isMemberToken = (token) =>
+    typeof token === 'string' && !!token.trim() && !['SYSTEM', 'ADMIN'].includes(token) && !token.startsWith('__');
+
+export const canReorderItem = (item, token, mode) =>
+    isMemberToken(token) &&
+    isMemberToken(item?.enqueuedBy?.token) &&
+    (mode === 'SEQUENTIAL' || item.enqueuedBy.token === token) &&
+    item.priority === 'REGULAR' &&
+    item.music?.platform !== 'netease-fm';
+
+export const reorderableItems = (queue, token, mode) => queue.filter((item) => canReorderItem(item, token, mode));
+
+export const isValidReorder = (queue, token, queueId, beforeQueueId, mode) => {
+    const items = reorderableItems(queue, token, mode);
+    const from = items.findIndex((item) => item.queueId === queueId);
+    if (from < 0 || queueId === beforeQueueId) return false;
+    const to = beforeQueueId === null ? items.length : items.findIndex((item) => item.queueId === beforeQueueId);
+    return to >= 0 && to !== from + 1;
 };

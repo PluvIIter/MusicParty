@@ -9,6 +9,8 @@ import { musicApi } from '../api/music';
 import { WS_DEST } from '../constants/api';
 import { STORAGE_KEYS } from '../constants/storage';
 import { createRoomClock } from '../services/playbackSync';
+import { isPlayMode } from '../domain/playModes';
+import { isValidReorder } from '../domain/queueRules';
 
 export const usePlayerStore = defineStore('player', () => {
     // === 1. State ===
@@ -16,10 +18,11 @@ export const usePlayerStore = defineStore('player', () => {
     const playbackId = ref(null);
     const queue = ref([]);
     const isPaused = ref(false);
-    const playMode = ref('SEQUENTIAL'); // 'SEQUENTIAL' | 'SHUFFLE' | 'REPEAT_ONE'
+    const playMode = ref('SEQUENTIAL');
     const isShuffle = computed(() => playMode.value === 'SHUFFLE');
     const isRepeatOne = computed(() => playMode.value === 'REPEAT_ONE');
-    const isFairShuffle = ref(true);
+    const isRoundRobin = computed(() => playMode.value === 'ROUND_ROBIN');
+    const memberShufflePreferences = ref({});
     const allowOfflineShuffle = ref(false);
     const isPauseLocked = ref(false);
     const isSkipLocked = ref(false);
@@ -111,7 +114,7 @@ export const usePlayerStore = defineStore('player', () => {
         queue.value = state.queue;
         isPaused.value = state.isPaused;
         playMode.value = state.playMode || (state.isShuffle ? 'SHUFFLE' : 'SEQUENTIAL');
-        isFairShuffle.value = state.isFairShuffle !== undefined ? state.isFairShuffle : true;
+        memberShufflePreferences.value = { ...(state.memberShufflePreferences || {}) };
         allowOfflineShuffle.value = state.allowOfflineShuffle || false;
         isPauseLocked.value = state.isPauseLocked || false;
         isSkipLocked.value = state.isSkipLocked || false;
@@ -220,6 +223,21 @@ export const usePlayerStore = defineStore('player', () => {
     const playNext = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_NEXT);
     const togglePause = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_PAUSE);
     const cyclePlayMode = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_SHUFFLE);
+    const canSendQueueControl = () => connected.value && socketService.connected && requireAuth();
+    const setPlayMode = (mode) => {
+        if (!isPlayMode(mode) || isPlayModeLocked.value || !canSendQueueControl()) return;
+        socketService.send(WS_DEST.PLAYER_MODE, { playMode: mode });
+    };
+    const setMemberShuffle = (shuffle) => {
+        if (typeof shuffle !== 'boolean' || !isRoundRobin.value || !canSendQueueControl()) return;
+        socketService.send(WS_DEST.MEMBER_SHUFFLE, { shuffle });
+    };
+    const reorderSong = (queueId, beforeQueueId) => {
+        if (!canSendQueueControl()) return;
+        if (!isPlayMode(playMode.value)) return;
+        if (!isValidReorder(queue.value, userStore.userToken, queueId, beforeQueueId, playMode.value)) return;
+        socketService.send(WS_DEST.QUEUE_REORDER, { queueId, beforeQueueId, playMode: playMode.value });
+    };
     const seekTo = (positionMs, expectedPlaybackId = playbackId.value) => {
         if (!Number.isFinite(positionMs) || positionMs < 0) return;
         if (!expectedPlaybackId || expectedPlaybackId !== playbackId.value || !nowPlaying.value) return;
@@ -347,7 +365,8 @@ export const usePlayerStore = defineStore('player', () => {
         playMode,
         isShuffle,
         isRepeatOne,
-        isFairShuffle,
+        isRoundRobin,
+        memberShufflePreferences,
         allowOfflineShuffle,
         config,
         isPauseLocked,
@@ -374,6 +393,9 @@ export const usePlayerStore = defineStore('player', () => {
         playNext,
         togglePause,
         cyclePlayMode,
+        setPlayMode,
+        setMemberShuffle,
+        reorderSong,
         seekTo,
         enqueue,
         enqueuePlaylist,

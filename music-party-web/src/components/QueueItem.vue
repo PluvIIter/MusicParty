@@ -1,8 +1,27 @@
 <template>
     <div
         class="group relative flex items-center gap-2 p-2 border hover:border-line-strong transition-all mb-2 h-14"
-        :class="isFmMarker ? 'bg-accent/5 border-accent/30' : 'bg-surface-raised border-line'"
+        :data-queue-id="item.queueId"
+        :class="[
+            isFmMarker ? 'bg-accent/5 border-accent/30' : 'bg-surface-raised border-line',
+            reorder?.drag.value?.queueId === item.queueId ? 'opacity-50' : '',
+            reorder?.drag.value?.hasTarget && reorder.drag.value.beforeQueueId === item.queueId
+                ? 'border-t-accent border-t-2'
+                : '',
+        ]"
     >
+        <button
+            v-if="isReorderable"
+            type="button"
+            :disabled="!player.connected || userStore.isGuest"
+            :aria-label="`调整 ${item.music.name} 的顺序`"
+            :title="reorderTooltip"
+            class="shrink-0 p-1 touch-none cursor-grab active:cursor-grabbing text-ink-subtle hover:text-accent disabled:opacity-40 disabled:cursor-not-allowed"
+            @pointerdown="reorder?.start(item, $event)"
+            @keydown="reorder?.keyboard(item, $event)"
+        >
+            <GripVertical class="w-4 h-4" aria-hidden="true" />
+        </button>
         <!-- 序号 -->
         <div v-if="index !== undefined" class="w-6 text-center font-mono text-xs text-ink-subtle">
             {{ String(index + 1).padStart(2, '0') }}
@@ -69,10 +88,11 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
+import { canReorderItem } from '../domain/queueRules';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
-import { Trash2, ArrowUpToLine, Loader2 } from 'lucide-vue-next';
+import { Trash2, ArrowUpToLine, Loader2, GripVertical } from 'lucide-vue-next';
 
 const props = defineProps({
     item: {
@@ -88,4 +108,13 @@ const props = defineProps({
 const player = usePlayerStore();
 const userStore = useUserStore();
 const isFmMarker = computed(() => props.item.music.platform === 'netease-fm');
+const reorder = inject('queueReorder', null);
+const isReorderable = computed(() => canReorderItem(props.item, userStore.userToken, player.playMode));
+const reorderTooltip = computed(() => {
+    if (player.playMode === 'SEQUENTIAL')
+        return '拖动或方向键上/下调整所有成员普通歌曲的全局顺序；置顶、FM 和系统条目位置不变';
+    if (player.playMode === 'ROUND_ROBIN')
+        return '拖动或方向键上/下调整自己歌单的普通歌曲；仅交换自己的槽位，其他成员和置顶、FM 条目不变';
+    return '当前模式仅可拖动或用方向键上/下调整自己的普通歌曲，不能移动其他成员歌曲；不改变随机选曲或单曲循环规则';
+});
 </script>

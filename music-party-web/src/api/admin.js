@@ -18,10 +18,10 @@ export const adminApi = {
         ),
 
     // 强制播放器操作 (PAUSE/SKIP/SHUFFLE)
-    playerAction: (adminPwd, action) =>
+    playerAction: (adminPwd, action, playMode) =>
         client.post(
             '/api/admin/player/action',
-            { action },
+            { action, ...(playMode ? { playMode } : {}) },
             {
                 headers: { 'X-Admin-Password': adminPwd },
             }

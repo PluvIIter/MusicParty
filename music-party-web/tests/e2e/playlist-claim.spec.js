@@ -8,7 +8,7 @@ async function room(
         enabled = true,
         rejectClaim = false,
         sourceOnline = false,
-        mode = 'SHUFFLE',
+        mode = 'ROUND_ROBIN',
         failSetting = false,
     } = {}
 ) {
@@ -85,7 +85,7 @@ async function room(
                 nowPlaying: null,
                 queue,
                 playMode: mode,
-                isFairShuffle: true,
+                memberShufflePreferences: {},
                 isPaused: true,
                 onlineUsers: [owner, other, ...(sourceOnline ? [original] : [])],
                 config,
@@ -160,13 +160,14 @@ for (const mobile of [false, true])
         if (mobile) await page.setViewportSize({ width: 320, height: 800 });
         const fixture = await room(page);
         if (mobile) await page.locator('#tutorial-queue-mobile').click();
-        const claim = page.getByRole('button', { name: '认领 Original 的歌单并改名', exact: true });
+        const claim = page.getByRole('button', { name: '认领 Original 的歌单', exact: true });
         await expect(claim).toBeVisible();
         const bounds = await claim.boundingBox();
         expect(bounds.x).toBeGreaterThanOrEqual(0);
         if (mobile) expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
         const before = structuredClone(fixture.queue());
         await claim.click();
+        await page.getByRole('button', { name: '确认认领', exact: true }).click();
         await expect(page.getByText('已认领 3 首，昵称已改为「Original」', { exact: true })).toBeVisible();
         await expect(claim).toHaveCount(0);
         expect(fixture.queue().map((item) => item.queueId)).toEqual(before.map((item) => item.queueId));
@@ -186,8 +187,9 @@ for (const mobile of [false, true])
 test('rejection keeps playlist and permits retry', async ({ page }) => {
     const fixture = await room(page, { rejectClaim: true });
     const before = structuredClone(fixture.queue());
-    const claim = page.getByRole('button', { name: '认领 Original 的歌单并改名', exact: true });
+    const claim = page.getByRole('button', { name: '认领 Original 的歌单', exact: true });
     await claim.click();
+    await page.getByRole('button', { name: '确认认领', exact: true }).click();
     await expect(page.getByText('原主人在线或刚刚断线，请稍后再认领', { exact: true })).toBeVisible();
     await expect(claim).toBeEnabled();
     expect(fixture.queue()).toEqual(before);
@@ -195,14 +197,14 @@ test('rejection keeps playlist and permits retry', async ({ page }) => {
 test('online owners and current identity have no claim button', async ({ page }) => {
     await room(page, { sourceOnline: true, guest: false });
     await expect(page.getByText('Original', { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: '认领 Original 的歌单并改名', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '认领 Other 的歌单并改名', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '认领 Current 的歌单并改名', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '认领 Original 的歌单', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '认领 Other 的歌单', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '认领 Current 的歌单', exact: true })).toHaveCount(0);
 });
 test('disabled setting hides all recovery buttons', async ({ page }) => {
     await room(page, { enabled: false });
     await expect(page.getByText('Original', { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: /认领.*的歌单并改名/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /认领.*的歌单/ })).toHaveCount(0);
 });
 test('admin switch persists partial settings and follows room state after reload', async ({ page }) => {
     const fixture = await room(page, { admin: true, guest: false, enabled: false });
@@ -221,7 +223,9 @@ test('admin switch persists partial settings and follows room state after reload
 });
 test('sequential mode exposes globally pinned-only orphan recovery', async ({ page }) => {
     const fixture = await room(page, { mode: 'SEQUENTIAL' });
-    await page.getByRole('button', { name: '认领 Pinned 的歌单并改名', exact: true }).click();
+    await page.getByRole('button', { name: /离线歌单/ }).click();
+    await page.getByRole('button', { name: '认领 Pinned 的歌单', exact: true }).click();
+    await page.getByRole('button', { name: '确认认领', exact: true }).click();
     await expect(page.getByText('已认领 1 首，昵称已改为「Pinned」', { exact: true })).toBeVisible();
     expect(fixture.queue().find((item) => item.queueId === 'q5').priority).toBe('GLOBAL_TOP');
     expect(fixture.queue()).toHaveLength(6);

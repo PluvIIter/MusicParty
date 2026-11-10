@@ -52,7 +52,7 @@ class MusicPlayerServiceSettingsTest {
         PlayerState state = service.getCurrentPlayerState();
         assertEquals("SHUFFLE", state.playMode());
         assertTrue(state.isShuffle());              // isShuffle 派生同步
-        assertTrue(state.isFairShuffle());
+        assertFalse(state.isFairShuffle(), "Explicit SHUFFLE mode overrides the legacy fairShuffle flag");
         assertTrue(state.allowOfflineShuffle());
         assertTrue(state.isVoteSkipEnabled());
         assertEquals(0.75, state.voteSkipThreshold());

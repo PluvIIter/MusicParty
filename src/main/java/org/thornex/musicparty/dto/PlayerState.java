@@ -25,7 +25,8 @@ public record PlayerState(
         /** 每次房间级 seek 自增；客户端据此重锚本地时钟（否则回退会被当成迟到包忽略）。 */
         long seekNonce,
         String playbackId,
-        AppConfigSummary config
+        AppConfigSummary config,
+        java.util.Map<String, Boolean> memberShufflePreferences
 ) {
     public record AppConfigSummary(
             int maxQueueSize,
