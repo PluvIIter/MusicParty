@@ -106,7 +106,8 @@ export async function room(page, { url, refreshed = url, blocked = false, failed
         const path = new URL(route.request().url()).pathname;
         let body = {};
         if (path === '/api/auth/status') body = { isSetup: true, hasProtection: false };
-        else if (path === '/api/config') body = { authorName: 'Fixture' };
+        else if (path === '/api/config') body = { authorName: 'Fixture', backWords: 'MUSIC PARTY' };
+        else if (path.startsWith('/api/lyric/')) body = '';
         else if (path.includes('/api/music/refresh/')) {
             refreshes++;
             if (route.request().headers()['x-room-password'] !== 'fixture-room')
@@ -188,13 +189,11 @@ export async function room(page, { url, refreshed = url, blocked = false, failed
 }
 
 export const media = (page) =>
-    page
-        .locator('audio')
-        .evaluate((a) => ({
-            time: a.currentTime,
-            paused: a.paused,
-            ready: a.readyState,
-            decoded: a.webkitAudioDecodedByteCount,
-            rate: a.playbackRate,
-            src: a.currentSrc,
-        }));
+    page.locator('audio').evaluate((a) => ({
+        time: a.currentTime,
+        paused: a.paused,
+        ready: a.readyState,
+        decoded: a.webkitAudioDecodedByteCount,
+        rate: a.playbackRate,
+        src: a.currentSrc,
+    }));

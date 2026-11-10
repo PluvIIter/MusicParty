@@ -193,10 +193,10 @@ for (const width of [1280, 320])
         await page.setViewportSize({ width, height: 800 });
         await page.addInitScript(() => localStorage.setItem('mp_room_password', 'fixture-room'));
         const server = await room(page);
-        await page.getByRole('button', { name: '收藏专辑', exact: true }).click();
+        if (width < 768) await page.locator('button:has(svg.lucide-arrow-left)').click();
         const pane = page.getByRole('region', { name: '收藏专辑', exact: true });
         await expect(pane.getByRole('button', { name: /^查看专辑：/ })).toHaveCount(2);
-        await expect(pane.getByText(/与绑定的歌单用户 ID 无关/)).toBeVisible();
+        await expect(pane.getByRole('heading', { name: '收藏专辑', exact: true })).toBeVisible();
         await pane.getByRole('button', { name: '加载更多专辑', exact: true }).click();
         await expect(pane.getByRole('button', { name: /^查看专辑：/ })).toHaveCount(3);
         await pane.getByRole('button', { name: '查看专辑：Saved 900', exact: true }).click();
@@ -212,14 +212,14 @@ for (const width of [1280, 320])
     });
 test('empty collection and login expiry support refresh and retry', async ({ page }) => {
     const server = await room(page);
-    await page.getByRole('button', { name: '收藏专辑', exact: true }).click();
+
     const pane = page.getByRole('region', { name: '收藏专辑', exact: true });
     await pane.getByRole('button', { name: '查看专辑：Saved 900', exact: true }).waitFor();
     server.setCollectionMode('empty');
-    await pane.getByRole('button', { name: '刷新收藏' }).click();
+    await page.getByRole('button', { name: '刷新', exact: true }).click();
     await expect(pane.getByText(/当前账号还没有收藏专辑/)).toBeVisible();
     server.setCollectionMode('expired');
-    await pane.getByRole('button', { name: '刷新收藏' }).click();
+    await page.getByRole('button', { name: '刷新', exact: true }).click();
     await expect(pane.getByRole('alert')).toContainText('网易云登录已失效');
     server.setCollectionMode('ok');
     await pane.getByRole('button', { name: '重试读取收藏' }).click();
