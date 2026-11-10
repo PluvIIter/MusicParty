@@ -1,11 +1,11 @@
 <template>
     <div
         v-if="isOpen"
-        class="fixed inset-0 z-[60] bg-medical-900/80 backdrop-blur-sm flex items-center justify-center p-0 md:p-4"
+        class="fixed inset-0 z-[60] bg-brand/80 backdrop-blur-sm flex items-center justify-center p-0 md:p-4"
     >
         <!-- 移动端全屏面板；桌面端居中弹窗。安全区 padding 兼容刘海屏/全面屏 -->
         <div
-            class="w-full max-w-4xl bg-medical-50 h-full md:h-[80vh] flex flex-col shadow-2xl relative chamfer-br max-h-full pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+            class="w-full max-w-4xl bg-surface h-full md:h-[80vh] flex flex-col shadow-2xl relative chamfer-br max-h-full pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
         >
             <!-- 关闭按钮 (移动端避开刘海区域) -->
             <button
@@ -16,10 +16,8 @@
             </button>
 
             <!-- 头部 -->
-            <div class="p-4 md:p-6 border-b border-medical-200 bg-white flex-shrink-0">
-                <h2
-                    class="text-xl md:text-2xl font-bold font-mono mb-3 md:mb-4 text-medical-900 flex items-center gap-2"
-                >
+            <div class="p-4 md:p-6 border-b border-line bg-surface-raised flex-shrink-0">
+                <h2 class="text-xl md:text-2xl font-bold font-mono mb-3 md:mb-4 text-ink flex items-center gap-2">
                     <Search class="w-5 h-5 text-accent" /> SEARCH
                 </h2>
 
@@ -33,24 +31,12 @@
                         class="px-4 md:px-6 py-2 text-sm font-bold uppercase transition-all"
                         :class="[
                             mode === 'search' && platform === p
-                                ? 'bg-accent text-white'
-                                : 'bg-medical-200 text-medical-500 hover:bg-medical-300',
+                                ? 'bg-accent text-ink-inverse'
+                                : 'bg-line text-ink-muted hover:bg-line-strong',
                             !isPlatformEnabled(p) ? 'opacity-30 cursor-not-allowed grayscale' : '',
                         ]"
                     >
                         {{ p }}
-                    </button>
-                    <button
-                        @click="mode = 'savedalbums'"
-                        :disabled="!isPlatformEnabled('netease')"
-                        class="px-4 md:px-6 py-2 text-sm font-bold transition-all disabled:opacity-30"
-                        :class="
-                            mode === 'savedalbums'
-                                ? 'bg-accent text-white'
-                                : 'bg-medical-200 text-medical-500 hover:bg-medical-300'
-                        "
-                    >
-                        收藏专辑
                     </button>
                     <!-- 本地点赞列表标签（仅本地缓存，不上报服务器） -->
                     <button
@@ -58,8 +44,8 @@
                         class="px-4 md:px-6 py-2 text-sm font-bold transition-all"
                         :class="
                             mode === 'likesong'
-                                ? 'bg-accent text-white'
-                                : 'bg-medical-200 text-medical-500 hover:bg-medical-300'
+                                ? 'bg-accent text-ink-inverse'
+                                : 'bg-line text-ink-muted hover:bg-line-strong'
                         "
                     >
                         LIKESONG
@@ -67,16 +53,16 @@
                 </div>
 
                 <!-- 搜索框 -->
-                <div v-if="mode !== 'savedalbums'" class="flex gap-2">
+                <div class="flex gap-2">
                     <input
                         v-model="keyword"
                         @keyup.enter="handleSearchAction"
                         :placeholder="mode === 'likesong' ? '搜索点赞的歌曲...' : '搜索音乐...'"
-                        class="flex-1 min-w-0 border p-2.5 md:p-3 outline-none transition-colors duration-300 font-sans bg-medical-100 border-medical-200 focus:border-accent"
+                        class="flex-1 min-w-0 border p-2.5 md:p-3 outline-none transition-colors duration-300 font-sans bg-surface-sunken border-line focus:border-accent"
                     />
                     <button
                         @click="handleSearchAction"
-                        class="text-white px-3 md:px-6 py-2 font-bold transition-colors text-xs md:text-base flex-shrink-0 font-sans bg-accent hover:bg-accent-hover"
+                        class="text-ink-inverse px-3 md:px-6 py-2 font-bold transition-colors text-xs md:text-base flex-shrink-0 font-sans bg-accent hover:bg-accent-hover"
                     >
                         SEARCH
                     </button>
@@ -85,20 +71,18 @@
 
             <!-- 内容区 -->
             <div class="flex-1 overflow-hidden flex flex-col md:flex-row relative">
-                <SavedAlbums v-if="mode === 'savedalbums'" />
-
                 <!-- LikeSong：本地点赞歌曲列表（仅本地缓存，不上报服务器） -->
-                <div v-if="mode === 'likesong'" class="flex-1 bg-medical-50 flex-col min-h-0 flex">
+                <div v-if="mode === 'likesong'" class="flex-1 bg-surface flex-col min-h-0 flex">
                     <div
-                        class="flex items-center justify-between p-3 bg-white border-b border-medical-200 flex-shrink-0"
+                        class="flex items-center justify-between p-3 bg-surface-raised border-b border-line flex-shrink-0"
                     >
-                        <span class="font-bold text-sm text-medical-800 font-mono">LIKESONG</span>
-                        <span class="text-[10px] font-mono text-medical-400">{{ likedSongs.length }} LIKED</span>
+                        <span class="font-bold text-sm text-ink font-mono">LIKESONG</span>
+                        <span class="text-[10px] font-mono text-ink-subtle">{{ likedSongs.length }} LIKED</span>
                     </div>
                     <div class="flex-1 overflow-y-auto overscroll-contain p-2 md:p-4">
                         <div
                             v-if="filteredLikedSongs.length === 0"
-                            class="text-center py-10 text-medical-400 text-xs font-mono"
+                            class="text-center py-10 text-ink-subtle text-xs font-mono"
                         >
                             {{ keyword.trim() ? 'NO MATCH' : 'NO LIKED SONGS YET' }}
                         </div>
@@ -106,15 +90,15 @@
                             <div
                                 v-for="song in filteredLikedSongs"
                                 :key="song.platform + ':' + song.id"
-                                class="flex items-center p-3 bg-white border border-transparent transition-all group hover:border-medical-300 hover:shadow-sm"
+                                class="flex items-center p-3 bg-surface-raised border border-transparent transition-all group hover:border-line-strong hover:shadow-sm"
                             >
                                 <div class="flex-1 w-0 flex items-center gap-3">
-                                    <div class="w-8 h-8 bg-medical-200 flex-shrink-0 relative overflow-hidden">
+                                    <div class="w-8 h-8 bg-line flex-shrink-0 relative overflow-hidden">
                                         <CoverImage :src="song.coverUrl" class="w-full h-full" :scanline="false" />
                                     </div>
                                     <div class="min-w-0 flex-1">
                                         <div class="text-sm font-bold truncate">{{ song.name }}</div>
-                                        <div class="text-xs text-medical-500 truncate">
+                                        <div class="text-xs text-ink-muted truncate">
                                             {{ song.artists.join(' / ') }}
                                         </div>
                                     </div>
@@ -128,7 +112,7 @@
                                             ? 'text-green-500 cursor-default'
                                             : pendingIds.has(song.id)
                                               ? 'text-accent cursor-wait'
-                                              : 'text-medical-300 hover:text-accent',
+                                              : 'text-ink-subtle hover:text-accent',
                                     ]"
                                 >
                                     <!-- 状态 1: 正在添加 -->
@@ -141,7 +125,7 @@
                                 <button
                                     @click="openLikedSource(song)"
                                     title="打开源页面"
-                                    class="ml-1 p-2 flex-shrink-0 text-medical-300 hover:text-accent transition-all duration-300"
+                                    class="ml-1 p-2 flex-shrink-0 text-ink-subtle hover:text-accent transition-all duration-300"
                                 >
                                     <ExternalLink class="w-5 h-5" />
                                 </button>
@@ -152,7 +136,7 @@
 
                 <!-- 左侧：我的歌单 / 绑定 -->
                 <div
-                    class="md:w-1/3 md:h-auto flex-shrink-0 border-b md:border-b-0 md:border-r border-medical-200 flex-col bg-white transition-all"
+                    class="md:w-1/3 md:h-auto flex-shrink-0 border-b md:border-b-0 md:border-r border-line flex-col bg-surface-raised transition-all"
                     :class="
                         mode !== 'search'
                             ? 'hidden'
@@ -162,38 +146,41 @@
                     "
                 >
                     <div
-                        class="p-2 md:p-3 bg-medical-100 text-xs font-bold text-medical-500 flex justify-between items-center font-sans"
+                        class="p-2 md:p-3 bg-surface-sunken text-xs font-bold text-ink-muted flex justify-between items-center font-sans"
                     >
                         <span>用户歌单</span>
+                        <button
+                            type="button"
+                            @click="refreshSidebar"
+                            :disabled="isPlaylistsLoading"
+                            class="text-[10px] font-bold px-2 py-0.5 border border-line hover:text-accent hover:border-accent disabled:opacity-40 transition-colors"
+                        >
+                            {{ isPlaylistsLoading ? '刷新中' : '刷新' }}
+                        </button>
                     </div>
 
                     <div class="flex-1 overflow-y-auto overscroll-contain p-2 space-y-2">
                         <!-- 未绑定 -->
-                        <div
-                            v-if="!bindings[platform]"
-                            class="p-4 border border-dashed border-medical-300 bg-medical-50"
-                        >
-                            <div class="text-xs text-medical-500 mb-2 text-center font-sans">
-                                绑定用户以获取用户歌单
-                            </div>
+                        <div v-if="!bindings[platform]" class="p-4 border border-dashed border-line-strong bg-surface">
+                            <div class="text-xs text-ink-muted mb-2 text-center font-sans">绑定用户以获取用户歌单</div>
                             <div class="flex gap-1">
                                 <input
                                     v-model="searchUserKeyword"
                                     @keyup.enter="searchUser"
                                     placeholder="搜索用户名"
-                                    class="flex-1 min-w-0 bg-white border border-medical-200 p-1 text-sm outline-none focus:border-accent font-sans"
+                                    class="flex-1 min-w-0 bg-surface-raised border border-line p-1 text-sm outline-none focus:border-accent font-sans"
                                 />
                                 <button
                                     @click="searchUser"
                                     class="bg-accent hover:bg-accent-hover p-1 transition-colors"
                                 >
-                                    <Search class="w-4 h-4 text-white" />
+                                    <Search class="w-4 h-4 text-ink-inverse" />
                                 </button>
                             </div>
                             <!-- 搜索结果列表 -->
                             <div
                                 v-if="userSearchResults.length > 0"
-                                class="mt-2 max-h-40 overflow-y-auto space-y-1 border-t border-medical-200 pt-2"
+                                class="mt-2 max-h-40 overflow-y-auto space-y-1 border-t border-line pt-2"
                             >
                                 <div
                                     v-for="user in userSearchResults"
@@ -201,7 +188,7 @@
                                     @click="bindUser(user)"
                                     class="flex items-center gap-2 p-1 hover:bg-accent/10 cursor-pointer group"
                                 >
-                                    <img :src="user.avatarUrl" class="w-6 h-6 rounded-full bg-medical-200" />
+                                    <img :src="user.avatarUrl" class="w-6 h-6 rounded-full bg-line" />
                                     <span class="text-xs font-bold truncate flex-1">{{ user.name }}</span>
                                 </div>
                             </div>
@@ -212,10 +199,8 @@
 
                         <!-- 已绑定：歌单列表 -->
                         <template v-else>
-                            <div
-                                class="flex justify-between items-center px-2 py-1 bg-medical-50 border-b border-medical-100"
-                            >
-                                <span class="text-[10px] font-mono text-medical-400">ID: {{ bindings[platform] }}</span>
+                            <div class="flex justify-between items-center px-2 py-1 bg-surface border-b border-line">
+                                <span class="text-[10px] font-mono text-ink-subtle">ID: {{ bindings[platform] }}</span>
                                 <button
                                     @click="playerStore.bindAccount(platform, '')"
                                     class="text-[10px] text-red-400 hover:underline"
@@ -233,39 +218,41 @@
                                 v-for="pl in playlists"
                                 :key="pl.id"
                                 @click="handleSelectPlaylist(pl.id)"
-                                class="flex items-center gap-3 p-2 hover:bg-medical-50 cursor-pointer group transition-colors border-l-2 border-transparent hover:border-accent"
+                                class="flex items-center gap-3 p-2 hover:bg-surface cursor-pointer group transition-colors border-l-2 border-transparent hover:border-accent"
                             >
-                                <div class="w-10 h-10 bg-medical-200 flex-shrink-0 overflow-hidden">
+                                <div class="w-10 h-10 bg-line flex-shrink-0 overflow-hidden">
                                     <CoverImage :src="pl.coverImgUrl" class="w-full h-full" :scanline="false" />
                                 </div>
                                 <div class="overflow-hidden">
                                     <div class="text-sm font-bold truncate group-hover:text-accent">{{ pl.name }}</div>
-                                    <div class="text-xs font-mono text-medical-400">{{ pl.trackCount }} TRACKS</div>
+                                    <div class="text-xs font-mono text-ink-subtle">{{ pl.trackCount }} TRACKS</div>
                                 </div>
-                                <ChevronRight class="w-4 h-4 text-medical-300 md:hidden ml-auto" />
+                                <ChevronRight class="w-4 h-4 text-ink-subtle md:hidden ml-auto" />
                             </div>
                         </template>
+
+                        <!-- 收藏专辑：并入用户歌单下方，不再单独开页 -->
+                        <div v-if="platform === 'netease'" class="mt-3 border-t border-line pt-2">
+                            <SavedAlbums ref="savedAlbumsRef" embedded />
+                        </div>
                     </div>
                 </div>
 
                 <!-- 右侧：歌曲列表 -->
                 <div
-                    class="md:flex-1 bg-medical-50 flex-col min-h-0"
+                    class="md:flex-1 bg-surface flex-col min-h-0"
                     :class="
                         mode !== 'search' ? 'hidden' : mobileView === 'songs' ? 'flex w-full h-full' : 'hidden md:flex'
                     "
                 >
                     <!-- 移动端返回条 -->
                     <div
-                        class="md:hidden flex items-center gap-2 p-3 bg-white border-b border-medical-200 flex-shrink-0"
+                        class="md:hidden flex items-center gap-2 p-3 bg-surface-raised border-b border-line flex-shrink-0"
                     >
-                        <button
-                            @click="mobileView = 'playlists'"
-                            class="p-1 -ml-1 text-medical-500 hover:text-medical-900"
-                        >
+                        <button @click="mobileView = 'playlists'" class="p-1 -ml-1 text-ink-muted hover:text-ink">
                             <ArrowLeft class="w-5 h-5" />
                         </button>
-                        <span class="font-bold text-sm text-medical-800">{{
+                        <span class="font-bold text-sm text-ink">{{
                             listMode === 'search' ? 'SEARCH RESULTS' : 'PLAYLIST DETAILS'
                         }}</span>
                     </div>
@@ -278,16 +265,16 @@
                         <!-- 歌单操作头 -->
                         <div
                             v-else-if="currentPlaylistId && listMode === 'playlist'"
-                            class="mb-4 p-4 bg-white border border-medical-200 flex justify-between items-center shadow-sm"
+                            class="mb-4 p-4 bg-surface-raised border border-line flex justify-between items-center shadow-sm"
                         >
                             <div>
-                                <div class="text-xs font-sans text-medical-400">用户歌单</div>
+                                <div class="text-xs font-sans text-ink-subtle">用户歌单</div>
                                 <div class="font-bold text-lg">{{ currentPlaylistId }}</div>
-                                <div class="text-xs text-medical-400 font-mono">{{ songs.length }} LOADED</div>
+                                <div class="text-xs text-ink-subtle font-mono">{{ songs.length }} LOADED</div>
                             </div>
                             <button
                                 @click="handleImportPlaylist"
-                                class="bg-medical-900 text-white px-4 py-2 text-sm font-bold hover:bg-accent transition-colors flex items-center gap-2 font-sans"
+                                class="bg-brand text-ink-inverse px-4 py-2 text-sm font-bold hover:bg-accent transition-colors flex items-center gap-2 font-sans"
                             >
                                 <ListPlus class="w-4 h-4" /> <span class="hidden sm:inline">导入全部</span>
                             </button>
@@ -297,7 +284,7 @@
                         <div class="space-y-1">
                             <div
                                 v-if="songs.length === 0 && !loading"
-                                class="text-center py-10 text-medical-400 text-xs font-mono"
+                                class="text-center py-10 text-ink-subtle text-xs font-mono"
                             >
                                 NO DATA FOUND
                             </div>
@@ -307,24 +294,24 @@
                                 class="flex items-center p-3 border border-transparent transition-all group"
                                 :class="
                                     isUnplayable(song)
-                                        ? 'opacity-50 grayscale bg-medical-50 cursor-not-allowed'
-                                        : 'bg-white hover:border-medical-300 hover:shadow-sm'
+                                        ? 'opacity-50 grayscale bg-surface cursor-not-allowed'
+                                        : 'bg-surface-raised hover:border-line-strong hover:shadow-sm'
                                 "
                             >
                                 <div class="flex-1 w-0 flex items-center gap-3">
-                                    <div class="w-8 h-8 bg-medical-200 flex-shrink-0 relative overflow-hidden">
+                                    <div class="w-8 h-8 bg-line flex-shrink-0 relative overflow-hidden">
                                         <CoverImage :src="song.coverUrl" class="w-full h-full" :scanline="false" />
                                     </div>
                                     <div class="min-w-0 flex-1">
                                         <div class="text-sm font-bold truncate">{{ song.name }}</div>
-                                        <div class="text-xs text-medical-500 truncate">
+                                        <div class="text-xs text-ink-muted truncate">
                                             {{ song.artists.join(' / ') }}
                                         </div>
                                     </div>
                                 </div>
                                 <div v-if="isUnplayable(song)" class="ml-2 flex-shrink-0">
                                     <span
-                                        class="px-1.5 py-0.5 text-[10px] font-mono font-bold text-medical-400 border border-medical-300 bg-medical-100 rounded-sm"
+                                        class="px-1.5 py-0.5 text-[10px] font-mono font-bold text-ink-subtle border border-line-strong bg-surface-sunken rounded-sm"
                                         >>{{ playerStore.config.bilibiliMaxDurationMinutes || 10 }}MIN</span
                                     >
                                 </div>
@@ -334,7 +321,7 @@
                                     @click="selectedAlbumSong = song"
                                     :aria-label="'查看《' + song.name + '》所属专辑'"
                                     title="查看专辑并添加整张专辑"
-                                    class="ml-2 px-2 py-2 flex-shrink-0 text-xs font-bold border border-medical-200 text-medical-500 hover:border-accent hover:text-accent transition-colors"
+                                    class="ml-2 px-2 py-2 flex-shrink-0 text-xs font-bold border border-line text-ink-muted hover:border-accent hover:text-accent transition-colors"
                                 >
                                     专辑
                                 </button>
@@ -350,7 +337,7 @@
                                             ? 'text-green-500 cursor-default'
                                             : pendingIds.has(song.id)
                                               ? 'text-accent cursor-wait'
-                                              : 'text-medical-300 hover:text-accent',
+                                              : 'text-ink-subtle hover:text-accent',
                                     ]"
                                     :disabled="pendingIds.has(song.id) || isInQueue(song.id)"
                                 >
@@ -371,7 +358,7 @@
                             <div v-if="isLoadingMore" class="flex justify-center text-accent">
                                 <Loader2 class="w-6 h-6 animate-spin" />
                             </div>
-                            <div v-else-if="!hasMore && songs.length > 0" class="text-xs font-mono text-medical-400">
+                            <div v-else-if="!hasMore && songs.length > 0" class="text-xs font-mono text-ink-subtle">
                                 -- END OF PLAYLIST --
                             </div>
                         </div>
@@ -467,6 +454,7 @@ const {
     bindUser,
     loadPlaylist,
     handleScroll,
+fetchPlaylists,
 } = usePlaylistLogic(platform, songs, listMode, loading);
 
 // 3. UI 状态
@@ -478,6 +466,15 @@ const isUnplayable = (song) => {
     return platform.value === 'bilibili' && song.duration > maxMin * 60 * 1000;
 };
 
+
+// 侧栏刷新：用户歌单 + 收藏专辑一起拉
+const savedAlbumsRef = ref(null);
+// 刷新只针对当前音乐源：网易云 = 用户歌单 + 收藏专辑；B 站 = 仅用户歌单（无收藏）
+const refreshSidebar = async () => {
+    const tasks = [fetchPlaylists()];
+    if (platform.value === 'netease') tasks.push(savedAlbumsRef.value?.reload?.());
+    await Promise.all(tasks);
+};
 const handleSelectPlaylist = (pid) => {
     loadPlaylist(pid);
     mobileView.value = 'songs';

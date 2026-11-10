@@ -166,6 +166,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         searchUser,
         bindUser,
         loadPlaylist,
+        fetchPlaylists,
         handleScroll,
     };
 }
