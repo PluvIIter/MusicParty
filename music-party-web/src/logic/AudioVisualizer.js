@@ -134,11 +134,13 @@ export class AudioVisualizer {
     }
     /** 背景装饰色（刻度环）：读 --mp-ring，随 data-theme 变化，按主题缓存避免每帧读样式 */
     graphicColor() {
-        const theme = document.documentElement?.dataset?.theme === 'dark' ? 'dark' : 'light';
+        const theme = document.documentElement?.dataset?.palette || document.documentElement?.dataset?.theme || 'light';
         if (theme !== this._themeKey) {
             this._themeKey = theme;
             const raw = getComputedStyle(document.documentElement).getPropertyValue('--mp-ring').trim();
             this._graphicColor = raw ? `rgb(${raw})` : '#D1D5DB';
+            this._accentColor =
+                getComputedStyle(document.documentElement).getPropertyValue('--mp-accent').trim() || '249 115 22';
         }
         return this._graphicColor;
     }
@@ -202,7 +204,8 @@ export class AudioVisualizer {
             if (!this.isFirefox) {
                 // shadowBlur 是 Firefox 的主要光栅化热点，故只在 Firefox 关闭；其他浏览器保留原光晕
                 ctx.shadowBlur = 50;
-                ctx.shadowColor = '#F97316';
+                this.graphicColor();
+                ctx.shadowColor = `rgb(${this._accentColor})`;
             }
 
             this.rings.forEach((ring) => {
@@ -238,7 +241,8 @@ export class AudioVisualizer {
                     );
                 }
                 ctx.closePath();
-                ctx.fillStyle = `rgba(249, 115, 22, ${this.smoothAlpha})`;
+                this.graphicColor();
+                ctx.fillStyle = `rgb(${this._accentColor} / ${this.smoothAlpha})`;
                 ctx.fill();
             });
             ctx.restore();
