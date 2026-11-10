@@ -4,31 +4,54 @@
             <h3 class="text-sm font-bold text-ink">
                 播放队列 <span class="text-accent text-xs">[{{ queue.length }}]</span>
             </h3>
-            <button
-                type="button"
-                @click="askClear"
-                :disabled="clearing || !player.connected || userStore.isGuest || mineCount === 0"
-                aria-label="清空我的歌单"
-                title="清空我的歌单（只移除自己点的歌）"
-                class="p-1.5 border border-line text-ink-muted hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-                <Trash2 class="w-4 h-4" />
-            </button>
+            <div class="flex items-center gap-2">
+                <button
+                    v-if="player.isRoundRobin"
+                    type="button"
+                    :disabled="!player.connected || userStore.isGuest"
+                    :aria-label="`我的选曲：${memberShuffle ? '随机' : '顺序'}`"
+                    :title="
+                        memberShuffle ? '轮到我时随机选曲；点击改为顺序' : '轮到我时按我的歌单顺序选曲；点击改为随机'
+                    "
+                    class="p-1.5 border border-line text-xs flex items-center gap-1 text-ink-muted hover:text-accent disabled:opacity-40 disabled:cursor-not-allowed"
+                    @click="player.setMemberShuffle(!memberShuffle)"
+                >
+                    <component :is="memberShuffle ? Shuffle : ListOrdered" class="w-4 h-4" aria-hidden="true" />
+                    {{ memberShuffle ? '个人随机' : '个人顺序' }}
+                </button>
+                <button
+                    type="button"
+                    @click="askClear"
+                    :disabled="clearing || !player.connected || userStore.isGuest || mineCount === 0"
+                    aria-label="清空我的歌单"
+                    title="清空我的歌单（只移除自己点的歌）"
+                    class="p-1.5 border border-line text-ink-muted hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                    <Trash2 class="w-4 h-4" />
+                </button>
+            </div>
         </div>
+        <p class="sr-only" role="status" aria-live="polite">{{ reorder.announcement.value }}</p>
 
+        <div
+            v-if="player.isShuffle && queue.length"
+            class="px-3 py-2 bg-accent/10 text-accent text-xs font-bold flex items-center gap-2"
+        >
+            <Shuffle class="w-4 h-4" aria-hidden="true" />随机播放中
+        </div>
         <!-- Conditional Rendering: Show empty message -->
         <div v-if="queue.length === 0" class="flex-1 text-center py-10 text-xs font-mono text-ink-subtle">
             QUEUE EMPTY / WAITING FOR INPUT
         </div>
 
-        <!-- Shuffle Mode View: Grouped by User (ONLY for Fair Shuffle) -->
-        <div v-else-if="player.isShuffle && player.isFairShuffle" class="flex-1 overflow-y-auto p-2">
-            <!-- Shuffle Indicator -->
+        <!-- Round-robin member groups -->
+        <div v-else-if="player.isRoundRobin" data-queue-scroll class="flex-1 overflow-y-auto p-2">
+            <!-- Round-robin indicator -->
             <div
                 class="-mx-2 -mt-2 mb-3 bg-accent/10 border-b border-accent/20 px-3 py-2 flex items-center gap-2 text-accent text-xs font-bold"
             >
-                <Shuffle class="w-4 h-4" />
-                <span>随机播放中</span>
+                <Repeat class="w-4 h-4" />
+                <span>轮询播放中</span>
             </div>
 
             <!-- Top Songs (Always at top) -->
@@ -85,14 +108,14 @@
 
                     <!-- Drawer Content -->
                     <div v-show="expandedUsers[group.token]" class="bg-surface/50 p-2 border-t border-line">
-                        <QueueItem v-for="(item, idx) in group.items" :key="item.queueId" :item="item" />
+                        <QueueItem v-for="item in group.items" :key="item.queueId" :item="item" />
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Normal Mode: Virtual List -->
-        <div v-else v-bind="containerProps" class="flex-1 overflow-y-auto p-2">
+        <div v-else v-bind="containerProps" data-queue-scroll class="flex-1 overflow-y-auto p-2">
             <div v-bind="wrapperProps">
                 <QueueItem v-for="{ data: item, index } in list" :key="item.queueId" :item="item" :index="index" />
             </div>
@@ -100,7 +123,7 @@
 
         <!-- 离线歌单：默认收起，放到底部，避免占据队列主区域 -->
         <div
-            v-if="!(player.isShuffle && player.isFairShuffle) && claimableGroups.length"
+            v-if="!player.isRoundRobin && claimableGroups.length"
             class="flex-shrink-0 border-t border-line bg-surface"
         >
             <button
@@ -225,18 +248,22 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, provide, ref } from 'vue';
 import { useVirtualList } from '@vueuse/core';
 import { usePlayerStore } from '../stores/player';
-import { Shuffle, ChevronDown, ChevronRight, User, Trash2 } from 'lucide-vue-next';
+import { Shuffle, Repeat, ListOrdered, ChevronDown, ChevronRight, User, Trash2 } from 'lucide-vue-next';
 import { useUserStore } from '../stores/user';
 import QueueItem from './QueueItem.vue';
 import { useToast } from '../composables/useToast';
 import { splitQueue } from '../domain/queueRules';
+import { useQueueReorder } from '../composables/useQueueReorder';
 
 const player = usePlayerStore();
 const queue = computed(() => player.queue);
 const userStore = useUserStore();
+const memberShuffle = computed(() => player.memberShufflePreferences[userStore.userToken] ?? true);
+const reorder = useQueueReorder(player, userStore);
+provide('queueReorder', reorder);
 const claiming = ref('');
 const clearing = ref(false);
 const mineCount = computed(() => queue.value.filter((item) => item.enqueuedBy.token === userStore.userToken).length);
@@ -305,7 +332,7 @@ const { list, containerProps, wrapperProps } = useVirtualList(queue, {
     overscan: 10,
 });
 
-// --- Shuffle Mode Logic ---
+// Round-robin groups
 
 const queueGroups = computed(() => splitQueue(queue.value, (group) => group.items.length > 0 || canClaim(group)));
 const topItems = computed(() => queueGroups.value.topItems);

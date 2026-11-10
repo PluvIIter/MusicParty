@@ -116,16 +116,12 @@
                 >
                     <Download class="w-4 h-4" />
                 </button>
-                <button
+                <PlayModePicker
                     id="tutorial-random-mobile"
-                    @click="player.cyclePlayMode"
-                    :disabled="!player.connected || player.isPlayModeLocked"
-                    class="p-2 border rounded-sm disabled:opacity-50 transition-colors bg-surface border-line text-ink-muted"
-                >
-                    <ListOrdered v-if="player.playMode === 'SEQUENTIAL'" class="w-4 h-4" />
-                    <Shuffle v-else-if="player.playMode === 'SHUFFLE'" class="w-4 h-4" />
-                    <Repeat1 v-else class="w-4 h-4" />
-                </button>
+                    :model-value="player.playMode"
+                    :disabled="!player.connected || player.isPlayModeLocked || userStore.isGuest"
+                    @select="player.setPlayMode"
+                />
                 <button
                     id="tutorial-pause-mobile"
                     @click="player.togglePause"
@@ -169,17 +165,12 @@
                     <Download class="w-5 h-5" />
                 </button>
 
-                <button
+                <PlayModePicker
                     id="tutorial-random"
-                    @click="player.cyclePlayMode"
-                    :disabled="player.isPlayModeLocked"
-                    :class="['text-ink-subtle', player.isPlayModeLocked ? 'opacity-50 cursor-not-allowed' : '']"
-                    :title="modeTitle"
-                >
-                    <ListOrdered v-if="player.playMode === 'SEQUENTIAL'" class="w-5 h-5" />
-                    <Shuffle v-else-if="player.playMode === 'SHUFFLE'" class="w-5 h-5" />
-                    <Repeat1 v-else class="w-5 h-5" />
-                </button>
+                    :model-value="player.playMode"
+                    :disabled="!player.connected || player.isPlayModeLocked || userStore.isGuest"
+                    @select="player.setPlayMode"
+                />
 
                 <button
                     id="tutorial-pause"
@@ -264,9 +255,6 @@ import { formatDuration } from '../domain/time';
 import * as voteRules from '../domain/voteRules';
 import {
     Download,
-    ListOrdered,
-    Repeat1,
-    Shuffle,
     SkipForward,
     Play,
     Pause,
@@ -278,6 +266,7 @@ import {
     Lock,
 } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
+import PlayModePicker from './PlayModePicker.vue';
 import { useToast } from '../composables/useToast';
 
 const player = usePlayerStore();
@@ -288,19 +277,6 @@ const { info, error } = useToast();
 
 const nowPlaying = computed(() => player.nowPlaying);
 const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
-
-const modeTitle = computed(() => {
-    switch (player.playMode) {
-        case 'SEQUENTIAL':
-            return '顺序播放';
-        case 'SHUFFLE':
-            return '随机播放';
-        case 'REPEAT_ONE':
-            return '单曲循环';
-        default:
-            return '';
-    }
-});
 
 // 投票切歌相关计算
 const hasTrack = computed(() => !!nowPlaying.value);

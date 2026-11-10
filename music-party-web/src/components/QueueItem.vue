@@ -1,8 +1,27 @@
 <template>
     <div
         class="group relative flex items-center gap-2 p-2 border hover:border-line-strong transition-all mb-2 h-14"
-        :class="isFmMarker ? 'bg-accent/5 border-accent/30' : 'bg-surface-raised border-line'"
+        :data-queue-id="item.queueId"
+        :class="[
+            isFmMarker ? 'bg-accent/5 border-accent/30' : 'bg-surface-raised border-line',
+            reorder?.drag.value?.queueId === item.queueId ? 'opacity-50' : '',
+            reorder?.drag.value?.hasTarget && reorder.drag.value.beforeQueueId === item.queueId
+                ? 'border-t-accent border-t-2'
+                : '',
+        ]"
     >
+        <button
+            v-if="isReorderable"
+            type="button"
+            :disabled="!player.connected || userStore.isGuest"
+            :aria-label="`调整 ${item.music.name} 的顺序`"
+            title="拖动排序；方向键上/下移动自己的歌曲"
+            class="shrink-0 p-1 touch-none cursor-grab active:cursor-grabbing text-ink-subtle hover:text-accent disabled:opacity-40 disabled:cursor-not-allowed"
+            @pointerdown="reorder?.start(item, $event)"
+            @keydown="reorder?.keyboard(item, $event)"
+        >
+            <GripVertical class="w-4 h-4" aria-hidden="true" />
+        </button>
         <!-- 序号 -->
         <div v-if="index !== undefined" class="w-6 text-center font-mono text-xs text-ink-subtle">
             {{ String(index + 1).padStart(2, '0') }}
@@ -69,10 +88,11 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
+import { canReorderItem } from '../domain/queueRules';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
-import { Trash2, ArrowUpToLine, Loader2 } from 'lucide-vue-next';
+import { Trash2, ArrowUpToLine, Loader2, GripVertical } from 'lucide-vue-next';
 
 const props = defineProps({
     item: {
@@ -88,4 +108,6 @@ const props = defineProps({
 const player = usePlayerStore();
 const userStore = useUserStore();
 const isFmMarker = computed(() => props.item.music.platform === 'netease-fm');
+const reorder = inject('queueReorder', null);
+const isReorderable = computed(() => canReorderItem(props.item, userStore.userToken));
 </script>

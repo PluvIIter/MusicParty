@@ -74,30 +74,24 @@
                                             />
                                             <span class="text-[10px] font-bold font-mono">切歌</span>
                                         </button>
-                                        <button
-                                            @click="execPlayerAction('SHUFFLE')"
-                                            class="flex flex-col items-center justify-center p-4 bg-surface border border-line hover:border-accent hover:text-accent transition-all group"
-                                        >
-                                            <ListOrdered
-                                                v-if="playerStore.playMode === 'SEQUENTIAL'"
-                                                class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform"
-                                            />
-                                            <Shuffle
-                                                v-else-if="playerStore.playMode === 'SHUFFLE'"
-                                                class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform"
-                                            />
-                                            <Repeat1
-                                                v-else
-                                                class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform"
-                                            />
-                                            <span class="text-[10px] font-bold font-mono">{{
-                                                playerStore.playMode === 'SEQUENTIAL'
-                                                    ? '顺序'
-                                                    : playerStore.playMode === 'SHUFFLE'
-                                                      ? '随机'
-                                                      : '单曲循环'
-                                            }}</span>
-                                        </button>
+                                        <label class="flex flex-col gap-2 text-[10px] font-bold text-ink">
+                                            播放模式
+                                            <select
+                                                aria-label="管理员播放模式"
+                                                :value="playerStore.playMode"
+                                                :disabled="!playerStore.connected"
+                                                class="p-2 bg-surface border border-line text-xs min-w-0 disabled:opacity-40"
+                                                @change="execPlayerAction('SET_PLAY_MODE', $event.target.value)"
+                                            >
+                                                <option
+                                                    v-for="mode in PLAY_MODES"
+                                                    :key="mode.value"
+                                                    :value="mode.value"
+                                                >
+                                                    {{ mode.label }}
+                                                </option>
+                                            </select>
+                                        </label>
                                     </div>
 
                                     <!-- Permission Locks -->
@@ -123,33 +117,9 @@
                                     <div class="space-y-3 p-3 bg-surface border border-line rounded-sm">
                                         <!-- Shuffle Controls -->
                                         <div
-                                            v-if="playerStore.isShuffle"
+                                            v-if="playerStore.isShuffle || playerStore.isRoundRobin"
                                             class="grid grid-cols-2 gap-3 pb-3 border-b border-line"
                                         >
-                                            <div class="flex items-center justify-between">
-                                                <div class="flex flex-col">
-                                                    <span class="text-[10px] font-bold text-ink">{{
-                                                        playerStore.isFairShuffle ? '公平模式' : '全部随机'
-                                                    }}</span>
-                                                    <span class="text-[8px] text-ink-subtle font-mono uppercase"
-                                                        >算法类型</span
-                                                    >
-                                                </div>
-                                                <button
-                                                    @click="execPlayerAction('TOGGLE_FAIR_SHUFFLE')"
-                                                    class="w-8 h-4 rounded-full relative transition-colors"
-                                                    :class="playerStore.isFairShuffle ? 'bg-accent' : 'bg-line-strong'"
-                                                >
-                                                    <div
-                                                        class="absolute top-0.5 left-0.5 w-3 h-3 bg-surface-raised rounded-full transition-transform duration-300"
-                                                        :style="{
-                                                            transform: playerStore.isFairShuffle
-                                                                ? 'translateX(16px)'
-                                                                : 'translateX(0)',
-                                                        }"
-                                                    ></div>
-                                                </button>
-                                            </div>
                                             <div class="flex items-center justify-between border-l border-line pl-3">
                                                 <div class="flex flex-col">
                                                     <span class="text-[10px] font-bold text-ink">{{
@@ -286,7 +256,7 @@
                                             <div class="flex flex-col">
                                                 <span class="text-[10px] font-bold text-ink">播完保留歌单</span>
                                                 <span class="text-[8px] text-ink-subtle"
-                                                    >循环保留已播歌曲；公平随机时每位成员轮完再重复</span
+                                                    >循环保留已播歌曲；轮询时每位成员轮完再重复</span
                                                 >
                                             </div>
                                             <button
@@ -590,15 +560,13 @@ import { usePlayerStore } from '../stores/player';
 import { adminApi } from '../api/admin';
 import { useToast } from '../composables/useToast';
 import { toAdminConfigPayload } from '../domain/adminConfig';
+import { PLAY_MODES } from '../domain/playModes';
 import {
     Settings,
     X,
     Pause,
     Play,
     SkipForward,
-    ListOrdered,
-    Repeat1,
-    Shuffle,
     Lock,
     Unlock,
     ShieldAlert,
@@ -700,7 +668,7 @@ const privateDj = computed(
 
 const privateDjSwitches = [
     { field: 'fillBlankEnabled', label: '填充空白', hint: '队列无有效歌曲时播FM/DJ' },
-    { field: 'joinQueueEnabled', label: '加入队列', hint: '仅随机模式生效·固定私人FM' },
+    { field: 'joinQueueEnabled', label: '加入队列', hint: '随机/轮询模式生效·固定私人FM' },
     { field: 'custodyEnabled', label: '播放托管', hint: '无视队列·仅播FM/DJ' },
 ];
 
@@ -728,9 +696,9 @@ const togglePrivateDjSwitch = async (field) => {
     }
 };
 
-const execPlayerAction = async (action) => {
+const execPlayerAction = async (action, playMode) => {
     try {
-        const data = await adminApi.playerAction(adminStore.adminPassword, action);
+        const data = await adminApi.playerAction(adminStore.adminPassword, action, playMode);
         success(data.message);
     } catch (e) {
         error('指令执行失败');
