@@ -52,6 +52,7 @@ public class MusicPlayerService {
 
     // --- Player State ---
     private final AtomicReference<PlayableMusic> currentMusic = new AtomicReference<>(null);
+    private String playbackId;
     private final AtomicReference<String> currentEnqueuerId = new AtomicReference<>(null);
     private final AtomicReference<String> currentEnqueuerName = new AtomicReference<>(null);
 
@@ -137,7 +138,7 @@ public class MusicPlayerService {
     }
 
     @Scheduled(fixedRate = 1000)
-    public void playerLoop() {
+    public synchronized void playerLoop() {
         if (isPaused.get()) {
             return;
         }
@@ -152,8 +153,7 @@ public class MusicPlayerService {
                 log.info("Song finished: {}", music.name());
 
                 if (playMode.get() == PlayMode.REPEAT_ONE) {
-                    // 单曲循环模式：重置进度，重新播放当前歌曲
-                    // 前端 AudioEngine 通过 @seeked 事件检测进度跳变并自动重启播放
+                    playbackId = UUID.randomUUID().toString();
                     positionAnchor.set(0);
                     timestampAnchor.set(System.currentTimeMillis());
                     log.info("Repeat-one mode: restarting {}", music.name());
@@ -176,6 +176,7 @@ public class MusicPlayerService {
 
                 // 清空当前，触发下一首
                 currentMusic.set(null);
+                playbackId = null;
                 playNextInQueue();
             }
         } else {
@@ -252,11 +253,13 @@ public class MusicPlayerService {
                             playableMusic -> {
                                 // 检查版本号是否匹配
                                 // 如果在请求期间执行了 skip/stop，版本号会变，这里就应该丢弃结果
-                                if (playHeadVersion.get() == currentVersion) {
-                                    queueManager.clearPlaybackFailure(nextItem);
-                                    applyNewSong(playableMusic, nextItem);
-                                } else {
-                                    log.info("Discarded stale play result for {}", nextItem.music().name());
+                                synchronized (this) {
+                                    if (playHeadVersion.get() == currentVersion) {
+                                        queueManager.clearPlaybackFailure(nextItem);
+                                        applyNewSong(playableMusic, nextItem);
+                                    } else {
+                                        log.info("Discarded stale play result for {}", nextItem.music().name());
+                                    }
                                 }
                             },
                             error -> {
@@ -367,17 +370,20 @@ public class MusicPlayerService {
         }
         playableMono.timeout(Duration.ofSeconds(10)).subscribe(
                 pm -> {
-                    if (playHeadVersion.get() != version) return;
-                    applyFmDjSegment(pm, segment, forceFm);
+                    synchronized (this) {
+                        if (playHeadVersion.get() != version) return;
+                        applyFmDjSegment(pm, segment, forceFm);
+                    }
                 },
                 error -> handleFmDjError(version, error));
     }
 
-    private void applyFmDjSegment(PlayableMusic music, PrivateDjSegment segment, boolean forceFm) {
+    private synchronized void applyFmDjSegment(PlayableMusic music, PrivateDjSegment segment, boolean forceFm) {
         currentLikedUserIds.clear();
         currentLikeMarkers.clear();
         skipVotes.clear();
         currentMusic.set(music);
+        playbackId = UUID.randomUUID().toString();
         currentIsVoice.set(segment instanceof PrivateDjSegment.Voice);
         currentEnqueuerId.set(MusicQueueManager.FM_MARKER_USER_TOKEN);
         boolean djMode = "DJ".equals(appProperties.getPrivateDj().getMode());
@@ -436,6 +442,7 @@ public class MusicPlayerService {
 
         // 重置计时器
         currentMusic.set(music);
+        playbackId = UUID.randomUUID().toString();
         currentIsVoice.set(false);
         currentEnqueuerId.set(queueItem.enqueuedBy().token());
         currentEnqueuerName.set(queueItem.enqueuedBy().name());
@@ -465,7 +472,7 @@ public class MusicPlayerService {
             currentEnqueuerName.set(member.name());
     }
 
-    public PlayerState getCurrentPlayerState() {
+    public synchronized PlayerState getCurrentPlayerState() {
         PlayableMusic music = currentMusic.get();
         NowPlayingInfo infoToSend = null;
 
@@ -506,6 +513,7 @@ public class MusicPlayerService {
                 currentVoteCount,
                 eligibleCount,
                 seekNonce.get(),
+                playbackId,
                 new PlayerState.AppConfigSummary(
                         appProperties.getQueue().getMaxSize(),
                         appProperties.getQueue().getHistorySize(),
@@ -932,7 +940,7 @@ public class MusicPlayerService {
         }
     }
 
-    private void executeSkip(String sessionId) {
+    private synchronized void executeSkip(String sessionId) {
         if (isSkipLocked.get() && !"SYSTEM".equals(sessionId)) {
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, getUserToken(sessionId), "切歌功能已被锁定"));
             return;
@@ -943,6 +951,7 @@ public class MusicPlayerService {
         isLoading.set(false);
 
         currentMusic.set(null);
+        playbackId = null;
         positionAnchor.set(0);
 
         if (!"SYSTEM".equals(sessionId)) {
@@ -1027,15 +1036,14 @@ public class MusicPlayerService {
         broadcastFullPlayerState();
     }
 
-    /**
-     * 房间级拖动进度：把共享播放位置跳到 positionMs。
-     *
-     * <p>仅在管理员开启 allowSeek（或系统调用）时生效；跳转后自增 seekNonce，
-     * 客户端据此重锚本地时钟——否则「向后拖」会被当成迟到的旧状态包而忽略。
-     */
     public void seekTo(String sessionId, long positionMs) {
+        // 无实例的旧客户端无法证明目标歌曲，不能回退到当前播放实例。
+        seekTo(sessionId, positionMs, null);
+    }
+
+    public synchronized void seekTo(String sessionId, long positionMs, String expectedPlaybackId) {
         PlayableMusic music = currentMusic.get();
-        if (music == null) return;
+        if (music == null || playbackId == null || !playbackId.equals(expectedPlaybackId)) return;
         boolean system = "SYSTEM".equals(sessionId);
         if (!system && !appProperties.getPlayer().isAllowSeek()) {
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
@@ -1071,7 +1079,7 @@ public class MusicPlayerService {
         return Math.min(target, Math.max(0, duration - 500));
     }
 
-    public void togglePause(String sessionId) {
+    public synchronized void togglePause(String sessionId) {
         if (currentMusic.get() == null) {
             if (!queueManager.getQueueSnapshot().isEmpty()) {
                 playNextInQueue();
@@ -1137,10 +1145,11 @@ public class MusicPlayerService {
                 PlayerAction.MODE_CHANGE, getUserToken(sessionId), modeName));
     }
 
-    public void resetSystem() {
+    public synchronized void resetSystem() {
         log.warn("!!!SYSTEM RESET INITIATED!!!");
         playHeadVersion.incrementAndGet();
         currentMusic.set(null);
+        playbackId = null;
         positionAnchor.set(0);
         timestampAnchor.set(0);
 
@@ -1228,7 +1237,7 @@ public class MusicPlayerService {
     /**
      * 进入空闲模式，停止播放
      */
-    private void enterIdleMode() {
+    private synchronized void enterIdleMode() {
         log.info("Last user disconnected. Entering idle mode.");
         isLoading.set(false);
 
@@ -1263,6 +1272,7 @@ public class MusicPlayerService {
                 if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
                     log.info("Empty idle room timeout reached. Clearing paused media without resuming.");
                     currentMusic.set(null);
+                    playbackId = null;
                     positionAnchor.set(0);
                     timestampAnchor.set(0);
                     // Keep isPaused=true: cleanup must not make playerLoop start the next song.

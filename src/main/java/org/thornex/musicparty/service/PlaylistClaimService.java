@@ -26,10 +26,10 @@ public class PlaylistClaimService {
         if (sourceToken == null || sourceToken.isBlank() || sourceToken.length() > 200
                 || "SYSTEM".equals(sourceToken) || "ADMIN".equals(sourceToken) || sourceToken.startsWith("__"))
             throw new IllegalArgumentException("该歌单不可认领");
-        // Identity mutations use users; player paths acquire player before queue; persistence acquires persistence before queue.
+        // Admin config holds persistence while entering the player, so claims must follow the same order.
         synchronized (users) {
-            synchronized (player) {
-                synchronized (persistence) {
+            synchronized (persistence) {
+                synchronized (player) {
                     synchronized (queue) {
                         if (!properties.getQueue().isAllowPlaylistClaim())
                             throw new IllegalArgumentException("管理员已关闭歌单认领");

@@ -144,9 +144,9 @@ for (const mobile of [false, true])
         if (mobile) await page.setViewportSize({ width: 320, height: 800 });
         const fixture = await room(page);
         if (mobile) await page.locator('#tutorial-queue-mobile').click();
-        await page.getByRole('button', { name: '清空我的歌单（2）' }).click();
+        await page.getByRole('button', { name: '清空我的歌单', exact: true }).click();
         await expect(page.getByText('已清空我的歌单，移除 2 首', { exact: true })).toBeVisible();
-        await expect(page.getByRole('button', { name: '清空我的歌单（0）' })).toBeDisabled();
+        await expect(page.getByRole('button', { name: '清空我的歌单', exact: true })).toBeDisabled();
         const queue = page.locator('#tutorial-queue:visible');
         await expect(queue.getByRole('button', { name: 'Bob 1 SONGS', exact: true })).toBeVisible();
         await expect(queue.getByText('Alice', { exact: true })).toHaveCount(0);
@@ -158,7 +158,7 @@ for (const mobile of [false, true])
 
 test('server rejection keeps playlist and enables retry', async ({ page }) => {
     const fixture = await room(page, { rejectClear: true });
-    const clear = page.getByRole('button', { name: '清空我的歌单（2）' });
+    const clear = page.getByRole('button', { name: '清空我的歌单', exact: true });
     await clear.click();
     await expect(page.getByText('请先设置昵称并加入房间', { exact: true })).toBeVisible();
     await expect(clear).toBeEnabled();
@@ -167,6 +167,6 @@ test('server rejection keeps playlist and enables retry', async ({ page }) => {
 
 test('guest cannot clear playlist', async ({ page }) => {
     const fixture = await room(page, { guest: true });
-    await expect(page.getByRole('button', { name: '清空我的歌单（2）' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '清空我的歌单', exact: true })).toBeDisabled();
     expect(fixture.sent.filter((item) => item.destination === '/app/queue/clear-mine')).toHaveLength(0);
 });

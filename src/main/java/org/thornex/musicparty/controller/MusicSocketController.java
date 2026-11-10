@@ -79,7 +79,7 @@ public class MusicSocketController {
     public void seek(SeekRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
         if (request == null) return;
-        musicPlayerService.seekTo(sessionId, request.positionMs());
+        musicPlayerService.seekTo(sessionId, request.positionMs(), request.playbackId());
     }
 
     @MessageMapping("/queue/top")

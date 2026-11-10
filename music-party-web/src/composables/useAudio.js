@@ -267,7 +267,7 @@ export function useAudio(audioRef, playerStore) {
     watch(
         () => {
             const music = playerStore.nowPlaying?.music;
-            return music ? `${music.platform}:${music.id}:${music.url}` : '';
+            return music ? `${playerStore.playbackId || ''}:${music.platform}:${music.id}:${music.url}` : '';
         },
         async () => {
             // #25：切歌时作废在途的地址刷新与重试
@@ -382,12 +382,14 @@ export function useAudio(audioRef, playerStore) {
     };
     const retryLocally = () => {
         if (needsUserGesture.value) {
-            needsUserGesture.value = false;
-            // 解锁后重置播放尝试与同步状态，再走一次正常的 canplay 流程
+            if (!audioRef.value || !playerStore.nowPlaying || playerStore.isPaused) return;
             resumeAttempts = 0;
             playAttempt = null;
             synchronizer.resetMedia();
-            checkAutoPlay();
+            if (audioRef.value.readyState >= 2) alignToRoom();
+            // Invoke play inside the gesture; canplay may require playback to start loading.
+            needsUserGesture.value = false;
+            safePlay();
             return;
         }
         retryCount.value = 0;
