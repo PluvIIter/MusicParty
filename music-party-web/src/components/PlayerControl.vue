@@ -256,7 +256,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
@@ -353,6 +353,9 @@ const progressPercent = computed(() => {
 const canSeek = computed(
     () =>
         player.config?.allowSeek === true &&
+        player.connected &&
+        !!player.playbackId &&
+        !player.isLoading &&
         !!nowPlaying.value &&
         (nowPlaying.value.music?.duration || 0) > 0 &&
         !player.isErrorState
@@ -363,6 +366,8 @@ const barRef = ref(null);
 const dragging = ref(false);
 const dragPercent = ref(0);
 let dragPointerId = null;
+let dragPlaybackId = null;
+let dragDuration = 0;
 
 /** 指针位置 → 0~1 的比例 */
 const seekRatioFromEvent = (event) => {
@@ -381,11 +386,15 @@ const endDrag = () => {
         }
     }
     dragPointerId = null;
+    dragPlaybackId = null;
+    dragDuration = 0;
 };
 
 const onSeekPointerDown = (event) => {
     if (!canSeek.value) return;
     dragging.value = true;
+    dragPlaybackId = player.playbackId;
+    dragDuration = nowPlaying.value.music.duration;
     dragPointerId = event.pointerId;
     dragPercent.value = seekRatioFromEvent(event) * 100;
     try {
@@ -403,16 +412,26 @@ const onSeekPointerMove = (event) => {
 const onSeekPointerUp = (event) => {
     if (!dragging.value || event.pointerId !== dragPointerId) return;
     const ratio = seekRatioFromEvent(event);
+    const expectedPlaybackId = dragPlaybackId;
+    const duration = dragDuration;
+    const valid = canSeek.value && expectedPlaybackId === player.playbackId;
     dragging.value = false;
     endDrag();
-    const duration = nowPlaying.value?.music?.duration || 0;
-    if (duration > 0) player.seekTo(ratio * duration);
+    if (valid && duration > 0) player.seekTo(ratio * duration, expectedPlaybackId);
 };
 
 const onSeekPointerCancel = () => {
     dragging.value = false;
     endDrag();
 };
+
+watch(
+    [() => player.playbackId, canSeek],
+    () => {
+        if (dragging.value && (!canSeek.value || dragPlaybackId !== player.playbackId)) onSeekPointerCancel();
+    },
+    { flush: 'sync' }
+);
 
 /** 键盘微调：当前进度（或拖动预览）基础上平移 deltaMs，并交给服务端裁剪 */
 const seekByStep = (deltaMs) => {

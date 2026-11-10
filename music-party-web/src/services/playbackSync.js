@@ -13,6 +13,7 @@ export function createRoomClock(now = () => performance.now()) {
     let reconnect = false;
     /** 服务端 seekNonce：变化即代表「房间被主动拖动过」，必须重锚（含向后拖）。 */
     let lastSeekNonce = null;
+    let playbackId = null;
 
     const position = (at = now()) => (key ? Math.max(0, anchor + (paused ? 0 : at - anchorAt)) : 0);
     const sample = (state) => {
@@ -23,6 +24,8 @@ export function createRoomClock(now = () => performance.now()) {
         if (!nextKey) {
             if (key) revision++;
             key = '';
+            playbackId = null;
+            lastSeekNonce = null;
             lastRaw = -1;
             sampleAt = -Infinity;
             return;
@@ -31,7 +34,9 @@ export function createRoomClock(now = () => performance.now()) {
         duration = Number(music.duration) || 0;
         if (duration > 0 && raw > duration + 2000) return;
         const nextPaused = !!state.isPaused;
+        const nextPlaybackId = state.playbackId || null;
         const changedTrack = nextKey !== key;
+        const changedPlayback = nextPlaybackId !== playbackId;
         const transport = !changedTrack && nextPaused !== paused;
         // 房间级拖动进度：nonce 变化就是显式跳转信号，不能被「迟到包不回退」的规则吃掉
         const nonce = Number(state.seekNonce);
@@ -39,6 +44,7 @@ export function createRoomClock(now = () => performance.now()) {
         if (Number.isFinite(nonce)) lastSeekNonce = nonce;
         // Same URL/id can start another pass (repeat-one or a one-track retained playlist).
         const repeat =
+            !nextPlaybackId &&
             !changedTrack &&
             !transport &&
             !seeked &&
@@ -49,17 +55,26 @@ export function createRoomClock(now = () => performance.now()) {
             raw < Math.min(10000, duration * 0.2) &&
             raw + 1000 < lastRaw;
 
-        if (changedTrack || transport || seeked || repeat || reconnect) {
+        if (changedTrack || changedPlayback || transport || seeked || repeat || reconnect) {
             anchor = raw;
             anchorAt = at;
             lastRaw = raw;
             sampleAt = at;
             sampleId++;
-            if (changedTrack || transport || seeked || repeat) {
+            if (changedTrack || changedPlayback || transport || seeked || repeat) {
                 revision++;
-                reason = changedTrack ? 'track' : seeked ? 'seek' : repeat ? 'repeat' : 'transport';
+                reason = changedTrack
+                    ? 'track'
+                    : changedPlayback
+                      ? 'repeat'
+                      : seeked
+                        ? 'seek'
+                        : repeat
+                          ? 'repeat'
+                          : 'transport';
             }
             key = nextKey;
+            playbackId = nextPlaybackId;
             paused = nextPaused;
             reconnect = false;
             return;

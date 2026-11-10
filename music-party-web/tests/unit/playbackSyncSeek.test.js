@@ -1,17 +1,109 @@
 import { describe, it, expect } from 'vitest';
-import { createRoomClock } from '../../src/services/playbackSync.js';
+import { createRoomClock, createMediaSynchronizer } from '../../src/services/playbackSync.js';
+import { createCompactReceiver } from '../../src/services/compactSync.js';
 
 /**
  * 拖动进度条依赖服务端 seekNonce：它是「房间被主动跳转」的显式信号。
  * 没有它，向后拖会被 sample() 里的「迟到包不回退」规则当成旧状态包忽略。
  */
-const state = (position, { id = 'a', duration = 180000, paused = false, seekNonce = 0 } = {}) => ({
+const state = (position, { id = 'a', duration = 180000, paused = false, seekNonce = 0, playbackId } = {}) => ({
+    playbackId,
     nowPlaying: {
         music: { platform: 'netease', id, url: 'https://example.invalid/a.mp3', duration },
         currentPosition: position,
     },
     isPaused: paused,
     seekNonce,
+});
+
+describe('playback instance clock revisions', () => {
+    it('reanchors a replay even when the previous pass never received an end sample', () => {
+        let now = 1000;
+        const clock = createRoomClock(() => now);
+        clock.sample(state(40000, { playbackId: 'first' }));
+        const before = clock.status().revision;
+        now = 2000;
+        clock.sample(state(0, { playbackId: 'second' }));
+        expect(clock.position()).toBe(0);
+        expect(clock.status()).toMatchObject({ revision: before + 1, reason: 'repeat' });
+        now = 3000;
+        expect(clock.position()).toBe(1000);
+    });
+
+    it('reanchors a same-song paused instance but does not infer repeats within one instance', () => {
+        let now = 1000;
+        const clock = createRoomClock(() => now);
+        clock.sample(state(175000, { playbackId: 'first' }));
+        now = 7000;
+        clock.sample(state(0, { playbackId: 'first' }));
+        expect(clock.position()).toBe(181000);
+        clock.sample(state(0, { playbackId: 'second', paused: true }));
+        now = 12000;
+        expect(clock.position()).toBe(0);
+        expect(clock.status().reason).toBe('repeat');
+    });
+
+    it('a new same-URL instance forces an ended media element to seek back', () => {
+        let now = 1000;
+        const clock = createRoomClock(() => now);
+        const media = createMediaSynchronizer();
+        const input = (ended, mediaTime) => ({
+            now,
+            mediaTime,
+            targetTime: clock.position() / 1000,
+            ready: true,
+            seeking: false,
+            blocked: false,
+            connected: true,
+            buffering: false,
+            paused: false,
+            ended,
+            ...clock.status(),
+        });
+        clock.sample(state(40000, { playbackId: 'first' }));
+        media.tick(input(false, 40));
+        now = 2000;
+        clock.sample(state(0, { playbackId: 'second' }));
+        expect(media.tick(input(true, 180))).toEqual({ rate: 1, seek: 0 });
+    });
+
+    it('reanchors after compact recovery coalesces an intermediate empty track', () => {
+        let now = 0;
+        const clock = createRoomClock(() => now);
+        const receiver = createCompactReceiver({ apply: clock.sample, requestSnapshot: () => {} });
+        const frame = (seq, base, full, patch) => ({ v: 1, epoch: 'server', seq, base, full, state: patch });
+        receiver.receive(frame(1, 1, true, { ...state(30000, { playbackId: 'first' }), queue: [] }));
+        now = 1000;
+        receiver.receive(frame(3, 2, false, state(0, { playbackId: 'second' })));
+        receiver.receive(frame(2, 1, false, { nowPlaying: null, playbackId: null, isLoading: true }));
+        expect(clock.position()).toBe(0);
+        expect(clock.status()).toMatchObject({ revision: 2, reason: 'repeat' });
+    });
+
+    it('reanchors short tracks on every pass even without a tail heartbeat', () => {
+        let now = 0;
+        const clock = createRoomClock(() => now);
+        for (let pass = 0; pass < 10; pass++) {
+            clock.sample(state(0, { playbackId: `pass-${pass}`, duration: 900 }));
+            expect(clock.position()).toBe(0);
+            expect(clock.status().revision).toBe(pass + 1);
+            now += 900;
+        }
+    });
+
+    it('pause, resume and seek preserve instance identity while changing clock revision', () => {
+        let now = 1000;
+        const clock = createRoomClock(() => now);
+        clock.sample(state(40000, { playbackId: 'first' }));
+        clock.sample(state(41000, { playbackId: 'first', paused: true }));
+        clock.sample(state(10000, { playbackId: 'first', paused: true, seekNonce: 1 }));
+        now = 9000;
+        expect(clock.position()).toBe(10000);
+        clock.sample(state(10000, { playbackId: 'first', seekNonce: 1 }));
+        now = 10000;
+        expect(clock.position()).toBe(11000);
+        expect(clock.status().revision).toBe(4);
+    });
 });
 
 describe('房间时钟与拖动进度（seekNonce）', () => {

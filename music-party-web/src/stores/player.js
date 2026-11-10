@@ -13,6 +13,7 @@ import { createRoomClock } from '../services/playbackSync';
 export const usePlayerStore = defineStore('player', () => {
     // === 1. State ===
     const nowPlaying = ref(null);
+    const playbackId = ref(null);
     const queue = ref([]);
     const isPaused = ref(false);
     const playMode = ref('SEQUENTIAL'); // 'SEQUENTIAL' | 'SHUFFLE' | 'REPEAT_ONE'
@@ -106,6 +107,7 @@ export const usePlayerStore = defineStore('player', () => {
     const syncState = (state) => {
         roomClock.sample(state);
         nowPlaying.value = state.nowPlaying;
+        playbackId.value = state.nowPlaying ? state.playbackId || null : null;
         queue.value = state.queue;
         isPaused.value = state.isPaused;
         playMode.value = state.playMode || (state.isShuffle ? 'SHUFFLE' : 'SEQUENTIAL');
@@ -218,15 +220,16 @@ export const usePlayerStore = defineStore('player', () => {
     const playNext = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_NEXT);
     const togglePause = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_PAUSE);
     const cyclePlayMode = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_SHUFFLE);
-    /**
-     * 拖动进度条：把房间的播放位置跳到 positionMs。
-     * 是否生效由服务端判定（管理面板的 allowSeek 开关），这里只负责下发。
-     */
-    const seekTo = (positionMs) => {
+    const seekTo = (positionMs, expectedPlaybackId = playbackId.value) => {
         if (!Number.isFinite(positionMs) || positionMs < 0) return;
+        if (!expectedPlaybackId || expectedPlaybackId !== playbackId.value || !nowPlaying.value) return;
+        if (!connected.value || !socketService.connected || !config.value.allowSeek || isLoading.value) return;
         if (!requireAuth()) return;
         if (!checkCooldown()) return;
-        socketService.send(WS_DEST.PLAYER_SEEK, { positionMs: Math.round(positionMs) });
+        socketService.send(WS_DEST.PLAYER_SEEK, {
+            positionMs: Math.round(positionMs),
+            playbackId: expectedPlaybackId,
+        });
     };
 
     const enqueue = (platform, musicId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
@@ -338,6 +341,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     return {
         nowPlaying,
+        playbackId,
         queue,
         isPaused,
         playMode,
