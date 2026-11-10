@@ -12,13 +12,13 @@
         <!-- 注意：点击 Connect 后，我们先不销毁它，直到 socket 连接成功，或者直接切换布局 -->
         <div
             v-if="userStore.isAuthPassed && !hasStarted"
-            class="absolute inset-0 z-[100] bg-medical-50 flex flex-col items-center justify-center space-y-8"
+            class="absolute inset-0 z-[100] bg-surface flex flex-col items-center justify-center space-y-8"
         >
-            <div class="text-4xl font-black tracking-tighter text-medical-900">MUSIC PARTY</div>
-            <div class="font-mono text-xs text-medical-400 tracking-widest">SYSTEM READY</div>
+            <div class="text-4xl font-black tracking-tighter text-ink">MUSIC PARTY</div>
+            <div class="font-mono text-xs text-ink-subtle tracking-widest">SYSTEM READY</div>
             <button
                 @click="startGame"
-                class="px-12 py-4 bg-medical-900 text-white font-bold text-xl hover:bg-accent transition-colors chamfer-br"
+                class="px-12 py-4 bg-brand text-ink-inverse font-bold text-xl hover:bg-accent transition-colors chamfer-br"
             >
                 CONNECT
             </button>

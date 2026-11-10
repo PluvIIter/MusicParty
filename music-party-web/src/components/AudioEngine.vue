@@ -20,7 +20,7 @@
         v-if="needsUserGesture || isErrorState"
         type="button"
         @click="retryLocally"
-        class="fixed bottom-28 left-1/2 -translate-x-1/2 z-[250] max-w-[90vw] px-5 py-3 bg-medical-900 text-white text-sm font-bold shadow-lg"
+        class="fixed bottom-28 left-1/2 -translate-x-1/2 z-[250] max-w-[90vw] px-5 py-3 bg-brand text-ink-inverse text-sm font-bold shadow-lg"
     >
         {{ needsUserGesture ? '点此开启声音' : '声音加载失败，点此重试' }}
     </button>

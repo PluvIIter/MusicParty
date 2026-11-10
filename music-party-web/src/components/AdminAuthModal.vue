@@ -9,14 +9,14 @@
     >
         <div
             v-if="adminStore.showAuthModal"
-            class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-medical-900/60 backdrop-blur-sm"
+            class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-brand/60 backdrop-blur-sm"
         >
-            <div class="w-full max-w-sm bg-white shadow-2xl border border-medical-200 chamfer-br overflow-hidden">
-                <div class="p-4 bg-medical-50 border-b border-medical-200 flex justify-between items-center">
-                    <h3 class="text-sm font-bold font-mono text-medical-900 flex items-center gap-2">
+            <div class="w-full max-w-sm bg-surface-raised shadow-2xl border border-line chamfer-br overflow-hidden">
+                <div class="p-4 bg-surface border-b border-line flex justify-between items-center">
+                    <h3 class="text-sm font-bold font-mono text-ink flex items-center gap-2">
                         <Lock class="w-4 h-4 text-accent" /> ADMIN LOGIN
                     </h3>
-                    <button @click="adminStore.showAuthModal = false" class="text-medical-400 hover:text-medical-900">
+                    <button @click="adminStore.showAuthModal = false" class="text-ink-subtle hover:text-ink">
                         <X class="w-4 h-4" />
                     </button>
                 </div>
@@ -24,7 +24,7 @@
                 <div class="p-6">
                     <div class="mb-4">
                         <label
-                            class="block text-[10px] font-bold text-medical-500 mb-1 uppercase tracking-wider font-mono"
+                            class="block text-[10px] font-bold text-ink-muted mb-1 uppercase tracking-wider font-mono"
                             >Password</label
                         >
                         <input
@@ -32,7 +32,7 @@
                             v-model="password"
                             type="password"
                             placeholder="ENTER ADMIN PASSWORD"
-                            class="w-full bg-medical-50 border border-medical-200 px-3 py-2 text-sm outline-none focus:border-accent font-sans transition-colors"
+                            class="w-full bg-surface border border-line px-3 py-2 text-sm outline-none focus:border-accent font-sans transition-colors"
                             @keyup.enter="handleVerify"
                         />
                     </div>
@@ -40,7 +40,7 @@
                     <button
                         @click="handleVerify"
                         :disabled="loading"
-                        class="w-full bg-medical-900 hover:bg-accent text-white py-2 font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2 group disabled:opacity-50"
+                        class="w-full bg-brand hover:bg-accent text-ink-inverse py-2 font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2 group disabled:opacity-50"
                     >
                         <Loader2 v-if="loading" class="w-4 h-4 animate-spin" />
                         <span v-else>ACCESS SYSTEM</span>

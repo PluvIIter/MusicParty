@@ -27,26 +27,26 @@
         <div
             v-if="currentStep"
             ref="tooltipRef"
-            class="absolute bg-white border border-medical-200 p-4 shadow-xl transition-all duration-300 chamfer-br flex flex-col gap-3"
+            class="absolute bg-surface-raised border border-line p-4 shadow-xl transition-all duration-300 chamfer-br flex flex-col gap-3"
             :style="tooltipStyle"
         >
-            <div class="flex items-center justify-between border-b border-medical-100 pb-2">
+            <div class="flex items-center justify-between border-b border-line pb-2">
                 <span class="text-xs font-mono font-bold text-accent"
                     >TUTORIAL_SYSTEM // {{ currentStepIndex + 1 }}/{{ steps.length }}</span
                 >
-                <button @click="skipTutorial" class="text-xs text-medical-400 hover:text-medical-900 font-mono">
+                <button @click="skipTutorial" class="text-xs text-ink-subtle hover:text-ink font-mono">
                     [SKIP]
                 </button>
             </div>
 
-            <div class="text-sm font-bold text-medical-900 leading-relaxed">
+            <div class="text-sm font-bold text-ink leading-relaxed">
                 {{ currentDisplayContent }}
             </div>
 
             <div class="flex justify-end pt-2">
                 <button
                     @click="nextStep"
-                    class="px-4 py-1.5 bg-medical-900 text-white text-xs font-bold hover:bg-accent transition-colors chamfer-br"
+                    class="px-4 py-1.5 bg-brand text-ink-inverse text-xs font-bold hover:bg-accent transition-colors chamfer-br"
                 >
                     {{ currentStepIndex === steps.length - 1 ? 'FINISH' : 'NEXT >' }}
                 </button>
@@ -54,7 +54,7 @@
 
             <!-- 连接线 (简单的视觉装饰) -->
             <div
-                class="absolute w-4 h-4 bg-white border-l border-b border-medical-200 transform rotate-45"
+                class="absolute w-4 h-4 bg-surface-raised border-l border-b border-line transform rotate-45"
                 :class="arrowClass"
                 :style="{ left: 'var(--arrow-left)' }"
             ></div>
@@ -232,9 +232,9 @@ const updatePosition = async () => {
 
     // 箭头样式
     if (arrowPos === 'top') {
-        arrowClass.value = `-top-2 bg-white border-t border-l border-medical-200 rotate-45`;
+        arrowClass.value = `-top-2 bg-surface-raised border-t border-l border-line rotate-45`;
     } else {
-        arrowClass.value = `-bottom-2 bg-white border-b border-r border-medical-200 rotate-45`;
+        arrowClass.value = `-bottom-2 bg-surface-raised border-b border-r border-line rotate-45`;
     }
 
     // 计算箭头相对于 tooltip 的水平位置

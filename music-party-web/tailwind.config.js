@@ -1,25 +1,38 @@
 /** @type {import('tailwindcss').Config} */
 export default {
     content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
+    // 主题由 <html data-theme="dark"> 决定（ui store 写入）。
+    // 语义令牌已覆盖绝大多数场景，这里保留 dark: 变体用于个别例外。
+    darkMode: ['class', '[data-theme="dark"]'],
     theme: {
         extend: {
             colors: {
-                // 定义“医疗白”风格色板 - 修复版，补全了所有色阶
-                medical: {
-                    50: '#F9FAFB', // 背景
-                    100: '#F3F4F6', // 次级背景
-                    200: '#E5E7EB', // 边框
-                    300: '#D1D5DB', // 补充：深一点的边框
-                    400: '#9CA3AF', // 补充：滚动条悬停色
-                    500: '#6B7280', // 补充：次级文字
-                    600: '#4B5563', // 补充
-                    700: '#374151', // 补充
-                    800: '#1F2937', // 主要文字
-                    900: '#111827', // 标题/深色背景
+                // 语义令牌：具体值在 src/style.css 的 :root / [data-theme='dark'] 里定义。
+                // 用 <alpha-value> 让 bg-surface/50 这类透明度变体照常工作。
+                surface: {
+                    DEFAULT: 'rgb(var(--mp-surface) / <alpha-value>)',
+                    raised: 'rgb(var(--mp-surface-raised) / <alpha-value>)',
+                    sunken: 'rgb(var(--mp-surface-sunken) / <alpha-value>)',
                 },
+                ink: {
+                    DEFAULT: 'rgb(var(--mp-ink) / <alpha-value>)',
+                    muted: 'rgb(var(--mp-ink-muted) / <alpha-value>)',
+                    subtle: 'rgb(var(--mp-ink-subtle) / <alpha-value>)',
+                    inverse: 'rgb(var(--mp-ink-inverse) / <alpha-value>)',
+                },
+                line: {
+                    DEFAULT: 'rgb(var(--mp-line) / <alpha-value>)',
+                    strong: 'rgb(var(--mp-line-strong) / <alpha-value>)',
+                },
+                brand: {
+                    DEFAULT: 'rgb(var(--mp-brand) / <alpha-value>)',
+                    soft: 'rgb(var(--mp-brand-soft) / <alpha-value>)',
+                },
+                // 背景装饰图形（大字水印、频谱刻度环）专用：浅色下是近黑，深色下是纯黑
+                graphic: 'rgb(var(--mp-graphic) / <alpha-value>)',
                 accent: {
-                    DEFAULT: '#F97316', // 警示橙 (Orange-500)
-                    hover: '#EA580C',
+                    DEFAULT: 'rgb(var(--mp-accent) / <alpha-value>)',
+                    hover: 'rgb(var(--mp-accent-hover) / <alpha-value>)',
                 },
             },
             fontFamily: {

@@ -12,14 +12,14 @@
         <div
             v-for="toast in toastStore.toasts"
             :key="toast.id"
-            class="bg-medical-900/90 text-white px-6 py-3 shadow-xl backdrop-blur-sm flex items-center gap-3 min-w-[300px] border-l-4 pointer-events-auto cursor-pointer"
+            class="bg-brand/90 text-ink-inverse px-6 py-3 shadow-xl backdrop-blur-sm flex items-center gap-3 min-w-[300px] border-l-4 pointer-events-auto cursor-pointer"
             :class="getTypeClass(toast.type)"
             @click="toastStore.remove(toast.id)"
         >
             <component :is="getIcon(toast.type)" class="w-5 h-5 flex-shrink-0" />
             <div class="flex-1 min-w-0">
                 <div class="font-bold text-sm font-mono">{{ toast.title }}</div>
-                <div v-if="toast.message" class="text-xs text-medical-200 truncate max-w-[250px]">
+                <div v-if="toast.message" class="text-xs text-ink-subtle truncate max-w-[250px]">
                     {{ toast.message }}
                 </div>
             </div>
@@ -43,7 +43,7 @@ const getTypeClass = (type) => {
         case 'warn':
             return 'border-yellow-500';
         default:
-            return 'border-medical-400';
+            return 'border-line-strong';
     }
 };
 

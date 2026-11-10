@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 body {
-    @apply bg-medical-50 text-medical-800 font-sans antialiased overflow-hidden;
+    @apply font-sans antialiased overflow-hidden;
 }
 
 /* 自定义滚动条 */
@@ -15,7 +15,7 @@ body {
     @apply bg-transparent;
 }
 ::-webkit-scrollbar-thumb {
-    @apply bg-medical-200 hover:bg-medical-400 rounded transition-colors;
+    @apply bg-line hover:bg-line-strong rounded transition-colors;
 }
 
 /* 切角效果 (Chamfer) - 核心设计元素 */
@@ -38,4 +38,95 @@ body {
 .animate-scan {
     /* 背景图片很小，repeat 之后移动背景位置就能产生流动感 */
     animation: scan 1s linear infinite;
+}
+
+/* ==========================================================================
+ * 主题令牌（design tokens）
+ *
+ * 组件使用「角色」而不是具体色阶：surface（表面）/ ink（文字）/ line（描边）/ brand（深色块）。
+ * 明暗两套值只在这里切换，组件模板里不需要任何 dark: 前缀或属性选择器覆盖。
+ * 由 ui store 写入 <html data-theme="dark">。
+ * ========================================================================== */
+@layer base {
+    :root {
+        --mp-surface: 249 250 251; /* 页面底色 */
+        --mp-surface-raised: 255 255 255; /* 卡片 / 面板 */
+        --mp-surface-sunken: 243 244 246; /* 次级底色 */
+        --mp-ink: 17 24 39; /* 主文字 */
+        --mp-ink-muted: 107 114 128; /* 次级文字 */
+        --mp-ink-subtle: 156 163 175; /* 弱化文字 */
+        --mp-ink-inverse: 255 255 255; /* 浅色沿用纯白（不改动白天观感） */
+        --mp-line: 229 231 235; /* 描边 / 分隔 / 轨道 */
+        --mp-line-strong: 209 213 219;
+        --mp-brand: 17 24 39; /* 深色块（按钮 / 表头 / 背板） */
+        --mp-brand-soft: 55 65 81;
+        --mp-grid-line: rgba(17, 24, 39, 0.03); /* 视觉器背景网格 */
+        --mp-graphic: 229 231 235; /* 浅色沿用原水印灰 #E5E7EB */
+        --mp-accent: 249 115 22; /* 强调橙：浅色保持原亮度 */
+        --mp-accent-hover: 234 88 12;
+        --mp-ring: 209 213 219; /* 浅色沿用原刻度环灰 #D1D5DB */
+    }
+
+    [data-theme='dark'] {
+        color-scheme: dark;
+        --mp-surface: 10 15 28;
+        --mp-surface-raised: 17 24 39;
+        --mp-surface-sunken: 20 27 44;
+        --mp-ink: 238 242 251;
+        --mp-ink-muted: 139 153 179;
+        --mp-ink-subtle: 100 116 139;
+        --mp-ink-inverse: 232 236 244;
+        --mp-line: 38 49 68;
+        --mp-line-strong: 51 65 85;
+        --mp-brand: 26 35 51;
+        --mp-brand-soft: 35 47 66;
+        --mp-grid-line: rgba(148, 163, 184, 0.08);
+        --mp-graphic: 0 0 0;
+        --mp-accent: 194 65 12; /* 深色压暗，避免刺眼 */
+        --mp-accent-hover: 154 52 18;
+        --mp-ring: 0 0 0;
+    }
+
+    body {
+        background-color: rgb(var(--mp-surface));
+        color: rgb(var(--mp-ink));
+    }
+
+    ::placeholder {
+        color: rgb(var(--mp-ink-subtle));
+    }
+
+    input,
+    textarea,
+    select {
+        color: rgb(var(--mp-ink));
+    }
+}
+
+/* 进度条可拖动时的键盘焦点提示（role=slider + tabindex） */
+.mp-seek:focus-visible {
+    outline: 2px solid #f97316;
+    outline-offset: 3px;
+}
+/* 专辑封面边框：深色下做克制的呼吸（浅色保持原样不动） */
+@keyframes mp-border-breathe {
+    0%,
+    100% {
+        border-color: rgb(var(--mp-accent) / 0.55);
+        box-shadow: 0 0 0 0 rgb(var(--mp-accent) / 0);
+    }
+    50% {
+        border-color: rgb(var(--mp-accent) / 1);
+        box-shadow: 0 0 12px 0 rgb(var(--mp-accent) / 0.18);
+    }
+}
+
+[data-theme='dark'] .mp-breathe-border {
+    animation: mp-border-breathe 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-theme='dark'] .mp-breathe-border {
+        animation: none;
+    }
 }

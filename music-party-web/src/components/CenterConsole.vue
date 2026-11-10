@@ -4,38 +4,40 @@
         <!-- LAYER 0: 静态背景层 (最底层) -->
         <div class="absolute inset-0 z-0 pointer-events-none">
             <div
-                class="absolute inset-0 bg-[linear-gradient(rgba(17,24,39,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(17,24,39,0.03)_1px,transparent_1px)] bg-[size:40px_40px]"
+                class="absolute inset-0 bg-[linear-gradient(var(--mp-grid-line)_1px,transparent_1px),linear-gradient(90deg,var(--mp-grid-line)_1px,transparent_1px)] bg-[size:40px_40px]"
             ></div>
             <div
-                class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[12vw] font-black text-medical-200/40 select-none whitespace-nowrap tracking-tighter blur-sm"
+                class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[12vw] font-black text-graphic/40 select-none whitespace-nowrap tracking-tighter blur-sm"
             >
                 {{ uiStore.backWords.toUpperCase() }}
             </div>
             <!-- 四角标记 (移动端下移，避开右上角浮动队列按钮) -->
-            <div class="absolute top-14 md:top-8 left-8 w-8 h-8 border-t-2 border-l-2 border-medical-300"></div>
-            <div class="absolute top-14 md:top-8 right-8 w-8 h-8 border-t-2 border-r-2 border-medical-300"></div>
-            <div class="absolute bottom-8 left-8 w-8 h-8 border-b-2 border-l-2 border-medical-300"></div>
-            <div class="absolute bottom-8 right-8 w-8 h-8 border-b-2 border-r-2 border-medical-300"></div>
+            <div class="absolute top-14 md:top-8 left-8 w-8 h-8 border-t-2 border-l-2 border-line-strong"></div>
+            <div class="absolute top-14 md:top-8 right-8 w-8 h-8 border-t-2 border-r-2 border-line-strong"></div>
+            <div class="absolute bottom-8 left-8 w-8 h-8 border-b-2 border-l-2 border-line-strong"></div>
+            <div class="absolute bottom-8 right-8 w-8 h-8 border-b-2 border-r-2 border-line-strong"></div>
         </div>
 
         <!-- LAYER 1: 动态视觉层 (Canvas) -->
         <!-- 移动端随封面一起上移，保持背景圆环与封面同心 -->
         <div
+            ref="gfxWrapRef"
             class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none -translate-y-12 md:translate-y-0"
         >
             <canvas
                 ref="canvasRef"
                 width="1200"
                 height="1200"
-                class="absolute left-1/2 top-1/2 -translate-x-1/4 -translate-y-1/3 w-[160vw] h-[160vw] md:w-[1000px] md:h-[1000px]"
+                class="absolute left-1/2 top-1/2 -translate-x-1/4 -translate-y-1/3"
+                :style="canvasSize ? { width: canvasSize + 'px', height: canvasSize + 'px' } : {}"
             ></canvas>
 
             <!-- 旋转圈圈 (CSS动画) -->
             <div
-                class="absolute inset-0 w-[320px] h-[320px] m-auto border border-medical-200 rounded-full animate-[spin_10s_linear_infinite] opacity-30 border-dashed"
+                class="absolute inset-0 w-[320px] h-[320px] m-auto border border-line rounded-full animate-[spin_10s_linear_infinite] opacity-30 border-dashed"
             ></div>
             <div
-                class="absolute inset-0 w-[340px] h-[340px] m-auto border border-medical-200 rounded-full animate-[spin_15s_linear_infinite_reverse] opacity-20"
+                class="absolute inset-0 w-[340px] h-[340px] m-auto border border-line rounded-full animate-[spin_15s_linear_infinite_reverse] opacity-20"
             ></div>
         </div>
 
@@ -51,7 +53,7 @@
                     LYRIC_SYSTEM
                 </div>
                 <div
-                    class="w-full space-y-1 text-xs font-normal text-medical-900 leading-tight mix-blend-normal md:mix-blend-multiply md:text-medical-600 flex flex-col md:justify-end min-h-0"
+                    class="w-full space-y-1 text-xs font-normal text-ink leading-tight mix-blend-normal md:mix-blend-multiply md:text-ink-muted flex flex-col md:justify-end min-h-0"
                 >
                     <div
                         v-if="parsedLyrics.length === 0"
@@ -67,7 +69,7 @@
                         class="w-full transition-all duration-300"
                         :class="
                             i === activeLines.length - 1
-                                ? 'opacity-100 scale-105 md:scale-100 text-medical-900'
+                                ? 'opacity-100 scale-105 md:scale-100 text-ink'
                                 : 'opacity-40 blur-[0.5px]'
                         "
                     >
@@ -77,7 +79,7 @@
                             :class="[
                                 // 当前行且文字溢出：黑色背景槽固定在容器上（居中，至多占屏幕 70%），文字在槽内滚动
                                 i === activeLines.length - 1 && isMobile && isOverflowing(i)
-                                    ? 'bg-medical-900 text-white'
+                                    ? 'bg-brand text-ink-inverse'
                                     : '',
                                 // 溢出行（当前或刚结束）：文字起始贴槽左缘，滚动/定格位置一致；其余行居中（桌面左对齐）
                                 isOverflowing(i) ? 'justify-start' : 'justify-center md:justify-start',
@@ -103,7 +105,7 @@
                                 :class="[
                                     // 已测量且未溢出的当前行：保留紧凑黑底高亮（未测量前不渲染背景，避免闪全幅黑条）
                                     {
-                                        'bg-medical-900 text-white px-1':
+                                        'bg-brand text-ink-inverse px-1':
                                             i === activeLines.length - 1 && isMobile && isShort(i),
                                     },
                                     { 'marquee-scroll': i === activeLines.length - 1 && isOverflowing(i) && isMobile },
@@ -129,7 +131,7 @@
 
             <!-- 右侧：伪系统日志 -->
             <div
-                class="absolute bottom-10 right-10 font-mono text-[10px] text-medical-400 text-right space-y-1 hidden md:block opacity-60"
+                class="absolute bottom-10 right-10 font-mono text-[10px] text-ink-subtle text-right space-y-1 hidden md:block opacity-60"
             >
                 <div v-for="(log, i) in logs" :key="i" class="animate-pulse">{{ log }} <</div>
             </div>
@@ -146,14 +148,14 @@
                     class="absolute -top-4 right-0 text-[10px] font-mono text-accent flex items-center gap-2 z-20 select-none"
                 >
                     <span>REQ_BY</span>
-                    <span class="font-bold text-medical-500 border-b border-medical-300 leading-tight">
+                    <span class="font-bold text-ink-muted border-b border-line-strong leading-tight">
                         {{ userStore.resolveName(player.nowPlaying.enqueuedById, player.nowPlaying.enqueuedByName) }}
                     </span>
                 </div>
 
                 <div
                     id="tutorial-like"
-                    class="relative w-64 h-64 md:w-72 md:h-72 bg-medical-50 chamfer-br flex items-center justify-center overflow-hidden transition-all duration-500 cursor-pointer border border-white shadow-2xl"
+                    class="relative w-64 h-64 md:w-72 md:h-72 bg-surface chamfer-br flex items-center justify-center overflow-hidden transition-all duration-500 cursor-pointer border border-white dark:border-accent mp-breathe-border shadow-2xl"
                     :class="[
                         // 仅保留暂停时的缩放/灰度
                         player.isPaused ? 'scale-95 grayscale' : 'scale-100',
@@ -166,7 +168,7 @@
                     <!-- Loading 状态 -->
                     <div
                         v-if="player.isLoading"
-                        class="absolute inset-0 z-50 bg-medical-900/50 backdrop-blur-sm flex flex-col items-center justify-center text-white"
+                        class="absolute inset-0 z-50 bg-brand/50 backdrop-blur-sm flex flex-col items-center justify-center text-ink-inverse"
                     >
                         <div class="w-12 h-12 border-4 border-white/30 border-t-white animate-spin mb-4"></div>
                         <span class="font-mono text-xs animate-pulse tracking-widest">FETCHING_AUDIO...</span>
@@ -188,9 +190,7 @@
                                 // 已点赞状态下，只显示极淡的角落标记，不遮挡封面
                                 hasLiked && !isBursting ? 'opacity-100' : '',
                                 // 交互或爆发时，增加暗色扫描背景
-                                isBursting || (!hasLiked && (isHovering || mobileLikePending))
-                                    ? 'bg-medical-900/40'
-                                    : '',
+                                isBursting || (!hasLiked && (isHovering || mobileLikePending)) ? 'bg-brand/40' : '',
                             ]"
                         >
                             <!-- 1. 动态网格背景 (仅在交互时显示) -->
@@ -235,7 +235,7 @@
                                             ? 'scale-125 text-accent drop-shadow-[0_0_15px_rgba(var(--color-accent),0.9)]'
                                             : hasLiked
                                               ? 'text-accent scale-100 drop-shadow-[0_0_5px_rgba(var(--color-accent),0.5)]'
-                                              : 'text-white/70 scale-100 group-hover:scale-110 group-hover:text-white',
+                                              : 'text-ink-inverse/70 scale-100 group-hover:scale-110 group-hover:text-ink-inverse',
                                     ]"
                                 >
                                     <Activity
@@ -253,7 +253,7 @@
                                 <!-- 状态文字 -->
                                 <div
                                     class="flex items-center gap-1 font-mono text-[9px] tracking-[0.2em] transition-colors duration-300"
-                                    :class="isBursting || hasLiked ? 'text-accent' : 'text-white/70'"
+                                    :class="isBursting || hasLiked ? 'text-accent' : 'text-ink-inverse/70'"
                                 >
                                     <span v-if="isBursting">INJECTING...</span>
                                     <span v-else-if="hasLiked">WONDERFUL MUSIC</span>
@@ -269,8 +269,8 @@
                         class="absolute inset-0 w-full h-full object-cover opacity-80"
                         :class="player.isPaused ? '' : 'animate-[pulse_4s_ease-in-out_infinite]'"
                     />
-                    <div v-else class="flex flex-col items-center text-medical-300">
-                        <div class="w-16 h-16 border-2 border-medical-300 mb-2 rotate-45"></div>
+                    <div v-else class="flex flex-col items-center text-ink-subtle">
+                        <div class="w-16 h-16 border-2 border-line-strong mb-2 rotate-45"></div>
                         <span class="font-mono text-xs tracking-widest">NO MEDIA</span>
                     </div>
                     <div
@@ -279,7 +279,7 @@
 
                     <!-- 状态标签：悬停或点赞时隐藏 -->
                     <div
-                        class="absolute top-0 left-0 z-50 px-3 py-1 font-mono text-xs font-bold chamfer-br transition-colors duration-300 bg-medical-900/80 backdrop-blur-sm text-white"
+                        class="absolute top-0 left-0 z-50 px-3 py-1 font-mono text-xs font-bold chamfer-br transition-colors duration-300 bg-brand/80 backdrop-blur-sm text-ink-inverse"
                     >
                         {{ player.isPaused ? 'PAUSED' : 'PLAYING' }}
                     </div>
@@ -305,6 +305,16 @@ const player = usePlayerStore();
 const uiStore = useUiStore();
 const { addLikedSong } = useLikedSongs();
 const canvasRef = ref(null);
+const gfxWrapRef = ref(null);
+// 画布边长 = 容器较长边 × 1.35；环半径恒为画布 37.5%，直径 ≈ 画面长边，始终穿过画面
+const canvasSize = ref(0);
+let gfxObserver = null;
+const resizeGfx = () => {
+    const wrap = gfxWrapRef.value;
+    if (!wrap) return;
+    const side = Math.round(Math.max(wrap.clientWidth, wrap.clientHeight) * 1.35);
+    if (side > 0 && side !== canvasSize.value) canvasSize.value = side;
+};
 const currentCover = computed(() => player.nowPlaying?.music.coverUrl);
 const { width } = useWindowSize();
 const isMobile = computed(() => width.value < 768);
@@ -483,6 +493,13 @@ onMounted(() => {
     if (canvasRef.value) {
         visualizer.mount(canvasRef.value);
         visualizer.setPlaying(isVisualizerActive.value);
+                resizeGfx();
+                if (typeof ResizeObserver !== 'undefined') {
+                    gfxObserver = new ResizeObserver(resizeGfx);
+                    if (gfxWrapRef.value) gfxObserver.observe(gfxWrapRef.value);
+                } else {
+                    window.addEventListener('resize', resizeGfx);
+                }
     }
 
     // 2. 监听全局自定义事件
@@ -579,6 +596,12 @@ onMounted(() => {
 
 onUnmounted(() => {
     visualizer.unmount();
+            if (gfxObserver) {
+                gfxObserver.disconnect();
+                gfxObserver = null;
+            } else {
+                window.removeEventListener('resize', resizeGfx);
+            }
     clearInterval(logInterval);
     clearInterval(updateInterval);
 });

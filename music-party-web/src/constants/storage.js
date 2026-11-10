@@ -9,4 +9,5 @@ export const STORAGE_KEYS = {
     AUTO_LITE_MODE: 'mp_auto_lite_mode', // 精简模式偏好
     PWA_HINT_SHOWN: 'mp_pwa_hint_shown', // PWA 安装提示是否已展示
     TUTORIAL_DONE: 'mp_tutorial_done_v1', // 新手引导是否已完成
+    THEME: 'mp_theme', // 外观偏好：light | dark（用户本地，不上报）
 };

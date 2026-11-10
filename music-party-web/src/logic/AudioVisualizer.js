@@ -41,6 +41,10 @@ export class AudioVisualizer {
         this.breatheBars = 60; // Reduced from 120
         this.breatheRadiusBase = 180;
 
+        // 刻度环颜色跟随主题令牌（--mp-graphic），按主题缓存，避免每帧读计算样式
+        this._themeKey = null;
+        this._graphicColor = '#0a0f14';
+
         // 圆环定义
         this.rings = [
             { radius: 450, baseWidth: 5, maxWidth: 150, speed: -0.015, offset: 0, segments: 3 },
@@ -124,6 +128,21 @@ export class AudioVisualizer {
         this.animationId = requestAnimationFrame(loop);
     }
 
+    /** 当前是否深色主题（读 data-theme，开销可忽略） */
+    isDarkTheme() {
+        return document.documentElement?.dataset?.theme === 'dark';
+    }
+    /** 背景装饰色（刻度环）：读 --mp-ring，随 data-theme 变化，按主题缓存避免每帧读样式 */
+    graphicColor() {
+        const theme = document.documentElement?.dataset?.theme === 'dark' ? 'dark' : 'light';
+        if (theme !== this._themeKey) {
+            this._themeKey = theme;
+            const raw = getComputedStyle(document.documentElement).getPropertyValue('--mp-ring').trim();
+            this._graphicColor = raw ? `rgb(${raw})` : '#D1D5DB';
+        }
+        return this._graphicColor;
+    }
+
     draw(now = performance.now()) {
         const { ctx, center } = this;
 
@@ -176,51 +195,54 @@ export class AudioVisualizer {
         ctx.scale(this.PIXEL_RATIO, this.PIXEL_RATIO);
 
         // --- 2. 绘制橙色流体圆环 ---
-        ctx.save();
-        ctx.globalCompositeOperation = 'screen';
-        if (!this.isFirefox) {
-            // shadowBlur 是 Firefox 的主要光栅化热点，故只在 Firefox 关闭；其他浏览器保留原光晕
-            ctx.shadowBlur = 50;
-            ctx.shadowColor = '#F97316';
+        // 深色主题下隐藏橙色呼吸环，避免与暗色背景争抢注意力
+        if (!this.isDarkTheme()) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            if (!this.isFirefox) {
+                // shadowBlur 是 Firefox 的主要光栅化热点，故只在 Firefox 关闭；其他浏览器保留原光晕
+                ctx.shadowBlur = 50;
+                ctx.shadowColor = '#F97316';
+            }
+
+            this.rings.forEach((ring) => {
+                // 波形点数：Firefox 减半以降低光栅化成本，其他浏览器保持 120 点
+                const count = this.isFirefox ? 60 : 120;
+                const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
+
+                // 预计算一圈的波形点，内外圈共享 (原来内外圈各算一遍三角函数)
+                const pts = [];
+                for (let i = 0; i <= count; i++) {
+                    const angle = (i / count) * Math.PI * 2;
+                    const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
+                    pts.push({
+                        x: Math.cos(angle),
+                        y: Math.sin(angle),
+                        w: ring.baseWidth + ((wave + 1) / 2) * currentMaxWidth,
+                    });
+                }
+
+                // 外圈 → 内圈回折成环带，一次 fill 完成
+                // (不再用宽描边模拟光晕：该描边是 Firefox 的新渲染热点，且光晕在浅色背景上几乎不可见)
+                ctx.beginPath();
+                for (let i = 0; i <= count; i++) {
+                    ctx.lineTo(
+                        center + pts[i].x * (ring.radius + pts[i].w / 2),
+                        center + pts[i].y * (ring.radius + pts[i].w / 2)
+                    );
+                }
+                for (let i = count; i >= 0; i--) {
+                    ctx.lineTo(
+                        center + pts[i].x * (ring.radius - pts[i].w / 2),
+                        center + pts[i].y * (ring.radius - pts[i].w / 2)
+                    );
+                }
+                ctx.closePath();
+                ctx.fillStyle = `rgba(249, 115, 22, ${this.smoothAlpha})`;
+                ctx.fill();
+            });
+            ctx.restore();
         }
-
-        this.rings.forEach((ring) => {
-            // 波形点数：Firefox 减半以降低光栅化成本，其他浏览器保持 120 点
-            const count = this.isFirefox ? 60 : 120;
-            const currentMaxWidth = ring.maxWidth * this.smoothWidthScale * this.roughnessMultiplier;
-
-            // 预计算一圈的波形点，内外圈共享 (原来内外圈各算一遍三角函数)
-            const pts = [];
-            for (let i = 0; i <= count; i++) {
-                const angle = (i / count) * Math.PI * 2;
-                const wave = Math.sin(angle * ring.segments + this.rippleTime * ring.speed + ring.offset);
-                pts.push({
-                    x: Math.cos(angle),
-                    y: Math.sin(angle),
-                    w: ring.baseWidth + ((wave + 1) / 2) * currentMaxWidth,
-                });
-            }
-
-            // 外圈 → 内圈回折成环带，一次 fill 完成
-            // (不再用宽描边模拟光晕：该描边是 Firefox 的新渲染热点，且光晕在浅色背景上几乎不可见)
-            ctx.beginPath();
-            for (let i = 0; i <= count; i++) {
-                ctx.lineTo(
-                    center + pts[i].x * (ring.radius + pts[i].w / 2),
-                    center + pts[i].y * (ring.radius + pts[i].w / 2)
-                );
-            }
-            for (let i = count; i >= 0; i--) {
-                ctx.lineTo(
-                    center + pts[i].x * (ring.radius - pts[i].w / 2),
-                    center + pts[i].y * (ring.radius - pts[i].w / 2)
-                );
-            }
-            ctx.closePath();
-            ctx.fillStyle = `rgba(249, 115, 22, ${this.smoothAlpha})`;
-            ctx.fill();
-        });
-        ctx.restore();
 
         // --- 3. 绘制呼吸态频谱 (前景灰色) ---
         ctx.globalCompositeOperation = 'source-over';
@@ -237,7 +259,7 @@ export class AudioVisualizer {
             ctx.moveTo(center + Math.cos(angle) * r1, center + Math.sin(angle) * r1);
             ctx.lineTo(center + Math.cos(angle) * r2, center + Math.sin(angle) * r2);
         }
-        ctx.strokeStyle = '#D1D5DB';
+        ctx.strokeStyle = this.graphicColor();
         ctx.lineWidth = 2;
         ctx.lineCap = 'round';
         ctx.stroke();

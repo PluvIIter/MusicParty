@@ -1,22 +1,22 @@
 <template>
-    <div class="fixed inset-0 z-[80] bg-medical-900/80 backdrop-blur-sm flex items-center justify-center p-3 md:p-6">
+    <div class="fixed inset-0 z-[80] bg-brand/80 backdrop-blur-sm flex items-center justify-center p-3 md:p-6">
         <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="album-title"
-            class="w-full max-w-2xl max-h-[85dvh] flex flex-col bg-medical-50 border border-medical-200 shadow-2xl chamfer-br"
+            class="w-full max-w-2xl max-h-[85dvh] flex flex-col bg-surface border border-line shadow-2xl chamfer-br"
         >
             <header
-                class="flex justify-between items-start gap-3 p-4 md:p-6 bg-white border-b border-medical-200 flex-shrink-0"
+                class="flex justify-between items-start gap-3 p-4 md:p-6 bg-surface-raised border-b border-line flex-shrink-0"
             >
                 <div class="flex gap-3 min-w-0">
                     <CoverImage v-if="album" :src="album.coverUrl" class="w-16 h-16 flex-shrink-0" :scanline="false" />
                     <div class="min-w-0">
                         <div class="text-xs text-accent font-bold mb-1">整张专辑</div>
-                        <h3 id="album-title" class="font-bold text-lg md:text-xl text-medical-900 break-words">
+                        <h3 id="album-title" class="font-bold text-lg md:text-xl text-ink break-words">
                             {{ album?.name || '读取专辑' }}
                         </h3>
-                        <p v-if="album" class="text-xs text-medical-500 mt-1 break-words">
+                        <p v-if="album" class="text-xs text-ink-muted mt-1 break-words">
                             {{ album.artists.join(' / ') }} · {{ album.trackCount }} 首
                         </p>
                     </div>
@@ -25,7 +25,7 @@
                     @click="emit('close')"
                     :disabled="importing"
                     aria-label="关闭专辑"
-                    class="p-1 text-medical-500 hover:text-accent disabled:opacity-40"
+                    class="p-1 text-ink-muted hover:text-accent disabled:opacity-40"
                 >
                     <X class="w-5 h-5" />
                 </button>
@@ -40,7 +40,7 @@
                 </div>
                 <div v-else-if="loadError" role="alert" class="py-8 text-center">
                     <p class="text-sm text-red-600">{{ loadError }}</p>
-                    <button @click="loadAlbum" class="mt-4 px-4 py-2 bg-medical-900 text-white text-sm">
+                    <button @click="loadAlbum" class="mt-4 px-4 py-2 bg-brand text-ink-inverse text-sm">
                         重新读取
                     </button>
                 </div>
@@ -48,12 +48,12 @@
                     <li
                         v-for="(song, index) in album.songs"
                         :key="song.id"
-                        class="flex gap-3 items-center p-3 bg-white border border-medical-100"
+                        class="flex gap-3 items-center p-3 bg-surface-raised border border-line"
                     >
-                        <span class="w-5 flex-shrink-0 text-xs text-medical-400 font-mono">{{ index + 1 }}</span>
+                        <span class="w-5 flex-shrink-0 text-xs text-ink-subtle font-mono">{{ index + 1 }}</span>
                         <div class="flex-1 min-w-0">
                             <div class="text-sm font-bold break-words">{{ song.name }}</div>
-                            <div class="text-xs text-medical-500 truncate">{{ song.artists.join(' / ') }}</div>
+                            <div class="text-xs text-ink-muted truncate">{{ song.artists.join(' / ') }}</div>
                         </div>
                         <span v-if="inQueue(song.id)" class="flex-shrink-0 text-xs text-green-600">已在队列</span>
                         <button
@@ -75,7 +75,7 @@
                                 userStore.isGuest ||
                                 playerStore.config.neteaseEnabled === false
                             "
-                            class="p-2 flex-shrink-0 text-medical-500 hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                            class="p-2 flex-shrink-0 text-ink-muted hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <Check v-if="inQueue(song.id)" class="w-5 h-5 text-green-600" />
                             <Loader2 v-else-if="pendingIds.has(song.id)" class="w-5 h-5 animate-spin text-accent" />
@@ -84,8 +84,8 @@
                     </li>
                 </ol>
             </div>
-            <footer v-if="album" class="p-4 md:px-6 bg-white border-t border-medical-200 flex-shrink-0">
-                <p class="text-xs text-medical-500 mb-3">
+            <footer v-if="album" class="p-4 md:px-6 bg-surface-raised border-t border-line flex-shrink-0">
+                <p class="text-xs text-ink-muted mb-3">
                     点击歌曲右侧“＋”添加单曲，或按专辑曲序添加整张；自动跳过队列中的歌曲，实际数量受房间导入、点歌和队列上限限制。
                 </p>
                 <p
@@ -99,7 +99,7 @@
                 <button
                     @click="importAlbum"
                     :disabled="importing || allInQueue || !playerStore.connected"
-                    class="w-full flex justify-center items-center gap-2 px-4 py-3 bg-accent hover:bg-accent-hover text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="w-full flex justify-center items-center gap-2 px-4 py-3 bg-accent hover:bg-accent-hover text-ink-inverse font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     <Loader2 v-if="importing" class="w-4 h-4 animate-spin" /><ListPlus v-else class="w-4 h-4" />
                     {{

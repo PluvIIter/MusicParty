@@ -11,8 +11,17 @@ export const useUiStore = defineStore('ui', () => {
     const authorName = ref('ThorNex');
     const backWords = ref('THORNEX');
 
+    // 外观：用户本地偏好，存 localStorage；首次访问跟随系统 prefers-color-scheme。
+    const storedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
+    const prefersDark = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    const isDarkMode = ref(storedTheme ? storedTheme === 'dark' : prefersDark);
+
     const toggleLiteMode = () => {
         isLiteMode.value = !isLiteMode.value;
+    };
+
+    const toggleDarkMode = () => {
+        isDarkMode.value = !isDarkMode.value;
     };
 
     const setVolume = (val) => {
@@ -38,6 +47,18 @@ export const useUiStore = defineStore('ui', () => {
         localStorage.setItem(STORAGE_KEYS.AUTO_LITE_MODE, newVal.toString());
     });
 
+    // 主题切换：写入 <html data-theme>，令牌在 style.css 里随属性切换
+    watch(
+        isDarkMode,
+        (dark) => {
+            if (typeof document !== 'undefined') {
+                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+            }
+            localStorage.setItem(STORAGE_KEYS.THEME, dark ? 'dark' : 'light');
+        },
+        { immediate: true }
+    );
+
     return {
         isLiteMode,
         toggleLiteMode,
@@ -47,5 +68,7 @@ export const useUiStore = defineStore('ui', () => {
         authorName,
         backWords,
         fetchConfig,
+        isDarkMode,
+        toggleDarkMode,
     };
 });

@@ -1,5 +1,5 @@
 <template>
-    <div class="relative overflow-hidden bg-medical-200 flex items-center justify-center">
+    <div class="relative overflow-hidden bg-line flex items-center justify-center">
         <img
             v-if="!hasError && src"
             :src="src"
@@ -8,7 +8,7 @@
         />
 
         <!-- 🟢 修改部分开始：使用 SVG 图标代替固定像素的 DIV -->
-        <div v-else class="flex flex-col items-center justify-center w-full h-full text-medical-400/80 p-1">
+        <div v-else class="flex flex-col items-center justify-center w-full h-full text-ink-subtle/80 p-1">
             <!--
          1. w-1/2 h-1/2: 让图标大小始终占据容器的一半，完美适配 32px 或 300px
          2. stroke-width: 线条稍微细一点，看起来更精致

@@ -23,7 +23,7 @@
         >
             <div
                 v-if="chatStore.isOpen"
-                class="pointer-events-auto bg-white border border-medical-200 shadow-2xl flex flex-col chamfer-br overflow-hidden"
+                class="pointer-events-auto bg-surface-raised border border-line shadow-2xl flex flex-col chamfer-br overflow-hidden"
                 :class="dynamicWindowClasses"
                 @mousedown.stop
                 @touchstart.stop
@@ -35,22 +35,22 @@
                 <div
                     ref="windowHeaderRef"
                     @pointerdown="startHeaderDrag"
-                    class="h-10 bg-medical-50 border-b border-medical-200 flex items-center justify-between px-3 flex-shrink-0 select-none"
+                    class="h-10 bg-surface border-b border-line flex items-center justify-between px-3 flex-shrink-0 select-none"
                     :class="{ 'cursor-move': !isMobile }"
                 >
-                    <div class="font-mono text-xs font-bold text-medical-500 flex items-center gap-2">
+                    <div class="font-mono text-xs font-bold text-ink-muted flex items-center gap-2">
                         <MessageSquare class="w-3 h-3" /> CHAT
                     </div>
                     <button
                         @click="chatStore.toggleChat"
-                        class="text-medical-400 hover:text-medical-900 p-1 cursor-pointer"
+                        class="text-ink-subtle hover:text-ink p-1 cursor-pointer"
                     >
                         <X class="w-4 h-4" />
                     </button>
                 </div>
 
                 <!-- 2. Tabs 切换栏 -->
-                <div class="flex border-b border-medical-200 bg-medical-50/50">
+                <div class="flex border-b border-line bg-surface/50">
                     <button
                         v-for="tab in ['CHAT', 'SYSTEM']"
                         :key="tab"
@@ -58,8 +58,8 @@
                         class="flex-1 py-2 text-[10px] font-bold font-mono transition-colors relative"
                         :class="
                             activeTab === tab
-                                ? 'text-medical-900 bg-white'
-                                : 'text-medical-400 hover:text-medical-600 hover:bg-medical-100'
+                                ? 'text-ink bg-surface-raised'
+                                : 'text-ink-subtle hover:text-ink-muted hover:bg-surface-sunken'
                         "
                     >
                         {{ tab }}
@@ -72,7 +72,7 @@
                 <div
                     ref="msgListRef"
                     @scroll="handleScroll"
-                    class="flex-1 overflow-y-auto p-3 space-y-4 bg-medical-50/30 chat-scroll"
+                    class="flex-1 overflow-y-auto p-3 space-y-4 bg-surface/30 chat-scroll"
                 >
                     <!-- Loading More Indicator -->
                     <div v-if="chatStore.isLoadingMore" class="flex justify-center py-2">
@@ -81,7 +81,7 @@
 
                     <div
                         v-if="processedMessages.length === 0"
-                        class="text-center py-8 text-[10px] text-medical-300 font-mono"
+                        class="text-center py-8 text-[10px] text-ink-subtle font-mono"
                     >
                         > NO RECORDS IN {{ activeTab }}
                     </div>
@@ -90,7 +90,7 @@
                         <!-- 时间戳 (如果与上一条间隔超过3分钟则显示) -->
                         <div v-if="item.showTime" class="flex justify-center mb-3">
                             <span
-                                class="text-[9px] font-mono text-medical-300 bg-medical-100/50 px-2 py-0.5 rounded-sm"
+                                class="text-[9px] font-mono text-ink-subtle bg-surface-sunken/50 px-2 py-0.5 rounded-sm"
                             >
                                 {{ formatTime(item.msg.timestamp) }}
                             </span>
@@ -103,7 +103,7 @@
                             class="flex flex-col text-sm group"
                             :class="isSelf(item.msg) ? 'items-end' : 'items-start'"
                         >
-                            <div class="flex items-center gap-2 text-[10px] text-medical-400 mb-0.5 font-sans">
+                            <div class="flex items-center gap-2 text-[10px] text-ink-subtle mb-0.5 font-sans">
                                 <span v-if="!isSelf(item.msg)">{{
                                     userStore.resolveName(item.msg.userId, item.msg.userName)
                                 }}</span>
@@ -112,8 +112,8 @@
                                 class="max-w-[90%] px-3 py-1.5 text-xs break-words relative shadow-sm leading-relaxed select-text cursor-text"
                                 :class="
                                     isSelf(item.msg)
-                                        ? 'bg-medical-900 text-white rounded-l-md rounded-tr-md'
-                                        : 'bg-white border border-medical-200 text-medical-800 rounded-r-md rounded-tl-md'
+                                        ? 'bg-brand text-ink-inverse rounded-l-md rounded-tr-md'
+                                        : 'bg-surface-raised border border-line text-ink rounded-r-md rounded-tl-md'
                                 "
                             >
                                 {{ item.msg.content }}
@@ -123,7 +123,7 @@
                         <!-- 情况B: 系统日志 (SYSTEM) -->
                         <div
                             v-else-if="item.msg.type === 'SYSTEM'"
-                            class="flex items-start gap-2 text-xs text-medical-500/80 px-2 opacity-80"
+                            class="flex items-start gap-2 text-xs text-ink-muted/80 px-2 opacity-80"
                         >
                             <Terminal class="w-3 h-3 mt-0.5 flex-shrink-0 opacity-50" />
                             <span class="font-sans text-[10px] leading-relaxed break-all select-text cursor-text">
@@ -144,7 +144,7 @@
                         <!-- 情况D: 开始播放 (PLAY_START) -->
                         <div v-else-if="item.msg.type === 'PLAY_START'" class="flex justify-center my-2">
                             <div
-                                class="bg-medical-100/80 border border-medical-300 text-medical-600 px-3 py-1 rounded-md text-[10px] font-mono flex items-center gap-2 shadow-sm"
+                                class="bg-surface-sunken/80 border border-line-strong text-ink-muted px-3 py-1 rounded-md text-[10px] font-mono flex items-center gap-2 shadow-sm"
                             >
                                 <span class="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
                                 <span>{{ item.msg.content }}</span>
@@ -156,7 +156,7 @@
                 <!-- 4. Input Area (仅在 Chat Tab 显示) -->
                 <div
                     v-if="activeTab === 'CHAT'"
-                    class="p-2 bg-white border-t border-medical-200 flex gap-2 flex-shrink-0"
+                    class="p-2 bg-surface-raised border-t border-line flex gap-2 flex-shrink-0"
                 >
                     <input
                         v-model="inputContent"
@@ -164,19 +164,19 @@
                         @mousedown.stop
                         @touchstart.stop
                         placeholder="TYPE MESSAGE..."
-                        class="flex-1 bg-medical-50 border border-medical-200 px-2 py-1.5 text-xs outline-none focus:border-accent font-sans transition-colors rounded-sm text-medical-900 placeholder-medical-300"
+                        class="flex-1 bg-surface border border-line px-2 py-1.5 text-xs outline-none focus:border-accent font-sans transition-colors rounded-sm text-ink placeholder-ink-subtle"
                     />
                     <button
                         @click="send"
-                        class="bg-accent hover:bg-accent-hover text-white px-3 py-1.5 transition-colors rounded-sm flex items-center justify-center shadow-sm shadow-accent/20"
+                        class="bg-accent hover:bg-accent-hover text-ink-inverse px-3 py-1.5 transition-colors rounded-sm flex items-center justify-center shadow-sm shadow-accent/20"
                     >
                         <Send class="w-4 h-4" />
                     </button>
                 </div>
 
                 <!-- System Tab 底部占位 -->
-                <div v-else class="h-6 bg-medical-50 border-t border-medical-200 flex items-center justify-center">
-                    <span class="text-[9px] font-mono text-medical-300">SYSTEM LOG READ-ONLY</span>
+                <div v-else class="h-6 bg-surface border-t border-line flex items-center justify-center">
+                    <span class="text-[9px] font-mono text-ink-subtle">SYSTEM LOG READ-ONLY</span>
                 </div>
             </div>
         </Transition>
@@ -193,8 +193,8 @@
             class="pointer-events-auto w-10 h-10 border flex items-center justify-center transition-all cursor-move select-none rounded-sm relative overflow-hidden"
             :class="
                 chatStore.unreadCount > 0
-                    ? 'bg-accent border-accent text-white shadow-[0_0_15px_rgba(249,115,22,0.6)] scale-110'
-                    : 'bg-white border-medical-200 text-medical-500 shadow-lg hover:text-medical-900 hover:border-medical-300'
+                    ? 'bg-accent border-accent text-ink-inverse shadow-[0_0_15px_rgba(249,115,22,0.6)] scale-110'
+                    : 'bg-surface-raised border-line text-ink-muted shadow-lg hover:text-ink hover:border-line-strong'
             "
         >
             <div
