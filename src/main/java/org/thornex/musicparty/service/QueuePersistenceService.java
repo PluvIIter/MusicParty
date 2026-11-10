@@ -21,8 +21,10 @@ import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.*;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -78,7 +80,13 @@ public class QueuePersistenceService {
     public synchronized void saveQueueSnapshot(List<MusicQueueItem> entries) throws IOException {
         Path file = getPersistenceFile().toPath().toAbsolutePath().normalize();
         PersistentData data = new PersistentData();
-        data.setQueue(List.copyOf(entries));
+        synchronized (musicQueueManager) {
+            data.setQueue(List.copyOf(entries));
+            Set<String> playedQueueIds = new HashSet<>(musicQueueManager.getPlayedQueueIds());
+            // Filter a copy: a failed proposed snapshot must not prune the live first-play ledger.
+            playedQueueIds.retainAll(data.getQueue().stream().map(MusicQueueItem::queueId).collect(Collectors.toSet()));
+            data.setPlayedQueueIds(playedQueueIds);
+        }
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
         data.setSettings(buildSettingsSnapshot());
