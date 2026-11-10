@@ -53,7 +53,7 @@
                     LYRIC_SYSTEM
                 </div>
                 <div
-                    class="w-full space-y-1 text-xs font-normal text-ink leading-tight mix-blend-normal md:mix-blend-multiply md:text-ink-muted flex flex-col md:justify-end min-h-0"
+                    class="w-full space-y-1 text-xs font-normal text-ink leading-tight mix-blend-normal md:mix-blend-multiply dark:mix-blend-normal md:text-ink-muted flex flex-col md:justify-end min-h-0"
                 >
                     <div
                         v-if="parsedLyrics.length === 0"

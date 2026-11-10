@@ -46,7 +46,7 @@
             <div class="flex justify-end pt-2">
                 <button
                     @click="nextStep"
-                    class="px-4 py-1.5 bg-brand text-ink-inverse text-xs font-bold hover:bg-accent transition-colors chamfer-br"
+                    class="px-4 py-1.5 bg-brand text-ink-inverse text-xs font-bold hover:bg-accent hover:text-accent-contrast transition-colors chamfer-br"
                 >
                     {{ currentStepIndex === steps.length - 1 ? 'FINISH' : 'NEXT >' }}
                 </button>

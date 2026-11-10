@@ -28,7 +28,7 @@
                     v-if="!isSetupMode || setupType === 'password'"
                     @click="handleAction"
                     :disabled="loading"
-                    class="w-full bg-brand text-ink-inverse font-bold py-3 hover:bg-accent transition-colors disabled:opacity-50"
+                    class="w-full bg-brand text-ink-inverse font-bold py-3 hover:bg-accent hover:text-accent-contrast transition-colors disabled:opacity-50"
                 >
                     {{ loading ? 'VERIFYING...' : isSetupMode ? 'CONFIRM PASSWORD' : 'UNLOCK' }}
                 </button>
@@ -36,7 +36,7 @@
                 <div v-if="isSetupMode && setupType === 'initial'" class="space-y-3">
                     <button
                         @click="setupType = 'password'"
-                        class="w-full bg-brand text-ink-inverse font-bold py-3 hover:bg-accent transition-colors chamfer-br"
+                        class="w-full bg-brand text-ink-inverse font-bold py-3 hover:bg-accent hover:text-accent-contrast transition-colors chamfer-br"
                     >
                         SET PASSWORD PROTECTION
                     </button>

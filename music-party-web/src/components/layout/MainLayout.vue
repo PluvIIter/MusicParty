@@ -99,7 +99,7 @@ const handleSearchClick = () => {
                 <button
                     id="tutorial-search"
                     @click="handleSearchClick"
-                    class="flex items-center justify-center w-9 h-9 md:w-auto md:h-9 md:px-4 border border-accent bg-accent hover:bg-accent-hover font-bold text-sm text-ink-inverse transition-all rounded-sm gap-2"
+                    class="flex items-center justify-center w-9 h-9 md:w-auto md:h-9 md:px-4 border border-accent bg-accent hover:bg-accent-hover font-bold text-sm text-accent-contrast transition-all rounded-sm gap-2"
                 >
                     <Search class="w-4 h-4" />
                     <span class="hidden md:inline">SEARCH</span>
@@ -271,7 +271,7 @@ const handleSearchClick = () => {
                 <!-- 退出动作 -->
                                 <button
                     @click="uiStore.toggleLiteMode"
-                    class="w-full bg-brand text-ink-inverse font-black py-4 flex items-center justify-center gap-4 transition-all hover:bg-accent hover:tracking-[0.2em] active:scale-[0.98] group shadow-xl"
+                    class="w-full bg-brand text-ink-inverse font-black py-4 flex items-center justify-center gap-4 transition-all hover:bg-accent hover:text-accent-contrast hover:tracking-[0.2em] active:scale-[0.98] group shadow-xl"
                 >
                     <Maximize2 class="w-5 h-5 transition-transform group-hover:scale-110" />
                     <span class="text-sm tracking-widest uppercase">退出精简模式</span>

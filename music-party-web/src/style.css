@@ -64,27 +64,29 @@ body {
         --mp-graphic: 229 231 235; /* 浅色沿用原水印灰 #E5E7EB */
         --mp-accent: 249 115 22; /* 强调橙：浅色保持原亮度 */
         --mp-accent-hover: 234 88 12;
+        --mp-on-accent: 255 255 255;
         --mp-ring: 209 213 219; /* 浅色沿用原刻度环灰 #D1D5DB */
     }
 
     [data-theme='dark'] {
         color-scheme: dark;
-        --mp-surface: 10 15 28;
-        --mp-surface-raised: 17 24 39;
-        --mp-surface-sunken: 20 27 44;
-        --mp-ink: 238 242 251;
-        --mp-ink-muted: 139 153 179;
-        --mp-ink-subtle: 100 116 139;
-        --mp-ink-inverse: 232 236 244;
-        --mp-line: 38 49 68;
-        --mp-line-strong: 51 65 85;
-        --mp-brand: 26 35 51;
-        --mp-brand-soft: 35 47 66;
-        --mp-grid-line: rgba(148, 163, 184, 0.08);
-        --mp-graphic: 0 0 0;
-        --mp-accent: 194 65 12; /* 深色压暗，避免刺眼 */
-        --mp-accent-hover: 154 52 18;
-        --mp-ring: 0 0 0;
+        --mp-surface: 21 23 25;
+        --mp-surface-raised: 30 33 36;
+        --mp-surface-sunken: 17 19 21;
+        --mp-ink: 227 229 231;
+        --mp-ink-muted: 172 178 184;
+        --mp-ink-subtle: 147 156 165;
+        --mp-ink-inverse: 227 229 231;
+        --mp-line: 51 56 61;
+        --mp-line-strong: 80 88 95;
+        --mp-brand: 39 43 47;
+        --mp-brand-soft: 47 52 57;
+        --mp-grid-line: rgba(172, 178, 184, 0.035);
+        --mp-graphic: 51 56 61;
+        --mp-accent: 219 133 63;
+        --mp-accent-hover: 230 150 84;
+        --mp-on-accent: 24 19 15;
+        --mp-ring: 80 88 95;
     }
 
     body {
@@ -105,7 +107,7 @@ body {
 
 /* 进度条可拖动时的键盘焦点提示（role=slider + tabindex） */
 .mp-seek:focus-visible {
-    outline: 2px solid #f97316;
+    outline: 2px solid rgb(var(--mp-accent));
     outline-offset: 3px;
 }
 /* 专辑封面边框：深色下做克制的呼吸（浅色保持原样不动） */

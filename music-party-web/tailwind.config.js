@@ -28,11 +28,12 @@ export default {
                     DEFAULT: 'rgb(var(--mp-brand) / <alpha-value>)',
                     soft: 'rgb(var(--mp-brand-soft) / <alpha-value>)',
                 },
-                // 背景装饰图形（大字水印、频谱刻度环）专用：浅色下是近黑，深色下是纯黑
+                // 装饰图形独立于正文，避免深色模式出现纯黑断层。
                 graphic: 'rgb(var(--mp-graphic) / <alpha-value>)',
                 accent: {
                     DEFAULT: 'rgb(var(--mp-accent) / <alpha-value>)',
                     hover: 'rgb(var(--mp-accent-hover) / <alpha-value>)',
+                    contrast: 'rgb(var(--mp-on-accent) / <alpha-value>)',
                 },
             },
             fontFamily: {

@@ -40,7 +40,7 @@
                     <button
                         @click="handleVerify"
                         :disabled="loading"
-                        class="w-full bg-brand hover:bg-accent text-ink-inverse py-2 font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2 group disabled:opacity-50"
+                        class="w-full bg-brand hover:bg-accent text-ink-inverse hover:text-accent-contrast py-2 font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2 group disabled:opacity-50"
                     >
                         <Loader2 v-if="loading" class="w-4 h-4 animate-spin" />
                         <span v-else>ACCESS SYSTEM</span>
