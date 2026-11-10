@@ -388,6 +388,7 @@ export function useAudio(audioRef, playerStore) {
             synchronizer.resetMedia();
             if (audioRef.value.readyState >= 2) alignToRoom();
             // Invoke play inside the gesture; canplay may require playback to start loading.
+            needsUserGesture.value = false;
             safePlay();
             return;
         }

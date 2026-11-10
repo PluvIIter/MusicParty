@@ -77,7 +77,7 @@ describe('local sound unlock', () => {
         );
         state.retryLocally();
         expect(audio.play).toHaveBeenCalledTimes(2);
-        expect(state.needsUserGesture.value).toBe(true);
+        expect(state.needsUserGesture.value).toBe(false);
         finish();
         await Promise.resolve();
         expect(state.needsUserGesture.value).toBe(false);
