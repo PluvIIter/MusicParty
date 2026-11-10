@@ -1,25 +1,25 @@
 <template>
-    <div id="tutorial-queue" class="h-full flex flex-col bg-white border-l border-medical-200">
-        <div class="p-4 bg-medical-50 border-b border-medical-200 flex flex-wrap gap-2 justify-between items-center">
-            <h3 class="text-sm font-bold text-medical-900">
+    <div id="tutorial-queue" class="h-full flex flex-col bg-surface-raised border-l border-line">
+        <div class="p-4 bg-surface border-b border-line flex flex-wrap gap-2 justify-between items-center">
+            <h3 class="text-sm font-bold text-ink">
                 播放队列 <span class="text-accent text-xs">[{{ queue.length }}]</span>
             </h3>
             <button
                 type="button"
                 @click="clearMine"
                 :disabled="clearing || !player.connected || userStore.isGuest || mineCount === 0"
-                class="text-xs font-bold border border-medical-200 px-2 py-1 text-medical-600 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                class="text-xs font-bold border border-line px-2 py-1 text-ink-muted hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
                 title="只清空自己点的歌，其他成员的歌保留；正在播放的歌先播完"
             >
-                {{ clearing ? '正在清空…' : `清空我的歌单（${mineCount}）` }}
+                {{ clearing ? '正在清空…' : '清空我的歌单' }}
             </button>
         </div>
 
         <div
             v-if="!(player.isShuffle && player.isFairShuffle) && claimableGroups.length"
-            class="p-2 border-b border-medical-200 space-y-2 max-h-44 overflow-y-auto"
+            class="p-2 border-b border-line space-y-2 max-h-44 overflow-y-auto"
         >
-            <div class="text-[10px] text-medical-500">离线成员的歌单 · 认领后同时改名</div>
+            <div class="text-[10px] text-ink-muted">离线成员的歌单 · 认领后同时改名</div>
             <div v-for="group in claimableGroups" :key="group.token" class="flex items-center gap-2 text-xs">
                 <span class="flex-1 min-w-0 break-words">{{ group.name }} · {{ group.totalCount }} 首</span>
                 <button
@@ -35,7 +35,7 @@
         </div>
 
         <!-- Conditional Rendering: Show empty message -->
-        <div v-if="queue.length === 0" class="flex-1 text-center py-10 text-xs font-mono text-medical-400">
+        <div v-if="queue.length === 0" class="flex-1 text-center py-10 text-xs font-mono text-ink-subtle">
             QUEUE EMPTY / WAITING FOR INPUT
         </div>
 
@@ -43,7 +43,7 @@
         <div v-else-if="player.isShuffle && player.isFairShuffle" class="flex-1 overflow-y-auto p-2">
             <!-- Shuffle Indicator -->
             <div
-                class="mb-4 bg-accent/10 border border-accent/20 p-2 flex items-center gap-2 rounded-sm text-accent text-xs font-bold"
+                class="-mx-2 -mt-2 mb-3 bg-accent/10 border-b border-accent/20 px-3 py-2 flex items-center gap-2 text-accent text-xs font-bold"
             >
                 <Shuffle class="w-4 h-4" />
                 <span>随机播放中</span>
@@ -51,37 +51,37 @@
 
             <!-- Top Songs (Always at top) -->
             <div v-if="topItems.length > 0" class="mb-4">
-                <div class="text-xs font-mono text-medical-400 mb-2 pl-1">TOP PRIORITY</div>
+                <div class="text-xs font-mono text-ink-subtle mb-2 pl-1">TOP PRIORITY</div>
                 <QueueItem v-for="(item, idx) in topItems" :key="item.queueId" :item="item" :index="idx" />
             </div>
 
             <!-- User Groups (Drawers) -->
             <div class="space-y-2">
-                <div v-for="group in userGroups" :key="group.token" class="border border-medical-100 bg-white">
+                <div v-for="group in userGroups" :key="group.token" class="border border-line bg-surface-raised">
                     <div class="flex items-center">
                         <button
                             type="button"
                             @click="toggleUser(group.token)"
-                            class="min-w-0 flex-1 flex items-center justify-between p-3 hover:bg-medical-50 transition-colors"
+                            class="min-w-0 flex-1 flex items-center justify-between p-3 hover:bg-surface transition-colors"
                         >
                             <div class="min-w-0 flex items-center gap-3">
                                 <div
-                                    class="shrink-0 w-8 h-8 rounded bg-medical-100 flex items-center justify-center text-medical-500"
+                                    class="shrink-0 w-8 h-8 rounded bg-surface-sunken flex items-center justify-center text-ink-muted"
                                 >
                                     <User class="w-4 h-4" />
                                 </div>
                                 <div class="min-w-0 text-left">
-                                    <div class="text-sm font-bold text-medical-800 break-words">
+                                    <div class="text-sm font-bold text-ink break-words">
                                         {{ userStore.resolveName(group.token, group.name) }}
                                     </div>
-                                    <div class="text-[10px] text-medical-400 font-mono">
+                                    <div class="text-[10px] text-ink-subtle font-mono">
                                         {{ group.totalCount }} SONGS <span v-if="canClaim(group)">· 离线</span>
                                     </div>
                                 </div>
                             </div>
                             <component
                                 :is="expandedUsers[group.token] ? ChevronDown : ChevronRight"
-                                class="w-4 h-4 text-medical-400"
+                                class="w-4 h-4 text-ink-subtle"
                             />
                         </button>
                         <button
@@ -98,7 +98,7 @@
                     </div>
 
                     <!-- Drawer Content -->
-                    <div v-show="expandedUsers[group.token]" class="bg-medical-50/50 p-2 border-t border-medical-100">
+                    <div v-show="expandedUsers[group.token]" class="bg-surface/50 p-2 border-t border-line">
                         <QueueItem v-for="(item, idx) in group.items" :key="item.queueId" :item="item" />
                     </div>
                 </div>
