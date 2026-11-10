@@ -207,7 +207,7 @@ for (const viewport of [
 test('album read error can be retried without adding songs', async ({ page }) => {
     const server = await room(page, { failAlbumOnce: true });
     await page.getByRole('button', { name: '查看《Song 1》所属专辑' }).click();
-    await expect(page.getByRole('alert')).toContainText('Album temporarily unavailable');
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Album temporarily unavailable');
     expect(server.queue).toHaveLength(0);
     await page.getByRole('button', { name: '重新读取' }).click();
     await expect(page.getByRole('dialog', { name: 'Test album' }).getByRole('listitem')).toHaveCount(5);
