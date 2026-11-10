@@ -1,25 +1,25 @@
 <template>
     <div
-        class="group relative flex items-center gap-2 p-2 border hover:border-medical-300 transition-all mb-2 h-14"
-        :class="isFmMarker ? 'bg-accent/5 border-accent/30' : 'bg-white border-medical-100'"
+        class="group relative flex items-center gap-2 p-2 border hover:border-line-strong transition-all mb-2 h-14"
+        :class="isFmMarker ? 'bg-accent/5 border-accent/30' : 'bg-surface-raised border-line'"
     >
         <!-- 序号 -->
-        <div v-if="index !== undefined" class="w-6 text-center font-mono text-xs text-medical-400">
+        <div v-if="index !== undefined" class="w-6 text-center font-mono text-xs text-ink-subtle">
             {{ String(index + 1).padStart(2, '0') }}
         </div>
-        <div v-else class="w-6 text-center font-mono text-xs text-medical-400">#</div>
+        <div v-else class="w-6 text-center font-mono text-xs text-ink-subtle">#</div>
 
         <div class="flex-1 min-w-0">
             <div class="flex items-center min-w-0">
-                <div class="text-sm font-bold text-medical-800 truncate">{{ item.music.name }}</div>
+                <div class="text-sm font-bold text-ink truncate">{{ item.music.name }}</div>
                 <span
                     v-if="isFmMarker"
-                    class="ml-1 flex-shrink-0 px-1 bg-accent text-white text-[8px] font-mono font-bold"
+                    class="ml-1 flex-shrink-0 px-1 bg-accent text-ink-inverse text-[8px] font-mono font-bold"
                     >FM</span
                 >
             </div>
             <div class="flex justify-between items-center">
-                <div v-if="!item.status || item.status === 'READY'" class="text-xs text-medical-500 truncate">
+                <div v-if="!item.status || item.status === 'READY'" class="text-xs text-ink-muted truncate">
                     {{ item.music.artists[0] }}
                 </div>
 
@@ -35,7 +35,7 @@
                 <div v-else-if="item.status === 'FAILED'" class="text-xs font-mono font-bold text-red-500">
                     DOWNLOAD FAILED
                 </div>
-                <div class="text-[10px] text-medical-300 bg-medical-50 px-1 border border-medical-100">
+                <div class="text-[10px] text-ink-subtle bg-surface px-1 border border-line">
                     {{ userStore.resolveName(item.enqueuedBy.token, item.enqueuedBy.name) }}
                 </div>
             </div>
@@ -44,7 +44,7 @@
         <!-- 操作遮罩 -->
         <div
             v-if="!userStore.isGuest && !isFmMarker"
-            class="absolute inset-y-0 right-0 bg-white/90 px-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
+            class="absolute inset-y-0 right-0 bg-surface-raised/90 px-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
         >
             <button @click="player.topSong(item.queueId)" title="Top" class="p-1 hover:text-accent">
                 <ArrowUpToLine class="w-4 h-4" />
