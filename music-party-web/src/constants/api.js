@@ -17,6 +17,8 @@ export const WS_DEST = {
     ENQUEUE: '/app/enqueue',
     ENQUEUE_PLAYLIST: '/app/enqueue/playlist',
     ENQUEUE_ALBUM: '/app/enqueue/album',
+    ENQUEUE_CONTAINER: '/app/enqueue/container',
+    USER_CONTAINER_IMPORT: '/user/queue/container/import',
     QUEUE_TOP: '/app/queue/top',
     QUEUE_REMOVE: '/app/queue/remove',
     QUEUE_CLAIM: '/app/queue/claim',

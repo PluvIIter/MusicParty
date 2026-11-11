@@ -10,6 +10,7 @@ export const ADMIN_CONFIG_PAYLOAD_FIELDS = new Set([
     'maxChatHistorySize',
     'minChatIntervalMs',
     'maxChatMessageLength',
+    'sources',
     'neteaseEnabled',
     'bilibiliEnabled',
     'bilibiliMaxDurationMinutes',

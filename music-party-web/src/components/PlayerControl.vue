@@ -112,6 +112,7 @@
                 <button
                     id="tutorial-download-mobile"
                     @click="downloadCurrentMusic"
+                    :disabled="!canDownload"
                     class="p-2 bg-surface border border-line rounded-sm text-ink-muted active:bg-line"
                 >
                     <Download class="w-4 h-4" />
@@ -160,6 +161,7 @@
                 <button
                     id="tutorial-download"
                     @click="downloadCurrentMusic"
+                    :disabled="!canDownload"
                     class="text-ink-subtle hover:text-accent transition-colors"
                     title="Download"
                 >
@@ -250,6 +252,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
+import { useSourcesStore } from '../stores/sources';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
 import { formatDuration } from '../domain/time';
@@ -269,8 +272,11 @@ import {
 import CoverImage from './CoverImage.vue';
 import PlayModePicker from './PlayModePicker.vue';
 import { useToast } from '../composables/useToast';
+import { openExternal, safeExternalUrl } from '../domain/sources';
 
 const player = usePlayerStore();
+const sources = useSourcesStore();
+const canDownload = computed(() => sources.supports(player.nowPlaying?.music?.platform, 'download'));
 const ui = useUiStore();
 const userStore = useUserStore();
 const volumeTrackRef = ref(null);
@@ -475,7 +481,7 @@ const handleVolumeMouseUp = () => {
 
 // --- 下载逻辑 ---
 const downloadCurrentMusic = async () => {
-    if (!nowPlaying.value) return;
+    if (!nowPlaying.value || !canDownload.value) return;
     const music = nowPlaying.value.music;
     info(`Starting download: ${music.name}...`);
     try {
@@ -491,7 +497,7 @@ const downloadCurrentMusic = async () => {
         document.body.removeChild(link);
         window.URL.revokeObjectURL(blobUrl);
     } catch (e) {
-        window.open(music.url, '_blank');
+        openExternal(safeExternalUrl(music.url) || new URL(music.url, window.location.origin).href);
         error('Blob download failed, opening new tab.');
     }
 };
@@ -499,9 +505,7 @@ const downloadCurrentMusic = async () => {
 // 跳转源页面
 const openSourcePage = () => {
     if (!nowPlaying.value) return;
-    const { platform, id } = nowPlaying.value.music;
-    let url = platform === 'netease' ? `https://music.163.com/#/song?id=${id}` : `https://www.bilibili.com/video/${id}`;
-    if (url) window.open(url, '_blank');
+    openExternal(nowPlaying.value.music.externalUrl);
 };
 
 onUnmounted(() => {

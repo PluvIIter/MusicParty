@@ -13,6 +13,7 @@ test('expired audio recovers locally and autoplay unlock does not pause the room
         url: audio.url + '/expired.wav',
         refreshed: audio.url + '/tone.wav',
         blocked: true,
+        platform: 'future-source',
     });
     await page.getByRole('button', { name: '点此开启声音', exact: true }).click();
     // Proactive play can expose unlock before the expired URL has finished recovering.
@@ -62,6 +63,12 @@ test('late refresh result is cancelled when a different track arrives', async ({
     await page.waitForTimeout(3000);
     expect((await media(page)).src.endsWith('/new.wav')).toBe(true);
     expect(hub.refreshes()).toBe(1);
+    expect(hub.errors).toEqual([]);
+});
+test('voice media never calls the song refresh endpoint', async ({ page }) => {
+    const hub = await room(page, { url: audio.url + '/expired.wav', platform: 'future-source', kind: 'VOICE' });
+    await page.getByRole('button', { name: '声音加载失败，点此重试', exact: true }).waitFor();
+    expect(hub.refreshes()).toBe(0);
     expect(hub.errors).toEqual([]);
 });
 test('nine-second download does not trigger a premature recovery', async ({ page }) => {

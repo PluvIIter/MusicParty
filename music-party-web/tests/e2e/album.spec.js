@@ -10,7 +10,16 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
         platform: 'netease',
         coverUrl: '',
     }));
-    const album = { id: '900', name: 'Test album', artists: ['Artist'], coverUrl: '', trackCount: songs.length, songs };
+    const album = {
+        platform: 'netease',
+        collectionType: 'album',
+        id: '900',
+        name: 'Test album',
+        artists: ['Artist'],
+        coverUrl: '',
+        trackCount: songs.length,
+        songs,
+    };
     const owner = { token: 'test-member', sessionId: 'test-session', name: 'AlbumTester', isGuest: false };
     const queue = [];
     const sent = [];
@@ -37,13 +46,28 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
         let body = {};
         if (path === '/api/auth/status') body = { isSetup: true, hasProtection: false };
         else if (path === '/api/config') body = { authorName: 'Test', backWords: 'MUSIC PARTY' };
-        else if (path.startsWith('/api/search/bilibili/'))
-            body = [
-                { ...songs[0], id: 'BVshort', name: 'Short video', platform: 'bilibili' },
-                { ...songs[1], id: 'BVlong', name: 'Long video', platform: 'bilibili', duration: 1200000 },
-            ];
-        else if (path.startsWith('/api/search/netease/')) body = songs.slice(0, 2);
-        else if (path.startsWith('/api/album/')) {
+        else if (path === '/api/v2/sources')
+            body = {
+                schemaVersion: 2,
+                sources: ['netease', 'bilibili'].map((id) => ({
+                    id,
+                    label: id,
+                    capabilities: { search: true, album: id === 'netease' },
+                    collectionCategories: [],
+                    delivery: { mode: 'DIRECT_URL', supportedModes: ['DIRECT_URL'] },
+                })),
+            };
+        else if (path === '/api/v2/sources/bilibili/tracks/search')
+            body = {
+                items: [
+                    { ...songs[0], id: 'BVshort', name: 'Short video', platform: 'bilibili' },
+                    { ...songs[1], id: 'BVlong', name: 'Long video', platform: 'bilibili', duration: 1200000 },
+                ],
+                nextCursor: null,
+            };
+        else if (path === '/api/v2/sources/netease/tracks/search')
+            body = { items: songs.slice(0, 2), nextCursor: null };
+        else if (path.endsWith('/album')) {
             if (fail) {
                 fail = false;
                 return route.fulfill({
@@ -53,7 +77,7 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
                 });
             }
             body = album;
-        }
+        } else if (path.endsWith('/tracks')) body = { items: songs, nextCursor: null };
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
     await page.routeWebSocket('**/ws', (socket) => {
@@ -120,7 +144,7 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
                     if (singleDelayMs) setTimeout(enqueue, singleDelayMs);
                     else enqueue();
                 }
-                if (headers.destination === '/app/enqueue/album') {
+                if (headers.destination === '/app/enqueue/container') {
                     let added = 0;
                     for (const song of songs) {
                         if (!queue.some((item) => item.music.id === song.id)) {
@@ -130,7 +154,7 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
                     }
                     update();
                     const duplicates = songs.length - added;
-                    send('/user/queue/album/import', {
+                    send('/user/queue/container/import', {
                         requestId: body.requestId,
                         albumId: album.id,
                         total: songs.length,
@@ -204,14 +228,14 @@ for (const viewport of [
         await expect(dialog.getByRole('button', { name: '已在队列：Song 4', exact: true })).toBeDisabled();
         expect(server.queue.map((item) => item.music.id)).toEqual(['1', '4']);
         expect(server.sent.filter((item) => item.destination === '/app/enqueue')).toHaveLength(2);
-        expect(server.sent.filter((item) => item.destination === '/app/enqueue/album')).toHaveLength(0);
+        expect(server.sent.filter((item) => item.destination === '/app/enqueue/container')).toHaveLength(0);
         await expect(dialog).toBeVisible();
         await dialog.getByRole('button', { name: /添加整张专辑/ }).click();
         await expect(dialog.getByText('已添加 3 首，重复跳过 2 首')).toBeVisible();
         await expect(dialog.getByRole('button', { name: '全部已在队列' })).toBeDisabled();
         expect(server.queue.map((item) => item.music.id)).toEqual(['1', '4', '2', '3', '5']);
-        expect(server.sent.filter((item) => item.destination === '/app/enqueue/album')).toHaveLength(1);
-        expect(server.sent.find((item) => item.destination === '/app/enqueue/album').body.requestId).toBeTruthy();
+        expect(server.sent.filter((item) => item.destination === '/app/enqueue/container')).toHaveLength(1);
+        expect(server.sent.find((item) => item.destination === '/app/enqueue/container').body.requestId).toBeTruthy();
     });
 }
 
@@ -225,11 +249,11 @@ test('album read error can be retried without adding songs', async ({ page }) =>
     expect(server.queue).toHaveLength(0);
 });
 
-test('Bilibili keeps its single-song action and duration limit', async ({ page }) => {
+test('sources without album capability keep only single-song actions', async ({ page }) => {
     await room(page);
     await page.getByRole('button', { name: /^bilibili$/i }).click();
     await expect(page.getByRole('button', { name: '添加单曲：Short video', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: '添加单曲：Long video', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '添加单曲：Long video', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /所属专辑/ })).toHaveCount(0);
 });
 
@@ -246,7 +270,7 @@ test('album single-song button blocks rapid repeats while queue result is pendin
     await expect(dialog.getByRole('button', { name: '已在队列：Song 3', exact: true })).toBeDisabled();
     expect(server.queue.map((item) => item.music.id)).toEqual(['3']);
     expect(server.sent.filter((item) => item.destination === '/app/enqueue')).toHaveLength(1);
-    expect(server.sent.filter((item) => item.destination === '/app/enqueue/album')).toHaveLength(0);
+    expect(server.sent.filter((item) => item.destination === '/app/enqueue/container')).toHaveLength(0);
     await expect(dialog.getByRole('button', { name: /添加整张专辑/ })).toBeEnabled();
     await dialog.getByRole('button', { name: '关闭专辑' }).click();
     await expect(dialog).toHaveCount(0);

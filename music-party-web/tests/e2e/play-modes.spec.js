@@ -269,13 +269,13 @@ for (const mode of ['SEQUENTIAL', 'ROUND_ROBIN'])
             pointerId: 9,
             pointerType: 'touch',
             clientX: box.x + 30,
-            clientY: box.y + 10,
+            clientY: box.y + 2,
         });
         await source.dispatchEvent('pointerup', {
             pointerId: 9,
             pointerType: 'touch',
             clientX: box.x + 30,
-            clientY: box.y + 10,
+            clientY: box.y + 2,
         });
         await expect
             .poll(() => fixture.queue().map(({ queueId }) => queueId))
@@ -414,12 +414,14 @@ for (const guard of ['guest', 'locked'])
     });
 
 test('admin selects explicit modes and has no legacy fair switch', async ({ page }) => {
-    const fixture = await room(page, { admin: true, locked: true });
+    const fixture = await room(page, { admin: true });
     await page.getByPlaceholder('ENTER ADMIN PASSWORD').fill('test-admin');
     await page.getByRole('button', { name: 'ACCESS SYSTEM' }).click();
-    const select = page.getByRole('combobox', { name: '管理员播放模式' });
-    await select.selectOption('ROUND_ROBIN');
-    await expect(select).toHaveValue('ROUND_ROBIN');
+    const select = page.getByRole('button', { name: '选择播放模式' });
+    await select.click();
+    const dialog = page.getByRole('dialog', { name: '选择播放模式' });
+    await dialog.getByRole('button', { name: /轮询/ }).click();
+    await expect(dialog).toHaveCount(0);
     expect(fixture.adminActions).toEqual([{ action: 'SET_PLAY_MODE', playMode: 'ROUND_ROBIN' }]);
     await expect(page.getByText('公平模式', { exact: true })).toHaveCount(0);
 });

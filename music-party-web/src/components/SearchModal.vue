@@ -24,19 +24,19 @@
                 <!-- 平台切换 TAB (移动端收紧内边距，防小屏换行)；全长方形，选中用主题色高亮 -->
                 <div class="flex gap-1 mb-3 md:mb-4 flex-wrap">
                     <button
-                        v-for="p in ['netease', 'bilibili']"
-                        :key="p"
-                        @click="selectPlatform(p)"
-                        :disabled="!isPlatformEnabled(p)"
+                        v-for="source in sources.sources"
+                        :key="source.id"
+                        @click="selectPlatform(source.id)"
+                        :disabled="!sources.isEnabled(source.id)"
                         class="px-4 md:px-6 py-2 text-sm font-bold uppercase transition-all"
                         :class="[
-                            mode === 'search' && platform === p
+                            mode === 'search' && platform === source.id
                                 ? 'bg-accent text-accent-contrast'
                                 : 'bg-line text-ink-muted hover:bg-line-strong',
-                            !isPlatformEnabled(p) ? 'opacity-30 cursor-not-allowed grayscale' : '',
+                            !sources.isEnabled(source.id) ? 'opacity-30 cursor-not-allowed grayscale' : '',
                         ]"
                     >
-                        {{ p }}
+                        {{ source.label }}
                     </button>
                     <!-- 本地点赞列表标签（仅本地缓存，不上报服务器） -->
                     <button
@@ -52,6 +52,9 @@
                     </button>
                 </div>
 
+                <p v-if="sources.loadError" role="alert" class="text-danger text-xs mb-2">
+                    {{ sources.loadError }} <button @click="sources.load()">重试</button>
+                </p>
                 <!-- 搜索框 -->
                 <div class="flex gap-2">
                     <input
@@ -105,20 +108,23 @@
                                 </div>
                                 <button
                                     @click="addLikedClick(song)"
-                                    :disabled="isInQueue(song.id) || pendingIds.has(song.id)"
+                                    :disabled="
+                                        isUnplayable(song) || isInQueue(song) || pendingIds.has(resourceKey(song))
+                                    "
+                                    :title="isUnplayable(song) ? '音乐源已禁用，收藏记录仍保留' : '添加单曲'"
                                     class="ml-2 p-2 flex-shrink-0 transition-all duration-300"
                                     :class="[
-                                        isInQueue(song.id)
+                                        isInQueue(song)
                                             ? 'text-success cursor-default'
-                                            : pendingIds.has(song.id)
+                                            : pendingIds.has(resourceKey(song))
                                               ? 'text-accent cursor-wait'
                                               : 'text-ink-subtle hover:text-accent',
                                     ]"
                                 >
                                     <!-- 状态 1: 正在添加 -->
-                                    <Loader2 v-if="pendingIds.has(song.id)" class="w-5 h-5 animate-spin" />
+                                    <Loader2 v-if="pendingIds.has(resourceKey(song))" class="w-5 h-5 animate-spin" />
                                     <!-- 状态 2: 已经在队列中 -->
-                                    <Check v-else-if="isInQueue(song.id)" class="w-5 h-5" />
+                                    <Check v-else-if="isInQueue(song)" class="w-5 h-5" />
                                     <!-- 状态 3: 普通添加按钮 -->
                                     <PlusCircle v-else class="w-5 h-5" />
                                 </button>
@@ -148,7 +154,7 @@
                     <div
                         class="p-2 md:p-3 bg-surface-sunken text-xs font-bold text-ink-muted flex justify-between items-center font-sans"
                     >
-                        <span>用户歌单</span>
+                        <span>公开用户收藏</span>
                         <button
                             type="button"
                             @click="refreshSidebar"
@@ -160,10 +166,39 @@
                     </div>
 
                     <div class="flex-1 overflow-y-auto overscroll-contain p-2 space-y-2">
+                        <select
+                            v-if="categories.length"
+                            v-model="categoryId"
+                            aria-label="收藏分类"
+                            class="w-full bg-surface border border-line p-2 text-sm"
+                        >
+                            <option v-for="item in categories" :key="item.id" :value="item.id">{{ item.label }}</option>
+                        </select>
+                        <p v-else class="text-xs p-3 text-ink-subtle">此音乐源没有公开用户收藏</p>
                         <!-- 未绑定 -->
-                        <div v-if="!bindings[platform]" class="p-4 border border-dashed border-line-strong bg-surface">
-                            <div class="text-xs text-ink-muted mb-2 text-center font-sans">绑定用户以获取用户歌单</div>
-                            <div class="flex gap-1">
+                        <div
+                            v-if="categories.length && !bindings[platform]"
+                            class="p-4 border border-dashed border-line-strong bg-surface"
+                        >
+                            <div class="text-xs text-ink-muted mb-2 text-center font-sans">
+                                保存公开用户 ID（仅在此浏览器）
+                            </div>
+                            <div class="flex gap-1 mb-2">
+                                <input
+                                    v-model="targetUserId"
+                                    aria-label="公开用户 ID"
+                                    placeholder="公开用户 ID"
+                                    class="min-w-0 flex-1 bg-surface-raised border border-line p-1 text-sm"
+                                />
+                                <button
+                                    @click="bindUser({ id: targetUserId })"
+                                    :disabled="!targetUserId.trim()"
+                                    class="p-1 text-accent text-xs"
+                                >
+                                    保存
+                                </button>
+                            </div>
+                            <div v-if="sources.supports(platform, 'userSearch')" class="flex gap-1">
                                 <input
                                     v-model="searchUserKeyword"
                                     @keyup.enter="searchUser"
@@ -198,11 +233,11 @@
                         </div>
 
                         <!-- 已绑定：歌单列表 -->
-                        <template v-else>
+                        <template v-else-if="categories.length">
                             <div class="flex justify-between items-center px-2 py-1 bg-surface border-b border-line">
                                 <span class="text-[10px] font-mono text-ink-subtle">ID: {{ bindings[platform] }}</span>
                                 <button
-                                    @click="playerStore.bindAccount(platform, '')"
+                                    @click="userStore.updateBinding(platform, '')"
                                     class="text-[10px] text-danger hover:underline"
                                 >
                                     UNLINK
@@ -217,11 +252,11 @@
                                 v-else
                                 v-for="pl in playlists"
                                 :key="pl.id"
-                                @click="handleSelectPlaylist(pl.id)"
+                                @click="handleSelectPlaylist(pl)"
                                 class="flex items-center gap-3 p-2 hover:bg-surface cursor-pointer group transition-colors border-l-2 border-transparent hover:border-accent"
                             >
                                 <div class="w-10 h-10 bg-line flex-shrink-0 overflow-hidden">
-                                    <CoverImage :src="pl.coverImgUrl" class="w-full h-full" :scanline="false" />
+                                    <CoverImage :src="pl.coverUrl" class="w-full h-full" :scanline="false" />
                                 </div>
                                 <div class="overflow-hidden">
                                     <div class="text-sm font-bold truncate group-hover:text-accent">{{ pl.name }}</div>
@@ -231,10 +266,14 @@
                             </div>
                         </template>
 
-                        <!-- 收藏专辑：并入用户歌单下方，不再单独开页 -->
-                        <div v-if="platform === 'netease'" class="mt-3 border-t border-line pt-2">
-                            <SavedAlbums ref="savedAlbumsRef" embedded />
-                        </div>
+                        <button
+                            v-if="collectionCursor"
+                            @click="fetchPlaylists(true)"
+                            :disabled="isPlaylistsLoading"
+                            class="p-2 text-accent text-xs"
+                        >
+                            更多收藏
+                        </button>
                     </div>
                 </div>
 
@@ -274,6 +313,7 @@
                             </div>
                             <button
                                 @click="handleImportPlaylist"
+                                :disabled="importing"
                                 class="bg-brand text-ink-inverse px-4 py-2 text-sm font-bold hover:bg-accent hover:text-accent-contrast transition-colors flex items-center gap-2 font-sans"
                             >
                                 <ListPlus class="w-4 h-4" /> <span class="hidden sm:inline">导入全部</span>
@@ -290,7 +330,7 @@
                             </div>
                             <div
                                 v-for="song in songs"
-                                :key="song.id"
+                                :key="resourceKey(song)"
                                 class="flex items-center p-3 border border-transparent transition-all group"
                                 :class="
                                     isUnplayable(song)
@@ -300,7 +340,7 @@
                             >
                                 <div class="flex-1 w-0 flex items-center gap-3">
                                     <button
-                                        v-if="platform === 'netease'"
+                                        v-if="sources.supports(song.platform, 'album')"
                                         type="button"
                                         @click="selectedAlbumSong = song"
                                         :aria-label="'查看《' + song.name + '》所属专辑'"
@@ -323,33 +363,27 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div v-if="isUnplayable(song)" class="ml-2 flex-shrink-0">
-                                    <span
-                                        class="px-1.5 py-0.5 text-[10px] font-mono font-bold text-ink-subtle border border-line-strong bg-surface-sunken rounded-sm"
-                                        >>{{ playerStore.config.bilibiliMaxDurationMinutes || 10 }}MIN</span
-                                    >
-                                </div>
 
                                 <button
                                     v-if="!isUnplayable(song)"
                                     @click="handleAddClick(song)"
-                                    :title="isInQueue(song.id) ? '已在队列' : '添加单曲'"
-                                    :aria-label="(isInQueue(song.id) ? '已在队列：' : '添加单曲：') + song.name"
+                                    :title="isInQueue(song) ? '已在队列' : '添加单曲'"
+                                    :aria-label="(isInQueue(song) ? '已在队列：' : '添加单曲：') + song.name"
                                     class="ml-2 p-2 flex-shrink-0 transition-all duration-300"
                                     :class="[
-                                        isInQueue(song.id)
+                                        isInQueue(song)
                                             ? 'text-success cursor-default'
-                                            : pendingIds.has(song.id)
+                                            : pendingIds.has(resourceKey(song))
                                               ? 'text-accent cursor-wait'
                                               : 'text-ink-subtle hover:text-accent',
                                     ]"
-                                    :disabled="pendingIds.has(song.id) || isInQueue(song.id)"
+                                    :disabled="pendingIds.has(resourceKey(song)) || isInQueue(song)"
                                 >
                                     <!-- 状态 1: 正在添加 -->
-                                    <Loader2 v-if="pendingIds.has(song.id)" class="w-5 h-5 animate-spin" />
+                                    <Loader2 v-if="pendingIds.has(resourceKey(song))" class="w-5 h-5 animate-spin" />
 
                                     <!-- 状态 2: 已经在队列中 -->
-                                    <Check v-else-if="isInQueue(song.id)" class="w-5 h-5" />
+                                    <Check v-else-if="isInQueue(song)" class="w-5 h-5" />
 
                                     <!-- 状态 3: 普通添加按钮 -->
                                     <PlusCircle v-else class="w-5 h-5" />
@@ -370,16 +404,25 @@
                 </div>
             </div>
         </div>
-        <AlbumModal v-if="selectedAlbumSong" :song-id="selectedAlbumSong.id" @close="selectedAlbumSong = null" />
+        <AlbumModal
+            v-if="selectedAlbumSong"
+            :source-id="selectedAlbumSong.platform"
+            :song-id="selectedAlbumSong.id"
+            @close="selectedAlbumSong = null"
+        />
     </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
+import { useUserStore } from '../stores/user';
+import { useSourcesStore } from '../stores/sources';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { usePlaylistLogic } from '../composables/usePlaylistLogic';
 import { useLikedSongs } from '../composables/useLikedSongs';
+import { resourceKey, openExternal } from '../domain/sources';
+import { useToast } from '../composables/useToast';
 import {
     X,
     Search,
@@ -393,60 +436,32 @@ import {
 } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import AlbumModal from './AlbumModal.vue';
-import SavedAlbums from './SavedAlbums.vue';
-
 const props = defineProps(['isOpen']);
 const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
+const userStore = useUserStore();
+const sources = useSourcesStore();
 const selectedAlbumSong = ref(null);
-
-const isPlatformEnabled = (p) => {
-    if (p === 'netease') return playerStore.config?.neteaseEnabled !== false;
-    if (p === 'bilibili') return playerStore.config?.bilibiliEnabled !== false;
-    return true;
-};
-
-// 1. 引入搜索逻辑
-const { platform, keyword, songs, loading, listMode, doSearch } = useSearchLogic(emit);
-
-const handleSearchAction = async () => {
-    // LIKESONG 模式下搜索针对本地点赞记录（列表已按关键词实时过滤），不触发平台搜索
-    if (mode.value === 'likesong') return;
-    await doSearch();
-    // 无论 listMode 之前是不是 search，只要用户手动搜索了，就切到列表视图
-    mobileView.value = 'songs';
-};
-
-// LikeSong 标签：'search' = 平台搜索 / 歌单，'likesong' = 本地点赞列表
+const targetUserId = ref('');
+const { platform, keyword, songs, loading, listMode, doSearch, cancelSearch } = useSearchLogic();
 const mode = ref('search');
+const mobileView = ref('playlists');
 const { likedSongs } = useLikedSongs();
-
-// LIKESONG 下搜索：按关键词过滤本地点赞记录（匹配歌名或歌手，不区分大小写）
 const filteredLikedSongs = computed(() => {
     const kw = keyword.value.trim().toLowerCase();
-    if (!kw) return likedSongs.value;
     return likedSongs.value.filter(
-        (s) => s.name.toLowerCase().includes(kw) || (s.artists || []).some((a) => String(a).toLowerCase().includes(kw))
+        (s) =>
+            !kw ||
+            s.name.toLowerCase().includes(kw) ||
+            (s.artists || []).some((a) => String(a).toLowerCase().includes(kw))
     );
 });
-
-const selectPlatform = async (p) => {
-    // 已在当前搜索平台则无需重复搜索
-    if (mode.value === 'search' && platform.value === p) return;
-    platform.value = p;
-    mode.value = 'search';
-    // 切换平台：有关键词则用新平台重新搜索，否则清空上一平台的残留结果
-    if (keyword.value.trim()) {
-        await doSearch();
-    } else {
-        songs.value = [];
-    }
-};
-
-// 2. 引入歌单逻辑 (注入依赖)
 const {
     playlists,
+    categories,
+    categoryId,
     currentPlaylistId,
+    currentContainer,
     searchUserKeyword,
     userSearchResults,
     isSearchingUser,
@@ -459,91 +474,91 @@ const {
     loadPlaylist,
     handleScroll,
     fetchPlaylists,
+    collectionCursor,
+    cancel,
 } = usePlaylistLogic(platform, songs, listMode, loading);
-
-// 3. UI 状态
-const mobileView = ref('playlists');
-// 4. 交互胶水代码
-const isUnplayable = (song) => {
-    // B站视频时长上限（分钟）由管理面板配置，默认 10
-    const maxMin = playerStore.config.bilibiliMaxDurationMinutes || 10;
-    return platform.value === 'bilibili' && song.duration > maxMin * 60 * 1000;
-};
-
-// 侧栏刷新：用户歌单 + 收藏专辑一起拉
-const savedAlbumsRef = ref(null);
-// 刷新只针对当前音乐源：网易云 = 用户歌单 + 收藏专辑；B 站 = 仅用户歌单（无收藏）
-const refreshSidebar = async () => {
-    const tasks = [fetchPlaylists()];
-    if (platform.value === 'netease') tasks.push(savedAlbumsRef.value?.reload?.());
-    await Promise.all(tasks);
-};
-const handleSelectPlaylist = (pid) => {
-    loadPlaylist(pid);
+watch(() => [bindings.value[platform.value], categoryId.value], cancelSearch, { flush: 'sync' });
+const handleSearchAction = async () => {
+    if (mode.value === 'likesong' || !sources.supports(platform.value, 'search')) return;
+    await doSearch();
     mobileView.value = 'songs';
 };
-
-const handleImportPlaylist = () => {
-    playerStore.enqueuePlaylist(platform.value, currentPlaylistId.value);
-    emit('close');
+const selectPlatform = async (id) => {
+    if (mode.value === 'search' && platform.value === id) return;
+    mode.value = 'search';
+    platform.value = id;
+    if (keyword.value.trim()) await handleSearchAction();
 };
-
-// 本地维护正在添加中的歌曲 ID 集合
+const isUnplayable = (song) => !sources.isEnabled(song.platform);
+const refreshSidebar = () => fetchPlaylists();
+const handleSelectPlaylist = (container) => {
+    loadPlaylist(container);
+    mobileView.value = 'songs';
+};
+const { success, error } = useToast();
+const importing = ref(false);
+const handleImportPlaylist = async () => {
+    if (importing.value || !currentContainer.value) return;
+    importing.value = true;
+    try {
+        const result = await playerStore.enqueueContainer(
+            platform.value,
+            currentContainer.value.collectionType,
+            currentContainer.value.id
+        );
+        success(result.message);
+    } catch (e) {
+        error(e.message);
+    } finally {
+        importing.value = false;
+    }
+};
 const pendingIds = ref(new Set());
-
-// 检查歌曲是否已经在队列中
-const isInQueue = (songId) => {
-    return playerStore.queue.some((item) => item.music.id === songId);
-};
-
-// 处理点击添加
+const timers = new Set();
+const isInQueue = (song) => playerStore.queue.some((item) => resourceKey(item.music) === resourceKey(song));
 const handleAddClick = (song) => {
-    // 防抖：如果正在添加或已在队列，直接忽略
-    if (pendingIds.value.has(song.id) || isInQueue(song.id)) return;
-
-    // 1. 设置 loading 状态
-    pendingIds.value.add(song.id);
-
-    // 2. 发送请求
-    playerStore.enqueue(platform.value, song.id);
-
-    // 3. 设定一个“冷却时间”用于视觉反馈 (2秒)
-    // WebSocket 是异步的，我们不需要一直等到服务器返回，
-    // 这里的 loading 主要是为了告诉用户“操作已受理”并防止连点
-    setTimeout(() => {
-        pendingIds.value.delete(song.id);
-    }, 2000);
-};
-
-// LikeSong 列表：添加（用该歌曲自身的平台入队）
-const addLikedClick = (song) => {
-    if (pendingIds.value.has(song.id) || isInQueue(song.id)) return;
-    pendingIds.value.add(song.id);
+    const key = resourceKey(song);
+    if (isUnplayable(song) || pendingIds.value.has(key) || isInQueue(song)) return;
+    pendingIds.value.add(key);
     playerStore.enqueue(song.platform, song.id);
-    setTimeout(() => {
-        pendingIds.value.delete(song.id);
+    const timer = setTimeout(() => {
+        pendingIds.value.delete(key);
+        timers.delete(timer);
     }, 2000);
+    timers.add(timer);
 };
-
-// LikeSong 列表：跳转源页面（与播放控制器专辑封面逻辑一致）
-const openLikedSource = (song) => {
-    const url =
-        song.platform === 'netease'
-            ? `https://music.163.com/#/song?id=${song.id}`
-            : `https://www.bilibili.com/video/${song.id}`;
-    if (url) window.open(url, '_blank');
-};
-
-// 监听搜索动作 -> 自动切视图
-watch(listMode, (m) => {
-    if (m === 'search') mobileView.value = 'songs';
+const addLikedClick = handleAddClick;
+const openLikedSource = (song) => openExternal(song.externalUrl);
+watch(listMode, (value) => {
+    if (value === 'search' || value === 'collection') mobileView.value = 'songs';
 });
-
+watch(
+    mode,
+    () => {
+        cancelSearch();
+        cancel();
+    },
+    { flush: 'sync' }
+);
 watch(
     () => props.isOpen,
-    (val) => {
-        if (val) mobileView.value = 'playlists';
-        else selectedAlbumSong.value = null;
+    (open) => {
+        if (open) {
+            mobileView.value = 'playlists';
+            sources.load();
+        } else {
+            selectedAlbumSong.value = null;
+            cancelSearch();
+            cancel();
+        }
     }
 );
+watch(
+    () => sources.enabled.map((s) => s.id),
+    (ids) => {
+        if (!ids.includes(platform.value)) platform.value = ids[0] || '';
+    }
+);
+onMounted(() => sources.load());
+onUnmounted(() => timers.forEach(clearTimeout));
 </script>

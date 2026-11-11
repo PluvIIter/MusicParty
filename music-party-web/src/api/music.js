@@ -1,32 +1,32 @@
 import client from './client';
 import { STORAGE_KEYS } from '../constants/storage';
-const roomHeaders = () => ({ 'X-Room-Password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '' });
+const segment = (value) => encodeURIComponent(value);
+const sourcePath = (source) => `/api/v2/sources/${segment(source)}`;
+const options = (signal, params) => ({
+    signal,
+    params,
+    timeout: 20000,
+    headers: { 'X-Room-Password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '' },
+});
 
 export const musicApi = {
-    getAlbum: (albumId) =>
-        client.get(`/api/album/netease/detail/${encodeURIComponent(albumId)}`, {
-            timeout: 20000,
-            headers: roomHeaders(),
-        }),
-    getSavedAlbums: (offset, limit) =>
-        client.get('/api/user/albums/netease', { params: { offset, limit }, timeout: 15000, headers: roomHeaders() }),
-    // 搜索歌曲
-    search: (platform, keyword) => client.get(`/api/search/${platform}/${keyword}`),
-
-    // 获取歌曲所属专辑及完整曲目
-    getSongAlbum: (songId) =>
-        client.get(`/api/album/netease/by-song/${encodeURIComponent(songId)}`, { timeout: 20000 }),
-
-    // 获取歌词
-    getLyric: (platform, songId) => client.get(`/api/music/lyric/${platform}/${songId}`),
-
-    // 获取用户歌单
-    getUserPlaylists: (platform, userId) => client.get(`/api/user/playlists/${platform}/${userId}`),
-
-    // 获取歌单详情 (分页)
-    getPlaylistSongs: (platform, playlistId, offset, limit) =>
-        client.get(`/api/playlist/songs/${platform}/${playlistId}`, { params: { offset, limit } }),
-
-    // 搜索用户
-    searchUser: (platform, keyword) => client.get(`/api/user/search/${platform}/${keyword}`),
+    getSources: (signal) => client.get('/api/v2/sources', options(signal)),
+    search: (source, q, signal) => client.get(`${sourcePath(source)}/tracks/search`, options(signal, { q })),
+    searchUser: (source, q, signal) => client.get(`${sourcePath(source)}/users/search`, options(signal, { q })),
+    getCategories: (source, signal) => client.get(`${sourcePath(source)}/collection-categories`, options(signal)),
+    getCollections: (source, category, userId, cursor, signal) =>
+        client.get(
+            `${sourcePath(source)}/collections/${segment(category)}`,
+            options(signal, { userId, cursor, limit: 50 })
+        ),
+    getContainer: (source, type, id, signal) =>
+        client.get(`${sourcePath(source)}/containers/${segment(type)}/${segment(id)}`, options(signal)),
+    getContainerTracks: (source, type, id, cursor, signal) =>
+        client.get(
+            `${sourcePath(source)}/containers/${segment(type)}/${segment(id)}/tracks`,
+            options(signal, { cursor, limit: 50 })
+        ),
+    getSongAlbum: (source, id, signal) =>
+        client.get(`${sourcePath(source)}/tracks/${segment(id)}/album`, options(signal)),
+    getLyric: (source, id, signal) => client.get(`${sourcePath(source)}/tracks/${segment(id)}/lyrics`, options(signal)),
 };

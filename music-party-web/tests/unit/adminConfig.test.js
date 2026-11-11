@@ -70,8 +70,12 @@ describe('toAdminConfigPayload 字段重命名', () => {
         expect(existsSync(dtoPath), `后端 DTO 不存在：${dtoPath}`).toBe(true);
 
         const source = readFileSync(dtoPath, 'utf8');
-        const body = source.slice(source.indexOf('(') + 1, source.lastIndexOf(')'));
-        const fields = [...body.matchAll(/\b(?:Integer|Long|Boolean|Double|String)\s+(\w+)/g)].map((m) => m[1]);
+        const body = source.slice(source.indexOf('(') + 1, source.indexOf(')'));
+        const fields = [
+            ...body.matchAll(
+                /\b(?:Integer|Long|Boolean|Double|String|java\.util\.Map<String, SourceSettings>)\s+(\w+)/g
+            ),
+        ].map((m) => m[1]);
 
         // 前置：正则确实抓到了字段，否则下面的比较会变成「空数组 vs 空数组」的自我满足
         expect(fields.length).toBeGreaterThan(5);

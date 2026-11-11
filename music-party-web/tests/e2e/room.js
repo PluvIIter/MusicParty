@@ -46,7 +46,18 @@ export async function audioServer() {
     };
 }
 
-export async function room(page, { url, refreshed = url, blocked = false, failed = false, refreshDelay = 0 } = {}) {
+export async function room(
+    page,
+    {
+        url,
+        refreshed = url,
+        blocked = false,
+        failed = false,
+        refreshDelay = 0,
+        platform = 'netease',
+        kind = 'SONG',
+    } = {}
+) {
     await page.addInitScript(
         ({ blocked }) => {
             localStorage.setItem('mp_username', 'AudioTester');
@@ -108,14 +119,15 @@ export async function room(page, { url, refreshed = url, blocked = false, failed
         if (path === '/api/auth/status') body = { isSetup: true, hasProtection: false };
         else if (path === '/api/config') body = { authorName: 'Fixture', backWords: 'MUSIC PARTY' };
         else if (path.startsWith('/api/lyric/')) body = '';
-        else if (path.includes('/api/music/refresh/')) {
+        else if (/^\/api\/v2\/playbacks\/[^/]+\/media\/refresh$/.test(path)) {
+            if (route.request().method() !== 'POST') throw new Error('Refresh must use POST');
             refreshes++;
             if (route.request().headers()['x-room-password'] !== 'fixture-room')
                 throw new Error('Missing room password');
             if (refreshDelay) await new Promise((r) => setTimeout(r, refreshDelay));
             if (failed)
                 return route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }).catch(() => {});
-            body = { id: '1', platform: 'netease', url: refreshed };
+            body = { id: '1', kind, platform, url: refreshed };
         }
         await route
             .fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
@@ -137,7 +149,8 @@ export async function room(page, { url, refreshed = url, blocked = false, failed
                     nowPlaying: {
                         music: {
                             id: '1',
-                            platform: 'netease',
+                            kind,
+                            platform,
                             name: 'Audio fixture',
                             artists: ['Fixture'],
                             duration: 180000,
@@ -148,6 +161,7 @@ export async function room(page, { url, refreshed = url, blocked = false, failed
                         currentPosition: position,
                         likeMarkers: [],
                     },
+                    playbackId: 'fixture-playback',
                     queue: [],
                     onlineUsers: [],
                     playMode: 'SEQUENTIAL',

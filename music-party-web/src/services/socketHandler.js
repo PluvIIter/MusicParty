@@ -148,10 +148,6 @@ export const createSocketCallbacks = () => {
             setTimeout(() => {
                 if (!socketService.hasCompactSync()) socketService.send(WS_DEST.RESYNC);
             }, 300);
-            // 恢复绑定
-            Object.entries(userStore.bindings).forEach(([platform, id]) => {
-                if (id) playerStore.bindAccount(platform, id);
-            });
         },
 
         // 连接断开 (含异常断开)

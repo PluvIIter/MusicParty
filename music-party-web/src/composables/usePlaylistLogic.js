@@ -1,185 +1,185 @@
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onScopeDispose } from 'vue';
 import { useUserStore } from '../stores/user.js';
-import { usePlayerStore } from '../stores/player.js';
+import { useSourcesStore } from '../stores/sources.js';
 import { musicApi } from '../api/music.js';
-import { useDebounceFn } from '@vueuse/core';
 import { useToast } from './useToast';
+import { createRequestScope, isCanceled } from '../domain/sources';
 
-export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef) {
+export function usePlaylistLogic(platform, songs, listMode, loading) {
     const userStore = useUserStore();
-    const playerStore = usePlayerStore();
+    const sources = useSourcesStore();
     const { error } = useToast();
-
-    // State
+    const bindings = computed(() => userStore.bindings);
+    const categories = computed(() => sources.descriptor(platform.value)?.collectionCategories || []);
+    const categoryId = ref(categories.value[0]?.id || '');
+    const category = computed(() => categories.value.find((item) => item.id === categoryId.value));
     const playlists = ref([]);
-    const currentPlaylistId = ref(null);
+    const currentContainer = ref(null);
+    const currentPlaylistId = computed(() => currentContainer.value?.id);
     const searchUserKeyword = ref('');
     const userSearchResults = ref([]);
     const isSearchingUser = ref(false);
     const isPlaylistsLoading = ref(false);
-
-    // Pagination
-    const offset = ref(0);
-    const hasMore = ref(true);
     const isLoadingMore = ref(false);
-    const limit = computed(() => (platformRef.value === 'bilibili' ? 20 : 50));
-
-    const bindings = computed(() => userStore.bindings);
-
-    const playlistCache = new Map();
-    const playlistRequests = new Map();
-    const cacheKey = () => `${platformRef.value}:${bindings.value[platformRef.value] || ''}`;
-    const fetchPlaylists = async () => {
-        const platform = platformRef.value;
-        const uid = bindings.value[platform];
-        const key = cacheKey();
-        const request = (playlistRequests.get(key) || 0) + 1;
-        playlistRequests.set(key, request);
-        if (!uid) {
-            playlists.value = [];
-            isPlaylistsLoading.value = false;
-            playlistCache.delete(key);
+    const nextCursor = ref(null);
+    const collectionCursor = ref(null);
+    const hasMore = computed(() => nextCursor.value != null);
+    const collectionRequests = createRequestScope();
+    const trackRequests = createRequestScope();
+    const userRequests = createRequestScope();
+    const report = (e, request) => {
+        if (request.current() && !isCanceled(e)) error(e.response?.data?.message || e.message || '读取失败');
+    };
+    const cancel = () => {
+        collectionRequests.cancel();
+        trackRequests.cancel();
+        userRequests.cancel();
+        isPlaylistsLoading.value = false;
+        isLoadingMore.value = false;
+        isSearchingUser.value = false;
+        loading.value = false;
+    };
+    const fetchCollections = async (append = false) => {
+        if (
+            !category.value ||
+            !bindings.value[platform.value] ||
+            !sources.supports(platform.value, 'personalCollections')
+        )
             return;
-        }
-        const isLatest = () => playlistRequests.get(key) === request;
-        const isCurrent = () => cacheKey() === key && isLatest();
+        const selected = category.value;
+        if (selected.entryKind === 'TRACK') listMode.value = 'collection';
+        const request = collectionRequests.start();
         isPlaylistsLoading.value = true;
         try {
-            const data = await musicApi.getUserPlaylists(platform, uid);
-            if (!isLatest()) return;
-            playlistCache.set(key, data);
-            if (isCurrent()) playlists.value = data;
+            const page = await musicApi.getCollections(
+                platform.value,
+                selected.id,
+                bindings.value[platform.value],
+                append ? collectionCursor.value : null,
+                request.signal
+            );
+            if (!request.current()) return;
+            collectionCursor.value = page.nextCursor;
+            if (selected.entryKind === 'TRACK') {
+                listMode.value = 'collection';
+                songs.value = append ? [...songs.value, ...page.items] : page.items;
+            } else playlists.value = append ? [...playlists.value, ...page.items] : page.items;
         } catch (e) {
-            if (!isCurrent()) return;
-            console.error(e);
-            playlists.value = [];
-            if (e.response?.data?.message) {
-                error(e.response.data.message);
-            }
+            report(e, request);
         } finally {
-            if (isCurrent()) isPlaylistsLoading.value = false;
+            if (request.current()) isPlaylistsLoading.value = false;
         }
     };
-
-    // 搜索用户 (用于绑定)
     const searchUser = async () => {
-        if (!searchUserKeyword.value) return;
+        const q = searchUserKeyword.value.trim();
+        if (!q || !sources.supports(platform.value, 'userSearch')) return;
+        const request = userRequests.start();
         isSearchingUser.value = true;
         userSearchResults.value = [];
         try {
-            const data = await musicApi.searchUser(platformRef.value, searchUserKeyword.value);
-            userSearchResults.value = data;
+            const page = await musicApi.searchUser(platform.value, q, request.signal);
+            if (request.current()) userSearchResults.value = page.items;
         } catch (e) {
-            console.error(e);
-            if (e.response?.data?.message) {
-                error(e.response.data.message);
-            } else {
-                error('User Search Failed');
-            }
+            report(e, request);
         } finally {
-            isSearchingUser.value = false;
+            if (request.current()) isSearchingUser.value = false;
         }
     };
-
-    // 绑定用户并刷新
     const bindUser = (user) => {
-        playerStore.bindAccount(platformRef.value, user.id);
+        const id = String(user.id ?? '').trim();
+        if (!id) return;
+        userStore.updateBinding(platform.value, id);
         userSearchResults.value = [];
         searchUserKeyword.value = '';
-        fetchPlaylists(); // 立即刷新
     };
-
-    // 分页获取歌单歌曲 (核心复杂逻辑)
-    const fetchSongsPage = async () => {
-        if (!currentPlaylistId.value) return;
+    const fetchTracks = async (append = false) => {
+        if (!currentContainer.value) return;
+        const request = trackRequests.start();
+        const container = currentContainer.value;
+        if (append) isLoadingMore.value = true;
+        else loading.value = true;
         try {
-            const rawSongs = await musicApi.getPlaylistSongs(
-                platformRef.value,
-                currentPlaylistId.value,
-                offset.value,
-                limit.value
+            const page = await musicApi.getContainerTracks(
+                platform.value,
+                container.collectionType,
+                container.id,
+                append ? nextCursor.value : null,
+                request.signal
             );
-
-            // B站特殊的分页判定
-            if (platformRef.value === 'bilibili') {
-                if (rawSongs.length === 0) hasMore.value = false;
-            } else {
-                if (rawSongs.length < limit.value) hasMore.value = false;
-            }
-
-            const validSongs = rawSongs.filter((s) => s.id !== 'INVALID_SKIP');
-            songsRef.value.push(...validSongs);
-
-            // 贪婪加载：如果有效数据太少，自动加载下一页
-            if (hasMore.value && rawSongs.length > 0 && validSongs.length < 10) {
-                offset.value += limit.value;
-                setTimeout(fetchSongsPage, 50);
-            }
-
-            // 兜底
-            if (rawSongs.length === 0) isLoadingMore.value = false;
+            if (!request.current()) return;
+            songs.value = append ? [...songs.value, ...page.items] : page.items;
+            nextCursor.value = page.nextCursor;
         } catch (e) {
-            console.error('Fetch songs failed', e);
-            hasMore.value = false;
-        }
-    };
-
-    // 点击歌单
-    const loadPlaylist = async (pid) => {
-        listModeRef.value = 'playlist';
-        currentPlaylistId.value = pid;
-        songsRef.value = [];
-        offset.value = 0;
-        hasMore.value = true;
-        loadingRef.value = true;
-
-        try {
-            await fetchSongsPage();
+            report(e, request);
         } finally {
-            loadingRef.value = false;
-        }
-    };
-
-    // 滚动加载
-    const handleScroll = useDebounceFn(async (e) => {
-        if (listModeRef.value !== 'playlist') return;
-        const el = e.target;
-        const bottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-
-        if (bottom < 100 && hasMore.value && !isLoadingMore.value && !loadingRef.value) {
-            isLoadingMore.value = true;
-            offset.value += limit.value;
-            try {
-                await fetchSongsPage();
-            } finally {
+            if (request.current()) {
+                loading.value = false;
                 isLoadingMore.value = false;
             }
         }
-    }, 200);
-
-    // 监听平台切换 -> 刷新歌单列表
+    };
+    const loadPlaylist = async (container) => {
+        listMode.value = 'playlist';
+        currentContainer.value = container;
+        songs.value = [];
+        nextCursor.value = null;
+        await fetchTracks();
+    };
+    const handleScroll = (event) => {
+        const el = event.target;
+        if (
+            listMode.value === 'playlist' &&
+            el.scrollHeight - el.scrollTop - el.clientHeight < 100 &&
+            hasMore.value &&
+            !loading.value &&
+            !isLoadingMore.value
+        )
+            fetchTracks(true);
+    };
     watch(
-        () => [platformRef.value, bindings.value[platformRef.value]],
-        ([platform, uid], previous) => {
-            if (previous && platform === previous[0] && uid !== previous[1]) {
-                const previousKey = `${platform}:${previous[1] || ''}`;
-                playlistCache.delete(previousKey);
-                playlistRequests.set(previousKey, (playlistRequests.get(previousKey) || 0) + 1);
-            }
-            const cached = playlistCache.get(cacheKey());
-            if (cached) {
-                playlists.value = cached;
-                isPlaylistsLoading.value = false;
-            } else {
-                playlists.value = [];
-                fetchPlaylists();
-            }
+        listMode,
+        () => {
+            trackRequests.cancel();
+            collectionRequests.cancel();
+            isPlaylistsLoading.value = false;
+            isLoadingMore.value = false;
+            loading.value = false;
+            if (listMode.value !== 'playlist') currentContainer.value = null;
         },
-        { immediate: true }
+        { flush: 'sync' }
     );
-
+    watch(
+        platform,
+        () => {
+            categoryId.value = categories.value[0]?.id || '';
+        },
+        { flush: 'sync' }
+    );
+    watch(categories, () => {
+        if (!categories.value.some((item) => item.id === categoryId.value))
+            categoryId.value = categories.value[0]?.id || '';
+    });
+    watch(
+        () => [platform.value, bindings.value[platform.value], categoryId.value],
+        () => {
+            cancel();
+            currentContainer.value = null;
+            songs.value = [];
+            playlists.value = [];
+            userSearchResults.value = [];
+            collectionCursor.value = null;
+            nextCursor.value = null;
+            fetchCollections();
+        },
+        { immediate: true, flush: 'sync' }
+    );
+    onScopeDispose(cancel);
     return {
         playlists,
+        categories,
+        categoryId,
+        category,
+        currentContainer,
         currentPlaylistId,
         searchUserKeyword,
         userSearchResults,
@@ -191,7 +191,9 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         searchUser,
         bindUser,
         loadPlaylist,
-        fetchPlaylists,
+        fetchPlaylists: fetchCollections,
         handleScroll,
+        collectionCursor,
+        cancel,
     };
 }

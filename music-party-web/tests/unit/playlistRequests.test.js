@@ -2,12 +2,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { effectScope, nextTick, reactive, ref } from 'vue';
 import { usePlaylistLogic } from '../../src/composables/usePlaylistLogic';
 
-const mocks = vi.hoisted(() => ({ user: null, fetch: vi.fn(), error: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: null, collections: vi.fn(), tracks: vi.fn(), users: vi.fn(), error: vi.fn() }));
 vi.mock('../../src/stores/user.js', () => ({ useUserStore: () => mocks.user }));
-vi.mock('../../src/stores/player.js', () => ({ usePlayerStore: () => ({}) }));
-vi.mock('../../src/api/music.js', () => ({ musicApi: { getUserPlaylists: mocks.fetch } }));
+vi.mock('../../src/stores/sources.js', () => ({
+    useSourcesStore: () => ({
+        descriptor: () => ({
+            collectionCategories: [
+                { id: 'lists', label: 'Lists', entryKind: 'CONTAINER', collectionType: 'playlist' },
+                { id: 'tracks', label: 'Tracks', entryKind: 'TRACK', collectionType: 'track' },
+            ],
+        }),
+        supports: () => true,
+    }),
+}));
+vi.mock('../../src/api/music.js', () => ({
+    musicApi: { getCollections: mocks.collections, getContainerTracks: mocks.tracks, searchUser: mocks.users },
+}));
 vi.mock('../../src/composables/useToast', () => ({ useToast: () => ({ error: mocks.error }) }));
-
 const deferred = () => {
     let resolve, reject;
     const promise = new Promise((yes, no) => {
@@ -16,99 +27,110 @@ const deferred = () => {
     });
     return { promise, resolve, reject };
 };
-
+const flush = async () => {
+    await nextTick();
+    await nextTick();
+};
+const page = (id, nextCursor = null) => ({ items: [{ id }], nextCursor });
+let scope;
 beforeEach(() => {
-    mocks.user = reactive({ bindings: { netease: 'N', bilibili: 'B' } });
-    mocks.fetch.mockReset();
-    mocks.error.mockReset();
+    scope?.stop();
+    mocks.user = reactive({ bindings: { unknown: 'U', another: 'A' } });
+    mocks.user.updateBinding = (source, uid) => {
+        mocks.user.bindings[source] = uid;
+    };
+    Object.values(mocks).forEach((value) => value?.mockReset?.());
 });
-
-describe('playlist request ownership', () => {
-    const setup = () => {
-        const requests = [];
-        mocks.fetch.mockImplementation((platform, uid) => {
+function setup() {
+    const requests = [];
+    for (const [kind, fn] of Object.entries({
+        collections: mocks.collections,
+        tracks: mocks.tracks,
+        users: mocks.users,
+    })) {
+        fn.mockImplementation((...args) => {
             const request = deferred();
-            requests.push({ platform, uid, ...request });
+            requests.push({ kind, args, ...request });
             return request.promise;
         });
-        const platform = ref('netease');
-        const scope = effectScope();
-        const state = scope.run(() => usePlaylistLogic(platform, ref([]), ref('search'), ref(false)));
-        return { platform, requests, state, scope };
-    };
-
-    it('stores late responses under their original platform and reuses the correct cache', async () => {
-        const { platform, requests, state, scope } = setup();
-        try {
-            platform.value = 'bilibili';
-            await nextTick();
-            requests[1].resolve([{ id: 'B-list' }]);
-            await nextTick();
-            requests[0].resolve([{ id: 'N-list' }]);
-            await nextTick();
-            expect(state.playlists.value).toEqual([{ id: 'B-list' }]);
-            platform.value = 'netease';
-            await nextTick();
-            expect(state.playlists.value).toEqual([{ id: 'N-list' }]);
-            platform.value = 'bilibili';
-            await nextTick();
-            expect(state.playlists.value).toEqual([{ id: 'B-list' }]);
-            expect(mocks.fetch).toHaveBeenCalledTimes(2);
-        } finally {
-            scope.stop();
-        }
+    }
+    const platform = ref('unknown'),
+        songs = ref([]),
+        mode = ref('search'),
+        loading = ref(false);
+    scope = effectScope();
+    const state = scope.run(() => usePlaylistLogic(platform, songs, mode, loading));
+    return { platform, songs, mode, loading, state, requests };
+}
+describe('public collection request ownership', () => {
+    it('passes the explicit public target and ignores late source responses and errors', async () => {
+        const { platform, state, requests } = setup();
+        expect(requests[0].args.slice(0, 3)).toEqual(['unknown', 'lists', 'U']);
+        platform.value = 'another';
+        await flush();
+        const current = requests.at(-1);
+        requests[0].reject(new Error('old failure'));
+        await flush();
+        expect(state.isPlaylistsLoading.value).toBe(true);
+        expect(mocks.error).not.toHaveBeenCalled();
+        current.resolve(page('current'));
+        await flush();
+        expect(state.playlists.value).toEqual([{ id: 'current' }]);
+        expect(state.isPlaylistsLoading.value).toBe(false);
     });
-
-    it('watches binding mutations and ignores the previous account response', async () => {
-        const { requests, state, scope } = setup();
-        try {
-            mocks.user.bindings.netease = 'replacement';
-            await nextTick();
-            expect(requests[1].uid).toBe('replacement');
-            requests[0].resolve([{ id: 'old-account' }]);
-            await nextTick();
-            expect(state.playlists.value).toEqual([]);
-            expect(state.isPlaylistsLoading.value).toBe(true);
-            requests[1].resolve([{ id: 'new-account' }]);
-            await nextTick();
-            expect(state.playlists.value).toEqual([{ id: 'new-account' }]);
-            expect(state.isPlaylistsLoading.value).toBe(false);
-            mocks.user.bindings.netease = '';
-            await nextTick();
-            expect(state.playlists.value).toEqual([]);
-        } finally {
-            scope.stop();
-        }
+    it('invalidates rebinding and unlinking even if transport ignores AbortSignal', async () => {
+        const { state, requests } = setup();
+        mocks.user.bindings.unknown = 'new-user';
+        const latest = requests.at(-1);
+        expect(latest.args[2]).toBe('new-user');
+        requests[0].resolve(page('old'));
+        await flush();
+        expect(state.playlists.value).toEqual([]);
+        latest.resolve(page('new'));
+        await flush();
+        expect(state.playlists.value).toEqual([{ id: 'new' }]);
+        mocks.user.bindings.unknown = '';
+        expect(state.playlists.value).toEqual([]);
     });
-
-    it('keeps a newer refresh when requests for the same key finish out of order', async () => {
-        const { requests, state, scope } = setup();
-        try {
-            const refreshed = state.fetchPlaylists();
-            requests[1].resolve([{ id: 'fresh' }]);
-            await refreshed;
-            requests[0].resolve([{ id: 'stale' }]);
-            await nextTick();
-            expect(state.playlists.value).toEqual([{ id: 'fresh' }]);
-        } finally {
-            scope.stop();
-        }
+    it('keeps newer refresh and category results when requests complete in reverse', async () => {
+        const { state, songs, requests } = setup();
+        const refreshed = state.fetchPlaylists();
+        requests.at(-1).resolve(page('fresh'));
+        await refreshed;
+        requests[0].resolve(page('stale'));
+        await flush();
+        expect(state.playlists.value).toEqual([{ id: 'fresh' }]);
+        state.categoryId.value = 'tracks';
+        requests.at(-1).resolve(page('song'));
+        await flush();
+        expect(songs.value).toEqual([{ id: 'song' }]);
     });
-
-    it('does not clear another platform or its loading flag on stale failures', async () => {
-        const { platform, requests, state, scope } = setup();
-        try {
-            platform.value = 'bilibili';
-            await nextTick();
-            requests[0].reject({ response: { data: { message: 'old request failed' } } });
-            await nextTick();
-            expect(state.isPlaylistsLoading.value).toBe(true);
-            expect(mocks.error).not.toHaveBeenCalled();
-            requests[1].resolve([{ id: 'B-list' }]);
-            await nextTick();
-            expect(state.playlists.value).toEqual([{ id: 'B-list' }]);
-        } finally {
-            scope.stop();
-        }
+    it('isolates container pagination, search transitions and unmount', async () => {
+        const { state, songs, mode, loading, requests } = setup();
+        state.loadPlaylist({ id: 'old', collectionType: 'playlist' });
+        const old = requests.at(-1);
+        state.loadPlaylist({ id: 'new', collectionType: 'album' });
+        const current = requests.at(-1);
+        old.resolve(page('old-song'));
+        await flush();
+        expect(loading.value).toBe(true);
+        current.resolve(page('new-song', 'cursor'));
+        await flush();
+        expect(songs.value).toEqual([{ id: 'new-song' }]);
+        state.handleScroll({ target: { scrollHeight: 100, scrollTop: 100, clientHeight: 100 } });
+        const more = requests.at(-1);
+        expect(more.args.slice(0, 4)).toEqual(['unknown', 'album', 'new', 'cursor']);
+        mode.value = 'search';
+        songs.value = [{ id: 'search-result' }];
+        more.resolve(page('late'));
+        await flush();
+        expect(songs.value).toEqual([{ id: 'search-result' }]);
+        state.searchUserKeyword.value = 'person';
+        state.searchUser();
+        const users = requests.at(-1);
+        scope.stop();
+        users.resolve(page('late-user'));
+        await flush();
+        expect(state.userSearchResults.value).toEqual([]);
     });
 });

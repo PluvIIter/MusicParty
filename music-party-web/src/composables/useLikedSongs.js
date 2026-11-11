@@ -40,7 +40,9 @@ export function useLikedSongs() {
             name: music.name || '',
             artists: music.artists || [],
             coverUrl: music.coverUrl || '',
-            url: music.url || '',
+            duration: music.duration || 0,
+            externalUrl: music.externalUrl || '',
+            album: music.album || null,
         });
         persist();
     };

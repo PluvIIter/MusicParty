@@ -26,6 +26,10 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
         maxQueueSize: 1000,
         maxUserSongs: 100,
         privateDj: { mode: 'OFF' },
+        sources: {
+            'future-source': { enabled: true, deliveryMode: 'DIRECT_URL' },
+            'disabled-source': { enabled: false, deliveryMode: 'SERVER_DOWNLOAD' },
+        },
     };
     let broadcast = () => {};
     await page.addInitScript(
@@ -45,11 +49,28 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
         let body = {};
         if (path === '/api/auth/status') body = { isSetup: true, hasProtection: false };
         if (path === '/api/config') body = { authorName: 'Test' };
+        if (path === '/api/v2/sources')
+            body = {
+                schemaVersion: 2,
+                sources: Object.entries(config.sources)
+                    .filter(([, settings]) => settings.enabled)
+                    .map(([id, settings]) => ({
+                        id,
+                        label: id,
+                        capabilities: {},
+                        collectionCategories: [],
+                        delivery: { mode: settings.deliveryMode, supportedModes: [settings.deliveryMode] },
+                    })),
+            };
         if (path === '/api/admin/verify') body = { message: 'VERIFIED' };
         if (path === '/api/admin/config/update') {
             const update = route.request().postDataJSON();
             updates.push(update);
+            const mergedSources = { ...config.sources };
+            for (const [id, settings] of Object.entries(update.sources || {}))
+                mergedSources[id] = { ...mergedSources[id], ...settings };
             Object.assign(config, update);
+            config.sources = mergedSources;
             broadcast();
             body = { message: '系统配置已刷新' };
         }
@@ -121,6 +142,21 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
     await page.getByRole('button', { name: 'CONNECT', exact: true }).click();
     return { sent, updates };
 }
+
+test('admin can discover and enable a disabled unknown source without credentials or capabilities config', async ({
+    page,
+}) => {
+    const fixture = await room(page, { admin: true });
+    await page.getByPlaceholder('ENTER ADMIN PASSWORD').fill('test-admin');
+    await page.getByRole('button', { name: 'ACCESS SYSTEM' }).click();
+    const control = page.getByRole('switch', { name: '启用音乐源：disabled-source' });
+    await expect(control).toHaveAttribute('aria-checked', 'false');
+    await control.click();
+    await expect(control).toHaveAttribute('aria-checked', 'true');
+    expect(fixture.updates).toEqual([{ sources: { 'disabled-source': { enabled: true } } }]);
+    await expect(page.getByText(/交付模式：SERVER_DOWNLOAD/)).toBeVisible();
+    await expect(page.getByPlaceholder(/输入新 COOKIE/)).toHaveCount(0);
+});
 
 test('admin retention switch sends partial updates and follows shared state after reload', async ({ page }) => {
     const fixture = await room(page, { admin: true });
