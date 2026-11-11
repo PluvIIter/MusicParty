@@ -201,7 +201,7 @@ public class AdminController {
                 if (!Set.of("OFF", "FM", "DJ").contains(request.mode())) {
                     return ResponseEntity.badRequest().body(Map.of("message", "模式仅支持 关闭/私人FM/私人DJ"));
                 }
-                if (!"OFF".equals(request.mode()) && !privateDjService.isAvailable()) {
+                if (!"OFF".equals(request.mode()) && !privateDjService.supportsMode(request.mode())) {
                     return ResponseEntity.badRequest().body(Map.of("message", "CAPABILITY_UNAVAILABLE: 配置的私人FM/DJ音源未启用或没有推荐实现"));
                 }
                 c.setMode(request.mode());

@@ -41,6 +41,8 @@ final class PlayerTestFactory {
                 .filter(api -> api.getPlatformName().equals(invocation.getArgument(0))).findFirst().orElseThrow()
                 .getPlayableMusic(invocation.getArgument(1)));
         when(dj.isAvailable()).thenReturn(true);
+        when(dj.supportsMode("FM")).thenReturn(true);
+        when(dj.supportsMode("DJ")).thenReturn(true);
         return new MusicPlayerService(sources, users, media, streams, queue, events, properties, dj);
     }
 

@@ -317,6 +317,7 @@
                                         >
                                         <div class="grid grid-cols-2 gap-1 p-1 bg-surface border border-line">
                                             <button
+                                                v-if="privateDj.fmSupported === true"
                                                 @click="setPrivateDjMode(privateDj.mode === 'FM' ? 'OFF' : 'FM')"
                                                 class="py-1.5 text-[10px] font-bold transition-colors"
                                                 :class="
@@ -328,6 +329,7 @@
                                                 私人FM
                                             </button>
                                             <button
+                                                v-if="privateDj.djSupported === true"
                                                 @click="setPrivateDjMode(privateDj.mode === 'DJ' ? 'OFF' : 'DJ')"
                                                 class="py-1.5 text-[10px] font-bold transition-colors"
                                                 :class="
@@ -339,9 +341,27 @@
                                                 私人DJ
                                             </button>
                                         </div>
-                                        <p class="text-[8px] text-ink-subtle">
-                                            点选即开启，再点已选中的模式即关闭；私人DJ模式=先播语音再播歌；加入队列功能固定为私人FM
+                                        <p
+                                            v-if="privateDj.fmSupported === true || privateDj.djSupported === true"
+                                            class="text-[8px] text-ink-subtle"
+                                        >
+                                            点选即开启，再点已选中的模式即关闭<span
+                                                v-if="privateDj.djSupported === true"
+                                                >；私人DJ模式=先播语音再播歌</span
+                                            ><span v-if="privateDj.fmSupported === true"
+                                                >；加入队列功能固定为私人FM</span
+                                            >
                                         </p>
+                                        <p v-else class="text-[8px] text-ink-subtle">
+                                            部署指定的推荐音源未启用或不支持私人电台
+                                        </p>
+                                        <button
+                                            v-if="privateDj.mode !== 'OFF' && !privateDjModeSupported"
+                                            @click="setPrivateDjMode('OFF')"
+                                            class="text-xs text-danger"
+                                        >
+                                            关闭私人电台
+                                        </button>
                                     </div>
 
                                     <!-- 三个功能开关 -->
@@ -361,7 +381,7 @@
                                                 @click="togglePrivateDjSwitch(sw.field)"
                                                 class="w-8 h-4 rounded-full relative transition-colors disabled:opacity-40"
                                                 :class="privateDj[sw.field] ? 'bg-accent' : 'bg-line-strong'"
-                                                :disabled="privateDj.mode === 'OFF'"
+                                                :disabled="!privateDjModeSupported"
                                             >
                                                 <div
                                                     class="absolute top-0.5 left-0.5 w-3 h-3 bg-surface-raised rounded-full transition-transform duration-300"
@@ -716,22 +736,30 @@ const privateDj = computed(
         }
 );
 
-const privateDjSwitches = [
-    { field: 'fillBlankEnabled', label: '填充空白', hint: '队列无有效歌曲时播FM/DJ' },
-    { field: 'joinQueueEnabled', label: '加入队列', hint: '随机/轮询模式生效·固定私人FM' },
-    { field: 'custodyEnabled', label: '播放托管', hint: '无视队列·仅播FM/DJ' },
-];
+const supportsPrivateDjMode = (mode) =>
+    (mode === 'FM' && privateDj.value.fmSupported === true) || (mode === 'DJ' && privateDj.value.djSupported === true);
+const privateDjModeSupported = computed(() => supportsPrivateDjMode(privateDj.value.mode));
+const privateDjSwitches = computed(() => {
+    const modes = privateDj.value.djSupported === true ? 'FM/DJ' : 'FM';
+    return [
+        { field: 'fillBlankEnabled', label: '填充空白', hint: `队列无有效歌曲时播${modes}` },
+        ...(privateDj.value.fmSupported === true
+            ? [{ field: 'joinQueueEnabled', label: '加入队列', hint: '随机/轮询模式生效·固定私人FM' }]
+            : []),
+        { field: 'custodyEnabled', label: '播放托管', hint: `无视队列·仅播${modes}` },
+    ];
+});
 
 const setPrivateDjMode = async (mode) => {
-    if (mode !== 'OFF' && playerStore.config.recommendationsAvailable === false) {
-        error('部署指定的私人FM/DJ音源未启用或不支持此功能');
+    if (mode !== 'OFF' && !supportsPrivateDjMode(mode)) {
+        error('部署指定的推荐音源未启用或不支持此模式');
         return;
     }
     try {
         const data = await adminApi.updatePrivateDj(adminStore.adminPassword, { mode });
         success(data.message);
     } catch (e) {
-        error('模式切换失败');
+        error(e.response?.data?.message || '模式切换失败');
     }
 };
 

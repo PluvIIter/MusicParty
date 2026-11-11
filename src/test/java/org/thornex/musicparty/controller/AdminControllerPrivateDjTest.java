@@ -62,7 +62,7 @@ class AdminControllerPrivateDjTest {
 
     @Test
     void enableAcceptedWithPublicProviderWithoutCookie() {
-        when(djService.isAvailable()).thenReturn(true);
+        when(djService.supportsMode("DJ")).thenReturn(true);
         ResponseEntity<?> resp = controller.updatePrivateDj("pw",
                 new AdminPrivateDjUpdateRequest("DJ", true, false, false));
         assertEquals(HttpStatus.OK, resp.getStatusCode());
@@ -70,6 +70,20 @@ class AdminControllerPrivateDjTest {
         assertTrue(props.getPrivateDj().isFillBlankEnabled());
         verify(djService).invalidate();
         verify(player).broadcastFullPlayerState();
+    }
+
+    @Test
+    void fmOnlyProviderRejectsDjBeforeMutatingConfig() {
+        when(djService.supportsMode("FM")).thenReturn(true);
+        when(djService.supportsMode("DJ")).thenReturn(false);
+        assertEquals(HttpStatus.OK, controller.updatePrivateDj("pw",
+                new AdminPrivateDjUpdateRequest("FM", null, null, null)).getStatusCode());
+        var rejected = controller.updatePrivateDj("pw",
+                new AdminPrivateDjUpdateRequest("DJ", true, true, true));
+        assertEquals(HttpStatus.BAD_REQUEST, rejected.getStatusCode());
+        assertEquals("FM", props.getPrivateDj().getMode());
+        assertFalse(props.getPrivateDj().isFillBlankEnabled());
+        assertFalse(props.getPrivateDj().isCustodyEnabled());
     }
 
     @Test

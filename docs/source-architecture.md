@@ -52,7 +52,7 @@ app:
 
 ## 私人 FM/DJ 的明确例外
 
-私人 FM/DJ 是应用功能，由部署配置 `app.music-api.private-dj.source`（环境变量 `PRIVATE_DJ_SOURCE`，默认 `netease`）指定唯一推荐提供源。目前只有网易云实现，使用该源配置 Cookie 请求原生 `personal_fm` / `aidj/content/rcmd`。不会按注册顺序挑选提供者，也不会在失败时换成其他源或公开歌单。源禁用、不支持、Cookie缺失/失效或上游拒绝均明确报错。
+私人 FM/DJ 是应用功能，由部署配置 `app.music-api.private-dj.source`（环境变量 `PRIVATE_DJ_SOURCE`，默认 `netease`）指定唯一推荐提供源。目前只有网易云实现，使用该源配置 Cookie 请求原生 `personal_fm` / `aidj/content/rcmd`。提供者代码分别声明FM与DJ，DJ必须以FM为基础。后端在房间配置的 `privateDj` 中下发 `source`、`fmSupported`、`djSupported`；这些标志只反映部署指定源，前端仅在对应标志为true时显示入口。指定源只有FM时不显示私人DJ，后端也拒绝DJ请求；不能因另一已启用源支持DJ就显示。不会按注册顺序挑选提供者，也不会在失败时换成其他源或公开歌单。源禁用、不支持、Cookie缺失/失效或上游拒绝均明确报错。
 
 歌曲段交给统一媒体服务，DJ语音标记VOICE并走同源配置的直链或服务器下载，Radio使用已验证的语音关联而不把voiceId当歌曲解析。语音不进普通歌曲历史、不走歌曲刷新；原生语音时长必须有效（0到600秒之间，不含0）。填空、加入队列、托管保留。内部合成FM标记是调度控制项，不是音源。
 

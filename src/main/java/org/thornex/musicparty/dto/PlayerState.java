@@ -55,7 +55,15 @@ public record PlayerState(
                 String mode,
                 boolean fillBlankEnabled,
                 boolean joinQueueEnabled,
-                boolean custodyEnabled
-        ) {}
+                boolean custodyEnabled,
+                String source,
+                boolean fmSupported,
+                boolean djSupported
+        ) {
+            public PrivateDjConfigSummary(String mode, boolean fillBlankEnabled,
+                    boolean joinQueueEnabled, boolean custodyEnabled) {
+                this(mode, fillBlankEnabled, joinQueueEnabled, custodyEnabled, null, false, false);
+            }
+        }
     }
 }

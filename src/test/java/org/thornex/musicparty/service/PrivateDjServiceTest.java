@@ -32,6 +32,7 @@ class PrivateDjServiceTest {
         sources = mock(SourceRegistry.class);
         provider = mock(RecommendationProvider.class);
         when(provider.sourceId()).thenReturn("public-feed");
+        when(provider.supportedModes()).thenReturn(Set.of("FM", "DJ"));
         when(sources.isEnabled("public-feed")).thenReturn(true);
         when(sources.descriptor("public-feed")).thenReturn(new SourceDescriptor("public-feed", "Feed", "music",
                 new SourceCapabilities(false, false, false, false, false, true, false, false),
@@ -89,6 +90,22 @@ class PrivateDjServiceTest {
         assertTrue(result.isCompletedExceptionally());
         when(provider.nextSegments("FM")).thenReturn(Mono.just(List.of(first)));
         assertEquals(first, service.nextSegment().block());
+    }
+
+    @Test
+    void djIsOptionalExtensionOfConfiguredFmProvider() {
+        when(provider.supportedModes()).thenReturn(Set.of("FM"));
+        assertTrue(service.supportsMode("FM"));
+        assertFalse(service.supportsMode("DJ"));
+        assertThrows(ApiRequestException.class, () -> service.nextDjSegment().block());
+        verify(provider, never()).nextSegments("DJ");
+        assertEquals(first, service.nextFmSegment().block());
+    }
+
+    @Test
+    void djOnlyProviderCannotRegisterWithoutBaseFmCapability() {
+        when(provider.supportedModes()).thenReturn(Set.of("DJ"));
+        assertThrows(IllegalArgumentException.class, () -> new PrivateDjService(List.of(provider), sources, properties));
     }
 
     @Test

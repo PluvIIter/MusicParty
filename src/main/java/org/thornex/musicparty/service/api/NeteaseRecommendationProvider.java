@@ -27,6 +27,11 @@ public class NeteaseRecommendationProvider implements RecommendationProvider {
     }
 
     @Override
+    public java.util.Set<String> supportedModes() {
+        return java.util.Set.of("FM", "DJ");
+    }
+
+    @Override
     public long credentialRevision() {
         return api.credentialRevision();
     }

@@ -109,6 +109,18 @@ class MusicPlayerServiceJoinQueueTest {
     }
 
     @Test
+    void restoredUnsupportedDjDoesNotSilentlyInstallFmMarker() {
+        props.getPrivateDj().setMode("DJ");
+        props.getPrivateDj().setJoinQueueEnabled(true);
+        when(djService.supportsMode("FM")).thenReturn(true);
+        when(djService.supportsMode("DJ")).thenReturn(false);
+        service.setPlayModeForTest(PlayMode.SHUFFLE);
+        service.syncFmMarkerForTest();
+        verify(queueManager, never()).ensureFmMarker();
+        verify(queueManager).removeFmMarker();
+    }
+
+    @Test
     void modeChangeRejectsPlayableAlreadyWaitingForRoomCommit() throws Exception {
         props.getPrivateDj().setMode("DJ");
         when(djService.isAvailable()).thenReturn(true);

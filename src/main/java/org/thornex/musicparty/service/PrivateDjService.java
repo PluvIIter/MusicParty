@@ -32,6 +32,10 @@ public class PrivateDjService {
     public PrivateDjService(List<RecommendationProvider> providers, SourceRegistry sources, AppProperties properties) {
         var registered = new HashMap<String, RecommendationProvider>();
         for (var provider : providers) {
+            var modes = provider.supportedModes();
+            if (modes == null || !modes.contains("FM") || !java.util.Set.of("FM", "DJ").containsAll(modes)) {
+                throw new IllegalArgumentException("Recommendation provider must support FM; DJ is an optional extension");
+            }
             if (registered.putIfAbsent(provider.sourceId(), provider) != null) {
                 throw new IllegalArgumentException("Duplicate recommendation provider: " + provider.sourceId());
             }
@@ -41,8 +45,10 @@ public class PrivateDjService {
         this.properties = properties;
     }
 
-    public boolean isAvailable() {
-        try { selected(); return true; }
+    public boolean isAvailable() { return supportsMode("FM"); }
+
+    public boolean supportsMode(String mode) {
+        try { return selected().supportedModes().contains(mode); }
         catch (ApiRequestException error) { return false; }
     }
 
@@ -91,6 +97,9 @@ public class PrivateDjService {
                 return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 私人FM/DJ已关闭"));
             }
             var provider = selected();
+            if (!provider.supportedModes().contains(mode)) {
+                return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 配置的私人FM音源不支持私人DJ"));
+            }
             String expected = scope(provider);
             long version;
             Mono<List<PrivateDjSegment>> fetch;

@@ -331,7 +331,7 @@ public class MusicPlayerService {
     /** 播放源决策：托管 > (队列有有效歌曲则队列) > 填充空白 */
     boolean shouldPlayPrivateFmDj() {
         AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
-        if ("OFF".equals(c.getMode()) || !privateDjService.isAvailable()) return false;
+        if ("OFF".equals(c.getMode()) || !privateDjService.supportsMode(c.getMode())) return false;
         if (c.isCustodyEnabled()) return true;
         if (c.isFillBlankEnabled()) {
             return !queueManager.hasPlayableItems(buildStatusMap());
@@ -383,7 +383,7 @@ public class MusicPlayerService {
      */
     void syncFmMarker() {
         AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
-        boolean shouldPresent = privateDjService.isAvailable() && !"OFF".equals(c.getMode()) && c.isJoinQueueEnabled()
+        boolean shouldPresent = privateDjService.supportsMode(c.getMode()) && !"OFF".equals(c.getMode()) && c.isJoinQueueEnabled()
                 && !c.isCustodyEnabled() && (playMode.get() == PlayMode.SHUFFLE || playMode.get() == PlayMode.ROUND_ROBIN);
         if (shouldPresent) {
             queueManager.ensureFmMarker();
@@ -579,7 +579,10 @@ public class MusicPlayerService {
                                 appProperties.getPrivateDj().getMode(),
                                 appProperties.getPrivateDj().isFillBlankEnabled(),
                                 appProperties.getPrivateDj().isJoinQueueEnabled(),
-                                appProperties.getPrivateDj().isCustodyEnabled()
+                                appProperties.getPrivateDj().isCustodyEnabled(),
+                                privateDjService.sourceId(),
+                                privateDjService.supportsMode("FM"),
+                                privateDjService.supportsMode("DJ")
                         ),
                         appProperties.getQueue().isAllowPlaylistClaim(),
                         appProperties.getQueue().isRetainPlaylist(),
