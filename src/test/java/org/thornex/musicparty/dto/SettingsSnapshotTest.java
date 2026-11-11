@@ -20,10 +20,13 @@ class SettingsSnapshotTest {
                 "room123", true,
                 new SettingsSnapshot.PrivateDjSettings("DJ", true, true, true),
                 new SettingsSnapshot.SystemConfigSettings(
-                        500, 100, 50, 200, 5000, 500L, true, false, 15));
+                        500, 100, 50, 200, 5000, 500L, true, false, 15, 512, true, true, true));
 
         String json = mapper.writeValueAsString(original);
         SettingsSnapshot restored = mapper.readValue(json, SettingsSnapshot.class);
+        assertTrue(restored.systemConfig().allowPlaylistClaim());
+        // 进度条拖动权限也要能往返（否则重启后开关回退成默认的 false）
+        assertTrue(restored.systemConfig().allowSeek());
 
         assertEquals("SHUFFLE", restored.player().playMode());
         assertTrue(restored.player().fairShuffle());
@@ -49,6 +52,7 @@ class SettingsSnapshotTest {
         assertTrue(restored.systemConfig().neteaseEnabled());
         assertFalse(restored.systemConfig().bilibiliEnabled());
         assertEquals(15, restored.systemConfig().bilibiliMaxDurationMinutes());
+        assertEquals(512, restored.systemConfig().maxChatMessageLength());
     }
 
     @Test

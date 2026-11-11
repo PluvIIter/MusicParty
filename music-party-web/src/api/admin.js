@@ -8,47 +8,84 @@ export const adminApi = {
     verify: (password) => client.post('/api/admin/verify', { password }),
 
     // 锁定控制 (PAUSE/SKIP/SHUFFLE/ALL)
-    setLock: (adminPwd, type, locked) => client.post('/api/admin/lock', { type, locked }, {
-        headers: { 'X-Admin-Password': adminPwd }
-    }),
+    setLock: (adminPwd, type, locked) =>
+        client.post(
+            '/api/admin/lock',
+            { type, locked },
+            {
+                headers: { 'X-Admin-Password': adminPwd },
+            }
+        ),
 
     // 强制播放器操作 (PAUSE/SKIP/SHUFFLE)
-    playerAction: (adminPwd, action) => client.post('/api/admin/player/action', { action }, {
-        headers: { 'X-Admin-Password': adminPwd }
-    }),
+    playerAction: (adminPwd, action, playMode) =>
+        client.post(
+            '/api/admin/player/action',
+            { action, ...(playMode ? { playMode } : {}) },
+            {
+                headers: { 'X-Admin-Password': adminPwd },
+            }
+        ),
 
     // 修改房间密码 (password为空即为开启房间)
-    setRoomPassword: (adminPwd, password) => client.post('/api/admin/room/password', { password }, {
-        headers: { 'X-Admin-Password': adminPwd }
-    }),
+    setRoomPassword: (adminPwd, password) =>
+        client.post(
+            '/api/admin/room/password',
+            { password },
+            {
+                headers: { 'X-Admin-Password': adminPwd },
+            }
+        ),
 
     // 清理数据 (QUEUE/CHAT)
-    clearData: (adminPwd, target) => client.post('/api/admin/room/clear', { target }, {
-        headers: { 'X-Admin-Password': adminPwd }
-    }),
+    clearData: (adminPwd, target) =>
+        client.post(
+            '/api/admin/room/clear',
+            { target },
+            {
+                headers: { 'X-Admin-Password': adminPwd },
+            }
+        ),
 
     // 系统重置
-    resetSystem: (adminPwd) => client.post('/api/admin/system/reset', {}, {
-        headers: { 'X-Admin-Password': adminPwd }
-    }),
+    resetSystem: (adminPwd) =>
+        client.post(
+            '/api/admin/system/reset',
+            {},
+            {
+                headers: { 'X-Admin-Password': adminPwd },
+            }
+        ),
 
     // 更新平台 Cookie
-    setCookie: (adminPwd, platform, value) => client.post('/api/admin/config/cookie', { platform, value }, {
-        headers: { 'X-Admin-Password': adminPwd }
-    }),
+    setCookie: (adminPwd, platform, value) =>
+        client.post(
+            '/api/admin/config/cookie',
+            { platform, value },
+            {
+                headers: { 'X-Admin-Password': adminPwd },
+            }
+        ),
 
     // 直播流控制
-    setStream: (adminPwd, enabled) => client.post('/api/admin/room/stream', { enabled }, {
-        headers: { 'X-Admin-Password': adminPwd }
-    }),
+    setStream: (adminPwd, enabled) =>
+        client.post(
+            '/api/admin/room/stream',
+            { enabled },
+            {
+                headers: { 'X-Admin-Password': adminPwd },
+            }
+        ),
 
     // 更新系统配置
-    updateConfig: (adminPwd, config) => client.post('/api/admin/config/update', config, {
-        headers: { 'X-Admin-Password': adminPwd }
-    }),
+    updateConfig: (adminPwd, config) =>
+        client.post('/api/admin/config/update', config, {
+            headers: { 'X-Admin-Password': adminPwd },
+        }),
 
     // 更新私人电台/私人DJ 配置
-    updatePrivateDj: (adminPwd, update) => client.post('/api/admin/private-dj', update, {
-        headers: { 'X-Admin-Password': adminPwd }
-    })
+    updatePrivateDj: (adminPwd, update) =>
+        client.post('/api/admin/private-dj', update, {
+            headers: { 'X-Admin-Password': adminPwd },
+        }),
 };

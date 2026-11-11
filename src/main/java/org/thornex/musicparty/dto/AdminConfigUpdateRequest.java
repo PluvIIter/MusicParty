@@ -13,5 +13,7 @@ public record AdminConfigUpdateRequest(
     Integer bilibiliMaxDurationMinutes,
     Boolean voteSkipEnabled,
     Double voteSkipThreshold,
-    Integer voteSkipWaitTime
+    Integer voteSkipWaitTime,
+        Boolean retainPlaylist,
+    Boolean allowSeek
 ) {}

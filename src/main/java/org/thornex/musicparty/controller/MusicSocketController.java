@@ -49,6 +49,13 @@ public class MusicSocketController {
         musicPlayerService.enqueuePlaylist(request, sessionId);
     }
 
+    @MessageMapping("/enqueue/album")
+    public void enqueueAlbum(EnqueueAlbumRequest request, @Header("simpSessionId") String sessionId) {
+        musicPlayerService.enqueueAlbum(request, sessionId).subscribe(result ->
+                messagingTemplate.convertAndSendToUser(sessionId, "/queue/album/import", result,
+                        createSessionHeaders(sessionId)));
+    }
+
     @MessageMapping("/control/next")
     public void nextSong(@Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
@@ -61,10 +68,26 @@ public class MusicSocketController {
         musicPlayerService.cyclePlayMode(sessionId);
     }
 
+    public record PlayModeRequest(String playMode) {}
+
+    @MessageMapping("/control/play-mode")
+    public void setPlayMode(PlayModeRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId) || request == null) return;
+        musicPlayerService.setPlayMode(sessionId, request.playMode());
+    }
+
     @MessageMapping("/control/toggle-pause")
     public void togglePause(@Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
         musicPlayerService.togglePause(sessionId);
+    }
+
+    /** 拖动进度条（房间级 seek，是否允许由管理面板的 allowSeek 决定）。 */
+    @MessageMapping("/control/seek")
+    public void seek(SeekRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
+        if (request == null) return;
+        musicPlayerService.seekTo(sessionId, request.positionMs(), request.playbackId());
     }
 
     @MessageMapping("/queue/top")

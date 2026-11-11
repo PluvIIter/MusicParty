@@ -7,12 +7,14 @@ import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.AdminPrivateDjUpdateRequest;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.service.ChatService;
+import org.thornex.musicparty.service.QueuePersistenceService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.PrivateDjService;
 import org.thornex.musicparty.service.api.BilibiliMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
 
@@ -29,8 +31,9 @@ public class AdminController {
     private final BilibiliMusicApiService bilibiliMusicApiService;
     private final LiveStreamService liveStreamService;
     private final PrivateDjService privateDjService;
+    private final QueuePersistenceService persistence;
 
-    public AdminController(MusicPlayerService musicPlayerService, ChatService chatService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService, LiveStreamService liveStreamService, PrivateDjService privateDjService) {
+    public AdminController(MusicPlayerService musicPlayerService, ChatService chatService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService, LiveStreamService liveStreamService, PrivateDjService privateDjService, QueuePersistenceService persistence) {
         this.musicPlayerService = musicPlayerService;
         this.chatService = chatService;
         this.adminPassword = appProperties.getAdminPassword();
@@ -40,6 +43,7 @@ public class AdminController {
         this.bilibiliMusicApiService = bilibiliMusicApiService;
         this.liveStreamService = liveStreamService;
         this.privateDjService = privateDjService;
+        this.persistence = persistence;
     }
 
     private boolean isValid(String password) {
@@ -92,6 +96,7 @@ public class AdminController {
                 musicPlayerService.cyclePlayMode("SYSTEM");
                 yield "播放模式已切换";
             }
+            case "SET_PLAY_MODE" -> musicPlayerService.setPlayMode("SYSTEM", request.playMode()) ? "播放模式已切换" : null;
             case "TOGGLE_FAIR_SHUFFLE" -> {
                 musicPlayerService.toggleFairShuffle("SYSTEM");
                 yield "随机算法已切换";
@@ -169,10 +174,13 @@ public class AdminController {
     }
 
     @PostMapping("/config/update")
-    public ResponseEntity<?> updateConfig(@RequestHeader("X-Admin-Password") String password, @RequestBody AdminConfigUpdateRequest request) {
+    public ResponseEntity<?> updateConfig(@RequestHeader("X-Admin-Password") String password, @RequestBody AdminConfigUpdateRequest request) throws IOException {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
-        musicPlayerService.updateConfig(request);
+        synchronized (persistence) {
+            musicPlayerService.updateConfig(request);
+            persistence.saveNow();
+        }
         return ResponseEntity.ok(Map.of("message", "系统配置已刷新"));
     }
 

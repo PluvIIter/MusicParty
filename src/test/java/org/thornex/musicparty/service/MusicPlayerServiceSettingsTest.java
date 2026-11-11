@@ -14,6 +14,20 @@ import static org.mockito.Mockito.*;
 
 class MusicPlayerServiceSettingsTest {
 
+    @Test
+    void retentionAdminUpdatesArePartialAndAppearInSharedState() throws Exception {
+        MusicPlayerService service = build();
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertFalse(service.getCurrentPlayerState().config().retainPlaylist());
+        service.updateConfig(mapper.readValue("{\"retainPlaylist\":true}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
+        assertTrue(service.getCurrentPlayerState().config().retainPlaylist());
+        service.updateConfig(mapper.readValue("{\"maxUserSongs\":55}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
+        assertTrue(service.getCurrentPlayerState().config().retainPlaylist());
+        assertEquals(55, service.getCurrentPlayerState().config().maxUserSongs());
+        service.updateConfig(mapper.readValue("{\"retainPlaylist\":false}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
+        assertFalse(service.getCurrentPlayerState().config().retainPlaylist());
+    }
+
     private MusicPlayerService build() {
         return new MusicPlayerService(
                 List.of(),
@@ -38,7 +52,7 @@ class MusicPlayerServiceSettingsTest {
         PlayerState state = service.getCurrentPlayerState();
         assertEquals("SHUFFLE", state.playMode());
         assertTrue(state.isShuffle());              // isShuffle 派生同步
-        assertTrue(state.isFairShuffle());
+        assertFalse(state.isFairShuffle(), "Explicit SHUFFLE mode overrides the legacy fairShuffle flag");
         assertTrue(state.allowOfflineShuffle());
         assertTrue(state.isVoteSkipEnabled());
         assertEquals(0.75, state.voteSkipThreshold());
@@ -107,5 +121,40 @@ class MusicPlayerServiceSettingsTest {
         assertFalse(captured.pauseLocked());
         assertFalse(captured.skipLocked());
         assertFalse(captured.playModeLocked());
+    }
+
+    /** 拖动进度条开关：默认关闭 → 打开后出现在共享状态里 → 可再关闭。 */
+    @Test
+    void seekPermissionTogglesAndAppearsInSharedState() throws Exception {
+        MusicPlayerService service = build();
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertFalse(service.getCurrentPlayerState().config().allowSeek());
+
+        service.updateConfig(
+                mapper.readValue("{\"allowSeek\":true}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
+        assertTrue(service.getCurrentPlayerState().config().allowSeek());
+
+        service.updateConfig(
+                mapper.readValue("{\"allowSeek\":false}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
+        assertFalse(service.getCurrentPlayerState().config().allowSeek());
+    }
+
+    /** 没有曲目时 seek 是安全的 no-op（不能抛异常，也不能改动状态）。 */
+    @Test
+    void seekWithoutTrackIsNoOp() {
+        MusicPlayerService service = build();
+        assertDoesNotThrow(() -> service.seekTo("session", 5000));
+        assertEquals(0L, service.getCurrentPlayerState().seekNonce());
+    }
+
+    /** 目标位置裁剪：负数归零、超出留在末尾前 500ms、未知时长只保证非负。 */
+    @Test
+    void seekPositionIsClamped() {
+        assertEquals(0, MusicPlayerService.clampSeek(-1000, 180000));
+        assertEquals(0, MusicPlayerService.clampSeek(0, 180000));
+        assertEquals(60000, MusicPlayerService.clampSeek(60000, 180000));
+        assertEquals(179500, MusicPlayerService.clampSeek(999999, 180000));
+        assertEquals(0, MusicPlayerService.clampSeek(300, 200));
+        assertEquals(999999, MusicPlayerService.clampSeek(999999, 0));
     }
 }

@@ -22,29 +22,42 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
     const offset = ref(0);
     const hasMore = ref(true);
     const isLoadingMore = ref(false);
-    const limit = computed(() => platformRef.value === 'bilibili' ? 20 : 50);
+    const limit = computed(() => (platformRef.value === 'bilibili' ? 20 : 50));
 
     const bindings = computed(() => userStore.bindings);
 
-    // 获取用户歌单
+    const playlistCache = new Map();
+    const playlistRequests = new Map();
+    const cacheKey = () => `${platformRef.value}:${bindings.value[platformRef.value] || ''}`;
     const fetchPlaylists = async () => {
-        const uid = bindings.value[platformRef.value];
+        const platform = platformRef.value;
+        const uid = bindings.value[platform];
+        const key = cacheKey();
+        const request = (playlistRequests.get(key) || 0) + 1;
+        playlistRequests.set(key, request);
         if (!uid) {
             playlists.value = [];
+            isPlaylistsLoading.value = false;
+            playlistCache.delete(key);
             return;
         }
+        const isLatest = () => playlistRequests.get(key) === request;
+        const isCurrent = () => cacheKey() === key && isLatest();
         isPlaylistsLoading.value = true;
         try {
-            const data = await musicApi.getUserPlaylists(platformRef.value, uid);
-            playlists.value = data;
+            const data = await musicApi.getUserPlaylists(platform, uid);
+            if (!isLatest()) return;
+            playlistCache.set(key, data);
+            if (isCurrent()) playlists.value = data;
         } catch (e) {
+            if (!isCurrent()) return;
             console.error(e);
             playlists.value = [];
             if (e.response?.data?.message) {
                 error(e.response.data.message);
             }
         } finally {
-            isPlaylistsLoading.value = false;
+            if (isCurrent()) isPlaylistsLoading.value = false;
         }
     };
 
@@ -94,7 +107,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
                 if (rawSongs.length < limit.value) hasMore.value = false;
             }
 
-            const validSongs = rawSongs.filter(s => s.id !== 'INVALID_SKIP');
+            const validSongs = rawSongs.filter((s) => s.id !== 'INVALID_SKIP');
             songsRef.value.push(...validSongs);
 
             // 贪婪加载：如果有效数据太少，自动加载下一页
@@ -105,9 +118,8 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
 
             // 兜底
             if (rawSongs.length === 0) isLoadingMore.value = false;
-
         } catch (e) {
-            console.error("Fetch songs failed", e);
+            console.error('Fetch songs failed', e);
             hasMore.value = false;
         }
     };
@@ -146,9 +158,25 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
     }, 200);
 
     // 监听平台切换 -> 刷新歌单列表
-    watch([platformRef, bindings], () => {
-        fetchPlaylists();
-    }, { immediate: true });
+    watch(
+        () => [platformRef.value, bindings.value[platformRef.value]],
+        ([platform, uid], previous) => {
+            if (previous && platform === previous[0] && uid !== previous[1]) {
+                const previousKey = `${platform}:${previous[1] || ''}`;
+                playlistCache.delete(previousKey);
+                playlistRequests.set(previousKey, (playlistRequests.get(previousKey) || 0) + 1);
+            }
+            const cached = playlistCache.get(cacheKey());
+            if (cached) {
+                playlists.value = cached;
+                isPlaylistsLoading.value = false;
+            } else {
+                playlists.value = [];
+                fetchPlaylists();
+            }
+        },
+        { immediate: true }
+    );
 
     return {
         playlists,
@@ -163,6 +191,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         searchUser,
         bindUser,
         loadPlaylist,
-        handleScroll
+        fetchPlaylists,
+        handleScroll,
     };
 }

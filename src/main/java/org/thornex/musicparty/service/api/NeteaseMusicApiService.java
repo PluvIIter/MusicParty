@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.dto.AlbumInfo;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
@@ -17,6 +18,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.time.Duration;
 import java.util.stream.StreamSupport;
 
 @Service
@@ -200,34 +204,41 @@ public class NeteaseMusicApiService implements IMusicApiService {
      * 部署环境的 api-enhanced 若 xeapi 公钥未就绪，/song/url/v1 会一律 404，这里自动降级不影响播放。
      */
     private Mono<String> resolveSongUrl(String musicId) {
-        return xeapiSongUrl(musicId)
-                .flatMap(url -> StringUtils.hasText(url)
-                        ? Mono.just(url)
-                        : Mono.error(new ApiRequestException("xeapi song url empty, falling back to eapi")))
-                .onErrorResume(e -> {
-                    log.debug("xeapi /song/url/v1 failed ({}), falling back to eapi /song/url", e.getMessage());
-                    return eapiSongUrl(musicId);
+        return resolveSongUrl(musicId, null);
+    }
+
+    public Mono<String> refreshSongUrl(String musicId) {
+        return Mono.defer(() -> {
+            if (musicId == null || !musicId.matches("[1-9][0-9]{0,19}")) {
+                return Mono.error(new ApiRequestException("无效的歌曲 ID"));
+            }
+            return resolveSongUrl(musicId, System.currentTimeMillis());
+        }).map(this::upgradeToHttps)
+          .timeout(java.time.Duration.ofSeconds(10))
+          .onErrorMap(error -> new ApiRequestException("播放地址刷新失败，请检查音乐接口后重试"));
+    }
+
+    private Mono<String> resolveSongUrl(String musicId, Long timestamp) {
+        return requestSongUrl(musicId, true, timestamp)
+                .onErrorResume(error -> {
+                    log.debug("Primary song URL unavailable; trying the existing bitrate fallback");
+                    return requestSongUrl(musicId, false, timestamp);
                 });
     }
 
-    private Mono<String> xeapiSongUrl(String musicId) {
+    private Mono<String> requestSongUrl(String musicId, boolean v1, Long timestamp) {
         ensureConfigured();
-        return webClient.get()
-                .uri(baseUrl + "/song/url/v1?id={musicId}&level={quality}&cookie={cookie}", musicId, quality, getCookie())
+        String route = v1 ? "/song/url/v1?id={id}&level={quality}&cookie={cookie}"
+                : "/song/url?id={id}&br={quality}&cookie={cookie}";
+        if (timestamp != null) route += "&timestamp=" + timestamp;
+        return webClient.get().uri(baseUrl + route, musicId, v1 ? quality : resolveBr(quality), getCookie())
                 .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL", response))
+                .onStatus(HttpStatusCode::isError, response -> response.releaseBody()
+                        .then(Mono.error(new ApiRequestException("播放地址暂不可用"))))
                 .bodyToMono(JsonNode.class)
-                .map(jsonNode -> jsonNode.path("data").get(0).path("url").asText());
-    }
-
-    private Mono<String> eapiSongUrl(String musicId) {
-        ensureConfigured();
-        return webClient.get()
-                .uri(baseUrl + "/song/url?id={musicId}&br={br}&cookie={cookie}", musicId, resolveBr(quality), getCookie())
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL (eapi fallback)", response))
-                .bodyToMono(JsonNode.class)
-                .map(jsonNode -> jsonNode.path("data").get(0).path("url").asText());
+                .map(json -> json.path("data").path(0).path("url").asText(""))
+                .flatMap(url -> url.startsWith("http://") || url.startsWith("https://")
+                        ? Mono.just(url) : Mono.error(new ApiRequestException("无有效播放地址")));
     }
 
     /** 将 level 音质档位映射为 eapi /song/url 的 br 码率（exhigh≈320k 高音质） */
@@ -353,4 +364,76 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 })
                 .onErrorReturn("");
     }
+
+    private void validateAlbumId(String id) {
+        ensureConfigured();
+        if (id == null || !id.matches("[1-9][0-9]{0,19}")) {
+            throw new ApiRequestException("无效的歌曲或专辑 ID");
+        }
+    }
+
+    private Mono<JsonNode> fetchAlbumData(String route, String id) {
+        return webClient.get()
+                .uri(baseUrl + route + "&cookie={cookie}", id, getCookie())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, response -> response.releaseBody()
+                        .then(Mono.error(new ApiRequestException("专辑读取失败，请稍后重试"))))
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(8))
+                .onErrorMap(error -> error instanceof ApiRequestException ? error
+                        : new ApiRequestException("专辑读取失败，请检查音乐接口连接"));
+    }
+
+    @Override
+    public Mono<AlbumInfo> getAlbumForSong(String musicId) {
+        return Mono.defer(() -> {
+            validateAlbumId(musicId);
+            return fetchAlbumData("/song/detail?ids={id}", musicId).flatMap(json -> {
+                JsonNode song = json.path("songs").path(0);
+                String albumId = song.path("al").path("id").asText("");
+                if (albumId.isBlank()) albumId = song.path("album").path("id").asText("");
+                if (albumId.isBlank() || "0".equals(albumId)) {
+                    return Mono.error(new ApiRequestException("这首歌暂无可添加的专辑"));
+                }
+                return getAlbum(albumId);
+            });
+        });
+    }
+
+    @Override
+    public Mono<AlbumInfo> getAlbum(String albumId) {
+        return Mono.defer(() -> {
+            validateAlbumId(albumId);
+            return fetchAlbumData("/album?id={id}", albumId).map(json -> {
+                JsonNode album = json.path("album");
+                if (album.path("id").asText("").isBlank() || !json.path("songs").isArray()) {
+                    throw new ApiRequestException("未找到专辑，或当前账号无法读取该专辑");
+                }
+                Map<String, Music> songs = new LinkedHashMap<>();
+                for (JsonNode song : json.path("songs")) {
+                    String id = song.path("id").asText("");
+                    if (id.isBlank() || "0".equals(id)) continue;
+                    JsonNode al = song.has("al") ? song.path("al") : song.path("album");
+                    songs.putIfAbsent(id, new Music(id, song.path("name").asText("未知歌曲"),
+                            albumArtists(song), song.path("dt").asLong(song.path("duration").asLong(0)),
+                            PLATFORM, upgradeToHttps(al.path("picUrl").asText(album.path("picUrl").asText("")))));
+                }
+                if (songs.isEmpty()) throw new ApiRequestException("专辑中没有可添加的曲目");
+                return new AlbumInfo(album.path("id").asText(),
+                        album.path("name").asText("未命名专辑"), albumArtists(album),
+                        upgradeToHttps(album.path("picUrl").asText("")), songs.size(), List.copyOf(songs.values()));
+            });
+        });
+    }
+
+    private List<String> albumArtists(JsonNode value) {
+        JsonNode artists = value.has("ar") ? value.path("ar") : value.path("artists");
+        List<String> names = new ArrayList<>();
+        for (JsonNode artist : artists) {
+            if (!artist.path("name").asText("").isBlank()) names.add(artist.path("name").asText());
+        }
+        if (names.isEmpty() && value.has("artist")) names.add(value.path("artist").path("name").asText("未知歌手"));
+        return names;
+    }
+
 }

@@ -1,104 +1,108 @@
 <template>
-  <div class="p-4">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="text-sm font-bold text-medical-400">在线成员</h3>
-      <div class="text-xs font-mono bg-accent/10 text-accent px-1">{{ users.length }}</div>
+    <div class="p-4">
+        <div class="mb-4 flex items-center justify-between">
+            <h3 class="text-sm font-bold text-ink-subtle">在线成员</h3>
+            <div class="text-xs font-mono bg-accent/10 text-accent px-1">{{ users.length }}</div>
+        </div>
+
+        <div class="space-y-3">
+            <!-- 自己 -->
+            <div
+                id="tutorial-rename"
+                class="flex items-center gap-3 pb-3 border-b border-line border-dashed transition-all duration-300 p-2 -mx-2 rounded"
+                :class="[
+                    isEnqueuerById(userStore.userToken)
+                        ? 'bg-accent/10 border-accent/30 shadow-sm'
+                        : isLikedUser(userStore.userToken)
+                          ? 'bg-accent/5'
+                          : '',
+                ]"
+            >
+                <div
+                    class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors rounded-none"
+                    :class="[
+                        isEnqueuerById(userStore.userToken)
+                            ? 'bg-accent text-accent-contrast'
+                            : isLikedUser(userStore.userToken)
+                              ? 'bg-accent text-accent-contrast'
+                              : 'bg-brand text-ink-inverse',
+                    ]"
+                >
+                    <span v-if="isEnqueuerById(userStore.userToken)">DJ</span>
+                    <Zap v-else-if="isLikedUser(userStore.userToken)" class="w-4 h-4 fill-current text-accent-contrast" />
+                    <span v-else>ME</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <input
+                        v-model="newName"
+                        @blur="doRename"
+                        @keyup.enter="doRename"
+                        class="w-full bg-transparent border-b border-transparent focus:border-accent outline-none text-sm font-bold"
+                        :class="isEnqueuerById(userStore.userToken) ? 'text-accent' : 'text-ink'"
+                    />
+                </div>
+
+                <!-- 使用 CSS 类控制动画 -->
+                <div v-if="isEnqueuerById(userStore.userToken)" class="flex gap-0.5 items-end h-4">
+                    <div class="bar bar-1 bg-accent"></div>
+                    <div class="bar bar-2 bg-accent"></div>
+                    <div class="bar bar-3 bg-accent"></div>
+                </div>
+                <div v-else class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
+            </div>
+
+            <!-- 其他人 -->
+            <div
+                v-for="u in others"
+                :key="u.sessionId"
+                class="flex items-center gap-3 transition-all duration-300 p-2 -mx-2 rounded"
+                :class="[isEnqueuerById(u.token) ? 'bg-accent/5' : isLikedUser(u.token) ? 'bg-accent/5' : '']"
+            >
+                <div
+                    class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors rounded-none"
+                    :class="[
+                        isEnqueuerById(u.token)
+                            ? 'bg-accent text-accent-contrast'
+                            : isLikedUser(u.token)
+                              ? 'bg-accent text-accent-contrast'
+                              : 'bg-line text-ink-muted',
+                    ]"
+                >
+                    <span v-if="isEnqueuerById(u.token)">DJ</span>
+                    <Zap v-else-if="isLikedUser(u.token)" class="w-4 h-4 fill-current text-accent-contrast" />
+                    <span v-else>OP</span>
+                </div>
+                <div
+                    class="text-sm font-bold truncate flex-1"
+                    :class="isEnqueuerById(u.token) ? 'text-accent' : 'text-ink'"
+                >
+                    {{ u.name }}
+                </div>
+
+                <!-- 使用 CSS 类控制动画 -->
+                <div v-if="isEnqueuerById(u.token)" class="flex gap-0.5 items-end h-4">
+                    <div class="bar bar-1 bg-accent"></div>
+                    <div class="bar bar-2 bg-accent"></div>
+                    <div class="bar bar-3 bg-accent"></div>
+                </div>
+                <div v-else class="w-2 h-2 bg-accent rounded-full"></div>
+            </div>
+        </div>
+
+        <!-- 直播流人数 -->
+        <div v-if="playerStore.streamListenerCount > 0" class="mt-4 pt-3 border-t border-line border-dashed">
+            <div class="flex items-center gap-3 p-2 -mx-2 opacity-60">
+                <div
+                    class="w-8 h-8 flex items-center justify-center bg-line text-ink-muted font-bold text-[10px] rounded-none"
+                >
+                    LIVE
+                </div>
+                <div class="text-xs font-bold text-ink">流在线 [{{ playerStore.streamListenerCount }}]</div>
+                <div class="flex-1"></div>
+                <div class="w-2 h-2 bg-line-strong rounded-full animate-pulse"></div>
+            </div>
+        </div>
     </div>
-
-    <div class="space-y-3">
-      <!-- 自己 -->
-      <div
-          id="tutorial-rename"
-          class="flex items-center gap-3 pb-3 border-b border-medical-200 border-dashed transition-all duration-300 p-2 -mx-2 rounded"
-          :class="[
-              isEnqueuerById(userStore.userToken) ? 'bg-accent/10 border-accent/30 shadow-sm' :
-              isLikedUser(userStore.userToken) ? 'bg-accent/5' : ''
-          ]"
-      >
-        <div
-            class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors rounded-none"
-            :class="[
-                isEnqueuerById(userStore.userToken) ? 'bg-accent text-white' :
-                isLikedUser(userStore.userToken) ? 'bg-accent text-white' :
-                'bg-medical-900 text-white'
-            ]"
-        >
-          <span v-if="isEnqueuerById(userStore.userToken)">DJ</span>
-          <Zap v-else-if="isLikedUser(userStore.userToken)" class="w-4 h-4 fill-white text-white" />
-          <span v-else>ME</span>
-        </div>
-        <div class="flex-1 min-w-0">
-          <input
-              v-model="newName"
-              @blur="doRename"
-              @keyup.enter="doRename"
-              class="w-full bg-transparent border-b border-transparent focus:border-accent outline-none text-sm font-bold"
-              :class="isEnqueuerById(userStore.userToken) ? 'text-accent' : 'text-medical-900'"
-          />
-        </div>
-
-        <!-- 使用 CSS 类控制动画 -->
-        <div v-if="isEnqueuerById(userStore.userToken)" class="flex gap-0.5 items-end h-4">
-          <div class="bar bar-1 bg-accent"></div>
-          <div class="bar bar-2 bg-accent"></div>
-          <div class="bar bar-3 bg-accent"></div>
-        </div>
-        <div v-else class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
-      </div>
-
-      <!-- 其他人 -->
-      <div
-          v-for="u in others"
-          :key="u.sessionId"
-          class="flex items-center gap-3 transition-all duration-300 p-2 -mx-2 rounded"
-          :class="[
-              isEnqueuerById(u.token) ? 'bg-accent/5' :
-              isLikedUser(u.token) ? 'bg-accent/5' : ''
-          ]"
-      >
-        <div
-            class="w-8 h-8 flex items-center justify-center font-bold text-xs transition-colors rounded-none"
-            :class="[
-                isEnqueuerById(u.token) ? 'bg-accent text-white' :
-                isLikedUser(u.token) ? 'bg-accent text-white' :
-                'bg-medical-200 text-medical-500'
-            ]"
-        >
-          <span v-if="isEnqueuerById(u.token)">DJ</span>
-          <Zap v-else-if="isLikedUser(u.token)" class="w-4 h-4 fill-white text-white" />
-          <span v-else>OP</span>
-        </div>
-        <div
-            class="text-sm font-bold truncate flex-1"
-            :class="isEnqueuerById(u.token) ? 'text-accent' : 'text-medical-900'"
-        >
-          {{ u.name }}
-        </div>
-
-        <!-- 使用 CSS 类控制动画 -->
-        <div v-if="isEnqueuerById(u.token)" class="flex gap-0.5 items-end h-4">
-          <div class="bar bar-1 bg-accent"></div>
-          <div class="bar bar-2 bg-accent"></div>
-          <div class="bar bar-3 bg-accent"></div>
-        </div>
-        <div v-else class="w-2 h-2 bg-accent rounded-full"></div>
-      </div>
-    </div>
-
-    <!-- 直播流人数 -->
-    <div v-if="playerStore.streamListenerCount > 0" class="mt-4 pt-3 border-t border-medical-200 border-dashed">
-      <div class="flex items-center gap-3 p-2 -mx-2 opacity-60">
-        <div class="w-8 h-8 flex items-center justify-center bg-medical-200 text-medical-500 font-bold text-[10px] rounded-none">
-          LIVE
-        </div>
-        <div class="text-xs font-bold text-medical-800">
-          流在线 [{{ playerStore.streamListenerCount }}]
-        </div>
-        <div class="flex-1"></div>
-        <div class="w-2 h-2 bg-medical-400 rounded-full animate-pulse"></div>
-      </div>
-    </div>
-  </div>
 </template>
 
 <script setup>
@@ -114,44 +118,61 @@ const me = computed(() => userStore.currentUser);
 const newName = ref(me.value.name);
 
 const isLikedUser = (token) => {
-  if (!playerStore.nowPlaying) return false;
-  return playerStore.nowPlaying.likedUserIds?.includes(token);
+    if (!playerStore.nowPlaying) return false;
+    return playerStore.nowPlaying.likedUserIds?.includes(token);
 };
 
-watch(() => me.value.name, (n) => newName.value = n);
+watch(
+    () => me.value.name,
+    (n) => (newName.value = n)
+);
 
-const others = computed(() => users.value.filter(u => u.token !== userStore.userToken));
+const others = computed(() => users.value.filter((u) => u.token !== userStore.userToken));
 
 const doRename = () => {
-  if(newName.value && newName.value !== me.value.name) {
-    playerStore.renameUser(newName.value);
-  }
+    if (newName.value && newName.value !== me.value.name) {
+        playerStore.renameUser(newName.value);
+    }
 };
 
 const isEnqueuerById = (token) => {
-  if (!playerStore.nowPlaying) return false;
-  // 后端 NowPlayingInfo 现在存的是 enqueuedById (Token)
-  // 我们比较：这首歌的Token === 列表里该用户的Token
-  return playerStore.nowPlaying.enqueuedById === token;
+    if (!playerStore.nowPlaying) return false;
+    // 后端 NowPlayingInfo 现在存的是 enqueuedById (Token)
+    // 我们比较：这首歌的Token === 列表里该用户的Token
+    return playerStore.nowPlaying.enqueuedById === token;
 };
 </script>
 
 <style scoped>
 /* 使用标准 CSS 实现跳动效果 */
 .bar {
-  width: 3px;
-  border-radius: 1px;
-  /* 使用 transform 性能更好 */
-  transform-origin: bottom;
-  animation: bounce infinite ease-in-out;
+    width: 3px;
+    border-radius: 1px;
+    /* 使用 transform 性能更好 */
+    transform-origin: bottom;
+    animation: bounce infinite ease-in-out;
 }
 
-.bar-1 { animation-duration: 0.6s; height: 60%; }
-.bar-2 { animation-duration: 0.8s; height: 100%; }
-.bar-3 { animation-duration: 0.5s; height: 40%; }
+.bar-1 {
+    animation-duration: 0.6s;
+    height: 60%;
+}
+.bar-2 {
+    animation-duration: 0.8s;
+    height: 100%;
+}
+.bar-3 {
+    animation-duration: 0.5s;
+    height: 40%;
+}
 
 @keyframes bounce {
-  0%, 100% { transform: scaleY(0.4); }
-  50% { transform: scaleY(1); }
+    0%,
+    100% {
+        transform: scaleY(0.4);
+    }
+    50% {
+        transform: scaleY(1);
+    }
 }
 </style>

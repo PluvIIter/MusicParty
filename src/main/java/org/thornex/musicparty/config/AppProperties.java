@@ -38,6 +38,10 @@ public class AppProperties {
         private int maxSize = 1000;
         private int historySize = 50;
         private int maxUserSongs = 100;
+        /** Room members may explicitly recover an absent owner's queued songs when enabled. */
+        private volatile boolean allowPlaylistClaim = false;
+        // Opt in to a reusable playlist; false preserves queue consumption.
+        private volatile boolean retainPlaylist = false;
         private String persistenceFile = "data/queue-data.json";
         private long persistenceIntervalMs = 60000; // Default save every 1 minute
     }
@@ -45,6 +49,8 @@ public class AppProperties {
     @Data
     public static class PlayerConfig {
         private int maxPlaylistImportSize = 100;
+        /** 是否允许房间成员拖动进度条（默认关闭：同步听歌有意对齐同一进度）。 */
+        private volatile boolean allowSeek = false;
         private boolean voteSkipEnabled = false;
         private double voteSkipThreshold = 0.5;
         private int voteSkipWaitTime = 15;

@@ -3,35 +3,132 @@
 @tailwind utilities;
 
 body {
-  @apply bg-medical-50 text-medical-800 font-sans antialiased overflow-hidden;
+    @apply font-sans antialiased overflow-hidden;
 }
 
 /* 自定义滚动条 */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+    width: 6px;
+    height: 6px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+    @apply bg-transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-medical-200 hover:bg-medical-400 rounded transition-colors;
+    @apply bg-line hover:bg-line-strong rounded transition-colors;
 }
 
 /* 切角效果 (Chamfer) - 核心设计元素 */
 .chamfer-br {
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
 }
 .chamfer-tl {
-  clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
+    clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
 }
 
 @keyframes scan {
-  0% { background-position: 0 0; }
-  100% { background-position: 0 100%; }
+    0% {
+        background-position: 0 0;
+    }
+    100% {
+        background-position: 0 100%;
+    }
 }
 
 .animate-scan {
-  /* 背景图片很小，repeat 之后移动背景位置就能产生流动感 */
-  animation: scan 1s linear infinite;
+    /* 背景图片很小，repeat 之后移动背景位置就能产生流动感 */
+    animation: scan 1s linear infinite;
+}
+
+/* ==========================================================================
+ * 主题令牌（design tokens）
+ *
+ * 组件使用「角色」而不是具体色阶：surface（表面）/ ink（文字）/ line（描边）/ brand（深色块）。
+ * 明暗两套值只在这里切换，组件模板里不需要任何 dark: 前缀或属性选择器覆盖。
+ * 由 ui store 写入 <html data-theme="dark">。
+ * ========================================================================== */
+@layer base {
+    :root {
+        --mp-surface: 249 250 251; /* 页面底色 */
+        --mp-surface-raised: 255 255 255; /* 卡片 / 面板 */
+        --mp-surface-sunken: 243 244 246; /* 次级底色 */
+        --mp-ink: 17 24 39; /* 主文字 */
+        --mp-ink-muted: 107 114 128; /* 次级文字 */
+        --mp-ink-subtle: 156 163 175; /* 弱化文字 */
+        --mp-ink-inverse: 255 255 255; /* 浅色沿用纯白（不改动白天观感） */
+        --mp-line: 229 231 235; /* 描边 / 分隔 / 轨道 */
+        --mp-line-strong: 209 213 219;
+        --mp-brand: 17 24 39; /* 深色块（按钮 / 表头 / 背板） */
+        --mp-brand-soft: 55 65 81;
+        --mp-grid-line: rgba(17, 24, 39, 0.03); /* 视觉器背景网格 */
+        --mp-graphic: 229 231 235; /* 浅色沿用原水印灰 #E5E7EB */
+        --mp-accent: 249 115 22; /* 强调橙：浅色保持原亮度 */
+        --mp-accent-hover: 234 88 12;
+        --mp-on-accent: 255 255 255;
+        --mp-ring: 209 213 219; /* 浅色沿用原刻度环灰 #D1D5DB */
+    }
+
+    [data-theme='dark'] {
+        color-scheme: dark;
+        --mp-surface: 21 23 25;
+        --mp-surface-raised: 30 33 36;
+        --mp-surface-sunken: 17 19 21;
+        --mp-ink: 227 229 231;
+        --mp-ink-muted: 172 178 184;
+        --mp-ink-subtle: 147 156 165;
+        --mp-ink-inverse: 227 229 231;
+        --mp-line: 51 56 61;
+        --mp-line-strong: 80 88 95;
+        --mp-brand: 39 43 47;
+        --mp-brand-soft: 47 52 57;
+        --mp-grid-line: rgba(172, 178, 184, 0.035);
+        --mp-graphic: 51 56 61;
+        --mp-accent: 219 133 63;
+        --mp-accent-hover: 230 150 84;
+        --mp-on-accent: 24 19 15;
+        --mp-ring: 80 88 95;
+    }
+
+    body {
+        background-color: rgb(var(--mp-surface));
+        color: rgb(var(--mp-ink));
+    }
+
+    ::placeholder {
+        color: rgb(var(--mp-ink-subtle));
+    }
+
+    input,
+    textarea,
+    select {
+        color: rgb(var(--mp-ink));
+    }
+}
+
+/* 进度条可拖动时的键盘焦点提示（role=slider + tabindex） */
+.mp-seek:focus-visible {
+    outline: 2px solid rgb(var(--mp-accent));
+    outline-offset: 3px;
+}
+/* 专辑封面边框：深色下做克制的呼吸（浅色保持原样不动） */
+@keyframes mp-border-breathe {
+    0%,
+    100% {
+        border-color: rgb(var(--mp-accent) / 0.55);
+        box-shadow: 0 0 0 0 rgb(var(--mp-accent) / 0);
+    }
+    50% {
+        border-color: rgb(var(--mp-accent) / 1);
+        box-shadow: 0 0 12px 0 rgb(var(--mp-accent) / 0.18);
+    }
+}
+
+[data-theme='dark'] .mp-breathe-border {
+    animation: mp-border-breathe 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-theme='dark'] .mp-breathe-border {
+        animation: none;
+    }
 }

@@ -1,10 +1,17 @@
-import { Client } from '@stomp/stompjs';
+import { Client, TickerStrategy } from '@stomp/stompjs';
+import { WS_DEST } from '../constants/api';
+import { createCompactReceiver } from './compactSync';
 
 class SocketService {
     constructor() {
         this.client = null;
         this.connected = false;
         this.stompConfig = null;
+        this.lastMessageAt = 0;
+        this.lastReconnectAt = 0;
+        this.callbacks = null;
+        this.subscriptionHandles = new Map();
+        this.compact = null;
     }
 
     /**
@@ -19,6 +26,18 @@ class SocketService {
     connect(authHeaders, callbacks, subscriptions) {
         // 避免重复连接
         if (this.client && this.client.active) return;
+        this.callbacks = callbacks;
+        const legacyTopics = [WS_DEST.TOPIC_STATE, WS_DEST.USER_STATE, WS_DEST.TOPIC_QUEUE, WS_DEST.TOPIC_USERS];
+        this.compact = createCompactReceiver({
+            apply: (state) => subscriptions[WS_DEST.TOPIC_STATE]?.(state),
+            requestSnapshot: () => this.send(WS_DEST.COMPACT_RESYNC),
+            activated: () => {
+                for (const topic of legacyTopics) {
+                    this.subscriptionHandles.get(topic)?.unsubscribe();
+                    this.subscriptionHandles.delete(topic);
+                }
+            },
+        });
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const brokerURL = `${protocol}//${window.location.host}/ws`;
@@ -28,17 +47,34 @@ class SocketService {
             connectHeaders: authHeaders,
             heartbeatIncoming: 10000,
             heartbeatOutgoing: 10000,
+            heartbeatStrategy: typeof Worker === 'undefined' ? TickerStrategy.Interval : TickerStrategy.Worker,
+            connectionTimeout: 10000,
+            discardWebsocketOnCommFailure: true,
             reconnectDelay: 2000,
 
             onConnect: (frame) => {
                 this.connected = true;
+                this.lastMessageAt = Date.now();
+                this.compact.reset();
+                this.subscriptionHandles.clear();
 
-                // 1. 注册所有订阅
-                Object.entries(subscriptions).forEach(([topic, handler]) => {
-                    this.client.subscribe(topic, (message) => {
+                // 1. 注册所有订阅（compact 通道优先；其激活后忽略对应的 legacy 主题）
+                const compactHandler = (frame) => this.compact.receive(frame);
+                const allSubscriptions = {
+                    [WS_DEST.TOPIC_COMPACT]: compactHandler,
+                    [WS_DEST.USER_COMPACT]: compactHandler,
+                    ...subscriptions,
+                    [WS_DEST.APP_COMPACT]: compactHandler,
+                };
+                Object.entries(allSubscriptions).forEach(([topic, handler]) => {
+                    const subscription = this.client.subscribe(topic, (message) => {
+                        // 心跳/半开连接检测：任何入站消息都算作链路活动的证据
+                        this.lastMessageAt = Date.now();
                         const body = JSON.parse(message.body);
+                        if (this.compact.isActive() && legacyTopics.includes(topic)) return;
                         handler(body);
                     });
+                    this.subscriptionHandles.set(topic, subscription);
                 });
 
                 // 2. 触发连接成功回调
@@ -49,19 +85,21 @@ class SocketService {
             onWebSocketClose: () => {
                 console.warn('WebSocket connection closed.');
                 this.connected = false;
+                this.compact.reset();
                 // 触发断开回调，让 Store 感知状态变化
                 if (callbacks.onDisconnect) callbacks.onDisconnect();
             },
 
             onDisconnect: () => {
                 this.connected = false;
+                this.compact.reset();
                 if (callbacks.onDisconnect) callbacks.onDisconnect();
             },
 
             onStompError: (frame) => {
                 console.error('STOMP Error:', frame.body);
                 if (callbacks.onStompError) callbacks.onStompError(frame);
-            }
+            },
         });
 
         this.client.activate();
@@ -74,19 +112,36 @@ class SocketService {
      */
     send(destination, body = {}) {
         if (this.client && this.connected) {
+            if (destination === WS_DEST.RESYNC && this.hasCompactSync()) destination = WS_DEST.COMPACT_RESYNC;
             this.client.publish({ destination, body: JSON.stringify(body) });
         } else {
             console.warn('Socket not connected, cannot send:', destination);
         }
     }
 
+    hasCompactSync() {
+        return this.compact?.isActive() === true;
+    }
+
     /**
      * 强制重连 (用于网络恢复或从后台切回时)
      */
     forceReconnect() {
-        if (this.client && !this.client.active) {
+        if (!this.client) return;
+        if (!this.client.active) {
             console.log('Force reconnecting socket...');
             this.client.activate();
+        } else if (
+            this.client.connected &&
+            Date.now() - this.lastMessageAt > 20000 &&
+            Date.now() - this.lastReconnectAt > 10000
+        ) {
+            // active means reconnect is enabled, not that the existing transport is healthy.
+            // A suspended phone can return with a half-open socket still marked connected.
+            this.lastReconnectAt = Date.now();
+            this.connected = false;
+            this.callbacks?.onDisconnect?.();
+            this.client.forceDisconnect();
         }
     }
 

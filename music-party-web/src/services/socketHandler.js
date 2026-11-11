@@ -26,7 +26,8 @@ function handleGameEvent(event) {
     if (event.action === 'ADMIN_TRIGGER') {
         if (adminStore.adminPassword) {
             // Attempt auto-login
-            adminApi.verify(adminStore.adminPassword)
+            adminApi
+                .verify(adminStore.adminPassword)
                 .then(() => {
                     adminStore.isVerified = true;
                     adminStore.showDashboard = true;
@@ -54,7 +55,10 @@ function handleGameEvent(event) {
         return;
     }
 
-    if (event.action === 'RENAME_FAILED' || (event.type === 'ERROR' && event.message && (event.message.includes('taken') || event.message.includes('占用')))) {
+    if (
+        event.action === 'RENAME_FAILED' ||
+        (event.type === 'ERROR' && event.message && (event.message.includes('taken') || event.message.includes('占用')))
+    ) {
         // 在改名弹窗内展示失败原因（弹窗背板会模糊背景 toast，故不走 toast）
         userStore.renameError = event.message || '该名称已被占用，请更换。';
         userStore.showNameModal = true;
@@ -71,18 +75,22 @@ function handleGameEvent(event) {
     let msgText = event.message || event.payload || `${userName} ${event.action}`;
 
     // 将后端 Level 枚举映射为 toast 类型
-    const typeMap = { 'error': 'error', 'warn': 'warning', 'success': 'success' };
+    const typeMap = { error: 'error', warn: 'warning', success: 'success' };
     let type = typeMap[event.type?.toLowerCase()] || 'info';
     if (event.action === 'ERROR_LOAD') type = 'error';
 
     show({
-        title: event.action === 'ERROR_LOAD' ? 'PLAYBACK ERROR'
-             : event.action === 'SYSTEM_MESSAGE' ? 'SYSTEM'
-             : event.action === 'MODE_CHANGE' ? '播放模式'
-             : event.action,
+        title:
+            event.action === 'ERROR_LOAD'
+                ? 'PLAYBACK ERROR'
+                : event.action === 'SYSTEM_MESSAGE'
+                  ? 'SYSTEM'
+                  : event.action === 'MODE_CHANGE'
+                    ? '播放模式'
+                    : event.action,
         message: msgText,
         type: type,
-        duration: 3000
+        duration: 3000,
     });
 }
 
@@ -104,7 +112,9 @@ export const createSocketSubscriptions = () => {
         [WS_DEST.TOPIC_USERS]: (users) => userStore.setOnlineUsers(users),
 
         // 3. 队列更新
-        [WS_DEST.TOPIC_QUEUE]: (data) => { playerStore.queue = data; },
+        [WS_DEST.TOPIC_QUEUE]: (data) => {
+            playerStore.queue = data;
+        },
 
         // 4. 事件通知 (Toast)
         [WS_DEST.TOPIC_EVENTS]: handleGameEvent,
@@ -118,7 +128,7 @@ export const createSocketSubscriptions = () => {
         [WS_DEST.APP_CHAT_HISTORY]: (history) => chatStore.setHistory(history),
 
         // 分页历史记录回调
-        [WS_DEST.USER_CHAT_HISTORY]: (moreMessages) => chatStore.prependHistory(moreMessages)
+        [WS_DEST.USER_CHAT_HISTORY]: (moreMessages) => chatStore.prependHistory(moreMessages),
     };
 };
 
@@ -136,7 +146,7 @@ export const createSocketCallbacks = () => {
             playerStore.connected = true;
             // 发起同步
             setTimeout(() => {
-                socketService.send(WS_DEST.RESYNC);
+                if (!socketService.hasCompactSync()) socketService.send(WS_DEST.RESYNC);
             }, 300);
             // 恢复绑定
             Object.entries(userStore.bindings).forEach(([platform, id]) => {
@@ -162,7 +172,7 @@ export const createSocketCallbacks = () => {
 
             // 强制刷新页面 (STOMP ERROR 帧通常意味着连接已不可用)
             window.location.reload();
-        }
+        },
     };
 };
 

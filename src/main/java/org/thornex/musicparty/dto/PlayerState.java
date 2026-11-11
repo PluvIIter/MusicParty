@@ -22,7 +22,11 @@ public record PlayerState(
         int voteSkipWaitTime,
         int currentVotes,
         int eligibleUsers,
-        AppConfigSummary config
+        /** 每次房间级 seek 自增；客户端据此重锚本地时钟（否则回退会被当成迟到包忽略）。 */
+        long seekNonce,
+        String playbackId,
+        AppConfigSummary config,
+        java.util.Map<String, Boolean> memberShufflePreferences
 ) {
     public record AppConfigSummary(
             int maxQueueSize,
@@ -39,7 +43,11 @@ public record PlayerState(
             double voteSkipThreshold,
             int voteSkipWaitTime,
             boolean neteaseCookieConfigured,
-            PrivateDjConfigSummary privateDj
+            PrivateDjConfigSummary privateDj,
+            boolean allowPlaylistClaim,
+            boolean retainPlaylist,
+            /** 是否允许拖动进度条（管理面板开关，默认关闭）。 */
+            boolean allowSeek
     ) {
         public record PrivateDjConfigSummary(
                 String mode,

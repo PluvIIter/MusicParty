@@ -1,15 +1,23 @@
 // src/stores/ui.js
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
-import { STORAGE_KEYS } from '../constants/keys';
+import { computed, ref, watch } from 'vue';
+import { THEMES } from '../constants/themes';
+import { applyTheme, readThemePreference } from '../domain/theme';
+import { STORAGE_KEYS } from '../constants/storage';
 import client from '../api/client';
 
 export const useUiStore = defineStore('ui', () => {
     const isLiteMode = ref(false);
     const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
-    const autoLiteMode = ref(localStorage.getItem('mp_auto_lite_mode') !== 'false'); // 默认 true
+    const autoLiteMode = ref(localStorage.getItem(STORAGE_KEYS.AUTO_LITE_MODE) !== 'false'); // 默认 true
     const authorName = ref('ThorNex');
     const backWords = ref('THORNEX');
+
+    const themeId = ref(readThemePreference());
+    const isDarkMode = computed(() => THEMES.find((theme) => theme.id === themeId.value)?.mode === 'dark');
+    const setTheme = (id) => {
+        if (THEMES.some((theme) => theme.id === id)) themeId.value = id;
+    };
 
     const toggleLiteMode = () => {
         isLiteMode.value = !isLiteMode.value;
@@ -35,8 +43,21 @@ export const useUiStore = defineStore('ui', () => {
     });
 
     watch(autoLiteMode, (newVal) => {
-        localStorage.setItem('mp_auto_lite_mode', newVal.toString());
+        localStorage.setItem(STORAGE_KEYS.AUTO_LITE_MODE, newVal.toString());
     });
+
+    watch(
+        themeId,
+        (id) => {
+            applyTheme(id);
+            try {
+                localStorage.setItem(STORAGE_KEYS.THEME, id);
+            } catch {
+                /* Keep the applied theme even if the browser refuses persistence. */
+            }
+        },
+        { immediate: true, flush: 'sync' }
+    );
 
     return {
         isLiteMode,
@@ -46,6 +67,9 @@ export const useUiStore = defineStore('ui', () => {
         autoLiteMode,
         authorName,
         backWords,
-        fetchConfig
+        fetchConfig,
+        isDarkMode,
+        themeId,
+        setTheme,
     };
 });

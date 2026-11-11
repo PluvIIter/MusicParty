@@ -1,13 +1,14 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { STORAGE_KEYS } from '../constants/keys';
+import { STORAGE_KEYS } from '../constants/storage';
 
 const generateToken = () => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = (Math.random() * 16) | 0,
+            v = c == 'x' ? r : (r & 0x3) | 0x8;
         return v.toString(16);
     });
-}
+};
 
 let storedToken = localStorage.getItem(STORAGE_KEYS.TOKEN);
 if (!storedToken) {
@@ -19,7 +20,7 @@ const userToken = ref(storedToken);
 const storageName = localStorage.getItem(STORAGE_KEYS.USERNAME);
 const currentUser = ref({
     name: storageName || '游客',
-    sessionId: ''
+    sessionId: '',
 });
 
 export const useUserStore = defineStore('user', () => {
@@ -28,10 +29,10 @@ export const useUserStore = defineStore('user', () => {
     const isAuthPassed = ref(false);
 
     // 启动时：严格从 LocalStorage 读取，默认值只在这里设定一次
-    const storageName = localStorage.getItem('mp_username');
+    const storageName = localStorage.getItem(STORAGE_KEYS.USERNAME);
     const currentUser = ref({
         name: storageName || '游客',
-        sessionId: ''
+        sessionId: '',
     });
 
     const bindings = ref(JSON.parse(localStorage.getItem(STORAGE_KEYS.BINDINGS) || '{}'));
@@ -54,9 +55,9 @@ export const useUserStore = defineStore('user', () => {
         if (id === userToken.value) return currentUser.value.name;
 
         // 否则去在线列表里找 (通过 u.token 匹配)
-        const u = onlineUsers.value.find(u => u.token === id);
+        const u = onlineUsers.value.find((u) => u.token === id);
 
-        return u ? u.name : (fallbackName || 'Unknown Agent');
+        return u ? u.name : fallbackName || 'Unknown Agent';
     };
 
     /**
@@ -76,7 +77,7 @@ export const useUserStore = defineStore('user', () => {
         if (serverIsGuest !== undefined) {
             // 状态变更检测: Guest -> User (转正)
             if (isGuest.value && !serverIsGuest) {
-                console.log("Identity upgraded to User");
+                console.log('Identity upgraded to User');
                 isGuest.value = false;
                 localStorage.setItem(STORAGE_KEYS.USERNAME, serverName);
                 showNameModal.value = false; // 成功改名后自动关闭弹窗
@@ -89,7 +90,7 @@ export const useUserStore = defineStore('user', () => {
             }
             // 状态变更检测: User -> Guest (降级/重置)
             else if (!isGuest.value && serverIsGuest) {
-                console.log("Identity degraded to Guest");
+                console.log('Identity degraded to Guest');
                 isGuest.value = true;
                 localStorage.removeItem(STORAGE_KEYS.USERNAME);
             }
@@ -115,15 +116,15 @@ export const useUserStore = defineStore('user', () => {
     // 废弃: 不再直接修改本地状态，改为等待 initUser 的后端回调
     const saveName = (newName) => {
         // Logic moved to initUser response handling
-    }
+    };
 
     const setPostNameAction = (fn) => {
         onNameSetCallback.value = fn;
-    }
+    };
 
     const resetAuthentication = () => {
         isAuthPassed.value = false;
-        localStorage.removeItem(STORAGE_KEYS.ROOM_PASSWORD);// 清除本地保存的旧密码
+        localStorage.removeItem(STORAGE_KEYS.ROOM_PASSWORD); // 清除本地保存的旧密码
     };
 
     return {
@@ -141,6 +142,6 @@ export const useUserStore = defineStore('user', () => {
         userToken,
         setPostNameAction,
         isAuthPassed,
-        resetAuthentication
+        resetAuthentication,
     };
 });

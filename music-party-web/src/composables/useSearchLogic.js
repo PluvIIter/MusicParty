@@ -37,6 +37,6 @@ export function useSearchLogic(emit) {
         songs,
         loading,
         listMode,
-        doSearch
+        doSearch,
     };
 }
