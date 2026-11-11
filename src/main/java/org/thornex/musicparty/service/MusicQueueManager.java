@@ -70,7 +70,7 @@ public class MusicQueueManager {
                 music,
                 enqueuedBy,
                 initialStatus // 存储枚举的名称
-        );
+        , org.thornex.musicparty.enums.Priority.REGULAR);
         queue.addLast(newItem);
         return newItem;
     }
@@ -157,12 +157,11 @@ public class MusicQueueManager {
     /**
      * 从队列中取出下一首可播放的歌曲
      * @param playMode 当前播放模式
-     * @param isFairShuffle 兼容旧调用方，调度不再使用此参数
      * @param allowOfflineShuffle 是否允许随机到离线用户的歌
      * @param onlineUserTokens 在线用户的 Token 集合 (用于优先调度)
      * @return 下一首歌曲，如果队列为空则返回 null
      */
-    public synchronized MusicQueueItem pollNext(PlayMode playMode, boolean isFairShuffle, boolean allowOfflineShuffle, Map<String, QueueItemStatus> statusMap, Set<String> onlineUserTokens) {
+    public synchronized MusicQueueItem pollNext(PlayMode playMode, boolean allowOfflineShuffle, Map<String, QueueItemStatus> statusMap, Set<String> onlineUserTokens) {
         playbackRetryAt.entrySet().removeIf(entry -> entry.getValue() <= System.currentTimeMillis());
         if (!appProperties.getQueue().isRetainPlaylist()) shuffleCycle.clear();
         if (queue.isEmpty()) {
@@ -366,10 +365,6 @@ public class MusicQueueManager {
         memberShuffle.putAll(restored);
     }
 
-    public synchronized boolean reorder(String queueId, String beforeQueueId, String actorToken) {
-        return reorder(queueId, beforeQueueId, actorToken, PlayMode.ROUND_ROBIN);
-    }
-
     public synchronized boolean reorder(String queueId, String beforeQueueId, String actorToken, PlayMode mode) {
         if (!isMemberToken(actorToken) || mode == null) return false;
         List<MusicQueueItem> reordered = new ArrayList<>(queue);
@@ -417,13 +412,6 @@ public class MusicQueueManager {
     }
 
     public synchronized void restorePlayedQueueIds(Set<String> ids) {
-        if (ids == null) {
-            // Old snapshots have no ledger. Migrate only songs known in saved history.
-            Set<String> history = new HashSet<>();
-            getHistorySnapshot().forEach(m -> history.add(musicKey(m)));
-            ids = queue.stream().filter(item -> history.contains(musicKey(item.music())))
-                    .map(MusicQueueItem::queueId).collect(Collectors.toSet());
-        }
         shuffleCycle.restoreHeard(ids);
         shuffleCycle.prune(new ArrayList<>(queue));
     }
@@ -469,7 +457,7 @@ public class MusicQueueManager {
     /** 确保队列中存在一个私人FM 合成标记项（幂等） */
     public synchronized void ensureFmMarker() {
         if (queue.size() >= appProperties.getQueue().getMaxSize()) return;
-        Music fmMusic = new Music(FM_MARKER_ID, "私人FM", List.of("私人FM"), 0L, FM_MARKER_ID, null);
+        Music fmMusic = new Music(FM_MARKER_ID, "私人FM", List.of("私人FM"), 0L, FM_MARKER_ID, null, null);
         if (isMusicInQueue(fmMusic)) return;
         UserSummary fmUser = new UserSummary(FM_MARKER_USER_TOKEN, FM_MARKER_USER_TOKEN, "私人FM", false);
         queue.addLast(new MusicQueueItem(UUID.randomUUID().toString(), fmMusic, fmUser, QueueItemStatus.READY, Priority.REGULAR));
@@ -566,6 +554,6 @@ public class MusicQueueManager {
                 randomSong,
                 systemUser,
                 QueueItemStatus.PENDING
-        );
+        , org.thornex.musicparty.enums.Priority.REGULAR);
     }
 }

@@ -37,12 +37,10 @@ class MusicPlayerServiceJoinQueueTest {
         service = PlayerTestFactory.create(
                 List.of(),
                 mock(org.thornex.musicparty.service.UserService.class),
-                mock(org.thornex.musicparty.service.LocalCacheService.class),
                 mock(org.thornex.musicparty.service.stream.LiveStreamService.class),
                 queueManager,
                 mock(ApplicationEventPublisher.class),
                 props,
-                mock(NeteaseMusicApiService.class),
                 djService
         );
     }
@@ -99,10 +97,10 @@ class MusicPlayerServiceJoinQueueTest {
         when(djService.nextFmSegment()).thenReturn(Mono.empty());
 
         Music fmMusic = new Music(MusicQueueManager.FM_MARKER_ID, "私人FM", List.of("私人FM"), 0L,
-                MusicQueueManager.FM_MARKER_ID, null);
+                MusicQueueManager.FM_MARKER_ID, null, null);
         MusicQueueItem marker = new MusicQueueItem("qid", fmMusic,
                 new UserSummary(MusicQueueManager.FM_MARKER_USER_TOKEN, MusicQueueManager.FM_MARKER_USER_TOKEN, "私人FM", false),
-                QueueItemStatus.READY);
+                QueueItemStatus.READY, org.thornex.musicparty.enums.Priority.REGULAR);
         service.playFmMarkerNextForTest(marker);
 
         verify(queueManager).ensureFmMarker(); // 选中即补回，播放期间队列常驻"私人FM"
@@ -141,7 +139,7 @@ class MusicPlayerServiceJoinQueueTest {
         when(djService.isAvailable()).thenReturn(true);
         when(djService.authorizationScope()).thenReturn("netease:DJ:1");
         var segment = new PrivateDjSegment.Voice("https://audio.invalid/voice", "voice", 1000, null, null);
-        var playable = new PlayableMusic("voice", "DJ", List.of(), 1000, "netease", "https://audio.invalid/voice", null, false, "VOICE", null);
+        var playable = new PlayableMusic("voice", "DJ", List.of(), 1000, "netease", "https://audio.invalid/voice", null, "VOICE", null);
         var response = reactor.core.publisher.Sinks.<PlayableMusic>one();
         var callbackEntered = new java.util.concurrent.CountDownLatch(1);
         when(djService.getPlayable(segment)).thenReturn(response.asMono().doOnNext(value -> callbackEntered.countDown()));
@@ -177,14 +175,14 @@ class MusicPlayerServiceJoinQueueTest {
         load.setAccessible(true);
         load.invoke(service, segment, 0L, false);
         verify(djService, timeout(2000)).getPlayable(segment);
-        response.tryEmitValue(new PlayableMusic("song", "Song", List.of(), 1000, "netease", "https://audio.invalid/song", null, false));
+        response.tryEmitValue(new PlayableMusic("song", "Song", List.of(), 1000, "netease", "https://audio.invalid/song", null, "SONG", null));
         PlayerTestFactory.await(() -> !loading.get());
         assertNull(service.getCurrentPlayerState().nowPlaying());
     }
 
     @Test
     void fmSongPreservesIssuedMediaInstanceForRadioTimeline() {
-        var song = new PlayableMusic("song", "Song", List.of(), 1000, "netease", "https://audio.invalid/song", null, false);
+        var song = new PlayableMusic("song", "Song", List.of(), 1000, "netease", "https://audio.invalid/song", null, "SONG", null);
         service.applyFmDjSegmentForTest(song, new PrivateDjSegment.Song("song", "Song", List.of(), 1000, null));
         assertSame(song, service.getCurrentPlayerState().nowPlaying().music());
     }
@@ -193,7 +191,7 @@ class MusicPlayerServiceJoinQueueTest {
     void voiceSegmentNeverEntersHistory() {
         PlayableMusic voice = new PlayableMusic(
                 "voice1", "AI DJ", List.of("私人DJ"), 1000L,
-                "netease", "http://x.mp3", null, false);
+                "netease", "http://x.mp3", null, "SONG", null);
         service.applyFmDjSegmentForTest(voice,
                 new PrivateDjSegment.Voice("http://x.mp3", "voice1", 1000L, "1", null));
         service.setPositionForTest(1000L);

@@ -92,15 +92,7 @@ public class AdminController {
                 musicPlayerService.skipToNext("SYSTEM");
                 yield "已强制跳过当前歌曲";
             }
-            case "SHUFFLE" -> {
-                musicPlayerService.cyclePlayMode("SYSTEM");
-                yield "播放模式已切换";
-            }
             case "SET_PLAY_MODE" -> musicPlayerService.setPlayMode("SYSTEM", request.playMode()) ? "播放模式已切换" : null;
-            case "TOGGLE_FAIR_SHUFFLE" -> {
-                musicPlayerService.toggleFairShuffle("SYSTEM");
-                yield "随机算法已切换";
-            }
             case "TOGGLE_ALLOW_OFFLINE" -> {
                 musicPlayerService.toggleAllowOfflineShuffle("SYSTEM");
                 yield "离线成员过滤规则已更新";
@@ -153,7 +145,6 @@ public class AdminController {
 
         if ("netease".equalsIgnoreCase(request.platform())) {
             neteaseMusicApiService.updateCookie(request.value());
-            // 首次配置 cookie 后即时广播，刷新控制面板总开关门禁（neteaseCookieConfigured 来自 PlayerState）
             musicPlayerService.broadcastFullPlayerState();
             return ResponseEntity.ok(Map.of("message", "网易云音乐凭据已更新"));
         } else if ("bilibili".equalsIgnoreCase(request.platform())) {
@@ -216,14 +207,4 @@ public class AdminController {
         }
     }
 
-    // Keep compatibility for now or remove if sure
-    @Deprecated
-    @PostMapping("/command")
-    public ResponseEntity<?> handleAdminCommand(@RequestBody AdminCommandRequest request) {
-        if (!isValid(request.password())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
-        }
-        // ... (original implementation if still needed, but I'll remove it since we are refactoring)
-        return ResponseEntity.status(HttpStatus.GONE).body(Map.of("message", "This endpoint is deprecated. Use structured endpoints."));
-    }
 }

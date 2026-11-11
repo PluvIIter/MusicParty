@@ -23,19 +23,19 @@ class MusicPlayerServiceSourceTest {
         MusicQueueManager queue = new MusicQueueManager(config);
         var member = new org.thornex.musicparty.dto.UserSummary("A", "s", "Alice", false);
         for (String id : List.of("1", "2")) queue.add(new org.thornex.musicparty.dto.Music(
-                id, id, List.of(), 1000, "netease", ""), member, org.thornex.musicparty.enums.QueueItemStatus.READY);
+                id, id, List.of(), 1000, "netease", "", null), member, org.thornex.musicparty.enums.QueueItemStatus.READY);
         UserService users = mock(UserService.class);
         when(users.getOnlineUserSummaries()).thenReturn(List.of(member));
         when(users.getRecentlyActiveUserTokens()).thenReturn(java.util.Set.of("A"));
         NeteaseMusicApiService netease = mock(NeteaseMusicApiService.class);
         when(netease.getPlatformName()).thenReturn("netease");
-        when(netease.getPlayableMusic(anyString())).thenReturn(reactor.core.publisher.Mono.error(new RuntimeException("test unavailable")));
-        MusicPlayerService player = PlayerTestFactory.create(List.of(netease), users, mock(LocalCacheService.class),
+        MusicPlayerService player = PlayerTestFactory.create(List.of(netease), users,
                 mock(org.thornex.musicparty.service.stream.LiveStreamService.class), queue,
-                mock(ApplicationEventPublisher.class), config, netease, mock(PrivateDjService.class));
+                mock(ApplicationEventPublisher.class), config, mock(PrivateDjService.class));
+        when(PlayerTestFactory.media(player).getPlayableMusic(anyString(), anyString())).thenReturn(reactor.core.publisher.Mono.error(new RuntimeException("test unavailable")));
         player.playerLoop();
         PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());
-        verify(netease, times(2)).getPlayableMusic(anyString());
+        verify(PlayerTestFactory.media(player), times(2)).getPlayableMusic(anyString(), anyString());
         assertEquals(2, queue.getQueueSnapshot().size());
         assertNull(player.getCurrentPlayerState().nowPlaying());
         assertFalse(player.getCurrentPlayerState().isLoading());
@@ -55,12 +55,10 @@ class MusicPlayerServiceSourceTest {
         service = PlayerTestFactory.create(
                 List.of(api),
                 mock(org.thornex.musicparty.service.UserService.class),
-                mock(org.thornex.musicparty.service.LocalCacheService.class),
                 mock(org.thornex.musicparty.service.stream.LiveStreamService.class),
                 queueManager,
                 mock(ApplicationEventPublisher.class),
                 props,
-                api,
                 mock(PrivateDjService.class)
         );
     }

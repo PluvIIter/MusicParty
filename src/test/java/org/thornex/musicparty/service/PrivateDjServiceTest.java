@@ -189,7 +189,7 @@ class PrivateDjServiceTest {
     @Test
     void playableResolutionUsesProviderRatherThanInventingTrackSource() {
         service.nextSegment().block();
-        var playable = new PlayableMusic("1", "First", List.of(), 1000, "public-feed", "https://audio.invalid", null, false);
+        var playable = new PlayableMusic("1", "First", List.of(), 1000, "public-feed", "https://audio.invalid", null, "SONG", null);
         when(provider.getPlayable(first)).thenReturn(Mono.just(playable));
         assertSame(playable, service.getPlayable(first).block());
         verify(sources, atLeastOnce()).getRequired("public-feed");

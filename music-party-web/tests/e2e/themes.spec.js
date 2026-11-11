@@ -88,8 +88,8 @@ for (const width of [1280, 320]) {
     });
 }
 
-test('legacy dark setting migrates before connect and selection supports keyboard', async ({ page }) => {
-    await openRoom(page, 'dark');
+test('current dark palette applies before connect and selection supports keyboard', async ({ page }) => {
+    await openRoom(page, 'dark-platinum');
     await expect(page.locator('html')).toHaveAttribute('data-palette', 'dark-platinum');
     const trigger = page.getByRole('button', { name: '切换主题', exact: true });
     await trigger.focus();

@@ -24,13 +24,6 @@ describe('v2 source resource requests', () => {
             expect.objectContaining({ signal, params: { cursor: null, limit: 50 } })
         );
     });
-    it('resolves legacy source links through room-authorized adapter metadata only', () => {
-        musicApi.getExternalUrl('disabled/source', 'track/id');
-        expect(mocks.get).toHaveBeenCalledWith(
-            '/api/v2/sources/disabled%2Fsource/tracks/track%2Fid/external-url',
-            expect.objectContaining({ headers: { 'X-Room-Password': 'room-secret' } })
-        );
-    });
     it('keeps search query data out of route segments', () => {
         musicApi.search('future', 'a/b?x=#y');
         expect(mocks.get).toHaveBeenCalledWith(

@@ -57,12 +57,9 @@ export const usePlayerStore = defineStore('player', () => {
         maxChatHistorySize: 1000,
         minChatIntervalMs: 1000,
         maxChatMessageLength: 200,
-        neteaseEnabled: true,
-        bilibiliEnabled: true,
         voteSkipEnabled: false,
         voteSkipThreshold: 0.5,
         voteSkipWaitTime: 15,
-        neteaseCookieConfigured: false,
         allowPlaylistClaim: false,
         privateDj: {
             mode: 'OFF',
@@ -115,7 +112,7 @@ export const usePlayerStore = defineStore('player', () => {
         playbackId.value = state.nowPlaying ? state.playbackId || null : null;
         queue.value = state.queue;
         isPaused.value = state.isPaused;
-        playMode.value = state.playMode || (state.isShuffle ? 'SHUFFLE' : 'SEQUENTIAL');
+        playMode.value = state.playMode;
         memberShufflePreferences.value = { ...(state.memberShufflePreferences || {}) };
         allowOfflineShuffle.value = state.allowOfflineShuffle || false;
         isPauseLocked.value = state.isPauseLocked || false;
@@ -164,15 +161,6 @@ export const usePlayerStore = defineStore('player', () => {
             if (result.error) pending.reject(new Error(result.message));
             else pending.resolve(result);
         };
-        subscriptions[WS_DEST.USER_ALBUM_IMPORT] = (result) => {
-            const pending = albumRequests.get(result.requestId);
-            if (!pending) return;
-            clearTimeout(pending.timer);
-            albumRequests.delete(result.requestId);
-            if (result.error) pending.reject(new Error(result.message));
-            else pending.resolve(result);
-        };
-
         subscriptions[WS_DEST.USER_PLAYLIST_CLAIM] = (result) => {
             const pending = claimRequests.get(result.requestId);
             if (!pending) return;
@@ -236,7 +224,6 @@ export const usePlayerStore = defineStore('player', () => {
     // --- 指令发送 ---
     const playNext = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_NEXT);
     const togglePause = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_PAUSE);
-    const cyclePlayMode = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_SHUFFLE);
     const canSendQueueControl = () => connected.value && socketService.connected && requireAuth();
     const setPlayMode = (mode) => {
         if (!isPlayMode(mode) || isPlayModeLocked.value || !canSendQueueControl()) return;
@@ -268,8 +255,6 @@ export const usePlayerStore = defineStore('player', () => {
         useSourcesStore().isEnabled(platform) &&
         requireAuth() &&
         socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
-    const enqueuePlaylist = (platform, playlistId) =>
-        requireAuth() && socketService.send(WS_DEST.ENQUEUE_PLAYLIST, { platform, playlistId });
     const enqueueContainer = (platform, collectionType, containerId) => {
         if (!useSourcesStore().isEnabled(platform)) return Promise.reject(new Error('音乐源已禁用'));
         if (!requireAuth()) return Promise.reject(new Error('请先设置昵称'));
@@ -283,28 +268,6 @@ export const usePlayerStore = defineStore('player', () => {
             albumRequests.set(requestId, { resolve, reject, timer });
             try {
                 socketService.send(WS_DEST.ENQUEUE_CONTAINER, { platform, collectionType, containerId, requestId });
-            } catch (error) {
-                clearTimeout(timer);
-                albumRequests.delete(requestId);
-                reject(error);
-            }
-        });
-    };
-    const enqueueAlbum = (platform, albumId) => {
-        if (!requireAuth()) return Promise.reject(new Error('请先设置昵称，再添加专辑'));
-        if (!connected.value || !socketService.connected)
-            return Promise.reject(new Error('房间连接已断开，请连接后重试'));
-        // HTTP LAN deployments may not expose crypto.randomUUID.
-        const requestId =
-            globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                albumRequests.delete(requestId);
-                reject(new Error('等待添加结果超时，请先查看队列，避免重复操作'));
-            }, 20000);
-            albumRequests.set(requestId, { resolve, reject, timer });
-            try {
-                socketService.send(WS_DEST.ENQUEUE_ALBUM, { platform, albumId, requestId });
             } catch (error) {
                 clearTimeout(timer);
                 albumRequests.delete(requestId);
@@ -337,10 +300,6 @@ export const usePlayerStore = defineStore('player', () => {
         });
     };
 
-    const bindAccount = (platform, accountId) => {
-        userStore.updateBinding(platform, accountId);
-    };
-
     const claimPlaylist = (sourceToken) => {
         if (!connected.value || !socketService.connected)
             return Promise.reject(new Error('房间连接已断开，请重连后再试'));
@@ -364,7 +323,6 @@ export const usePlayerStore = defineStore('player', () => {
 
     const renameUser = (newName) => {
         socketService.send(WS_DEST.USER_RENAME, { newName });
-        // userStore.saveName(newName) removed; relying on backend sync
     };
 
     const sendLike = () => {
@@ -436,20 +394,16 @@ export const usePlayerStore = defineStore('player', () => {
         syncState, // 导出 syncState
         playNext,
         togglePause,
-        cyclePlayMode,
         setPlayMode,
         setMemberShuffle,
         reorderSong,
         seekTo,
         enqueue,
-        enqueuePlaylist,
-        enqueueAlbum,
         enqueueContainer,
         topSong,
         removeSong,
         claimPlaylist,
         clearMyPlaylist,
-        bindAccount,
         renameUser,
         sendChatMessage,
         sendLike,

@@ -128,7 +128,7 @@ class VoiceMediaDeliveryTest {
     @Test void rawOrAlteredVoiceCannotBecomeRadioInput() {
         PlayableMusic prepared = delivery.prepareVoice("stub", voice).block();
         PlayableMusic forged = new PlayableMusic(prepared.id(), prepared.name(), prepared.artists(), prepared.duration(), "stub",
-                "https://93.184.216.34/other.mp3", "", false, "VOICE");
+                "https://93.184.216.34/other.mp3", "", "VOICE", null);
         assertThrows(RuntimeException.class, () -> delivery.serverInput(forged).block());
         MediaDeliveryService restarted = new MediaDeliveryService(registry, cache);
         assertThrows(RuntimeException.class, () -> restarted.serverInput(prepared).block());
@@ -166,7 +166,7 @@ class VoiceMediaDeliveryTest {
         var mediaAccessor = type.getDeclaredMethod("media"); mediaAccessor.setAccessible(true);
         ResolvedMedia original = (ResolvedMedia) mediaAccessor.invoke(asset);
         ResolvedMedia expired = new ResolvedMedia(original.resource(), original.representationKey(), original.url(), original.mimeType(), original.extension(),
-                Instant.now().minusSeconds(1), Map.of(), true);
+                Instant.now().minusSeconds(1), Map.of(), true, original.representationKey());
         associations.put(key, constructor.newInstance("stub", prepared.id(), delivery.authorizationScope("stub"), expired,
                 "unused", prepared.url()));
         assertFalse(delivery.inputAvailable(prepared)); assertThrows(RuntimeException.class, () -> delivery.serverInput(prepared).block());

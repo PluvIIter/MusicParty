@@ -39,6 +39,7 @@ public class QueuePersistenceService {
     private final MusicPlayerService musicPlayerService;
     private final AuthController authController;
     private final LiveStreamService liveStreamService;
+    private boolean persistenceRejected;
 
     @PostConstruct
     public void init() {
@@ -56,8 +57,10 @@ public class QueuePersistenceService {
     }
 
     public synchronized void saveNow() throws IOException {
+        if (persistenceRejected) throw new IOException("Persistence file was rejected; choose a new persistence-file path");
         File file = getPersistenceFile();
         PersistentData data = new PersistentData();
+        data.setSchemaVersion(1);
         synchronized (musicQueueManager) {
             data.setQueue(musicQueueManager.getQueueSnapshot());
             data.setPlayedQueueIds(musicQueueManager.getPlayedQueueIds());
@@ -66,7 +69,6 @@ public class QueuePersistenceService {
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
         data.setSettings(buildSettingsSnapshot());
-        data.setPlaybackModeVersion(2);
         objectMapper.writeValue(file, data);
         log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
     }
@@ -81,8 +83,10 @@ public class QueuePersistenceService {
 
     /** Persist a proposed queue before publishing its ownership to runtime state. Failure propagates to the caller. */
     public synchronized void saveQueueSnapshot(List<MusicQueueItem> entries) throws IOException {
+        if (persistenceRejected) throw new IOException("Persistence file was rejected; choose a new persistence-file path");
         Path file = getPersistenceFile().toPath().toAbsolutePath().normalize();
         PersistentData data = new PersistentData();
+        data.setSchemaVersion(1);
         synchronized (musicQueueManager) {
             data.setQueue(List.copyOf(entries));
             Set<String> playedQueueIds = new HashSet<>(musicQueueManager.getPlayedQueueIds());
@@ -99,7 +103,6 @@ public class QueuePersistenceService {
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
         data.setSettings(buildSettingsSnapshot());
-        data.setPlaybackModeVersion(2);
         Path temporary = Files.createTempFile(file.getParent(), "queue-snapshot-", ".tmp");
         try {
             objectMapper.writeValue(temporary.toFile(), data);
@@ -118,6 +121,10 @@ public class QueuePersistenceService {
         try {
             PersistentData data = objectMapper.readValue(file, new TypeReference<PersistentData>() {});
             
+            if (!Integer.valueOf(1).equals(data.getSchemaVersion())) {
+                throw new IOException("Unsupported persistence schema; expected schemaVersion=1");
+            }
+
             musicQueueManager.restore(
                 data.getQueue() != null ? data.getQueue() : Collections.emptyList(),
                 data.getHistory() != null ? data.getHistory() : Collections.emptyList()
@@ -125,17 +132,6 @@ public class QueuePersistenceService {
 
             musicQueueManager.restorePlayedQueueIds(data.getPlayedQueueIds());
             musicQueueManager.restoreMemberShufflePreferences(data.getMemberShufflePreferences());
-            if (data.getPlaybackModeVersion() == null && data.getSettings() != null && data.getSettings().player() != null) {
-                SettingsSnapshot old = data.getSettings();
-                SettingsSnapshot.PlayerSettings p = old.player();
-                if ("SHUFFLE".equals(p.playMode()) && !Boolean.FALSE.equals(p.fairShuffle())) {
-                    data.setSettings(new SettingsSnapshot(new SettingsSnapshot.PlayerSettings("ROUND_ROBIN", true,
-                            p.allowOfflineShuffle(), p.voteSkipEnabled(), p.voteSkipThreshold(), p.voteSkipWaitTime(),
-                            p.pauseLocked(), p.skipLocked(), p.playModeLocked()), old.roomPassword(), old.streamEnabled(),
-                            old.privateDj(), old.systemConfig(), old.sourceEnabled()));
-                }
-            }
-
             chatService.restore(data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
 
             applySettings(data.getSettings());
@@ -147,7 +143,8 @@ public class QueuePersistenceService {
                 data.getChatHistory() != null ? data.getChatHistory().size() : 0,
                 file.getAbsolutePath());
         } catch (Exception e) {
-            log.error("Failed to load persistence data from {}", file.getAbsolutePath(), e);
+            persistenceRejected = true;
+            log.error("Failed to load persistence data from {}; writes disabled to preserve the original file", file.getAbsolutePath(), e);
         }
     }
 
@@ -179,14 +176,6 @@ public class QueuePersistenceService {
             if (cfg.maxChatHistorySize() != null) appProperties.getChat().setMaxHistorySize(cfg.maxChatHistorySize());
             if (cfg.minChatIntervalMs() != null) appProperties.getChat().setMinIntervalMs(cfg.minChatIntervalMs());
             if (cfg.maxChatMessageLength() != null) appProperties.getChat().setMaxMessageLength(cfg.maxChatMessageLength());
-            if (cfg.neteaseEnabled() != null) {
-                appProperties.getNetease().setEnabled(cfg.neteaseEnabled());
-                musicPlayerService.restoreSourceEnabled("netease", cfg.neteaseEnabled());
-            }
-            if (cfg.bilibiliEnabled() != null) {
-                appProperties.getBilibili().setEnabled(cfg.bilibiliEnabled());
-                musicPlayerService.restoreSourceEnabled("bilibili", cfg.bilibiliEnabled());
-            }
             if (cfg.allowPlaylistClaim() != null) appProperties.getQueue().setAllowPlaylistClaim(cfg.allowPlaylistClaim());
             if (cfg.allowSeek() != null) appProperties.getPlayer().setAllowSeek(cfg.allowSeek());
             if (cfg.bilibiliMaxDurationMinutes() != null) appProperties.getBilibili().setMaxDurationMinutes(cfg.bilibiliMaxDurationMinutes());
@@ -221,8 +210,6 @@ public class QueuePersistenceService {
                         appProperties.getPlayer().getMaxPlaylistImportSize(),
                         appProperties.getChat().getMaxHistorySize(),
                         appProperties.getChat().getMinIntervalMs(),
-                        appProperties.getNetease().isEnabled(),
-                        appProperties.getBilibili().isEnabled(),
                         appProperties.getBilibili().getMaxDurationMinutes(),
                         appProperties.getChat().getMaxMessageLength(),
                         appProperties.getQueue().isRetainPlaylist(),
@@ -249,7 +236,7 @@ public class QueuePersistenceService {
         private List<Music> history;
         private List<org.thornex.musicparty.dto.ChatMessage> chatHistory;
         private SettingsSnapshot settings;
-        private Integer playbackModeVersion;
+        private Integer schemaVersion;
         private Map<String, Boolean> memberShufflePreferences;
     }
 }

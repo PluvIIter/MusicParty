@@ -42,7 +42,7 @@ class ResourceServiceTest {
     void emptyFilteredPageStillAdvancesAndImportTraversesNextPage() {
         var adapter = adapter();
         when(adapter.containerPage("favorites", "42", 0, 20)).thenReturn(Mono.just(new SourcePage<>(List.of(), 20, null)));
-        var track = new Music("same", "Song", List.of("Artist"), 1000, "fixture", "");
+        var track = new Music("same", "Song", List.of("Artist"), 1000, "fixture", "", null);
         when(adapter.containerPage("favorites", "42", 20, 20)).thenReturn(Mono.just(new SourcePage<>(List.of(track), null, null)));
         var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
         assertEquals(List.of(track), service.importTracks("fixture", "favorites", "42", 100).block());
@@ -65,7 +65,7 @@ class ResourceServiceTest {
         when(adapter.descriptor()).thenReturn(new SourceDescriptor("fixture", "Fixture", "music",
                 new SourceCapabilities(true, true, false, true, true, false, false, true),
                 Set.of(DeliveryMode.DIRECT_URL), List.of(new CollectionCategory("likes", "公开喜欢", "favorites", "TRACK"))));
-        var track = new Music("42", "Song", List.of("Artist"), 1000, "fixture", "");
+        var track = new Music("42", "Song", List.of("Artist"), 1000, "fixture", "", null);
         when(adapter.publicCollectionTracks("public-user", "likes", 0, 20))
                 .thenReturn(Mono.just(new SourcePage<>(List.of(track), null, 1L)));
         var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
@@ -94,21 +94,6 @@ class ResourceServiceTest {
         service.tracks("fixture", "playlist", "same", null, 20).block();
         verify(adapter).containerPage("favorites", "same", 0, 20);
         verify(adapter).containerPage("playlist", "same", 0, 20);
-        verify(adapter, never()).playlistPage(anyString(), anyInt(), anyInt());
-        verify(adapter, never()).playlistDetail(anyString());
-    }
-
-    @Test
-    void externalUrlMetadataRemainsAvailableWhenSourceIsDisabledWithoutFetchingMedia() {
-        var adapter = adapter();
-        when(adapter.externalUrl("opaque")).thenReturn("https://example.test/opaque");
-        var registry = new SourceRegistry(List.of(adapter), new AppProperties());
-        registry.update("fixture", false, null);
-        var service = new ResourceService(registry, new ResourceCursor());
-        assertEquals("https://example.test/opaque", service.externalUrl("fixture", "opaque"));
-        assertThrows(RuntimeException.class, () -> service.externalUrl("fixture", "bad" + (char) 0 + "id"));
-        verify(adapter, never()).getMusic(anyString());
-        verify(adapter, never()).resolveMedia(anyString(), any());
     }
 
     @Test

@@ -1,3 +1,4 @@
+import { compactFrames } from './compact-fixture';
 import { test, expect } from '@playwright/test';
 
 async function room(page, settings, reject = false) {
@@ -43,6 +44,8 @@ async function room(page, settings, reject = false) {
     await page.routeWebSocket('**/ws', (socket) => {
         const subscriptions = new Map();
         let sequence = 0;
+        const snapshot = compactFrames();
+        const sendState = (state) => send('/topic/player/compact', snapshot(state));
         const send = (destination, body) => {
             for (const [id, topic] of subscriptions)
                 if (topic === destination)
@@ -51,11 +54,12 @@ async function room(page, settings, reject = false) {
                     );
         };
         broadcast = () =>
-            send('/topic/player/state', {
+            sendState({
                 nowPlaying: null,
                 queue: [],
                 onlineUsers: [],
                 playMode: 'SEQUENTIAL',
+                isPaused: false,
                 config,
             });
         socket.onMessage((raw) => {
@@ -76,7 +80,7 @@ async function room(page, settings, reject = false) {
                     if (headers.destination === '/app/user/me')
                         send(headers.destination, { name: 'Admin', sessionId: 'admin-user', isGuest: false });
                 }
-                if (command === 'SEND' && headers.destination === '/app/player/resync') {
+                if (command === 'SEND' && headers.destination === '/app/player/compact-resync') {
                     broadcast();
                     send('/topic/player/events', { action: 'ADMIN_TRIGGER', userId: 'admin-user', level: 'INFO' });
                 }
@@ -125,7 +129,7 @@ test('both supported modes render and updated backend capabilities hide DJ immed
 });
 
 for (const settings of [{ fmSupported: false, djSupported: false }, {}]) {
-    test(`unsupported or legacy deployment fails closed ${JSON.stringify(settings)}`, async ({ page }) => {
+    test(`unsupported or missing-capability deployment fails closed ${JSON.stringify(settings)}`, async ({ page }) => {
         const server = await room(page, settings);
         await expect(page.getByRole('button', { name: '私人FM', exact: true })).toHaveCount(0);
         await expect(page.getByRole('button', { name: '私人DJ', exact: true })).toHaveCount(0);

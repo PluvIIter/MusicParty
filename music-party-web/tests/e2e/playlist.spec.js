@@ -1,3 +1,4 @@
+import { compactFrames } from './compact-fixture';
 import { test, expect } from '@playwright/test';
 
 async function room(page, { admin = false, guest = false, rejectClear = false } = {}) {
@@ -21,8 +22,6 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
     const updates = [];
     const config = {
         retainPlaylist: false,
-        neteaseEnabled: true,
-        bilibiliEnabled: true,
         maxQueueSize: 1000,
         maxUserSongs: 100,
         privateDj: { mode: 'OFF' },
@@ -79,6 +78,8 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
     await page.routeWebSocket('**/ws', (socket) => {
         const subscriptions = new Map();
         let sequence = 0;
+        const snapshot = compactFrames();
+        const sendState = (state) => send('/topic/player/compact', snapshot(state));
         const send = (destination, body) => {
             for (const [id, topic] of subscriptions)
                 if (topic === destination)
@@ -87,8 +88,7 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
                     );
         };
         broadcast = () => {
-            send('/topic/player/queue', queue);
-            send('/topic/player/state', {
+            sendState({
                 nowPlaying: null,
                 queue,
                 playMode: 'ROUND_ROBIN',
@@ -119,7 +119,7 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
                 if (command !== 'SEND') continue;
                 const body = JSON.parse(json || '{}');
                 sent.push({ destination: headers.destination, body });
-                if (headers.destination === '/app/player/resync') {
+                if (headers.destination === '/app/player/compact-resync') {
                     broadcast();
                     if (admin)
                         send('/topic/player/events', { action: 'ADMIN_TRIGGER', userId: 'member-A', level: 'INFO' });

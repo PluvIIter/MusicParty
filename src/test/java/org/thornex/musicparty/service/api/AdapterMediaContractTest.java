@@ -6,7 +6,6 @@ import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.media.MediaConsumer;
-import org.thornex.musicparty.service.LocalCacheService;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
@@ -44,14 +43,14 @@ class AdapterMediaContractTest {
 
     @Test void bilibiliMetadataUsesNoAccountCookieAndNeverStartsDownload() {
         AppProperties props = new AppProperties(); props.getBilibili().setBaseUrl("http://bili.test");
-        var cookie = mock(BilibiliCookieService.class); var cache = mock(LocalCacheService.class); var wbi = mock(BilibiliWbiService.class);
+        var cookie = mock(BilibiliCookieService.class); var wbi = mock(BilibiliWbiService.class);
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             assertEquals("", request.headers().getFirst("Cookie"));
             return Mono.just(json("{\"code\":0,\"data\":{\"cid\":10,\"title\":\"Track\",\"duration\":1,\"owner\":{\"name\":\"Artist\"}}}"));
         }).build();
-        var music = new BilibiliMusicApiService(client, props, cache, wbi, cookie).getMusic("BV1abc").block();
+        var music = new BilibiliMusicApiService(client, props, wbi, cookie).getMusic("BV1abc").block();
         assertEquals("BV1abc", music.id()); assertEquals("https://www.bilibili.com/video/BV1abc", music.externalUrl());
-        verifyNoInteractions(cookie, cache, wbi);
+        verifyNoInteractions(cookie, wbi);
     }
 
     @Test void neteaseTimelineIgnoresCodecButSeparatesTrialWindows() {
@@ -86,7 +85,7 @@ class AdapterMediaContractTest {
             }
             return Mono.just(json("{\"code\":0,\"data\":{\"timelength\":1000,\"is_preview\":0,\"dash\":{\"audio\":[{\"id\":30280,\"baseUrl\":\"https://cdn.test/audio\"}]}}}"));
         }).build();
-        var adapter = new BilibiliMusicApiService(client, props, mock(LocalCacheService.class), mock(BilibiliWbiService.class), cookie);
+        var adapter = new BilibiliMusicApiService(client, props, mock(BilibiliWbiService.class), cookie);
         var browser = adapter.resolveMedia("BV1abc", MediaConsumer.BROWSER).block();
         var server = adapter.resolveMedia("BV1abc", MediaConsumer.SERVER).block();
         assertEquals("html5", browser.representationKey());

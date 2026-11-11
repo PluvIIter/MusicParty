@@ -119,7 +119,7 @@ class NeteaseRecommendationProviderTest {
 
     @Test void songsAlwaysUseUnifiedMediaDelivery() {
         var segment = new PrivateDjSegment.Song("42", "Track", List.of(), 1000, "");
-        var playable = new PlayableMusic("42", "Track", List.of(), 1000, "netease", "/media/ticket", "", false);
+        var playable = new PlayableMusic("42", "Track", List.of(), 1000, "netease", "/media/ticket", "", "SONG", null);
         when(delivery.getPlayableMusic("netease", "42")).thenReturn(Mono.just(playable));
         assertSame(playable, provider.getPlayable(segment).block());
         verify(delivery).getPlayableMusic("netease", "42");
@@ -129,7 +129,7 @@ class NeteaseRecommendationProviderTest {
 
     @Test void voicesDelegatePolicyAndDeliveryWithoutSongRefresh() {
         var segment = new PrivateDjSegment.Voice("https://cdn.test/voice.mp3", "voice-native", 1000, "42", "");
-        var playable = new PlayableMusic("voice:opaque", "私人DJ", List.of(), 1000, "netease", "/media/voice", "", false, "VOICE");
+        var playable = new PlayableMusic("voice:opaque", "私人DJ", List.of(), 1000, "netease", "/media/voice", "", "VOICE", null);
         when(delivery.prepareVoice("netease", segment)).thenReturn(Mono.just(playable));
         assertSame(playable, provider.getPlayable(segment).block());
         verify(delivery).prepareVoice("netease", segment);

@@ -1,3 +1,4 @@
+import { compactFrames } from './compact-fixture';
 import http from 'node:http';
 
 export async function audioServer() {
@@ -136,6 +137,8 @@ export async function room(
     await page.routeWebSocket('**/ws', (socket) => {
         const subscriptions = new Map();
         let seq = 0;
+        const snapshot = compactFrames();
+        const sendState = (state) => send('/topic/player/compact', snapshot(state));
         const send = (destination, body) => {
             for (const [id, topic] of subscriptions)
                 if (topic === destination)
@@ -145,7 +148,7 @@ export async function room(
         };
         hub = {
             push: (position = 10000 + performance.now() - started, paused = false, music = {}) =>
-                send('/topic/player/state', {
+                sendState({
                     nowPlaying: {
                         music: {
                             id: '1',
@@ -166,8 +169,6 @@ export async function room(
                     onlineUsers: [],
                     playMode: 'SEQUENTIAL',
                     isPaused: paused,
-                    isFairShuffle: true,
-                    config: { neteaseEnabled: true, bilibiliEnabled: false, privateDj: { mode: 'OFF' } },
                 }),
         };
         socket.onMessage((raw) => {
@@ -193,7 +194,7 @@ export async function room(
                         });
                     if (headers.destination === '/app/chat/history') send(headers.destination, []);
                 }
-                if (command === 'SEND' && headers.destination === '/app/player/resync') hub.push();
+                if (command === 'SEND' && headers.destination === '/app/player/compact-resync') hub.push();
             }
         });
     });

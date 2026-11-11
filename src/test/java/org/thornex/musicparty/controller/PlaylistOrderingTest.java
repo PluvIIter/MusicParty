@@ -23,7 +23,7 @@ class PlaylistOrderingTest {
         clearInvocations(player);
     }
     MusicQueueItem add(String id, String owner) {
-        return queue.add(new Music(id, id, List.of(), 1000, "netease", ""),
+        return queue.add(new Music(id, id, List.of(), 1000, "netease", "", null),
                 new UserSummary(owner, owner, owner, false), QueueItemStatus.READY);
     }
     void member() { when(users.getUser("s")).thenReturn(Optional.of(new User("A", "s", "Alice"))); }

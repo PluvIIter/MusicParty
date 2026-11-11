@@ -42,19 +42,19 @@ class MusicPlayerServiceSeekTest {
         when(users.getRecentlyActiveUserTokens()).thenReturn(Set.of(owner.token()));
         NeteaseMusicApiService api = mock(NeteaseMusicApiService.class);
         when(api.getPlatformName()).thenReturn("netease");
-        when(api.getPlayableMusic("a")).thenReturn(Mono.just(music("a")));
         publisher = mock(ApplicationEventPublisher.class);
-        player = PlayerTestFactory.create(List.of(api), users, mock(LocalCacheService.class),
-                mock(LiveStreamService.class), queue, publisher, properties, api, mock(PrivateDjService.class));
+        player = PlayerTestFactory.create(List.of(api), users,
+                mock(LiveStreamService.class), queue, publisher, properties, mock(PrivateDjService.class));
+        when(PlayerTestFactory.media(player).getPlayableMusic("netease", "a")).thenReturn(Mono.just(music("a")));
         start("a");
     }
 
     private PlayableMusic music(String id) {
-        return new PlayableMusic(id, id, List.of("Artist"), 180_000L, "netease", "https://example.invalid/" + id, null, false);
+        return new PlayableMusic(id, id, List.of("Artist"), 180_000L, "netease", "https://example.invalid/" + id, null, "SONG", null);
     }
 
     private MusicQueueItem item(String id) {
-        return new MusicQueueItem(id, new Music(id, id, List.of("Artist"), 180_000L, "netease", null), owner, QueueItemStatus.READY);
+        return new MusicQueueItem(id, new Music(id, id, List.of("Artist"), 180_000L, "netease", null, null), owner, QueueItemStatus.READY, org.thornex.musicparty.enums.Priority.REGULAR);
     }
 
     private void start(String id) {
@@ -100,11 +100,9 @@ class MusicPlayerServiceSeekTest {
     }
 
     @Test
-    void missingIdentityIsRejectedEvenForLegacySystemEntryPoint() {
+    void missingIdentityIsRejectedForMembersAndSystem() {
         player.setPausedForTest(true);
         clearInvocations(publisher);
-        player.seekTo("session", 80_000);
-        player.seekTo("SYSTEM", 80_000);
         player.seekTo("SYSTEM", 80_000, null);
         player.seekTo("session", 80_000, "");
         assertEquals(0, player.getCurrentPlayerState().nowPlaying().currentPosition());
@@ -134,7 +132,7 @@ class MusicPlayerServiceSeekTest {
     @Test
     void retainedSameSongAndFmSegmentsEachGetNewIdentity() {
         String initial = player.getCurrentPlayerState().playbackId();
-        when(queue.pollNext(any(), anyBoolean(), anyBoolean(), anyMap(), anySet())).thenReturn(item("a"));
+        when(queue.pollNext(any(), anyBoolean(), anyMap(), anySet())).thenReturn(item("a"));
         player.setPositionForTest(180_000);
         player.playerLoop();
         PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());

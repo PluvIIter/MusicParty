@@ -58,13 +58,13 @@ class NeteaseRecommendationApiTest {
         assertEquals(1, api.credentialRevision());
     }
 
-    @Test void missingOrPlaceholderCookieFailsWithoutAnyRequest() {
+    @Test void missingCookieFailsWithoutAnyRequest() {
         AtomicInteger requests = new AtomicInteger();
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             requests.incrementAndGet();
             return Mono.just(response(HttpStatus.OK, "{}"));
         }).build();
-        for (String cookie : new String[]{null, "", "  ", "YOUR_NETEASE_COOKIE_STRING_HERE"}) {
+        for (String cookie : new String[]{null, "", "  "}) {
             var api = new NeteaseMusicApiService(client, properties(cookie));
             assertTrue(assertThrows(ApiRequestException.class, () -> api.fetchPersonalFm().block())
                     .getMessage().contains("RECOMMENDATION_AUTH_REQUIRED"));
@@ -134,8 +134,8 @@ class NeteaseRecommendationApiTest {
         api.getLyric("1").block();
         api.getAlbum("1").block();
         api.publicCollections("1", "playlists", 0, 10).block();
-        api.playlistDetail("1").block();
-        api.getPlaylistMusics("1", 0, 10).block();
+        api.containerDetail("playlist", "1").block();
+        api.containerPage("playlist", "1", 0, 10).block();
         assertEquals(8, routes.size());
     }
 }

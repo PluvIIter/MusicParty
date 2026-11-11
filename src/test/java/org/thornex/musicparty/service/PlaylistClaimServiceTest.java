@@ -29,7 +29,7 @@ class PlaylistClaimServiceTest {
         properties=new AppProperties();properties.getQueue().setAllowPlaylistClaim(true);
         var events=mock(ApplicationEventPublisher.class);
         users=new UserService(events);queue=new MusicQueueManager(properties);
-        player=PlayerTestFactory.create(List.of(),users,mock(LocalCacheService.class),mock(LiveStreamService.class),queue,events,properties,mock(NeteaseMusicApiService.class),mock(PrivateDjService.class));
+        player=PlayerTestFactory.create(List.of(),users,mock(LiveStreamService.class),queue,events,properties,mock(PrivateDjService.class));
         persistence=mock(QueuePersistenceService.class);
         claims=new PlaylistClaimService(users,queue,player,persistence,properties);
         target=users.handleConnect("target-session","target","游客");
@@ -41,7 +41,7 @@ class PlaylistClaimServiceTest {
         queue.restore(List.of(item("a","source","Original",Priority.GLOBAL_TOP),item("mine","target","游客",Priority.REGULAR),item("other","other","Other",Priority.USER_TOP),item("b","source","Original",Priority.USER_TOP)),List.of(music("historic")));
     }
     @AfterEach void stopScheduler(){((ScheduledExecutorService)ReflectionTestUtils.getField(users,"scheduler")).shutdownNow();}
-    private static Music music(String id){return new Music(id,"Track "+id,List.of("Fixture"),180000,"netease","");}
+    private static Music music(String id){return new Music(id,"Track "+id,List.of("Fixture"),180000,"netease","", null);}
     private static MusicQueueItem item(String id,String token,String name,Priority priority){return new MusicQueueItem(id,music(id),new UserSummary(token,"old",name,false),QueueItemStatus.READY,priority);}
     @SuppressWarnings("unchecked") private <T> AtomicReference<T> reference(String field){return (AtomicReference<T>)ReflectionTestUtils.getField(player,field);}
     private void reject(String session,String token){var before=queue.getQueueSnapshot();String name=target.getName();assertThrows(IllegalArgumentException.class,()->claims.claim(session,token));assertEquals(before,queue.getQueueSnapshot());assertEquals(name,target.getName());}
@@ -66,7 +66,7 @@ class PlaylistClaimServiceTest {
     }
     @Test void rejectsOwnMissingVirtualAndGuestPlaylists() {
         reject("target-session","target");reject("target-session","absent");reject("target-session","SYSTEM");reject("target-session","ADMIN");reject("target-session","__FM__");
-        queue.restore(List.of(new MusicQueueItem("guest",music("guest"),new UserSummary("guest","old","Former",true),QueueItemStatus.READY)),List.of());
+        queue.restore(List.of(new MusicQueueItem("guest",music("guest"),new UserSummary("guest","old","Former",true),QueueItemStatus.READY, org.thornex.musicparty.enums.Priority.REGULAR)),List.of());
         reject("target-session","guest");verifyNoInteractions(persistence);
     }
     @Test void exactNameCollisionRejectsWithoutRenamingAnyone() {
@@ -97,7 +97,7 @@ class PlaylistClaimServiceTest {
         assertThrows(IOException.class,()->claims.claim("target-session","source"));assertEquals(before,queue.getQueueSnapshot());assertTrue(target.isGuest());assertEquals("游客",target.getName());
     }
     @Test void preservesPlayingAudioPausePositionAndFairMemberReference() throws Exception {
-        var playing=new PlayableMusic("a","Track",List.of("Fixture"),180000,"netease","fixture://audio","",false);
+        var playing=new PlayableMusic("a","Track",List.of("Fixture"),180000,"netease","fixture://audio","", "SONG", null);
         reference("currentMusic").set(playing);reference("currentEnqueuerId").set("source");reference("currentEnqueuerName").set("Original");
         ((AtomicLong)ReflectionTestUtils.getField(player,"positionAnchor")).set(12345);
         ((AtomicBoolean)ReflectionTestUtils.getField(player,"isPaused")).set(true);
@@ -109,7 +109,7 @@ class PlaylistClaimServiceTest {
     }
     @Test void pendingConsumedEntryUsesClaimedOwnerButFutureRequestsDoNot() throws Exception {
         var pending=item("pending","source","Original",Priority.REGULAR);
-        var playable=new PlayableMusic("pending","Track",List.of("Fixture"),180000,"netease","fixture://audio","",false);
+        var playable=new PlayableMusic("pending","Track",List.of("Fixture"),180000,"netease","fixture://audio","", "SONG", null);
         claims.claim("target-session","source");
         ReflectionTestUtils.invokeMethod(player,"applyNewSong",playable,pending);assertEquals("target",reference("currentEnqueuerId").get());
         ((AtomicLong)ReflectionTestUtils.getField(player,"playHeadVersion")).incrementAndGet();

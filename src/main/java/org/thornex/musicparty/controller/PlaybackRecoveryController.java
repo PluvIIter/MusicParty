@@ -37,31 +37,24 @@ public class PlaybackRecoveryController {
         this.registry = registry;
     }
 
-    @GetMapping("/api/music/refresh/{sourceId}/{musicId}")
-    public Mono<ResponseEntity<PlayableMusic>> refreshSource(@PathVariable String sourceId, @PathVariable String musicId,
-            @RequestParam String playbackId, @RequestHeader(value = "X-Room-Password", required = false) String password) {
-        return refreshPlayback(sourceId, musicId, playbackId, password);
-    }
-
     @PostMapping("/api/v2/playbacks/{playbackId}/media/refresh")
     public Mono<ResponseEntity<PlayableMusic>> refreshCurrent(@PathVariable String playbackId,
             @RequestHeader(value = "X-Room-Password", required = false) String password) {
-        return refreshPlayback(null, null, playbackId, password);
+        return refreshPlayback(playbackId, password);
     }
 
     @GetMapping("/api/v2/playbacks/{playbackId}/media")
     public Mono<ResponseEntity<PlayableMusic>> currentMedia(@PathVariable String playbackId,
             @RequestHeader(value = "X-Room-Password", required = false) String password) {
-        return refreshPlayback(null, null, playbackId, password);
+        return refreshPlayback(playbackId, password);
     }
 
-    private Mono<ResponseEntity<PlayableMusic>> refreshPlayback(String sourceId, String id, String playbackId, String password) {
+    private Mono<ResponseEntity<PlayableMusic>> refreshPlayback(String playbackId, String password) {
         return Mono.defer(() -> {
             if (!authorized(password)) return Mono.just(ResponseEntity.status(403).cacheControl(CacheControl.noStore()).build());
             PlayerState state = player.getCurrentPlayerState();
             PlayableMusic track = state.nowPlaying() == null ? null : state.nowPlaying().music();
             if (track == null || !Objects.equals(playbackId, state.playbackId()) || playbackId == null
-                    || (sourceId != null && (!sourceId.equals(track.platform()) || !id.equals(track.id())))
                     || !registry.isEnabled(track.platform()) || !"SONG".equals(track.kind())) {
                 return Mono.just(ResponseEntity.status(409).cacheControl(CacheControl.noStore()).build());
             }
@@ -85,7 +78,7 @@ public class PlaybackRecoveryController {
         inFlight = delivery.refreshSongUrl(track).timeout(Duration.ofSeconds(20))
                 .map(url -> {
                     if (!Objects.equals(delivery.authorizationScope(track.platform()), authorizationScope)) throw new ApiRequestException("媒体凭据已更新，请重试");
-                    return new PlayableMusic(track.id(), track.name(), track.artists(), track.duration(), track.platform(), url, track.coverUrl(), false, track.kind(), track.externalUrl());
+                    return new PlayableMusic(track.id(), track.name(), track.artists(), track.duration(), track.platform(), url, track.coverUrl(), track.kind(), track.externalUrl());
                 }).onErrorMap(error -> new ApiRequestException("MEDIA_CONTENT_CHANGED".equals(error.getMessage())
                         ? "MEDIA_CONTENT_CHANGED" : "播放地址刷新失败，请稍后重试")).cache(Duration.ofSeconds(5));
         return inFlight;

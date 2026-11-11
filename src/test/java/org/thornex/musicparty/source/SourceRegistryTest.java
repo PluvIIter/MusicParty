@@ -48,9 +48,8 @@ class SourceRegistryTest {
     }
 
     @Test
-    void explicitConfigurationOverridesLegacyButCannotHotChangeDelivery() {
+    void sourceMapConfigurationCannotHotChangeDelivery() {
         var props = new AppProperties();
-        props.getNetease().setEnabled(false);
         var configured = new AppProperties.SourceConfig();
         configured.setEnabled(true);
         props.getSources().put("netease", configured);

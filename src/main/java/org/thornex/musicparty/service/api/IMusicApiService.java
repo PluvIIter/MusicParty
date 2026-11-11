@@ -2,7 +2,6 @@ package org.thornex.musicparty.service.api;
 
 import org.thornex.musicparty.dto.AlbumInfo;
 import org.thornex.musicparty.dto.Music;
-import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
 import org.thornex.musicparty.exception.ApiRequestException;
@@ -28,9 +27,6 @@ public interface IMusicApiService {
     }
     String getPlatformName();
     Mono<List<Music>> searchMusic(String keyword);
-    Mono<PlayableMusic> getPlayableMusic(String musicId);
-    Mono<List<Playlist>> getUserPlaylists(String userId);
-    Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit);
     Mono<List<UserSearchResult>> searchUsers(String keyword);
     Mono<String> getLyric(String musicId);
     default Mono<org.thornex.musicparty.source.SourcePage<Playlist>> publicCollections(
@@ -41,13 +37,6 @@ public interface IMusicApiService {
             String userId, String category, int offset, int limit) {
         return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持公开歌曲收藏"));
     }
-    default Mono<org.thornex.musicparty.source.SourcePage<Music>> playlistPage(
-            String playlistId, int offset, int limit) {
-        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持容器分页"));
-    }
-    default Mono<Playlist> playlistDetail(String playlistId) {
-        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持容器详情"));
-    }
     default Mono<Playlist> containerDetail(String type, String id) {
         return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持此容器类型"));
     }
@@ -55,5 +44,4 @@ public interface IMusicApiService {
             String type, String id, int offset, int limit) {
         return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持此容器类型"));
     }
-    default void prefetchMusic(String musicId) {};
 }

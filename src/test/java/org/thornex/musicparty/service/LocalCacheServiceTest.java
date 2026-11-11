@@ -48,7 +48,7 @@ class LocalCacheServiceTest {
         String key = resource + ":credentials:0";
         LocalCacheService cache = cache(new AppProperties(), mp3(1024), events);
         try {
-            cache.submitDownload(key, Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/audio", ".mp3", Map.of(), "audio/mpeg")), Map.of());
+            cache.submitDownload(key, Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/audio", ".mp3", Map.of(), "audio/mpeg", "test-audio")), Map.of(), () -> {});
             await(cache, key, CacheStatus.COMPLETED);
             Path file = cache.localPath(key);
             assertEquals(directory.toAbsolutePath(), file.getParent());
@@ -68,7 +68,7 @@ class LocalCacheServiceTest {
         LocalCacheService cache = cache(props, mp3(64), new CopyOnWriteArrayList<>());
         String key = ResourceKey.encode("stub", "large");
         try {
-            cache.submitDownload(key, Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/audio", ".mp3")), Map.of());
+            cache.submitDownload(key, Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/audio", ".mp3", Map.of(), "audio/mpeg", "test-audio")), Map.of(), () -> {});
             await(cache, key, CacheStatus.FAILED);
             assertNull(cache.localPath(key));
             Flux.interval(Duration.ofMillis(10)).filter(tick -> {
@@ -81,16 +81,16 @@ class LocalCacheServiceTest {
     @Test void malformedContentIsRejected() {
         LocalCacheService cache = cache(new AppProperties(), "<html>not audio</html>".getBytes(), new CopyOnWriteArrayList<>());
         try {
-            cache.submitDownload("bad", Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/audio", ".mp3")), Map.of());
+            cache.submitDownload("bad", Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/audio", ".mp3", Map.of(), "audio/mpeg", "test-audio")), Map.of(), () -> {});
             await(cache, "bad", CacheStatus.FAILED);
-            assertNull(cache.getLocalUrl("bad"));
+            assertNull(cache.localPath("bad"));
         } finally { cache.cleanup(); }
     }
 
     @Test void disabledOrChangedCredentialBeforeCommitDiscardsAsset() {
         LocalCacheService cache = cache(new AppProperties(), mp3(64), new CopyOnWriteArrayList<>());
         try {
-            cache.submitDownload("changed", Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/audio", ".mp3")), Map.of(),
+            cache.submitDownload("changed", Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/audio", ".mp3", Map.of(), "audio/mpeg", "test-audio")), Map.of(),
                     () -> { throw new IllegalStateException("Authorization changed"); });
             await(cache, "changed", CacheStatus.FAILED); assertNull(cache.localPath("changed"));
         } finally { cache.cleanup(); }
@@ -102,11 +102,11 @@ class LocalCacheServiceTest {
         try {
             cache.submitDownload("blocked-song", Mono.defer(() -> {
                 songStarted.countDown(); return Mono.never();
-            }), Map.of());
+            }), Map.of(), () -> {});
             assertTrue(songStarted.await(2, java.util.concurrent.TimeUnit.SECONDS));
-            for (int i = 0; i < 32; i++) cache.submitDownload("backlog-" + i, Mono.never(), Map.of());
+            for (int i = 0; i < 32; i++) cache.submitDownload("backlog-" + i, Mono.never(), Map.of(), () -> {});
             long start = System.nanoTime();
-            cache.submitVoiceDownload("priority-voice", Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/voice", ".mp3")), Map.of(), () -> {});
+            cache.submitVoiceDownload("priority-voice", Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/voice", ".mp3", Map.of(), "audio/mpeg", "test-audio")), Map.of(), () -> {});
             await(cache, "priority-voice", CacheStatus.COMPLETED);
             assertTrue(Duration.ofNanos(System.nanoTime() - start).compareTo(Duration.ofSeconds(3)) < 0);
             assertEquals(CacheStatus.DOWNLOADING, cache.getStatus("blocked-song"));
@@ -114,7 +114,20 @@ class LocalCacheServiceTest {
         } finally { cache.cleanup(); }
     }
 
-    @Test void legacyBareFilesNeverGuessSource() throws Exception {
+    @Test void incompleteIndexCannotReceiveImplicitMimeOrRepresentationDefaults() throws Exception {
+        String key = "stub:encoded:credentials:0";
+        String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest((key + ":representation:default").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        String file = hash + ".mp3";
+        Files.write(directory.resolve(file), mp3(64));
+        java.util.Properties oldIndex = new java.util.Properties(); oldIndex.setProperty("key", key); oldIndex.setProperty("file", file);
+        try (var output = Files.newOutputStream(directory.resolve(hash + ".index"))) { oldIndex.store(output, null); }
+        LocalCacheService cache = cache(new AppProperties(), mp3(64), new CopyOnWriteArrayList<>());
+        try { assertNull(cache.getStatus(key)); assertNull(cache.localPath(key)); }
+        finally { cache.cleanup(); }
+    }
+
+    @Test void bareFilesNeverGuessSource() throws Exception {
         Files.write(directory.resolve("123.mp3"), mp3(64));
         LocalCacheService cache = cache(new AppProperties(), mp3(64), new CopyOnWriteArrayList<>());
         try { assertNull(cache.getStatus("123")); assertNull(cache.getStatus(ResourceKey.encode("stub", "123"))); }

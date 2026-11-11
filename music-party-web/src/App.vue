@@ -1,7 +1,7 @@
 <!-- src/App.vue -->
 <template>
     <!-- 全局 Toast 挂载点 -->
-    <ToastNotification ref="toastInstance" />
+    <ToastNotification />
 
     <div class="h-screen w-screen overflow-hidden font-sans">
         <AudioEngine />
@@ -50,7 +50,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import { usePlayerStore } from './stores/player';
 import { useUserStore } from './stores/user';
@@ -79,8 +79,7 @@ const uiStore = useUiStore();
 const adminStore = useAdminStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
-const toastInstance = ref(null);
-const { register, info } = useToast();
+const { info } = useToast();
 
 const startGame = () => {
     hasStarted.value = true;
@@ -118,8 +117,4 @@ const handleSearchClick = () => {
         showSearch.value = true;
     }
 };
-
-onMounted(() => {
-    if (toastInstance.value) register(toastInstance.value);
-});
 </script>

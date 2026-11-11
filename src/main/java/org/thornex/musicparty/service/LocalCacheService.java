@@ -51,10 +51,6 @@ public class LocalCacheService {
     private record DownloadTask(String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {}
 
     public record DownloadSource(String url, String extension, Map<String, String> headers, String mimeType, String representationKey) {
-        public DownloadSource(String url, String extension) { this(url, extension, Map.of(), "application/octet-stream", "default"); }
-        public DownloadSource(String url, String extension, Map<String, String> headers, String mimeType) {
-            this(url, extension, headers, mimeType, "default");
-        }
         public DownloadSource { headers = Map.copyOf(headers); java.util.Objects.requireNonNull(representationKey); }
     }
 
@@ -113,13 +109,14 @@ public class LocalCacheService {
             try (InputStream input = Files.newInputStream(index)) { data.load(input); }
             String key = data.getProperty("key");
             String file = data.getProperty("file");
-            String representation = data.getProperty("representation", "default");
-            if (key == null || file == null || !file.matches("[a-f0-9]{64}\\.(mp3|m4a|mp4|flac|ogg|wav)")
+            String representation = data.getProperty("representation");
+            String mime = data.getProperty("mime");
+            if (key == null || file == null || representation == null || representation.isBlank() || mime == null || mime.isBlank() || !file.matches("[a-f0-9]{64}\\.(mp3|m4a|mp4|flac|ogg|wav)")
                     || !file.startsWith(hash(key + ":representation:" + representation) + ".")) return;
             Path path = controlled(file);
             if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.size(path) == 0) return;
             CacheEntry entry = new CacheEntry();
-            entry.setId(key); entry.setFileName(file); entry.setMimeType(data.getProperty("mime", "application/octet-stream"));
+            entry.setId(key); entry.setFileName(file); entry.setMimeType(mime);
             entry.setRepresentationKey(representation);
             entry.setStatus(CacheStatus.COMPLETED); entry.setSize(Files.size(path));
             entry.setLastAccessTime(Files.getLastModifiedTime(path).toMillis());
@@ -131,10 +128,6 @@ public class LocalCacheService {
     public void cleanup() {
         if (queueSubscription != null) queueSubscription.dispose();
         if (voiceSubscription != null) voiceSubscription.dispose();
-    }
-
-    public void submitDownload(String key, Mono<DownloadSource> source, Map<String, String> headers) {
-        submitDownload(key, source, headers, () -> {});
     }
 
     public void submitDownload(String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {
@@ -258,11 +251,6 @@ public class LocalCacheService {
     public Path localPath(String key) {
         CacheEntry entry = getCacheEntry(key);
         return entry != null && getStatus(key) == CacheStatus.COMPLETED ? controlled(entry.getFileName()) : null;
-    }
-
-    public String getLocalUrl(String key) {
-        CacheEntry entry = getCacheEntry(key);
-        return entry != null && getStatus(key) == CacheStatus.COMPLETED ? "/media/" + entry.getFileName() : null;
     }
 
     public CacheStatus getStatus(String key) {

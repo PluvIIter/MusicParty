@@ -52,31 +52,6 @@ public class ResourceService {
                 .timeout(Duration.ofSeconds(12));
     }
 
-    public Mono<List<Playlist>> legacyCollections(String source, String userId) {
-        validateId(userId);
-        var adapter = registry.getRequired(source);
-        if (!registry.descriptor(source).capabilities().personalCollections()) throw unsupported("此音源不支持公开收藏");
-        return Mono.defer(() -> adapter.getUserPlaylists(userId)).timeout(Duration.ofSeconds(12));
-    }
-
-    public Mono<List<Music>> legacyTracks(String source, String id, int offset, int limit) {
-        validateId(id);
-        validateLimit(limit);
-        if (offset < 0 || offset > 100_000) throw new ApiRequestException("INVALID_LIMIT: 无效分页偏移");
-        var adapter = registry.getRequired(source);
-        String type = registry.descriptor(source).collectionCategories().stream()
-                .filter(item -> "CONTAINER".equals(item.entryKind())).map(CollectionCategory::collectionType)
-                .distinct().reduce((left, right) -> { throw unsupported("请使用包含容器类型的资源接口"); })
-                .orElseThrow(() -> unsupported("此音源不支持容器"));
-        return Mono.defer(() -> adapter.containerPage(type, id, offset, limit)).timeout(Duration.ofSeconds(12))
-                .map(page -> page.items().stream().map(this::withExternalUrl).toList());
-    }
-
-    public String externalUrl(String source, String id) {
-        validateId(id);
-        return registry.externalUrl(source, id);
-    }
-
     public List<CollectionCategory> categories(String source) {
         registry.getRequired(source);
         return registry.descriptor(source).collectionCategories();

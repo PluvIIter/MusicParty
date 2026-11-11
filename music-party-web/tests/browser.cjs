@@ -95,6 +95,16 @@ async function listener(browser, origin) {
         connections++;
         const subscriptions = new Map();
         let sequence = 0;
+        let syncSequence = 0;
+        const sendState = (state) =>
+            send('/topic/player/compact', {
+                v: 1,
+                epoch: 'fixture',
+                seq: ++syncSequence,
+                base: syncSequence,
+                full: true,
+                state,
+            });
         const send = (destination, payload) => {
             for (const [id, topic] of subscriptions)
                 if (topic === destination)
@@ -104,7 +114,7 @@ async function listener(browser, origin) {
         };
         hub = {
             push: () =>
-                send('/topic/player/state', {
+                sendState({
                     nowPlaying: {
                         music: {
                             id: room.id,
@@ -118,11 +128,12 @@ async function listener(browser, origin) {
                         currentPosition: (room.offset + (room.paused ? 0 : (Date.now() - room.start) / 1000)) * 1000,
                         likeMarkers: [],
                     },
+                    playbackId: room.id,
                     queue: [],
                     onlineUsers: [],
                     playMode: 'SEQUENTIAL',
                     isPaused: room.paused,
-                    config: { neteaseEnabled: true, bilibiliEnabled: false, privateDj: { mode: 'OFF' } },
+                    config: { sources: {}, privateDj: { mode: 'OFF' } },
                 }),
         };
         socket.onMessage((raw) => {
@@ -138,7 +149,7 @@ async function listener(browser, origin) {
                 );
                 if (command === 'CONNECT') socket.send('CONNECTED\nversion:1.2\nheart-beat:0,0\nsession:fixture\n\n\0');
                 if (command === 'SUBSCRIBE') subscriptions.set(headers.id, headers.destination);
-                if (command === 'SEND' && headers.destination === '/app/player/resync') hub.push();
+                if (command === 'SEND' && headers.destination === '/app/player/compact-resync') hub.push();
             }
         });
     });
@@ -148,14 +159,12 @@ async function listener(browser, origin) {
     return { context, page, errors, room, push: () => hub.push(), connections: () => connections };
 }
 const media = (page) =>
-    page
-        .locator('audio')
-        .evaluate((a) => ({
-            time: a.currentTime,
-            paused: a.paused,
-            ready: a.readyState,
-            decoded: a.webkitAudioDecodedByteCount,
-        }));
+    page.locator('audio').evaluate((a) => ({
+        time: a.currentTime,
+        paused: a.paused,
+        ready: a.readyState,
+        decoded: a.webkitAudioDecodedByteCount,
+    }));
 (async () => {
     const fixture = await serve();
     try {

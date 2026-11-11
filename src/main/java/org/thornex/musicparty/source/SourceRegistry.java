@@ -50,16 +50,7 @@ public class SourceRegistry {
     public boolean isEnabled(String id) {
         if (!adapters.containsKey(id)) return false;
         AppProperties.SourceConfig configured = properties.getSources().get(id);
-        if (configured != null && configured.getEnabled() != null) return configured.getEnabled();
-        if ("netease".equals(id)) return properties.getNetease().isEnabled();
-        if ("bilibili".equals(id)) return properties.getBilibili().isEnabled();
-        return true;
-    }
-
-    public String externalUrl(String id, String resourceId) {
-        IMusicApiService adapter = adapters.get(id);
-        if (adapter == null) throw new ApiRequestException("SOURCE_NOT_FOUND: 音源不存在");
-        return adapter.externalUrl(resourceId);
+        return configured == null || !Boolean.FALSE.equals(configured.getEnabled());
     }
 
     public SourceDescriptor descriptor(String id) {

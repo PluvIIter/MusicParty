@@ -53,16 +53,16 @@ class PlaylistClaimLockOrderTest {
         source.setLastActiveTime(0);
         queue = new MusicQueueManager(properties);
         queue.restore(List.of(new MusicQueueItem("stable-id",
-                new Music("track", "Track", List.of("Fixture"), 180000, "netease", ""),
-                new UserSummary("source", "source-session", "Original", false), QueueItemStatus.READY)), List.of());
+                new Music("track", "Track", List.of("Fixture"), 180000, "netease", "", null),
+                new UserSummary("source", "source-session", "Original", false), QueueItemStatus.READY, org.thornex.musicparty.enums.Priority.REGULAR)), List.of());
         var cache = mock(LocalCacheService.class);
         var stream = mock(LiveStreamService.class);
         var netease = mock(NeteaseMusicApiService.class);
         when(netease.getPlatformName()).thenReturn("netease");
-        when(netease.getPlayableMusic("track")).thenReturn(Mono.just(new PlayableMusic("track", "Track",
-                List.of("Fixture"), 180000, "netease", "fixture://audio", "", false)));
         var dj = mock(PrivateDjService.class);
-        player = PlayerTestFactory.create(List.of(netease), users, cache, stream, queue, events, properties, netease, dj);
+        player = PlayerTestFactory.create(List.of(netease), users, stream, queue, events, properties, dj);
+        when(PlayerTestFactory.media(player).getPlayableMusic("netease", "track")).thenReturn(Mono.just(new PlayableMusic("track", "Track",
+                List.of("Fixture"), 180000, "netease", "fixture://audio", "", "SONG", null)));
         var chat = mock(ChatService.class);
         when(chat.getHistoryFull()).thenReturn(List.of());
         var auth = mock(AuthController.class);
@@ -81,7 +81,7 @@ class PlaylistClaimLockOrderTest {
         @SuppressWarnings("unchecked")
         var currentMusic = (AtomicReference<PlayableMusic>) ReflectionTestUtils.getField(player, "currentMusic");
         currentMusic.set(new PlayableMusic("track", "Track", List.of("Fixture"), 180000,
-                "netease", "fixture://audio", "", false));
+                "netease", "fixture://audio", "", "SONG", null));
         var result = new CompletableFuture<PlaylistClaimService.Claimed>();
         Thread claimant = new Thread(() -> {
             try { result.complete(claims.claim("target-session", "source")); }
@@ -96,7 +96,7 @@ class PlaylistClaimLockOrderTest {
                 assertFalse(owns(blocked, player), "claim must acquire persistence before player");
                 assertFalse(owns(blocked, queue), "claim must acquire persistence before queue");
                 var request = new AdminConfigUpdateRequest(null, null, null, null, null, null,
-                        null, null, null, null, true, 0.0, null, null, null);
+                        null, null, true, 0.0, null, null, null, null);
                 assertEquals(200, admin.updateConfig("fixture-admin", request).getStatusCode().value());
                 assertTrue(((AtomicLong) ReflectionTestUtils.getField(player, "playHeadVersion")).get() > 0,
                         "config must exercise the synchronized player skip path");

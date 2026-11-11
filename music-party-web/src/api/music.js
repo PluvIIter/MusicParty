@@ -11,8 +11,6 @@ const options = (signal, params) => ({
 
 export const musicApi = {
     getSources: (signal) => client.get('/api/v2/sources', options(signal)),
-    getExternalUrl: (source, id, signal) =>
-        client.get(`${sourcePath(source)}/tracks/${segment(id)}/external-url`, options(signal)),
     search: (source, q, signal) => client.get(`${sourcePath(source)}/tracks/search`, options(signal, { q })),
     searchUser: (source, q, signal) => client.get(`${sourcePath(source)}/users/search`, options(signal, { q })),
     getCategories: (source, signal) => client.get(`${sourcePath(source)}/collection-categories`, options(signal)),

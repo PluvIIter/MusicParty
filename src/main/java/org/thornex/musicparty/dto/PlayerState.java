@@ -6,8 +6,6 @@ public record PlayerState(
         NowPlayingInfo nowPlaying,
         List<MusicQueueItem> queue,
         String playMode,
-        boolean isShuffle,
-        boolean isFairShuffle,
         boolean allowOfflineShuffle,
         List<UserSummary> onlineUsers,
         boolean isPaused,
@@ -36,13 +34,10 @@ public record PlayerState(
             int maxChatHistorySize,
             long minChatIntervalMs,
             int maxChatMessageLength,
-            boolean neteaseEnabled,
-            boolean bilibiliEnabled,
             int bilibiliMaxDurationMinutes,
             boolean voteSkipEnabled,
             double voteSkipThreshold,
             int voteSkipWaitTime,
-            boolean neteaseCookieConfigured,
             PrivateDjConfigSummary privateDj,
             boolean allowPlaylistClaim,
             boolean retainPlaylist,
@@ -59,11 +54,6 @@ public record PlayerState(
                 String source,
                 boolean fmSupported,
                 boolean djSupported
-        ) {
-            public PrivateDjConfigSummary(String mode, boolean fillBlankEnabled,
-                    boolean joinQueueEnabled, boolean custodyEnabled) {
-                this(mode, fillBlankEnabled, joinQueueEnabled, custodyEnabled, null, false, false);
-            }
-        }
+        ) {}
     }
 }

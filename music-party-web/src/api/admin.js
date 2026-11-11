@@ -57,16 +57,6 @@ export const adminApi = {
             }
         ),
 
-    // 更新平台 Cookie
-    setCookie: (adminPwd, platform, value) =>
-        client.post(
-            '/api/admin/config/cookie',
-            { platform, value },
-            {
-                headers: { 'X-Admin-Password': adminPwd },
-            }
-        ),
-
     // 直播流控制
     setStream: (adminPwd, enabled) =>
         client.post(

@@ -13,22 +13,15 @@ import static org.mockito.Mockito.*;
 class ExplicitPlayModeTest {
     final UserService users = mock(UserService.class);
     final MusicQueueManager queue = new MusicQueueManager(new AppProperties());
-    final MusicPlayerService player = PlayerTestFactory.create(List.of(), users, mock(LocalCacheService.class),
-            mock(LiveStreamService.class), queue, mock(ApplicationEventPublisher.class), new AppProperties(),
-            mock(NeteaseMusicApiService.class), mock(PrivateDjService.class));
+    final MusicPlayerService player = PlayerTestFactory.create(List.of(), users,
+            mock(LiveStreamService.class), queue, mock(ApplicationEventPublisher.class), new AppProperties(), mock(PrivateDjService.class));
 
-    @Test void systemSelectsEveryModeAndLegacyCycleIncludesRoundRobin() {
+    @Test void systemSelectsEveryExplicitMode() {
         for (String mode : List.of("SHUFFLE", "ROUND_ROBIN", "REPEAT_ONE", "SEQUENTIAL")) {
             assertTrue(player.setPlayMode("SYSTEM", mode));
             var state = player.getCurrentPlayerState();
             assertEquals(mode, state.playMode());
-            assertEquals(mode.equals("ROUND_ROBIN"), state.isFairShuffle());
-            assertEquals(mode.equals("ROUND_ROBIN") || mode.equals("SHUFFLE"), state.isShuffle());
         }
-        player.cyclePlayMode("SYSTEM");
-        assertEquals("SHUFFLE", player.getCurrentPlayerState().playMode());
-        player.cyclePlayMode("SYSTEM");
-        assertEquals("ROUND_ROBIN", player.getCurrentPlayerState().playMode());
     }
     @Test void guestUnknownInvalidAndLockedRequestsDoNotChangeMode() {
         when(users.getUser("member")).thenReturn(Optional.of(new User("A", "member", "Alice")));

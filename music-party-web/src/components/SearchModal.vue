@@ -429,8 +429,7 @@ import { useSourcesStore } from '../stores/sources';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { usePlaylistLogic } from '../composables/usePlaylistLogic';
 import { useLikedSongs } from '../composables/useLikedSongs';
-import { resourceKey, openExternal, safeExternalUrl } from '../domain/sources';
-import { musicApi } from '../api/music';
+import { resourceKey, openExternal } from '../domain/sources';
 import { useToast } from '../composables/useToast';
 import {
     X,
@@ -543,25 +542,7 @@ const handleAddClick = (song) => {
     timers.add(timer);
 };
 const addLikedClick = handleAddClick;
-const sourceLinks = new Map();
-const openLikedSource = async (song) => {
-    if (song.externalUrl) return openExternal(song.externalUrl);
-    const key = resourceKey(song);
-    if (sourceLinks.has(key)) return openExternal(sourceLinks.get(key));
-    const tab = window.open('about:blank', '_blank');
-    if (tab) tab.opener = null;
-    try {
-        const result = await musicApi.getExternalUrl(song.platform, song.id);
-        const url = safeExternalUrl(result.externalUrl);
-        if (!url) throw new Error('此音乐源暂不提供源页面链接');
-        sourceLinks.set(key, url);
-        if (tab && !tab.closed) tab.location.replace(url);
-        else openExternal(url);
-    } catch (e) {
-        tab?.close();
-        error(e.response?.data?.message || e.message || '源页面链接读取失败');
-    }
-};
+const openLikedSource = (song) => openExternal(song.externalUrl);
 watch(listMode, (value) => {
     if (value === 'search' || value === 'collection') mobileView.value = 'songs';
 });

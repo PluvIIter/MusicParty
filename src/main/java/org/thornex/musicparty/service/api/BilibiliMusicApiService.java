@@ -10,12 +10,9 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import org.springframework.web.util.UriComponentsBuilder;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.Music;
-import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
-import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
-import org.thornex.musicparty.service.LocalCacheService;
 import org.thornex.musicparty.util.BilibiliApiUtils;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -35,7 +32,6 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     private final WebClient webClient;
     private final String baseUrl;
-    private final LocalCacheService localCacheService;
     private static final String PLATFORM = "bilibili";
     private final AtomicLong credentialRevision = new AtomicLong();
     private final BilibiliWbiService wbiService;
@@ -52,19 +48,11 @@ public class BilibiliMusicApiService implements IMusicApiService {
         public WbiSignatureException(String message) { super(message); }
     }
 
-    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, LocalCacheService localCacheService, BilibiliWbiService wbiService, BilibiliCookieService cookieService) {
+    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, BilibiliWbiService wbiService, BilibiliCookieService cookieService) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getBilibili().getBaseUrl();
-        this.localCacheService = localCacheService;
         this.wbiService = wbiService;
         this.cookieService = cookieService;
-    }
-
-    private void ensureConfigured() {
-        if (!cookieService.hasCookie()) {
-            // 与网易云一致：Cookie 为可选，缺失仅导致 B站源不可用，不影响其他音乐源
-            throw new ApiRequestException("尚未配置 Bilibili Cookie，B站源不可用（不影响其他音乐源）");
-        }
     }
 
     public void updateCookie(String newCookie) {
@@ -88,20 +76,9 @@ public class BilibiliMusicApiService implements IMusicApiService {
                         .header("Referer", "https://www.bilibili.com/"));
     }
 
-    private Mono<Music> getVideoDetailsWithCookie(String bvid) {
-        return cookieService.getCookieHeader()
-                .flatMap(cookie -> BilibiliApiUtils.getVideoDetails(bvid, webClient, baseUrl, cookie));
-    }
-
     private Mono<String> getVideoCidWithCookie(String bvid) {
         return cookieService.getCookieHeader()
                 .flatMap(cookie -> BilibiliApiUtils.getVideoCid(bvid, webClient, baseUrl, cookie));
-    }
-
-    /** 一次 /view 调用同时取 CID 与视频元数据。 */
-    private Mono<BilibiliApiUtils.BilibiliVideoInfo> getVideoInfoWithCookie(String bvid) {
-        return cookieService.getCookieHeader()
-                .flatMap(cookie -> BilibiliApiUtils.getVideoInfo(bvid, webClient, baseUrl, cookie));
     }
 
     @Override
@@ -174,7 +151,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                                         List.of(video.path("author").asText()),
                                                         durationMs,
                                                         PLATFORM,
-                                                        picUrl));
+                                                        picUrl, externalUrl(video.path("bvid").asText())));
                                             });
                                         }
                                         sink.next(musicList);
@@ -239,13 +216,6 @@ public class BilibiliMusicApiService implements IMusicApiService {
                     source.url(), source.extension().equals(".mp4") ? "video/mp4" : "audio/mp4", source.extension(),
                     Instant.now().plusSeconds(600), Map.of("Referer", "https://www.bilibili.com/", "User-Agent", USER_AGENT), false, source.timeline()));
         }));
-    }
-
-    @Override
-    public Mono<PlayableMusic> getPlayableMusic(String bvid) {
-        return Mono.zip(getMusic(bvid), resolveMedia(bvid, MediaConsumer.BROWSER))
-                .map(pair -> new PlayableMusic(pair.getT1().id(), pair.getT1().name(), pair.getT1().artists(),
-                        pair.getT1().duration(), PLATFORM, pair.getT2().url(), pair.getT1().coverUrl(), false, "SONG", pair.getT1().externalUrl()));
     }
 
     /**
@@ -380,7 +350,9 @@ public class BilibiliMusicApiService implements IMusicApiService {
     }
 
     @Override
-    public Mono<List<Playlist>> getUserPlaylists(String userId) {
+    public Mono<SourcePage<Playlist>> publicCollections(String userId, String category, int offset, int limit) {
+        if (!"favorites".equals(category)) return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 收藏类别不存在"));
+        if (offset < 0 || limit < 1) return Mono.error(new ApiRequestException("INVALID_CURSOR: 无效分页参数"));
         // API: /x/v3/fav/folder/created/list-all
         // 参数: up_mid (目标用户ID)
         String favListApi = baseUrl + "/x/v3/fav/folder/created/list-all";
@@ -395,7 +367,6 @@ public class BilibiliMusicApiService implements IMusicApiService {
                 .flatMap(spec -> spec.retrieve().bodyToMono(JsonNode.class))
                 .map(jsonNode -> {
                     if (jsonNode.path("code").asInt() != 0) {
-                        // 如果用户隐私设置导致无法获取，或者用户不存在，返回空列表而非报错
                         log.warn("Failed to get Bilibili favorites for user {}: {}", userId, jsonNode.path("message").asText());
                         throw new ApiRequestException("公开收藏夹不可读取");
                     }
@@ -419,34 +390,15 @@ public class BilibiliMusicApiService implements IMusicApiService {
                             }
                         });
                     }
-                    return playlists;
+                    int start = Math.min(offset, playlists.size());
+                    int end = Math.min(start + limit, playlists.size());
+                    return new SourcePage<>(playlists.subList(start, end), end < playlists.size() ? end : null, (long) playlists.size());
                 });
     }
 
     @Override
-    public Mono<org.thornex.musicparty.source.SourcePage<Playlist>> publicCollections(
-            String userId, String category, int offset, int limit) {
-        if (!"favorites".equals(category)) return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 收藏类别不存在"));
-        return getUserPlaylists(userId).map(items -> {
-            int start = Math.min(offset, items.size());
-            int end = Math.min(start + limit, items.size());
-            return new org.thornex.musicparty.source.SourcePage<>(items.subList(start, end),
-                    end < items.size() ? end : null, (long) items.size());
-        });
-    }
-
-    @Override
     public Mono<Playlist> containerDetail(String type, String id) {
-        return "favorites".equals(type) ? playlistDetail(id) : IMusicApiService.super.containerDetail(type, id);
-    }
-
-    @Override
-    public Mono<org.thornex.musicparty.source.SourcePage<Music>> containerPage(String type, String id, int offset, int limit) {
-        return "favorites".equals(type) ? playlistPage(id, offset, limit) : IMusicApiService.super.containerPage(type, id, offset, limit);
-    }
-
-    @Override
-    public Mono<Playlist> playlistDetail(String id) {
+        if (!"favorites".equals(type)) return IMusicApiService.super.containerDetail(type, id);
         String uri = UriComponentsBuilder.fromHttpUrl(baseUrl + "/x/v3/fav/resource/list")
                 .queryParam("media_id", id).queryParam("ps", 1).queryParam("pn", 1).toUriString();
         return buildBilibiliRequest(uri).flatMap(spec -> spec.retrieve().bodyToMono(JsonNode.class)).map(json -> {
@@ -461,31 +413,20 @@ public class BilibiliMusicApiService implements IMusicApiService {
     }
 
     @Override
-    public Mono<org.thornex.musicparty.source.SourcePage<Music>> playlistPage(String id, int offset, int limit) {
-        int upstreamLimit = Math.min(limit, 20);
-        if (upstreamLimit < 1 || offset % upstreamLimit != 0) {
+    public Mono<SourcePage<Music>> containerPage(String type, String id, int offset, int limit) {
+        if (!"favorites".equals(type)) return IMusicApiService.super.containerPage(type, id, offset, limit);
+        int pageSize = Math.min(limit, 20);
+        if (pageSize < 1 || offset < 0 || offset % pageSize != 0) {
             return Mono.error(new ApiRequestException("INVALID_CURSOR: 无效的收藏夹分页位置"));
         }
-        return getPlaylistMusics(id, offset, upstreamLimit).map(raw -> {
-            List<Music> items = raw.stream().filter(song -> !"INVALID_SKIP".equals(song.id())).toList();
-            return new org.thornex.musicparty.source.SourcePage<>(items,
-                    raw.size() == upstreamLimit ? offset + raw.size() : null, null);
-        });
-    }
-
-    @Override
-    public Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit) {
-        if (limit < 1 || offset < 0) return Mono.error(new ApiRequestException("INVALID_CURSOR: 无效分页参数"));
-        int safeLimit = Math.min(limit, 20);
-
-        int pageNumber = (offset / safeLimit) + 1;
+        int pageNumber = offset / pageSize + 1;
 
         // API: /x/v3/fav/resource/list
         String favDetailApi = baseUrl + "/x/v3/fav/resource/list";
 
         String uri = UriComponentsBuilder.fromHttpUrl(favDetailApi)
-                .queryParam("media_id", playlistId)
-                .queryParam("ps", safeLimit)
+                .queryParam("media_id", id)
+                .queryParam("ps", pageSize)
                 .queryParam("pn", pageNumber)
                 .build()
                 .toUriString();
@@ -497,7 +438,6 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
                     int code = jsonNode.path("code").asInt();
                     if (code != 0) {
-                        // -404 通常表示空页或没有权限，视为正常结束
                         if (code == -404) throw new ApiRequestException("公开收藏夹不可读取");
                         log.error("Failed to get Bilibili favorite details: {}", jsonNode.path("message").asText());
                         throw new ApiRequestException("公开收藏夹不可读取");
@@ -509,17 +449,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                         medias.forEach(media -> {
                             String title = media.path("title").asText();
                             // 过滤失效视频
-                            if ("已失效视频".equals(title)) {
-                                musicList.add(new Music(
-                                        "INVALID_SKIP", // 特殊 ID
-                                        "已失效视频",
-                                        List.of("Unknown"),
-                                        0,
-                                        PLATFORM,
-                                        ""
-                                ));
-                                return; // 结束当前循环，继续下一个
-                            }
+                            if ("已失效视频".equals(title)) return;
 
                             // 构造 Music 对象
                             musicList.add(new Music(
@@ -528,11 +458,14 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                     List.of(media.path("upper").path("name").asText()),
                                     media.path("duration").asLong() * 1000,
                                     PLATFORM,
-                                    BilibiliApiUtils.normalizeCoverUrl(media.path("cover").asText())
-                            ));
+                                    BilibiliApiUtils.normalizeCoverUrl(media.path("cover").asText()),
+                                    externalUrl(media.path("bvid").asText())));
                         });
                     }
-                    return musicList;
+                    int received = medias.isArray() ? medias.size() : 0;
+                    boolean hasMore = jsonNode.path("data").has("has_more")
+                            ? jsonNode.path("data").path("has_more").asBoolean() : received == pageSize;
+                    return new SourcePage<>(musicList, hasMore ? offset + received : null, null);
                 });
     }
 

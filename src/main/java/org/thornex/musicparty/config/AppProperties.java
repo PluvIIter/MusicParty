@@ -4,7 +4,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@ConfigurationProperties(prefix = "app.music-api")
+@ConfigurationProperties(prefix = "app.music-api", ignoreUnknownFields = false)
 @Data
 public class AppProperties {
     private NeteaseApiConfig  netease  = new NeteaseApiConfig();
@@ -117,7 +117,6 @@ public class AppProperties {
          * 才能解析高音质 DASH 音频并降低风控概率。
          */
         private String cookie;
-        private boolean enabled = true;
         /** B站视频时长上限（分钟），超过则前端标记为不可播放 */
         private int maxDurationMinutes = 10;
     }
@@ -127,6 +126,5 @@ public class AppProperties {
     public static class NeteaseApiConfig extends ApiConfig {
         private String cookie;
         private String quality = "exhigh"; // 默认音质：极高 (exhigh)
-        private boolean enabled = true;
     }
 }

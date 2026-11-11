@@ -34,6 +34,28 @@ class SourceApiControllerTest {
     }
 
     @Test
+    void malformedHttpParametersAreClientErrorsRatherThanUpstreamFailures() throws Exception {
+        var method = SourceApiController.class.getMethod("tracks", String.class, String.class, String.class, String.class, int.class);
+        var mismatch = new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException("abc", int.class,
+                "limit", new org.springframework.core.MethodParameter(method, 4), new NumberFormatException());
+        assertEquals(400, ResourceAccess.failure(mismatch).getStatusCode().value());
+        assertEquals(400, ResourceAccess.failure(new org.springframework.web.bind.MissingServletRequestParameterException("limit", "int"))
+                .getStatusCode().value());
+    }
+
+    @Test
+    void externalLinkCompatibilityRouteAndHelpersAreAbsent() {
+        assertThrows(NoSuchMethodException.class, () -> SourceApiController.class.getMethod("externalUrl", String.class, String.class));
+        assertThrows(NoSuchMethodException.class, () -> ResourceService.class.getMethod("externalUrl", String.class, String.class));
+        assertThrows(NoSuchMethodException.class, () -> SourceRegistry.class.getMethod("externalUrl", String.class, String.class));
+        assertTrue(java.util.Arrays.stream(SourceApiController.class.getDeclaredMethods())
+                .map(method -> method.getAnnotation(org.springframework.web.bind.annotation.GetMapping.class))
+                .filter(java.util.Objects::nonNull)
+                .flatMap(mapping -> java.util.Arrays.stream(mapping.value()))
+                .noneMatch(path -> path.contains("external-url")));
+    }
+
+    @Test
     void upstreamErrorsRemainErrorsAndUnexpectedFailureIsSanitized() {
         var controller = new SourceApiController(null, null, null, null);
         var denied = controller.failure(new org.thornex.musicparty.exception.ApiRequestException("COLLECTION_NOT_PUBLIC: 目标不公开"));

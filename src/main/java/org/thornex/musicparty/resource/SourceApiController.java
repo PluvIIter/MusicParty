@@ -1,7 +1,6 @@
 package org.thornex.musicparty.resource;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
@@ -78,11 +77,6 @@ public class SourceApiController {
     @GetMapping("/sources/{source}/tracks/{id}/album")
     public Mono<ContainerResource> album(@PathVariable String source, @PathVariable String id) {
         return resources.albumForTrack(source, id);
-    }
-
-    @GetMapping("/sources/{source}/tracks/{id}/external-url")
-    public Map<String, String> externalUrl(@PathVariable String source, @PathVariable String id) {
-        return Collections.singletonMap("externalUrl", resources.externalUrl(source, id));
     }
 
     @GetMapping("/sources/{source}/tracks/{id}/lyrics")

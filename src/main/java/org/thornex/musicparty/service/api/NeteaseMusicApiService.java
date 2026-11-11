@@ -9,7 +9,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.AlbumInfo;
 import org.thornex.musicparty.dto.Music;
-import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
 import org.thornex.musicparty.exception.ApiRequestException;
@@ -54,7 +53,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     @PostConstruct
     public void initialize() {
         log.info("Initializing NeteaseCloudMusic API client with quality: {}...", quality);
-        if (!StringUtils.hasText(currentCookie) || "YOUR_NETEASE_COOKIE_STRING_HERE".equals(currentCookie)) {
+        if (!StringUtils.hasText(currentCookie)) {
             log.info("Netease Cookie is empty. Service running in passive mode (waiting for config).");
         } else {
             log.info("Netease Cookie configured.");
@@ -71,10 +70,8 @@ public class NeteaseMusicApiService implements IMusicApiService {
         return currentCookie != null ? currentCookie : "";
     }
 
-    /** 是否已配置可用的网易云 cookie（非空且非占位符） */
     public boolean isCookieConfigured() {
-        return StringUtils.hasText(neteaseConfig.getCookie())
-                && !"YOUR_NETEASE_COOKIE_STRING_HERE".equals(neteaseConfig.getCookie());
+        return StringUtils.hasText(neteaseConfig.getCookie());
     }
 
     public Mono<JsonNode> fetchPersonalFm() {
@@ -174,8 +171,8 @@ public class NeteaseMusicApiService implements IMusicApiService {
                                     artists,
                                     song.path("dt").asLong(),
                                     PLATFORM,
-                                    upgradeToHttps(song.path("al").path("picUrl").asText())
-                            ));
+                                    upgradeToHttps(song.path("al").path("picUrl").asText()),
+                                    externalUrl(song.path("id").asText())));
                         }
                     }
                     return musicList;
@@ -200,8 +197,26 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<Music> getMusic(String musicId) {
-        return Mono.defer(() -> getMusicDetails(musicId)).map(music -> new Music(music.id(), music.name(), music.artists(),
-                music.duration(), music.platform(), music.coverUrl(), externalUrl(musicId)));
+        return webClient.get()
+                .uri(baseUrl + "/song/detail?ids={musicId}", musicId)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, response -> handleApiError("get song detail", response))
+                .bodyToMono(JsonNode.class)
+                .map(jsonNode -> {
+                    JsonNode song = jsonNode.path("songs").path(0);
+                    if (song.isMissingNode()) throw new ApiRequestException("歌曲不可用");
+                    List<String> artists = new ArrayList<>();
+                    JsonNode artistNode = song.has("artists") ? song.path("artists") : song.path("ar");
+                    artistNode.forEach(artist -> artists.add(artist.path("name").asText()));
+                    return new Music(
+                            song.path("id").asText(),
+                            song.path("name").asText(),
+                            artists,
+                            song.path("dt").asLong(),
+                            PLATFORM,
+                            upgradeToHttps(song.path("al").path("picUrl").asText()),
+                            externalUrl(musicId));
+                });
     }
 
     @Override
@@ -237,63 +252,6 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 });
     }
 
-    @Override
-    public Mono<PlayableMusic> getPlayableMusic(String musicId) {
-        return Mono.zip(getMusic(musicId), resolveMedia(musicId, MediaConsumer.BROWSER))
-                .map(pair -> new PlayableMusic(pair.getT1().id(), pair.getT1().name(), pair.getT1().artists(),
-                        pair.getT1().duration(), PLATFORM, pair.getT2().url(), pair.getT1().coverUrl(), false, "SONG", pair.getT1().externalUrl()));
-    }
-
-    /**
-     * 私人FM/DJ 推荐歌曲的播放直链（与普通点播一致的回退策略：xeapi 优先、eapi 兜底）。
-     * 从段信息直接构造，省一次 /song/detail。
-     */
-    public Mono<String> getFmDjSongUrl(String musicId) {
-        return resolveSongUrl(musicId).map(this::upgradeToHttps);
-    }
-
-    /**
-     * 歌曲直链：先尝试 xeapi /song/url/v1（高音质档位），
-     * 出错或返回空 url 时回退到 eapi /song/url（br 码率，稳定）。
-     * 部署环境的 api-enhanced 若 xeapi 公钥未就绪，/song/url/v1 会一律 404，这里自动降级不影响播放。
-     */
-    private Mono<String> resolveSongUrl(String musicId) {
-        return resolveSongUrl(musicId, null);
-    }
-
-    public Mono<String> refreshSongUrl(String musicId) {
-        return Mono.defer(() -> {
-            if (musicId == null || !musicId.matches("[1-9][0-9]{0,19}")) {
-                return Mono.error(new ApiRequestException("无效的歌曲 ID"));
-            }
-            return resolveSongUrl(musicId, System.currentTimeMillis());
-        }).map(this::upgradeToHttps)
-          .timeout(java.time.Duration.ofSeconds(10))
-          .onErrorMap(error -> new ApiRequestException("播放地址刷新失败，请检查音乐接口后重试"));
-    }
-
-    private Mono<String> resolveSongUrl(String musicId, Long timestamp) {
-        return requestSongUrl(musicId, true, timestamp)
-                .onErrorResume(error -> {
-                    log.debug("Primary song URL unavailable; trying the existing bitrate fallback");
-                    return requestSongUrl(musicId, false, timestamp);
-                });
-    }
-
-    private Mono<String> requestSongUrl(String musicId, boolean v1, Long timestamp) {
-        String route = v1 ? "/song/url/v1?id={id}&level={quality}&cookie={cookie}"
-                : "/song/url?id={id}&br={quality}&cookie={cookie}";
-        if (timestamp != null) route += "&timestamp=" + timestamp;
-        return webClient.get().uri(baseUrl + route, musicId, v1 ? quality : resolveBr(quality), getCookie())
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> response.releaseBody()
-                        .then(Mono.error(new ApiRequestException("播放地址暂不可用"))))
-                .bodyToMono(JsonNode.class)
-                .map(json -> json.path("data").path(0).path("url").asText(""))
-                .flatMap(url -> url.startsWith("http://") || url.startsWith("https://")
-                        ? Mono.just(url) : Mono.error(new ApiRequestException("无有效播放地址")));
-    }
-
     /** 将 level 音质档位映射为 eapi /song/url 的 br 码率（exhigh≈320k 高音质） */
     int resolveBr(String level) {
         if (level == null) return 320_000;
@@ -303,35 +261,6 @@ public class NeteaseMusicApiService implements IMusicApiService {
             case "lossless", "hires", "jymaster", "sky", "jyeffect" -> 999_000;
             default -> 320_000;
         };
-    }
-
-    private Mono<Music> getMusicDetails(String musicId) {
-        return webClient.get()
-                .uri(baseUrl + "/song/detail?ids={musicId}", musicId)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> handleApiError("get song detail", response))
-                .bodyToMono(JsonNode.class)
-                .map(jsonNode -> {
-                    JsonNode song = jsonNode.path("songs").path(0);
-                    if (song.isMissingNode()) throw new ApiRequestException("歌曲不可用");
-                    List<String> artists = new ArrayList<>();
-                    JsonNode artistNode = song.has("artists") ? song.path("artists") : song.path("ar");
-                    artistNode.forEach(artist -> artists.add(artist.path("name").asText()));
-                    return new Music(
-                            song.path("id").asText(),
-                            song.path("name").asText(),
-                            artists,
-                            song.path("dt").asLong(),
-                            PLATFORM,
-                            upgradeToHttps(song.path("al").path("picUrl").asText())
-                    );
-                });
-    }
-
-    @Override
-    public Mono<List<Playlist>> getUserPlaylists(String userId) {
-        return publicCollections(userId, "playlists", 0, 50)
-                .map(org.thornex.musicparty.source.SourcePage::items);
     }
 
     @Override
@@ -362,17 +291,8 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<Playlist> containerDetail(String type, String id) {
-        return "playlist".equals(type) ? playlistDetail(id) : IMusicApiService.super.containerDetail(type, id);
-    }
-
-    @Override
-    public Mono<org.thornex.musicparty.source.SourcePage<Music>> containerPage(String type, String id, int offset, int limit) {
-        return "playlist".equals(type) ? playlistPage(id, offset, limit) : IMusicApiService.super.containerPage(type, id, offset, limit);
-    }
-
-    @Override
-    public Mono<Playlist> playlistDetail(String playlistId) {
-        return webClient.get().uri(baseUrl + "/playlist/detail?id={id}", playlistId)
+        if (!"playlist".equals(type)) return IMusicApiService.super.containerDetail(type, id);
+        return webClient.get().uri(baseUrl + "/playlist/detail?id={id}", id)
                 .retrieve().bodyToMono(JsonNode.class).map(json -> {
                     JsonNode playlist = json.path("playlist");
                     if (json.path("code").asInt(200) != 200 || playlist.path("id").asText("").isBlank()) {
@@ -383,16 +303,11 @@ public class NeteaseMusicApiService implements IMusicApiService {
     }
 
     @Override
-    public Mono<org.thornex.musicparty.source.SourcePage<Music>> playlistPage(String id, int offset, int limit) {
-        return getPlaylistMusics(id, offset, limit).map(items ->
-                new org.thornex.musicparty.source.SourcePage<>(items,
-                        items.size() == limit ? offset + items.size() : null, null));
-    }
-
-    @Override
-    public Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit) {
+    public Mono<org.thornex.musicparty.source.SourcePage<Music>> containerPage(String type, String id, int offset, int limit) {
+        if (!"playlist".equals(type)) return IMusicApiService.super.containerPage(type, id, offset, limit);
+        if (offset < 0 || limit < 1) return Mono.error(new ApiRequestException("INVALID_CURSOR: 无效分页参数"));
         return webClient.get()
-                .uri(baseUrl + "/playlist/track/all?id={playlistId}&limit={limit}&offset={offset}", playlistId, limit, offset)
+                .uri(baseUrl + "/playlist/track/all?id={playlistId}&limit={limit}&offset={offset}", id, limit, offset)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("get playlist tracks", response))
                 .bodyToMono(JsonNode.class)
@@ -412,10 +327,10 @@ public class NeteaseMusicApiService implements IMusicApiService {
                                 artists,
                                 song.path("dt").asLong(),
                                 PLATFORM,
-                                upgradeToHttps(song.path("al").path("picUrl").asText())
-                        ));
+                                upgradeToHttps(song.path("al").path("picUrl").asText()),
+                                externalUrl(song.path("id").asText())));
                     });
-                    return musicList;
+                    return new SourcePage<>(musicList, musicList.size() == limit ? offset + musicList.size() : null, null);
                 });
     }
 
@@ -464,7 +379,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     private Mono<JsonNode> fetchAlbumData(String route, String id) {
         return webClient.get()
-                .uri(baseUrl + route + "", id)
+                .uri(baseUrl + route, id)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> response.releaseBody()
                         .then(Mono.error(new ApiRequestException("专辑读取失败，请稍后重试"))))
@@ -506,7 +421,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                     JsonNode al = song.has("al") ? song.path("al") : song.path("album");
                     songs.putIfAbsent(id, new Music(id, song.path("name").asText("未知歌曲"),
                             albumArtists(song), song.path("dt").asLong(song.path("duration").asLong(0)),
-                            PLATFORM, upgradeToHttps(al.path("picUrl").asText(album.path("picUrl").asText("")))));
+                            PLATFORM, upgradeToHttps(al.path("picUrl").asText(album.path("picUrl").asText(""))), externalUrl(id)));
                 }
                 if (songs.isEmpty()) throw new ApiRequestException("专辑中没有可添加的曲目");
                 return new AlbumInfo(album.path("id").asText(),

@@ -15,7 +15,7 @@ const setup = new Function(
 let playerStore, api, error, success, state;
 beforeEach(() => {
     playerStore = reactive({
-        config: { privateDj: { source: 'selected', mode: 'OFF' }, recommendationsAvailable: true },
+        config: { privateDj: { source: 'selected', mode: 'OFF' } },
     });
     api = { updatePrivateDj: vi.fn().mockResolvedValue({ message: 'Saved' }) };
     error = vi.fn();
@@ -33,8 +33,7 @@ describe('selected deployment recommendation capabilities', () => {
         await state.setPrivateDjMode('FM');
         expect(api.updatePrivateDj).toHaveBeenCalledExactlyOnceWith('admin', { mode: 'FM' });
     });
-    it('accepts both explicit flags regardless of the legacy root summary', async () => {
-        playerStore.config.recommendationsAvailable = false;
+    it('accepts both explicit selected-provider flags', async () => {
         Object.assign(playerStore.config.privateDj, { fmSupported: true, djSupported: true });
         await state.setPrivateDjMode('DJ');
         await state.setPrivateDjMode('FM');

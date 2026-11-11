@@ -11,7 +11,7 @@ export const useSourcesStore = defineStore('sources', () => {
     const enabled = computed(() => sources.value.filter((source) => isEnabled(source.id)));
     const descriptor = (id) => sources.value.find((source) => source.id === id);
     const overrides = ref({});
-    const isEnabled = (id) => !!descriptor(id) && (overrides.value[id]?.enabled ?? descriptor(id).enabled ?? true);
+    const isEnabled = (id) => !!descriptor(id) && (overrides.value[id]?.enabled ?? true);
     const supports = (id, capability) => isEnabled(id) && descriptor(id)?.capabilities?.[capability] === true;
     const load = (refresh = false) => {
         if (request) {

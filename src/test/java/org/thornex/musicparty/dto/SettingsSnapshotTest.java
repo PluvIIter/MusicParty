@@ -16,11 +16,11 @@ class SettingsSnapshotTest {
     void roundTripPreservesAllFields() throws Exception {
         SettingsSnapshot original = new SettingsSnapshot(
                 new SettingsSnapshot.PlayerSettings(
-                        "SHUFFLE", true, true, true, 0.75, 20, true, true, true),
+                        "SHUFFLE", true, true, 0.75, 20, true, true, true),
                 "room123", true,
                 new SettingsSnapshot.PrivateDjSettings("DJ", true, true, true),
                 new SettingsSnapshot.SystemConfigSettings(
-                        500, 100, 50, 200, 5000, 500L, true, false, 15, 512, true, true, true));
+                        500, 100, 50, 200, 5000, 500L, 15, 512, true, true, true), java.util.Map.of("netease", true, "bilibili", false));
 
         String json = mapper.writeValueAsString(original);
         SettingsSnapshot restored = mapper.readValue(json, SettingsSnapshot.class);
@@ -29,7 +29,6 @@ class SettingsSnapshotTest {
         assertTrue(restored.systemConfig().allowSeek());
 
         assertEquals("SHUFFLE", restored.player().playMode());
-        assertTrue(restored.player().fairShuffle());
         assertTrue(restored.player().allowOfflineShuffle());
         assertTrue(restored.player().voteSkipEnabled());
         assertEquals(0.75, restored.player().voteSkipThreshold());
@@ -49,8 +48,8 @@ class SettingsSnapshotTest {
         assertEquals(200, restored.systemConfig().maxPlaylistImportSize());
         assertEquals(5000, restored.systemConfig().maxChatHistorySize());
         assertEquals(500L, restored.systemConfig().minChatIntervalMs());
-        assertTrue(restored.systemConfig().neteaseEnabled());
-        assertFalse(restored.systemConfig().bilibiliEnabled());
+        assertTrue(restored.sourceEnabled().get("netease"));
+        assertFalse(restored.sourceEnabled().get("bilibili"));
         assertEquals(15, restored.systemConfig().bilibiliMaxDurationMinutes());
         assertEquals(512, restored.systemConfig().maxChatMessageLength());
     }
@@ -59,8 +58,8 @@ class SettingsSnapshotTest {
     void nullSectionsRoundTripAsNull() throws Exception {
         SettingsSnapshot original = new SettingsSnapshot(
                 new SettingsSnapshot.PlayerSettings(
-                        "SEQUENTIAL", null, null, null, null, null, null, null, null),
-                null, null, null, null);
+                        "SEQUENTIAL", null, null, null, null, null, null, null),
+                null, null, null, null, null);
 
         String json = mapper.writeValueAsString(original);
         SettingsSnapshot restored = mapper.readValue(json, SettingsSnapshot.class);
@@ -71,12 +70,4 @@ class SettingsSnapshotTest {
         assertNull(restored.player().voteSkipEnabled());
     }
 
-    @Test
-    void unknownJsonFieldsAreIgnored() throws Exception {
-        // 模拟旧版读新版文件 / 未来字段：未知字段必须被忽略
-        String json = "{\"player\":{\"playMode\":\"SHUFFLE\"},\"futureField\":123}";
-        SettingsSnapshot restored = mapper.readValue(json, SettingsSnapshot.class);
-        assertEquals("SHUFFLE", restored.player().playMode());
-        assertNull(restored.player().voteSkipEnabled());
-    }
 }

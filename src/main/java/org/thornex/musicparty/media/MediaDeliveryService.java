@@ -27,7 +27,6 @@ public class MediaDeliveryService {
     private final LocalCacheService cache;
     private final Map<String, Mono<ResolvedMedia>> resolutions = new ConcurrentHashMap<>();
     private final Map<String, Ticket> tickets = new ConcurrentHashMap<>();
-    private final Map<String, String> representations = new ConcurrentHashMap<>();
     private final Map<String, String> downloadAliases = new ConcurrentHashMap<>();
     private final java.util.Set<String> failedDownloads = ConcurrentHashMap.newKeySet();
     private PlayableMusic activePlayback;
@@ -80,14 +79,13 @@ public class MediaDeliveryService {
                 .timeout(Duration.ofSeconds(15));
     }
 
-    private Mono<ResolvedMedia> resolve(String sourceId, String id, MediaConsumer consumer, boolean refresh) {
+    private Mono<ResolvedMedia> resolve(String sourceId, String id, MediaConsumer consumer) {
         return Mono.defer(() -> {
             var adapter = registry.getRequired(sourceId);
             if (resolutions.size() > 1024) resolutions.clear();
             long revision = adapter.credentialRevision();
             long epoch = registry.authorizationEpoch(sourceId);
             String key = ResourceKey.encode(sourceId, id) + ":" + revision + ":" + epoch + ":" + consumer;
-            if (refresh) resolutions.remove(key);
             return resolutions.computeIfAbsent(key, ignored -> Mono.defer(() -> {
                         registry.getRequired(sourceId);
                         return adapter.resolveMedia(id, consumer);
@@ -109,20 +107,17 @@ public class MediaDeliveryService {
             registry.getRequired(sourceId);
             return getMetadata(sourceId, id).flatMap(music -> {
                 if (registry.deliveryMode(sourceId) == DeliveryMode.DIRECT_URL) {
-                    return resolve(sourceId, id, MediaConsumer.BROWSER, false).map(media -> {
-                        representations.put(ResourceKey.encode(sourceId, id), media.representationKey());
+                    return resolve(sourceId, id, MediaConsumer.BROWSER).map(media -> {
                         PlayableMusic prepared = playable(music, media.url());
                         rememberTimeline(prepared, media.timelineKey());
                         return prepared;
                     });
                 }
                 return prepareDownload(music).flatMap(key -> awaitDownload(music.platform(), key)).map(key -> {
-                    var entry = cache.getCacheEntry(key);
-                    if (entry != null && entry.getRepresentationKey() != null) representations.put(ResourceKey.encode(sourceId, id), entry.getRepresentationKey());
                     PlayableMusic prepared = playable(music, issueTicket(sourceId, key));
-                    String timeline = assetTimelines.get(key);
-                    if (timeline == null && entry != null) timeline = entry.getRepresentationKey();
-                    if (timeline != null) rememberTimeline(prepared, timeline);
+                    String timeline = cachedTimeline(key);
+                    if (timeline == null) throw new ApiRequestException("MEDIA_CONTENT_CHANGED");
+                    rememberTimeline(prepared, timeline);
                     synchronized (this) { playbackAssets.put(new PlaybackIdentity(prepared, playbackReferences), key); }
                     return prepared;
                 });
@@ -156,7 +151,7 @@ public class MediaDeliveryService {
             requireAuthorization(sourceId, scope);
             Instant expiresAt = Instant.now().plus(VOICE_LIFETIME);
             ResolvedMedia media = new ResolvedMedia(new ResourceKey(sourceId, id), "voice:" + id,
-                    voice.voiceUrl(), "audio/mpeg", ".mp3", expiresAt, Map.of(), true);
+                    voice.voiceUrl(), "audio/mpeg", ".mp3", expiresAt, Map.of(), true, "voice:" + id);
             return MediaUrlPolicy.validate(media).flatMap(validated -> {
                 requireAuthorization(sourceId, scope);
                 Mono<String> delivered;
@@ -178,7 +173,7 @@ public class MediaDeliveryService {
                     if (voices.size() >= 1024) throw new ApiRequestException("VOICE_MEDIA_CAPACITY_EXCEEDED");
                     voices.put(ResourceKey.encode(sourceId, id), new VoiceAsset(sourceId, id, scope, validated, key, url));
                     return new PlayableMusic(id, "DJ 语音", java.util.List.of("DJ"), Math.max(0, voice.durationMs()),
-                            sourceId, url, voice.relatedCoverUrl(), false, "VOICE", null);
+                            sourceId, url, voice.relatedCoverUrl(), "VOICE", null);
                 });
             });
         });
@@ -218,7 +213,7 @@ public class MediaDeliveryService {
         return Mono.defer(() -> {
             String scope = authorizationScope(music.platform());
             String logical = assetKey(music.platform(), music.id());
-            return resolve(music.platform(), music.id(), MediaConsumer.SERVER, false).map(media -> {
+            return resolve(music.platform(), music.id(), MediaConsumer.SERVER).map(media -> {
                 requireAuthorization(music.platform(), scope);
                 int separator = logical.lastIndexOf(":credentials:");
                 String version = fingerprint(media.timelineKey().length() + ":" + media.timelineKey() + media.representationKey());
@@ -287,35 +282,11 @@ public class MediaDeliveryService {
                         });
                     });
                 }
-                return resolve(source, current.id(), MediaConsumer.BROWSER, false).map(media -> {
+                return resolve(source, current.id(), MediaConsumer.BROWSER).map(media -> {
                     requireAuthorization(source, scope);
                     requireTimeline(timeline, media.timelineKey());
                     return media.url();
                 });
-            });
-        });
-    }
-
-    public Mono<String> refreshSongUrl(String sourceId, String id) {
-        return Mono.defer(() -> {
-            registry.getRequired(sourceId);
-            if (registry.deliveryMode(sourceId) == DeliveryMode.SERVER_DOWNLOAD) {
-                String previous = representations.get(ResourceKey.encode(sourceId, id));
-                return getMetadata(sourceId, id).flatMap(music -> {
-                    return prepareDownload(music).flatMap(key -> awaitDownload(sourceId, key)).map(key -> {
-                        var entry = cache.getCacheEntry(key);
-                        String current = entry == null ? null : entry.getRepresentationKey();
-                        int timelineMarker = current == null ? -1 : current.indexOf(":timeline:");
-                        if (timelineMarker >= 0) current = current.substring(0, timelineMarker);
-                        if (previous != null && !previous.equals(current)) throw new ApiRequestException("MEDIA_CONTENT_CHANGED");
-                        return issueTicket(sourceId, key);
-                    });
-                });
-            }
-            return resolve(sourceId, id, MediaConsumer.BROWSER, false).map(media -> {
-                String previous = representations.get(ResourceKey.encode(sourceId, id));
-                if (previous != null && !previous.equals(media.representationKey())) throw new ApiRequestException("MEDIA_CONTENT_CHANGED");
-                return media.url();
             });
         });
     }
@@ -353,7 +324,7 @@ public class MediaDeliveryService {
                         });
                     });
                 }
-                return resolve(music.platform(), music.id(), MediaConsumer.SERVER, false).map(media -> {
+                return resolve(music.platform(), music.id(), MediaConsumer.SERVER).map(media -> {
                     requireRadio(music.platform());
                     requireAuthorization(music.platform(), scope);
                     requireTimeline(timeline, media.timelineKey());
@@ -396,7 +367,7 @@ public class MediaDeliveryService {
             var entry = cache.getCacheEntry(key);
             timeline = entry == null ? null : entry.getRepresentationKey();
             int marker = timeline == null ? -1 : timeline.indexOf(":timeline:");
-            if (marker >= 0) timeline = timeline.substring(marker + ":timeline:".length());
+            timeline = marker >= 0 ? timeline.substring(marker + ":timeline:".length()) : null;
         }
         return timeline;
     }
@@ -481,6 +452,6 @@ public class MediaDeliveryService {
     }
 
     private PlayableMusic playable(Music music, String url) {
-        return new PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), music.platform(), url, music.coverUrl(), false, "SONG", music.externalUrl());
+        return new PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), music.platform(), url, music.coverUrl(), "SONG", music.externalUrl());
     }
 }

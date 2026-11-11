@@ -1,8 +1,11 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,52 +57,28 @@ func DefaultConfig() *AppConfig {
 	}
 }
 
-func (c *AppConfig) UnmarshalJSON(data []byte) error {
-	type plain AppConfig
-	decoded := plain(*DefaultConfig())
-	var stored struct {
-		*plain
-		NeteaseEnabled  *bool `json:"neteaseEnabled"`
-		BilibiliEnabled *bool `json:"bilibiliEnabled"`
-		Sources         map[string]struct {
-			Enabled      *bool  `json:"enabled"`
-			DeliveryMode string `json:"deliveryMode"`
-		} `json:"sources"`
+func DecodeConfig(data []byte) (*AppConfig, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var cfg AppConfig
+	if err := decoder.Decode(&cfg); err != nil {
+		return nil, err
 	}
-	stored.plain = &decoded
-	if err := json.Unmarshal(data, &stored); err != nil {
-		return err
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("configuration must contain one JSON object")
 	}
-	if stored.NeteaseEnabled != nil {
-		source := decoded.Sources["netease"]
-		source.Enabled = *stored.NeteaseEnabled
-		decoded.Sources["netease"] = source
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
-	if stored.BilibiliEnabled != nil {
-		source := decoded.Sources["bilibili"]
-		source.Enabled = *stored.BilibiliEnabled
-		decoded.Sources["bilibili"] = source
-	}
-	for id, override := range stored.Sources {
-		source, exists := decoded.Sources[id]
-		if !exists {
-			source.DeliveryMode = DirectURL
-		}
-		if override.Enabled != nil {
-			source.Enabled = *override.Enabled
-		}
-		if override.DeliveryMode != "" {
-			source.DeliveryMode = override.DeliveryMode
-		}
-		decoded.Sources[id] = source
-	}
-	*c = AppConfig(decoded)
-	return nil
+	return &cfg, nil
 }
 
 var sourceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 func (c *AppConfig) Validate() error {
+	if c.Sources == nil {
+		return fmt.Errorf("sources configuration is required")
+	}
 	for _, id := range c.SourceIDs() {
 		source := c.Sources[id]
 		if !sourceIDPattern.MatchString(id) {
@@ -138,16 +117,15 @@ func GetConfigPath() string {
 	return filepath.Join(GetBaseDir(), "launcher_config.json")
 }
 
-func LoadConfig() *AppConfig {
+func LoadConfig() (*AppConfig, error) {
 	data, err := os.ReadFile(GetConfigPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return DefaultConfig(), nil
+	}
 	if err != nil {
-		return DefaultConfig()
+		return nil, err
 	}
-	var cfg AppConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return DefaultConfig()
-	}
-	return &cfg
+	return DecodeConfig(data)
 }
 
 func (c *AppConfig) Save() error {

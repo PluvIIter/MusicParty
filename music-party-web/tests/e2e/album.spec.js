@@ -1,3 +1,4 @@
+import { compactFrames } from './compact-fixture';
 import { test, expect } from '@playwright/test';
 
 // HTTP and STOMP fixtures keep browser tests independent of accounts and music services.
@@ -25,13 +26,9 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
     const sent = [];
     let fail = failAlbumOnce;
     const config = {
-        neteaseEnabled: true,
-        bilibiliEnabled: true,
-        neteaseCookieConfigured: true,
         maxUserSongs: 100,
         maxQueueSize: 1000,
         maxPlaylistImportSize: 100,
-        bilibiliMaxDurationMinutes: 10,
         privateDj: { mode: 'OFF' },
     };
     await page.addInitScript(() => {
@@ -83,6 +80,8 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
     await page.routeWebSocket('**/ws', (socket) => {
         const subscriptions = new Map();
         let sequence = 0;
+        const snapshot = compactFrames();
+        const sendState = (state) => send('/topic/player/compact', snapshot(state));
         const send = (destination, payload) => {
             for (const [id, topic] of subscriptions) {
                 if (topic === destination)
@@ -96,14 +95,12 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
             queue,
             playMode: 'SEQUENTIAL',
             isPaused: false,
-            isFairShuffle: true,
             allowOfflineShuffle: false,
             onlineUsers: [owner],
             config,
         });
         const update = () => {
-            send('/topic/player/queue', queue);
-            send('/topic/player/state', state());
+            sendState(state());
         };
         const add = (song) =>
             queue.push({
@@ -134,7 +131,7 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
                 if (command !== 'SEND') continue;
                 const body = JSON.parse(json || '{}');
                 sent.push({ destination: headers.destination, body });
-                if (headers.destination === '/app/player/resync') update();
+                if (headers.destination === '/app/player/compact-resync') update();
                 if (headers.destination === '/app/enqueue') {
                     const song = songs.find((song) => song.id === body.musicId);
                     const enqueue = () => {
@@ -174,7 +171,7 @@ async function room(page, { failAlbumOnce = false, singleDelayMs = 0 } = {}) {
     await page.getByPlaceholder('搜索音乐...').fill('test');
     await page.getByPlaceholder('搜索音乐...').press('Enter');
     await page.getByRole('button', { name: '查看《Song 1》所属专辑' }).waitFor();
-    await expect.poll(() => sent.some((item) => item.destination === '/app/player/resync')).toBe(true);
+    await expect.poll(() => sent.some((item) => item.destination === '/app/player/compact-resync')).toBe(true);
     return { queue, sent };
 }
 

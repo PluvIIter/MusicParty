@@ -1,12 +1,12 @@
 package org.thornex.musicparty.service;
 
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.media.MediaDeliveryService;
 import org.thornex.musicparty.service.api.IMusicApiService;
-import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 import org.thornex.musicparty.source.*;
 
@@ -19,16 +19,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 final class PlayerTestFactory {
-    static MusicPlayerService create(List<IMusicApiService> adapters, UserService users, LocalCacheService unusedCache,
+    static MusicPlayerService create(List<IMusicApiService> adapters, UserService users,
                                     LiveStreamService streams, MusicQueueManager queue, ApplicationEventPublisher events,
-                                    AppProperties properties, NeteaseMusicApiService unusedApi, PrivateDjService dj) {
+                                    AppProperties properties, PrivateDjService dj) {
         SourceRegistry sources = mock(SourceRegistry.class);
         when(sources.descriptors()).thenReturn(List.of());
         when(sources.isEnabled(anyString())).thenAnswer(invocation -> {
-            String id = invocation.getArgument(0);
-            var config = properties.getSources().get(id);
-            if (config != null && config.getEnabled() != null) return config.getEnabled();
-            return !"netease".equals(id) || properties.getNetease().isEnabled();
+            var config = properties.getSources().get(invocation.<String>getArgument(0));
+            return config == null || !Boolean.FALSE.equals(config.getEnabled());
         });
         when(sources.descriptor(anyString())).thenAnswer(invocation -> new SourceDescriptor(invocation.getArgument(0),
                 "Fixture", "music", new SourceCapabilities(true, true, true, true, false, false, true, true),
@@ -38,13 +36,14 @@ final class PlayerTestFactory {
         MediaDeliveryService media = mock(MediaDeliveryService.class);
         when(media.authorizationScope(anyString())).thenReturn("fixture-scope");
         when(media.status(any(Music.class))).thenReturn(QueueItemStatus.READY);
-        when(media.getPlayableMusic(anyString(), anyString())).thenAnswer(invocation -> adapters.stream()
-                .filter(api -> api.getPlatformName().equals(invocation.getArgument(0))).findFirst().orElseThrow()
-                .getPlayableMusic(invocation.getArgument(1)));
         when(dj.isAvailable()).thenReturn(true);
         when(dj.supportsMode("FM")).thenReturn(true);
         when(dj.supportsMode("DJ")).thenReturn(true);
         return new MusicPlayerService(sources, users, media, streams, queue, events, properties, dj);
+    }
+
+    static MediaDeliveryService media(MusicPlayerService player) {
+        return (MediaDeliveryService) ReflectionTestUtils.getField(player, "mediaDeliveryService");
     }
 
     static void await(BooleanSupplier condition) {

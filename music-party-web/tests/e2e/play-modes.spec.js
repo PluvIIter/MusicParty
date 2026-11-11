@@ -1,3 +1,4 @@
+import { compactFrames } from './compact-fixture';
 import { test, expect } from '@playwright/test';
 
 async function room(
@@ -80,6 +81,8 @@ async function room(
         disconnect = () => socket.close({ code: 1000, reason: 'Fixture disconnect' });
         const subscriptions = new Map();
         let sequence = 0;
+        const snapshot = compactFrames();
+        const sendState = (state) => send('/topic/player/compact', snapshot(state));
         const send = (destination, body) => {
             for (const [id, topic] of subscriptions)
                 if (topic === destination)
@@ -88,8 +91,7 @@ async function room(
                     );
         };
         broadcast = () => {
-            send('/topic/player/queue', queue);
-            send('/topic/player/state', {
+            sendState({
                 nowPlaying: null,
                 queue,
                 playMode: mode,
@@ -97,7 +99,6 @@ async function room(
                 isPlayModeLocked: locked,
                 memberShufflePreferences: preferences,
                 onlineUsers: [member, other],
-                config: { neteaseEnabled: true, privateDj: { mode: 'OFF' } },
             });
         };
         sendEvent = (message) => send('/user/queue/events', { action: 'ERROR', type: 'ERROR', message });
@@ -122,7 +123,7 @@ async function room(
                 if (command !== 'SEND') continue;
                 const body = JSON.parse(json || '{}');
                 sent.push({ destination: headers.destination, body });
-                if (headers.destination === '/app/player/resync') {
+                if (headers.destination === '/app/player/compact-resync') {
                     broadcast();
                     if (admin) send('/topic/player/events', { action: 'ADMIN_TRIGGER', userId: 'mine', type: 'INFO' });
                 }
@@ -413,7 +414,7 @@ for (const guard of ['guest', 'locked'])
         }
     });
 
-test('admin selects explicit modes and has no legacy fair switch', async ({ page }) => {
+test('admin selects explicit modes without obsolete fair switch', async ({ page }) => {
     const fixture = await room(page, { admin: true });
     await page.getByPlaceholder('ENTER ADMIN PASSWORD').fill('test-admin');
     await page.getByRole('button', { name: 'ACCESS SYSTEM' }).click();

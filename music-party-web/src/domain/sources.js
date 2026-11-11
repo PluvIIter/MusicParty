@@ -1,5 +1,4 @@
-export const resourceKey = (track) =>
-    JSON.stringify([track?.platform ?? track?.sourceId ?? '', String(track?.id ?? '')]);
+export const resourceKey = (track) => JSON.stringify([track?.platform ?? '', String(track?.id ?? '')]);
 
 export function safeExternalUrl(value) {
     if (!value) return '';

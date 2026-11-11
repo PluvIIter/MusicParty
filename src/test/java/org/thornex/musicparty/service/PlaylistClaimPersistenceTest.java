@@ -27,7 +27,7 @@ class PlaylistClaimPersistenceTest {
     @Test void settingAndClaimedOwnersSurviveNormalLoad() throws Exception {
         var props=new AppProperties();props.getQueue().setPersistenceFile(directory.resolve("queue.json").toString());props.getQueue().setAllowPlaylistClaim(true);
         var queue=new MusicQueueManager(props);
-        var item=new MusicQueueItem("stable-id",new Music("1","Fixture",List.of("Fixture"),180000,"netease",""),new UserSummary("current","session","Recovered",false),QueueItemStatus.READY);
+        var item=new MusicQueueItem("stable-id",new Music("1","Fixture",List.of("Fixture"),180000,"netease","", null),new UserSummary("current","session","Recovered",false),QueueItemStatus.READY, org.thornex.musicparty.enums.Priority.REGULAR);
         persistence(props,queue,new ObjectMapper()).saveQueueSnapshot(List.of(item));
         props.getQueue().setAllowPlaylistClaim(false);
         persistence(props,queue,new ObjectMapper()).loadData();
@@ -36,8 +36,8 @@ class PlaylistClaimPersistenceTest {
         persistence(props,queue,new ObjectMapper()).loadData();assertFalse(props.getQueue().isAllowPlaylistClaim());
     }
     private static MusicQueueItem item(String queueId, String musicId, String token) {
-        return new MusicQueueItem(queueId, new Music(musicId, "Fixture", List.of("Fixture"), 180000, "netease", ""),
-                new UserSummary(token, "session", "Recovered", false), QueueItemStatus.READY);
+        return new MusicQueueItem(queueId, new Music(musicId, "Fixture", List.of("Fixture"), 180000, "netease", "", null),
+                new UserSummary(token, "session", "Recovered", false), QueueItemStatus.READY, org.thornex.musicparty.enums.Priority.REGULAR);
     }
     @Test void proposedSnapshotKeepsStableFirstPlayIdsWithoutInferringFromMusicHistory() throws Exception {
         var props = new AppProperties();
@@ -63,7 +63,7 @@ class PlaylistClaimPersistenceTest {
         assertEquals(proposed, restored.getQueueSnapshot());
         assertEquals(Set.of("heard-id"), restored.getPlayedQueueIds());
         restored.remove("replacement-id");
-        assertEquals("fresh-id", restored.pollNext(org.thornex.musicparty.enums.PlayMode.SHUFFLE, true, false,
+        assertEquals("fresh-id", restored.pollNext(org.thornex.musicparty.enums.PlayMode.SHUFFLE, false,
                 Map.of(ResourceKey.encode("netease", "heard"), QueueItemStatus.READY, ResourceKey.encode("netease", "fresh"), QueueItemStatus.READY), Set.of("target")).queueId());
     }
     @Test void proposedSnapshotWritesAuthoritativeEmptyLedger() throws Exception {

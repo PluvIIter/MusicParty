@@ -24,7 +24,7 @@ class MediaDeliveryServiceTest {
     LocalCacheService cache;
     IMusicApiService adapter;
     MediaDeliveryService service;
-    Music music = new Music("same/id", "Track", List.of(), 120000, "stub", "");
+    Music music = new Music("same/id", "Track", List.of(), 120000, "stub", "", null);
 
     @BeforeEach void setup() {
         registry = mock(SourceRegistry.class); cache = mock(LocalCacheService.class); adapter = mock(IMusicApiService.class);
@@ -33,7 +33,7 @@ class MediaDeliveryServiceTest {
         when(adapter.getMusic("same/id")).thenReturn(Mono.just(music));
         when(adapter.resolveMedia(eq("same/id"), any())).thenAnswer(call -> Mono.just(new ResolvedMedia(
                 new ResourceKey("stub", "same/id"), "mp3:full", "https://93.184.216.34/audio", "audio/mpeg", ".mp3",
-                Instant.now().plusSeconds(100), Map.of(), true)));
+                Instant.now().plusSeconds(100), Map.of(), true, "mp3:full")));
         when(registry.descriptor("stub")).thenReturn(new SourceDescriptor("stub", "Stub", "music",
                 new SourceCapabilities(true, false, false, false, false, false, true, true),
                 java.util.Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD), List.of()));
@@ -69,7 +69,7 @@ class MediaDeliveryServiceTest {
 
     @Test void browserUnsafeResolvedMediaIsRejected() {
         when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"),
-                "dash", "https://93.184.216.34/audio", "audio/mp4", ".m4a", Instant.now().plusSeconds(100), Map.of("Cookie", "secret"), false)));
+                "dash", "https://93.184.216.34/audio", "audio/mp4", ".m4a", Instant.now().plusSeconds(100), Map.of("Cookie", "secret"), false, "dash")));
         assertThrows(RuntimeException.class, () -> service.getPlayableMusic("stub", "same/id").block());
     }
 
@@ -84,12 +84,12 @@ class MediaDeliveryServiceTest {
         var full = service.getPlayableMusic("stub", "same/id").block();
         when(adapter.credentialRevision()).thenReturn(1L);
         when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"),
-                "trial:30000", "https://93.184.216.34/trial", "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true)));
+                "trial:30000", "https://93.184.216.34/trial", "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true, "trial:30000")));
         assertEquals("MEDIA_CONTENT_CHANGED", assertThrows(RuntimeException.class, () -> service.serverInput(full).block()).getMessage());
     }
 
     @Test void radioRejectsUnregisteredOldPlayableInsteadOfRebaselining() {
-        var manual = new org.thornex.musicparty.dto.PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), "stub", "old", "", false);
+        var manual = new org.thornex.musicparty.dto.PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), "stub", "old", "", "SONG", null);
         assertEquals("MEDIA_CONTENT_CHANGED", assertThrows(RuntimeException.class, () -> service.serverInput(manual).block()).getMessage());
         verify(adapter, never()).resolveMedia(anyString(), any());
     }
@@ -98,7 +98,7 @@ class MediaDeliveryServiceTest {
         var full = service.getPlayableMusic("stub", "same/id").block();
         when(adapter.credentialRevision()).thenReturn(1L);
         when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"),
-                "trial:30000", full.url(), "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true)));
+                "trial:30000", full.url(), "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true, "trial:30000")));
         var trial = service.getPlayableMusic("stub", "same/id").block();
         assertEquals(full, trial); assertNotSame(full, trial);
         assertEquals("MEDIA_CONTENT_CHANGED", assertThrows(RuntimeException.class, () -> service.serverInput(full).block()).getMessage());
@@ -165,7 +165,7 @@ class MediaDeliveryServiceTest {
         when(cache.getCacheEntry(anyString())).thenReturn(entry);
         var current = service.getPlayableMusic("stub", "same/id").block();
         when(adapter.credentialRevision()).thenReturn(1L); entry.setRepresentationKey("trial");
-        when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"), "trial", "https://93.184.216.34/trial", "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true)));
+        when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"), "trial", "https://93.184.216.34/trial", "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true, "trial")));
         assertEquals("MEDIA_CONTENT_CHANGED", assertThrows(RuntimeException.class, () -> service.refreshSongUrl(current).block()).getMessage());
     }
 
@@ -184,7 +184,7 @@ class MediaDeliveryServiceTest {
         when(cache.getCacheEntry(anyString())).thenReturn(entry);
         var full = service.getPlayableMusic("stub", "same/id").block();
         when(adapter.credentialRevision()).thenReturn(1L); entry.setRepresentationKey("trial:30000");
-        when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"), "trial:30000", "https://93.184.216.34/trial", "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true)));
+        when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"), "trial:30000", "https://93.184.216.34/trial", "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true, "trial:30000")));
         when(cache.localPath(anyString())).thenReturn(java.nio.file.Path.of("/cache/trial.mp3"));
         assertEquals("MEDIA_CONTENT_CHANGED", assertThrows(RuntimeException.class, () -> service.serverInput(full).block()).getMessage());
         when(cache.localPath(anyString())).thenReturn(null);
@@ -195,7 +195,7 @@ class MediaDeliveryServiceTest {
         when(registry.descriptor("stub")).thenReturn(new SourceDescriptor("stub", "Stub", "music",
                 new SourceCapabilities(true, false, false, false, false, false, true, false),
                 java.util.Set.of(DeliveryMode.DIRECT_URL), List.of()));
-        var playable = new org.thornex.musicparty.dto.PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), "stub", "old", "", false);
+        var playable = new org.thornex.musicparty.dto.PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), "stub", "old", "", "SONG", null);
         assertThrows(RuntimeException.class, () -> service.serverInput(playable).block());
         assertFalse(service.sourceAvailable("stub"));
         verifyNoInteractions(cache); verify(adapter, never()).resolveMedia(anyString(), any());
@@ -218,14 +218,14 @@ class MediaDeliveryServiceTest {
         when(cache.getStatus(anyString())).thenReturn(CacheStatus.COMPLETED);
         var entry = new LocalCacheService.CacheEntry(); entry.setRepresentationKey("mp3:full");
         when(cache.getCacheEntry(anyString())).thenReturn(entry);
-        service.getPlayableMusic("stub", "same/id").block();
+        var current = service.getPlayableMusic("stub", "same/id").block();
         when(adapter.credentialRevision()).thenReturn(1L);
         entry.setRepresentationKey("trial:30000");
-        when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"), "trial:30000", "https://93.184.216.34/trial", "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true)));
-        var failure = assertThrows(RuntimeException.class, () -> service.refreshSongUrl("stub", "same/id").block());
+        when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"), "trial:30000", "https://93.184.216.34/trial", "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true, "trial:30000")));
+        var failure = assertThrows(RuntimeException.class, () -> service.refreshSongUrl(current).block());
         assertEquals("MEDIA_CONTENT_CHANGED", failure.getMessage());
         assertEquals("MEDIA_CONTENT_CHANGED", assertThrows(RuntimeException.class,
-                () -> service.refreshSongUrl("stub", "same/id").block()).getMessage());
+                () -> service.refreshSongUrl(current).block()).getMessage());
     }
 
     @Test void restartNeverReusesPriorCredentialScopeEvenWhenRevisionsReset() {

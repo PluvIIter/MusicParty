@@ -50,11 +50,11 @@ class SourceIndependentRoomTest {
     }
 
     private Music track(String source) {
-        return new Music("same-id", "Track", List.of("Artist"), 1000, source, null);
+        return new Music("same-id", "Track", List.of("Artist"), 1000, source, null, null);
     }
 
     private PlayableMusic playable() {
-        return new PlayableMusic("same-id", "Track", List.of("Artist"), 1000, "third-source", "/media/ticket", null, false);
+        return new PlayableMusic("same-id", "Track", List.of("Artist"), 1000, "third-source", "/media/ticket", null, "SONG", null);
     }
 
     @Test
@@ -107,7 +107,7 @@ class SourceIndependentRoomTest {
         assertNull(queue.add(track("third-source"), owner, QueueItemStatus.READY));
         var status = Map.of(ResourceKey.of(first.music()).encoded(), QueueItemStatus.PENDING,
                 ResourceKey.of(other.music()).encoded(), QueueItemStatus.READY);
-        assertEquals(other, queue.pollNext(PlayMode.SEQUENTIAL, false, false, status, Set.of("member")));
+        assertEquals(other, queue.pollNext(PlayMode.SEQUENTIAL, false, status, Set.of("member")));
         assertEquals(List.of(first), queue.getQueueSnapshot());
     }
 

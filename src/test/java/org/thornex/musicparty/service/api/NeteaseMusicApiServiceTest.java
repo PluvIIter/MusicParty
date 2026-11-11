@@ -24,8 +24,8 @@ class NeteaseMusicApiServiceTest {
         assertFalse(service.isCookieConfigured(), "未配置应为 false");
         props.getNetease().setCookie("MUSIC_U=abc; __csrf=def");
         assertTrue(service.isCookieConfigured(), "已配置应为 true");
-        props.getNetease().setCookie("YOUR_NETEASE_COOKIE_STRING_HERE");
-        assertFalse(service.isCookieConfigured(), "占位符不算配置");
+        props.getNetease().setCookie("  ");
+        assertFalse(service.isCookieConfigured(), "空白不算配置");
     }
 
     @Test

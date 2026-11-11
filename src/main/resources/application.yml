@@ -18,22 +18,22 @@ app:
     back-words: ${APP_BACK_WORDS:THORNEX}
     sources:
       netease:
+        enabled: ${NETEASE_ENABLED:true}
         delivery-mode: ${NETEASE_DELIVERY_MODE:DIRECT_URL}
       bilibili:
+        enabled: ${BILIBILI_ENABLED:true}
         delivery-mode: ${BILIBILI_DELIVERY_MODE:SERVER_DOWNLOAD}
     netease:
       # The base URL of your deployed NeteaseCloudMusicApi instance
       base-url: ${NETEASE_API_URL:http://netease-api:3000}
       cookie: ${NETEASE_COOKIE:}
       quality: ${NETEASE_QUALITY:exhigh}
-      enabled: ${NETEASE_ENABLED:true}
     bilibili:
       # Bilibili API base URL, it's public
       base-url: "https://api.bilibili.com"
       # 完整 Cookie（可选）：浏览器登录 B站后复制的完整 Cookie 串，含 buvid3/SESSDATA/bili_jct 等。
       # 不填仅 B站源不可用，不影响其他音乐源。
       cookie: ${BILIBILI_COOKIE:}
-      enabled: ${BILIBILI_ENABLED:true}
       max-duration-minutes: ${BILIBILI_MAX_DURATION_MINUTES:10}
     private-dj:
       source: ${PRIVATE_DJ_SOURCE:netease}
@@ -57,8 +57,7 @@ app:
       seek-threshold-ms: ${STREAM_SEEK_THRESHOLD_MS:3000}
       emitter-timeout-ms: ${STREAM_EMITTER_TIMEOUT_MS:86400000}
     auth:
-      rate-limit:
-        enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
-        max-attempts: ${AUTH_MAX_ATTEMPTS:5}
-        window-seconds: ${AUTH_WINDOW_SECONDS:60}
-        block-duration-seconds: ${AUTH_BLOCK_DURATION:300}
+      rate-limit-enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
+      max-attempts: ${AUTH_MAX_ATTEMPTS:5}
+      window-seconds: ${AUTH_WINDOW_SECONDS:60}
+      block-duration-seconds: ${AUTH_BLOCK_DURATION:300}

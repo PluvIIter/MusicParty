@@ -9,11 +9,6 @@ import java.util.Objects;
 public record ResolvedMedia(ResourceKey resource, String representationKey, String url,
                             String mimeType, String extension, Instant expiresAt,
                             Map<String, String> headers, boolean browserSafe, String timelineKey) {
-    public ResolvedMedia(ResourceKey resource, String representationKey, String url, String mimeType,
-                         String extension, Instant expiresAt, Map<String, String> headers, boolean browserSafe) {
-        this(resource, representationKey, url, mimeType, extension, expiresAt, headers, browserSafe, representationKey);
-    }
-
     public ResolvedMedia {
         Objects.requireNonNull(resource);
         Objects.requireNonNull(representationKey);

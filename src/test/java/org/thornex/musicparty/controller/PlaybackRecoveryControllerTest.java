@@ -36,7 +36,7 @@ class PlaybackRecoveryControllerTest {
         registry = mock(SourceRegistry.class); adapter = mock(IMusicApiService.class);
         when(registry.getRequired("stub")).thenReturn(adapter); when(registry.isEnabled("stub")).thenReturn(true);
         state = mock(PlayerState.class); now = mock(NowPlayingInfo.class);
-        track = new PlayableMusic("1", "Track", List.of("Artist"), 180000, "stub", "https://audio.test/expired", "", false);
+        track = new PlayableMusic("1", "Track", List.of("Artist"), 180000, "stub", "https://audio.test/expired", "", "SONG", null);
         when(player.getCurrentPlayerState()).thenReturn(state); when(state.nowPlaying()).thenReturn(now);
         when(state.playbackId()).thenReturn("playback-1"); when(now.music()).thenReturn(track);
         when(delivery.refreshSongUrl(track)).thenReturn(Mono.just("https://audio.test/fresh"));
@@ -66,7 +66,7 @@ class PlaybackRecoveryControllerTest {
         when(registry.isEnabled("stub")).thenReturn(false);
         assertEquals(409, controller.refreshCurrent("playback-1", "room-secret").block().getStatusCode().value());
         when(registry.isEnabled("stub")).thenReturn(true);
-        when(now.music()).thenReturn(new PlayableMusic("1", "Voice", List.of(), 1000, "stub", "https://voice.test", "", false, "VOICE"));
+        when(now.music()).thenReturn(new PlayableMusic("1", "Voice", List.of(), 1000, "stub", "https://voice.test", "", "VOICE", null));
         assertEquals(409, controller.refreshCurrent("playback-1", "room-secret").block().getStatusCode().value());
         verifyNoInteractions(delivery);
     }

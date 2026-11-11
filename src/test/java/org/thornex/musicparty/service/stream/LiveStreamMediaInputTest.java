@@ -22,7 +22,7 @@ class LiveStreamMediaInputTest {
     @Test void mediaPreparationSubscribesOutsideRadioMonitor() throws Exception {
         var delivery = mock(MediaDeliveryService.class);
         var service = new LiveStreamService(delivery, mock(ApplicationEventPublisher.class), new AppProperties());
-        var music = new PlayableMusic("same", "Track", List.of(), 10000, "third", "https://cdn.test/old", "", false);
+        var music = new PlayableMusic("same", "Track", List.of(), 10000, "third", "https://cdn.test/old", "", "SONG", null);
         when(delivery.sourceAvailable("third")).thenReturn(true);
         ReflectionTestUtils.setField(service, "currentMusic", music); ReflectionTestUtils.setField(service, "isPaused", false);
         CountDownLatch subscribed = new CountDownLatch(1); AtomicBoolean locked = new AtomicBoolean(true);
@@ -39,7 +39,7 @@ class LiveStreamMediaInputTest {
         var delivery = mock(MediaDeliveryService.class);
         when(delivery.sourceAvailable("third")).thenReturn(true); when(delivery.authorizationScope("third")).thenReturn("scope");
         var service = new LiveStreamService(delivery, mock(ApplicationEventPublisher.class), new AppProperties());
-        var music = new PlayableMusic("A", "A", List.of(), 180000, "third", "old", "", false);
+        var music = new PlayableMusic("A", "A", List.of(), 180000, "third", "old", "", "SONG", null);
         reactor.core.publisher.Sinks.One<org.thornex.musicparty.media.ServerInput> pending = reactor.core.publisher.Sinks.one();
         CountDownLatch subscribed = new CountDownLatch(1), emitted = new CountDownLatch(1), replay = new CountDownLatch(1);
         when(delivery.serverInput(music)).thenReturn(pending.asMono().doOnSubscribe(value -> subscribed.countDown()).doAfterTerminate(emitted::countDown),
@@ -58,8 +58,8 @@ class LiveStreamMediaInputTest {
         var delivery = mock(MediaDeliveryService.class);
         when(delivery.sourceAvailable("third")).thenReturn(true); when(delivery.authorizationScope("third")).thenReturn("scope");
         var service = new LiveStreamService(delivery, mock(ApplicationEventPublisher.class), new AppProperties());
-        var first = new PlayableMusic("A", "A", List.of(), 180000, "third", "old", "", false);
-        var next = new PlayableMusic("B", "B", List.of(), 180000, "third", "old", "", false);
+        var first = new PlayableMusic("A", "A", List.of(), 180000, "third", "old", "", "SONG", null);
+        var next = new PlayableMusic("B", "B", List.of(), 180000, "third", "old", "", "SONG", null);
         var a = reactor.core.publisher.Sinks.<org.thornex.musicparty.media.ServerInput>one();
         var b = reactor.core.publisher.Sinks.<org.thornex.musicparty.media.ServerInput>one();
         CountDownLatch subscribedA = new CountDownLatch(1), subscribedB = new CountDownLatch(1), finishedA = new CountDownLatch(1), finishedB = new CountDownLatch(1);
@@ -80,8 +80,8 @@ class LiveStreamMediaInputTest {
         var delivery = mock(MediaDeliveryService.class);
         when(delivery.sourceAvailable("third")).thenReturn(true); when(delivery.authorizationScope("third")).thenReturn("scope");
         var service = new LiveStreamService(delivery, mock(ApplicationEventPublisher.class), new AppProperties());
-        var full = new PlayableMusic("A", "A", List.of(), 180000, "third", "full", "", false);
-        var trial = new PlayableMusic("A", "A", List.of(), 180000, "third", "trial", "", false);
+        var full = new PlayableMusic("A", "A", List.of(), 180000, "third", "full", "", "SONG", null);
+        var trial = new PlayableMusic("A", "A", List.of(), 180000, "third", "trial", "", "SONG", null);
         when(delivery.timelineIdentity(full)).thenReturn("full:180000"); when(delivery.timelineIdentity(trial)).thenReturn("trial:30000");
         ReflectionTestUtils.setField(service, "currentMusic", trial); ReflectionTestUtils.setField(service, "isPaused", false);
         ReflectionTestUtils.setField(service, "preparedResource", ResourceKey.encode("third", "A") + ":auth:scope:timeline:full:180000");
@@ -98,7 +98,7 @@ class LiveStreamMediaInputTest {
     @Test void alreadyPreparedNewTimelineRestartsOldProcessEvenWithSameTargetKey() throws Exception {
         var delivery = mock(MediaDeliveryService.class);
         when(delivery.sourceAvailable("third")).thenReturn(true); when(delivery.authorizationScope("third")).thenReturn("scope");
-        var music = new PlayableMusic("A", "A", List.of(), 180000, "third", "trial", "", false);
+        var music = new PlayableMusic("A", "A", List.of(), 180000, "third", "trial", "", "SONG", null);
         when(delivery.timelineIdentity(music)).thenReturn("trial");
         AppProperties properties = new AppProperties(); properties.setFfmpegPath("/nonexistent/musicparty-test-ffmpeg");
         var service = new LiveStreamService(delivery, mock(ApplicationEventPublisher.class), properties);
@@ -124,7 +124,7 @@ class LiveStreamMediaInputTest {
         when(delivery.sourceAvailable("third")).thenReturn(true); when(delivery.authorizationScope("third")).thenReturn("scope");
         AppProperties properties = new AppProperties(); properties.setFfmpegPath("/nonexistent/musicparty-test-ffmpeg");
         var service = new LiveStreamService(delivery, mock(ApplicationEventPublisher.class), properties);
-        var music = new PlayableMusic("A", "A", List.of(), 180000, "third", "old", "", false);
+        var music = new PlayableMusic("A", "A", List.of(), 180000, "third", "old", "", "SONG", null);
         ReflectionTestUtils.setField(service, "currentMusic", music); ReflectionTestUtils.setField(service, "isPaused", false);
         ((AtomicBoolean) ReflectionTestUtils.getField(service, "isEnabled")).set(true);
         ((AtomicBoolean) ReflectionTestUtils.getField(service, "songActive")).set(true);
@@ -153,7 +153,7 @@ class LiveStreamMediaInputTest {
         var delivery = mock(MediaDeliveryService.class);
         when(delivery.sourceAvailable("third")).thenReturn(true); when(delivery.authorizationScope("third")).thenReturn("scope");
         var service = new LiveStreamService(delivery, mock(ApplicationEventPublisher.class), new AppProperties());
-        var voice = new PlayableMusic("voice:opaque", "DJ", List.of(), 10000, "third", "https://cdn.test/voice", "", false, "VOICE");
+        var voice = new PlayableMusic("voice:opaque", "DJ", List.of(), 10000, "third", "https://cdn.test/voice", "", "VOICE", null);
         ReflectionTestUtils.setField(service, "currentMusic", voice);
         Class<?> type = Class.forName(LiveStreamService.class.getName() + "$TranscodeTarget");
         var constructor = type.getDeclaredConstructor(String.class, Map.class, String.class); constructor.setAccessible(true);
@@ -170,7 +170,7 @@ class LiveStreamMediaInputTest {
         var delivery = mock(MediaDeliveryService.class);
         when(delivery.sourceAvailable("third")).thenReturn(true); when(delivery.authorizationScope("third")).thenReturn("scope");
         var service = new LiveStreamService(delivery, mock(ApplicationEventPublisher.class), new AppProperties());
-        var music = new PlayableMusic("same", "Track", List.of(), 10000, "third", "old", "", false);
+        var music = new PlayableMusic("same", "Track", List.of(), 10000, "third", "old", "", "SONG", null);
         ReflectionTestUtils.setField(service, "currentMusic", music);
         Class<?> targetClass = Class.forName(LiveStreamService.class.getName() + "$TranscodeTarget");
         var constructor = targetClass.getDeclaredConstructor(String.class, Map.class, String.class); constructor.setAccessible(true);

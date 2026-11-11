@@ -16,7 +16,6 @@ import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.enums.TopResult;
 import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
-import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.media.MediaDeliveryService;
 import org.thornex.musicparty.source.ResourceKey;
 import org.thornex.musicparty.source.SourceRegistry;
@@ -63,9 +62,7 @@ public class MusicPlayerService {
     private final AtomicLong seekNonce = new AtomicLong(0);
 
 
-    private final AtomicBoolean isShuffle = new AtomicBoolean(false);
     private final AtomicReference<PlayMode> playMode = new AtomicReference<>(PlayMode.SEQUENTIAL);
-    private final AtomicBoolean isFairShuffle;
     private final AtomicBoolean allowOfflineShuffle;
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
     private final AtomicBoolean isPauseLocked = new AtomicBoolean(false);
@@ -117,7 +114,6 @@ public class MusicPlayerService {
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
         this.privateDjService = privateDjService;
-        this.isFairShuffle = new AtomicBoolean(true);
         this.allowOfflineShuffle = new AtomicBoolean(false);
         this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
         this.currentLikeMarkers = new CopyOnWriteArrayList<>();
@@ -261,7 +257,7 @@ public class MusicPlayerService {
 
         Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
 
-        MusicQueueItem nextItem = queueManager.pollNext(playMode.get(), isFairShuffle.get(), allowOfflineShuffle.get(), statusMap, onlineUserTokens);
+        MusicQueueItem nextItem = queueManager.pollNext(playMode.get(), allowOfflineShuffle.get(), statusMap, onlineUserTokens);
 
         if (isFmMarker(nextItem)) {
             playFmMarkerNext(nextItem);
@@ -447,7 +443,7 @@ public class MusicPlayerService {
         boolean voice = segment instanceof PrivateDjSegment.Voice;
         String kind = voice ? "VOICE" : "SONG";
         currentMusic.set(kind.equals(music.kind()) ? music : new PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), music.platform(),
-                music.url(), music.coverUrl(), music.needsProxy(), kind, music.externalUrl()));
+                music.url(), music.coverUrl(), kind, music.externalUrl()));
         playbackId = UUID.randomUUID().toString();
         currentIsVoice.set(voice);
         currentEnqueuerId.set(MusicQueueManager.FM_MARKER_USER_TOKEN);
@@ -562,8 +558,6 @@ public class MusicPlayerService {
                 infoToSend,
                 getQueueWithUpdatedStatus(),
                 currentPlayMode.name(),
-                currentPlayMode == PlayMode.SHUFFLE || currentPlayMode == PlayMode.ROUND_ROBIN,
-                currentPlayMode == PlayMode.ROUND_ROBIN,
                 allowOfflineShuffle.get(),
                 userService.getOnlineUserSummaries(),
                 isPaused.get(),
@@ -588,13 +582,10 @@ public class MusicPlayerService {
                         appProperties.getChat().getMaxHistorySize(),
                         appProperties.getChat().getMinIntervalMs(),
                         appProperties.getChat().getMaxMessageLength(),
-                        sourceRegistry.isEnabled("netease"),
-                        sourceRegistry.isEnabled("bilibili"),
                         appProperties.getBilibili().getMaxDurationMinutes(),
                         isVoteSkipEnabled.get(),
                         voteSkipThreshold.get(),
                         voteSkipWaitTime.get(),
-                        false,
                         new PlayerState.AppConfigSummary.PrivateDjConfigSummary(
                                 appProperties.getPrivateDj().getMode(),
                                 appProperties.getPrivateDj().isFillBlankEnabled(),
@@ -622,10 +613,6 @@ public class MusicPlayerService {
                 .filter(u -> onlineTokens.contains(u.token()))
                 .filter(u -> !u.token().equals(enqueuerToken))
                 .count();
-    }
-
-    public void toggleFairShuffle(String sessionId) {
-        setPlayMode(sessionId, playMode.get() == PlayMode.ROUND_ROBIN ? "SHUFFLE" : "ROUND_ROBIN");
     }
 
     public void toggleAllowOfflineShuffle(String sessionId) {
@@ -689,7 +676,6 @@ public class MusicPlayerService {
     public SettingsSnapshot.PlayerSettings getPlayerSettings() {
         return new SettingsSnapshot.PlayerSettings(
                 playMode.get().name(),
-                isFairShuffle.get(),
                 allowOfflineShuffle.get(),
                 isVoteSkipEnabled.get(),
                 voteSkipThreshold.get(),
@@ -699,19 +685,17 @@ public class MusicPlayerService {
                 isPlayModeLocked.get());
     }
 
-    /** 回填持久化的播放设置。逐字段判空；playMode 恢复时同步 isShuffle 保持派生一致。 */
+    /** 回填持久化的播放设置。逐字段判空；playMode 是唯一模式状态。 */
     public void applyPlayerSettings(SettingsSnapshot.PlayerSettings s) {
         if (s == null) return;
         if (s.playMode() != null) {
             try {
                 PlayMode mode = PlayMode.valueOf(s.playMode());
                 playMode.set(mode);
-                isShuffle.set(mode == PlayMode.SHUFFLE);
             } catch (IllegalArgumentException e) {
                 log.warn("Ignored invalid persisted playMode: {}", s.playMode());
             }
         }
-        if (s.fairShuffle() != null) isFairShuffle.set(s.fairShuffle());
         if (s.allowOfflineShuffle() != null) allowOfflineShuffle.set(s.allowOfflineShuffle());
         if (s.voteSkipEnabled() != null) isVoteSkipEnabled.set(s.voteSkipEnabled());
         if (s.voteSkipThreshold() != null) voteSkipThreshold.set(s.voteSkipThreshold());
@@ -797,104 +781,6 @@ public class MusicPlayerService {
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, token, music.name()));
         // 广播状态更新进度条打点和用户列表
         broadcastFullPlayerState();
-    }
-
-    public void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {
-        Optional<User> userOpt = userService.getUser(sessionId);
-        if (userOpt.isEmpty()) return;
-        User enqueuer = userOpt.get();
-
-        if (!sourceRegistry.isEnabled(request.platform())) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE,
-                    enqueuer.getToken(), "导入失败: 音源不可用"));
-            return;
-        }
-
-        // Check user song limit
-        long currentCount = queueManager.getQueueSnapshot().stream()
-                .filter(item -> item.enqueuedBy().token().equals(enqueuer.getToken()))
-                .count();
-        int maxUserSongs = appProperties.getQueue().getMaxUserSongs();
-
-        if (currentCount >= maxUserSongs) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "导入失败: 您的点歌数量已达上限"));
-            return;
-        }
-
-        // Calculate remaining quota
-        int remainingQuota = (int) (maxUserSongs - currentCount);
-        int importLimit = Math.min(appProperties.getPlayer().getMaxPlaylistImportSize(), remainingQuota);
-
-        IMusicApiService service = getApiService(request.platform());
-        service.getPlaylistMusics(request.playlistId(), 0, importLimit)
-                .subscribe(musics -> {
-                    int count = 0;
-                    for (Music music : musics) {
-                        if (!sourceRegistry.isEnabled(music.platform())) break;
-                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), mediaDeliveryService.status(music));
-                        if (newItem != null) {
-                            mediaDeliveryService.prefetch(music);
-                            count++;
-                        }
-                    }
-
-                    log.info("{} enqueued {} songs from playlist", enqueuer.getName(), count);
-                    broadcastQueueUpdate();
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getToken(), String.valueOf(count)));
-                });
-    }
-
-    public Mono<AlbumImportResult> enqueueAlbum(EnqueueAlbumRequest request, String sessionId) {
-        return Mono.defer(() -> {
-            if (request == null || request.requestId() == null || request.requestId().length() > 80) {
-                return Mono.just(AlbumImportResult.failure(request, "无效的专辑添加请求"));
-            }
-            Optional<User> user = userService.getUser(sessionId);
-            if (user.isEmpty() || user.get().isGuest()) {
-                return Mono.just(AlbumImportResult.failure(request, "请先设置昵称并加入房间，再添加专辑"));
-            }
-            if (!sourceRegistry.descriptor(request.platform()).capabilities().album()) {
-                return Mono.just(AlbumImportResult.failure(request, "此音源暂不支持专辑"));
-            }
-            if (!sourceRegistry.isEnabled(request.platform())) {
-                return Mono.just(AlbumImportResult.failure(request, "音源已被禁用"));
-            }
-            return getApiService(request.platform()).getAlbum(request.albumId()).map(album -> {
-                Optional<User> current = userService.getUser(sessionId);
-                if (current.isEmpty() || current.get().isGuest()) {
-                    return AlbumImportResult.failure(request, "已离开房间，未添加专辑");
-                }
-                if (!sourceRegistry.isEnabled(request.platform())) {
-                    return AlbumImportResult.failure(request, "音源已被禁用");
-                }
-                User member = current.get();
-                UserSummary owner = new UserSummary(member.getToken(), member.getSessionId(), member.getName(), member.isGuest());
-                int added = 0, duplicates = 0, limited = 0;
-                List<Music> imported = new ArrayList<>();
-                synchronized (queueManager) {
-                    Set<String> existing = queueManager.getQueueSnapshot().stream()
-                            .map(item -> ResourceKey.encode(item.music().platform(), item.music().id())).collect(Collectors.toCollection(HashSet::new));
-                    long mine = queueManager.getQueueSnapshot().stream()
-                            .filter(item -> item.enqueuedBy().token().equals(owner.token())).count();
-                    int quota = Math.max(0, Math.min(appProperties.getPlayer().getMaxPlaylistImportSize(),
-                            appProperties.getQueue().getMaxUserSongs() - (int) mine));
-                    for (Music song : album.songs()) {
-                        if (existing.contains(ResourceKey.encode(song.platform(), song.id()))) { duplicates++; continue; }
-                        if (added >= quota) { limited++; continue; }
-                        if (queueManager.add(song, owner, mediaDeliveryService.status(song)) != null) {
-                            added++; imported.add(song); existing.add(ResourceKey.encode(song.platform(), song.id()));
-                        } else { limited++; }
-                    }
-                }
-                imported.forEach(mediaDeliveryService::prefetch);
-                broadcastQueueUpdate();
-                String message = "《" + album.name() + "》：已添加 " + added + " 首，重复跳过 " + duplicates + " 首"
-                        + (limited > 0 ? "，受导入 / 点歌 / 队列上限限制 " + limited + " 首" : "");
-                return new AlbumImportResult(request.requestId(), album.id(), album.name(), album.trackCount(),
-                        added, duplicates, limited, message, false);
-            });
-        }).onErrorResume(error -> Mono.just(AlbumImportResult.failure(request,
-                error instanceof ApiRequestException ? error.getMessage() : "专辑添加失败，请稍后重试")));
     }
 
     public synchronized void topSong(String queueId, String sessionId) {
@@ -1030,8 +916,6 @@ public class MusicPlayerService {
     }
 
     public void updateConfig(AdminConfigUpdateRequest request) {
-        if (request.neteaseEnabled() != null) sourceRegistry.descriptor("netease");
-        if (request.bilibiliEnabled() != null) sourceRegistry.descriptor("bilibili");
         if (request.sources() != null) {
             request.sources().forEach((id, settings) -> {
                 if (settings == null) throw new ApiRequestException("Invalid source configuration");
@@ -1053,13 +937,13 @@ public class MusicPlayerService {
         }
         StringBuilder logMsg = new StringBuilder("System configuration updated: ");
         
-        if (request.maxSize() != null) {
-            appProperties.getQueue().setMaxSize(request.maxSize());
-            logMsg.append("MaxQueueSize=").append(request.maxSize()).append(" ");
+        if (request.maxQueueSize() != null) {
+            appProperties.getQueue().setMaxSize(request.maxQueueSize());
+            logMsg.append("MaxQueueSize=").append(request.maxQueueSize()).append(" ");
         }
-        if (request.historySize() != null) {
-            appProperties.getQueue().setHistorySize(request.historySize());
-            logMsg.append("HistorySize=").append(request.historySize()).append(" ");
+        if (request.maxHistorySize() != null) {
+            appProperties.getQueue().setHistorySize(request.maxHistorySize());
+            logMsg.append("HistorySize=").append(request.maxHistorySize()).append(" ");
         }
         if (request.maxUserSongs() != null) {
             appProperties.getQueue().setMaxUserSongs(request.maxUserSongs());
@@ -1081,14 +965,6 @@ public class MusicPlayerService {
             appProperties.getChat().setMaxMessageLength(request.maxChatMessageLength());
             logMsg.append("MaxChatMessageLength=").append(request.maxChatMessageLength()).append(" ");
         }
-        if (request.neteaseEnabled() != null) {
-            sourceRegistry.update("netease", request.neteaseEnabled(), null);
-            logMsg.append("NeteaseEnabled=").append(request.neteaseEnabled()).append(" ");
-        }
-        if (request.bilibiliEnabled() != null) {
-            sourceRegistry.update("bilibili", request.bilibiliEnabled(), null);
-            logMsg.append("BilibiliEnabled=").append(request.bilibiliEnabled()).append(" ");
-        }
         if (request.bilibiliMaxDurationMinutes() != null) {
             appProperties.getBilibili().setMaxDurationMinutes(request.bilibiliMaxDurationMinutes());
             logMsg.append("BilibiliMaxDurationMinutes=").append(request.bilibiliMaxDurationMinutes()).append(" ");
@@ -1107,7 +983,7 @@ public class MusicPlayerService {
             logMsg.append("VoteSkipWaitTime=").append(request.voteSkipWaitTime()).append("s ");
         }
 
-        if (request.sources() != null || request.neteaseEnabled() != null || request.bilibiliEnabled() != null) {
+        if (request.sources() != null) {
             prepareRestoredQueue();
         }
         log.info(logMsg.toString().trim());
@@ -1118,11 +994,6 @@ public class MusicPlayerService {
         }
 
         broadcastFullPlayerState();
-    }
-
-    public void seekTo(String sessionId, long positionMs) {
-        // 无实例的旧客户端无法证明目标歌曲，不能回退到当前播放实例。
-        seekTo(sessionId, positionMs, null);
     }
 
     public synchronized void seekTo(String sessionId, long positionMs, String expectedPlaybackId) {
@@ -1200,16 +1071,6 @@ public class MusicPlayerService {
 
     public PlayMode getPlayMode() { return playMode.get(); }
 
-    public synchronized void cyclePlayMode(String sessionId) {
-        PlayMode next = switch (playMode.get()) {
-            case SEQUENTIAL -> PlayMode.SHUFFLE;
-            case SHUFFLE -> PlayMode.ROUND_ROBIN;
-            case ROUND_ROBIN -> PlayMode.REPEAT_ONE;
-            case REPEAT_ONE -> PlayMode.SEQUENTIAL;
-        };
-        setPlayMode(sessionId, next.name());
-    }
-
     public synchronized boolean setPlayMode(String sessionId, String requested) {
         if (!"SYSTEM".equals(sessionId) && userService.getUser(sessionId).map(User::isGuest).orElse(true)) return false;
         PlayMode next;
@@ -1219,8 +1080,6 @@ public class MusicPlayerService {
         if (playMode.get() == next) return true;
         if (!"SYSTEM".equals(sessionId) && isRateLimited(sessionId)) return false;
         playMode.set(next);
-        isShuffle.set(next == PlayMode.SHUFFLE || next == PlayMode.ROUND_ROBIN);
-        isFairShuffle.set(next == PlayMode.ROUND_ROBIN);
         syncFmMarker();
         broadcastFullPlayerState();
         broadcastQueueUpdate();
@@ -1245,7 +1104,6 @@ public class MusicPlayerService {
 
         queueManager.clearAll();
         isPaused.set(false);
-        isShuffle.set(false);
         playMode.set(PlayMode.SEQUENTIAL);
         isLoading.set(false);
 
@@ -1442,10 +1300,6 @@ public class MusicPlayerService {
 
     public AppProperties getAppProperties() {
         return appProperties;
-    }
-
-    private IMusicApiService getApiService(String platform) {
-        return sourceRegistry.getRequired(platform);
     }
 
     private String getUserToken(String sessionId) {

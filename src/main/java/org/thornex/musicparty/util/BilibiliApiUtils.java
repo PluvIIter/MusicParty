@@ -78,7 +78,8 @@ public class BilibiliApiUtils {
                             List.of(data.path("owner").path("name").asText()),
                             durationMs,
                             "bilibili",
-                            normalizeCoverUrl(data.path("pic").asText())
+                            normalizeCoverUrl(data.path("pic").asText()),
+                            null
                     );
 
                     sink.next(new BilibiliVideoInfo(cid, music));

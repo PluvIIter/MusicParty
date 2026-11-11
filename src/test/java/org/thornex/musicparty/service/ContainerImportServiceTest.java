@@ -26,7 +26,7 @@ class ContainerImportServiceTest {
     private MusicQueueManager queue;
     private ContainerImportService imports;
     private final ContainerImportService.Request request = new ContainerImportService.Request("third", "favorites", "opaque:id", "r1");
-    private final Music track = new Music("same", "Track", List.of(), 1000, "third", null);
+    private final Music track = new Music("same", "Track", List.of(), 1000, "third", null, null);
 
     @BeforeEach
     void setUp() {
@@ -42,7 +42,7 @@ class ContainerImportServiceTest {
         when(users.getUser("session")).thenReturn(Optional.of(new User("member", "session", "Listener")));
         when(resources.container("third", "favorites", "opaque:id")).thenReturn(Mono.just(new ContainerResource("opaque:id", "Favorites", "third", "favorites", null, 2)));
         when(resources.importTracks(eq("third"), eq("favorites"), eq("opaque:id"), anyInt()))
-                .thenReturn(Mono.just(List.of(track, new Music("2", "Second", List.of(), 1000, "third", null))));
+                .thenReturn(Mono.just(List.of(track, new Music("2", "Second", List.of(), 1000, "third", null, null))));
         when(media.status(any())).thenReturn(QueueItemStatus.PENDING);
     }
 
@@ -130,7 +130,7 @@ class ContainerImportServiceTest {
     @Test
     void malformedMixedSourceBatchIsRejectedBeforeAnyInsertion() {
         when(resources.importTracks(eq("third"), eq("favorites"), eq("opaque:id"), anyInt()))
-                .thenReturn(Mono.just(List.of(track, new Music("2", "Other", List.of(), 1000, "other", null))));
+                .thenReturn(Mono.just(List.of(track, new Music("2", "Other", List.of(), 1000, "other", null, null))));
         assertTrue(imports.enqueue(request, "session").block().error());
         assertTrue(queue.getQueueSnapshot().isEmpty());
     }

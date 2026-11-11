@@ -413,7 +413,7 @@ export function useAudio(audioRef, playerStore) {
             if (currentId === endedTrackId) {
                 console.warn('[Ended] No next track pushed, forcing resync...');
                 playerStore.tryReconnect();
-                socketService.send(WS_DEST.RESYNC);
+                socketService.send(WS_DEST.COMPACT_RESYNC);
             }
         }, ENDED_RESYNC_DELAY);
     };
@@ -450,7 +450,7 @@ export function useAudio(audioRef, playerStore) {
         if (document.visibilityState === 'visible') {
             playerStore.tryReconnect();
             // Ask for fresh state; foregrounding must not force a media seek.
-            socketService.send(WS_DEST.RESYNC);
+            socketService.send(WS_DEST.COMPACT_RESYNC);
             resumeLocalPlayback();
             if (!playerStore.isPaused) requestWakeLock();
         }
@@ -462,7 +462,7 @@ export function useAudio(audioRef, playerStore) {
         if (navigator.onLine) {
             console.log('[Network] Back online, checking socket...');
             playerStore.tryReconnect();
-            socketService.send(WS_DEST.RESYNC);
+            socketService.send(WS_DEST.COMPACT_RESYNC);
             resumeLocalPlayback();
         }
     };

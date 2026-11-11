@@ -25,14 +25,16 @@ type App struct {
 }
 
 func NewApp() *App {
-	return &App{
-		cfg: config.LoadConfig(),
-	}
+	return &App{}
 }
 
-func (a *App) LoadConfig() *config.AppConfig {
-	a.cfg = config.LoadConfig()
-	return a.cfg
+func (a *App) LoadConfig() (*config.AppConfig, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	a.cfg = cfg
+	return cfg, nil
 }
 
 func (a *App) SaveConfig(newConfig config.AppConfig) error {
@@ -135,6 +137,9 @@ func (a *App) OpenBrowser(url string) {
 }
 
 func (a *App) StartServices() error {
+	if a.cfg == nil {
+		return fmt.Errorf("load or save configuration before starting services")
+	}
 	jarPath := filepath.Join(a.getBinDir(), "server.jar")
 	args, err := a.cfg.JavaArgs(jarPath)
 	if err != nil {

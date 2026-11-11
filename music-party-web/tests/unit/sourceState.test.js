@@ -62,12 +62,6 @@ describe('source-local frontend state', () => {
         await nextTick();
         expect(player.lyricText).toBe('');
     });
-    it('stores bindings locally without sending user identity over websocket', () => {
-        const player = usePlayerStore();
-        player.bindAccount('future-source', 'public-uid');
-        expect(mocks.updateBinding).toHaveBeenCalledWith('future-source', 'public-uid');
-        expect(socketService.send).not.toHaveBeenCalled();
-    });
     it('preserves LIKESONG snapshots when a source becomes disabled and validates enqueue', () => {
         const sources = useSourcesStore();
         sources.sources = [{ id: 'future-source', capabilities: {} }];

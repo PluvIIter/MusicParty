@@ -9,13 +9,8 @@ public record SettingsSnapshot(
         SystemConfigSettings systemConfig,
         java.util.Map<String, Boolean> sourceEnabled
 ) {
-    public SettingsSnapshot(PlayerSettings player, String roomPassword, Boolean streamEnabled,
-                            PrivateDjSettings privateDj, SystemConfigSettings systemConfig) {
-        this(player, roomPassword, streamEnabled, privateDj, systemConfig, null);
-    }
     public record PlayerSettings(
-            String playMode,            // SEQUENTIAL / SHUFFLE / REPEAT_ONE
-            Boolean fairShuffle,
+            String playMode,
             Boolean allowOfflineShuffle,
             Boolean voteSkipEnabled,
             Double voteSkipThreshold,
@@ -36,7 +31,6 @@ public record SettingsSnapshot(
             Integer maxQueueSize, Integer maxHistorySize, Integer maxUserSongs,
             Integer maxPlaylistImportSize, Integer maxChatHistorySize,
             Long minChatIntervalMs,
-            Boolean neteaseEnabled, Boolean bilibiliEnabled,
             Integer bilibiliMaxDurationMinutes,
             Integer maxChatMessageLength,
             Boolean retainPlaylist,
