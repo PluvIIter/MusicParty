@@ -228,7 +228,7 @@
                     <div class="w-full h-1 bg-line relative">
                         <!-- 橙色填充层 -->
                         <div
-                            class="h-full bg-line-strong group-hover:bg-accent transition-colors relative"
+                            class="h-full bg-ink-muted group-hover:bg-accent transition-colors relative"
                             :style="{ width: ui.volume * 100 + '%' }"
                         >
                             <!-- 装饰滑块 (只在悬停时显示) -->
