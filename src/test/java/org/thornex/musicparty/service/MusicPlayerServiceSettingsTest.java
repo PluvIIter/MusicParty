@@ -29,7 +29,7 @@ class MusicPlayerServiceSettingsTest {
     }
 
     private MusicPlayerService build() {
-        return new MusicPlayerService(
+        return PlayerTestFactory.create(
                 List.of(),
                 mock(org.thornex.musicparty.service.UserService.class),
                 mock(org.thornex.musicparty.service.LocalCacheService.class),

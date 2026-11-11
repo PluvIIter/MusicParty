@@ -1,5 +1,7 @@
 package org.thornex.musicparty.service;
 
+import org.thornex.musicparty.source.ResourceKey;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -62,7 +64,7 @@ class PlaylistClaimPersistenceTest {
         assertEquals(Set.of("heard-id"), restored.getPlayedQueueIds());
         restored.remove("replacement-id");
         assertEquals("fresh-id", restored.pollNext(org.thornex.musicparty.enums.PlayMode.SHUFFLE, true, false,
-                Map.of("heard", QueueItemStatus.READY, "fresh", QueueItemStatus.READY), Set.of("target")).queueId());
+                Map.of(ResourceKey.encode("netease", "heard"), QueueItemStatus.READY, ResourceKey.encode("netease", "fresh"), QueueItemStatus.READY), Set.of("target")).queueId());
     }
     @Test void proposedSnapshotWritesAuthoritativeEmptyLedger() throws Exception {
         var props = new AppProperties();

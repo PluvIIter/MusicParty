@@ -35,9 +35,8 @@ public class SavedAlbumsController {
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "25") int limit) {
         if (!allowed(password)) return Mono.just(error(403, "请先进入房间"));
-        return savedAlbums.getSaved(offset, limit).map(page -> reply(200, page))
-                .onErrorResume(ResponseStatusException.class, e -> Mono.just(error(e.getStatusCode().value(), e.getReason())))
-                .onErrorReturn(error(502, "收藏专辑读取失败，请稍后重试"));
+        return Mono.just(reply(410, Map.of("code", "CAPABILITY_UNAVAILABLE",
+                "message", "不再提供配置 Cookie 账号的收藏；仅支持绑定用户的公开收藏")));
     }
 
     @GetMapping("/api/album/netease/detail/{albumId}")

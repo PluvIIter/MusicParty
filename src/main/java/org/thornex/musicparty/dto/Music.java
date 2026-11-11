@@ -8,6 +8,11 @@ public record Music(
         List<String> artists,
         long duration, // in milliseconds
         String platform,
-        String coverUrl
-) {}
+        String coverUrl,
+        String externalUrl
+) {
+    public Music(String id, String name, List<String> artists, long duration, String platform, String coverUrl) {
+        this(id, name, artists, duration, platform, coverUrl, null);
+    }
+}
 

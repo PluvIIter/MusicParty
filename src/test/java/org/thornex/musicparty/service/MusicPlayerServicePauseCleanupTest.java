@@ -52,7 +52,7 @@ class MusicPlayerServicePauseCleanupTest {
         events = mock(ApplicationEventPublisher.class);
         api = mock(NeteaseMusicApiService.class);
         when(api.getPlatformName()).thenReturn("netease");
-        player = new MusicPlayerService(List.of(api), users, mock(LocalCacheService.class), streams,
+        player = PlayerTestFactory.create(List.of(api), users, mock(LocalCacheService.class), streams,
                 queue, events, new AppProperties(), api, mock(PrivateDjService.class));
 
         queuedSongs = List.of(new MusicQueueItem("queue-1",

@@ -1,5 +1,7 @@
 package org.thornex.musicparty.service;
 
+import org.thornex.musicparty.source.ResourceKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -41,7 +43,7 @@ class MusicQueueManagerPlaybackModesTest {
 
     private Map<String, QueueItemStatus> ready() {
         Map<String, QueueItemStatus> statuses = new HashMap<>();
-        queue.getQueueSnapshot().forEach(item -> statuses.put(item.music().id(), QueueItemStatus.READY));
+        queue.getQueueSnapshot().forEach(item -> statuses.put(ResourceKey.encode(item.music().platform(), item.music().id()), QueueItemStatus.READY));
         return statuses;
     }
 
@@ -274,7 +276,7 @@ class MusicQueueManagerPlaybackModesTest {
                     new UserSummary("A", "A", "A", false), QueueItemStatus.READY);
             manager.ensureFmMarker();
             Map<String, QueueItemStatus> statuses = new HashMap<>();
-            manager.getQueueSnapshot().forEach(item -> statuses.put(item.music().id(), QueueItemStatus.READY));
+            manager.getQueueSnapshot().forEach(item -> statuses.put(ResourceKey.encode(item.music().platform(), item.music().id()), QueueItemStatus.READY));
             MusicQueueItem picked = manager.pollNext(PlayMode.SHUFFLE, false, true, statuses, Set.of());
             if (MusicQueueManager.FM_MARKER_ID.equals(picked.music().platform())) fmPicked++;
         }

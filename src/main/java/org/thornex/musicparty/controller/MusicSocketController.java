@@ -127,11 +127,6 @@ public class MusicSocketController {
         }
     }
 
-    @MessageMapping("/user/bind")
-    public void bindAccount(BindRequest request, @Header("simpSessionId") String sessionId) {
-        userService.bindAccount(sessionId, request.platform(), request.accountId());
-    }
-
     @SubscribeMapping("/topic/player/state")
     public PlayerState getInitialPlayerState() {
         return musicPlayerService.getCurrentPlayerState();

@@ -1,0 +1,18 @@
+package org.thornex.musicparty.media;
+
+import org.thornex.musicparty.source.ResourceKey;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.Objects;
+
+public record ResolvedMedia(ResourceKey resource, String representationKey, String url,
+                            String mimeType, String extension, Instant expiresAt,
+                            Map<String, String> headers, boolean browserSafe) {
+    public ResolvedMedia {
+        Objects.requireNonNull(resource);
+        Objects.requireNonNull(representationKey);
+        Objects.requireNonNull(url);
+        headers = Map.copyOf(headers);
+    }
+}

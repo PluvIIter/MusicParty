@@ -132,13 +132,14 @@ public class QueuePersistenceService {
                     data.setSettings(new SettingsSnapshot(new SettingsSnapshot.PlayerSettings("ROUND_ROBIN", true,
                             p.allowOfflineShuffle(), p.voteSkipEnabled(), p.voteSkipThreshold(), p.voteSkipWaitTime(),
                             p.pauseLocked(), p.skipLocked(), p.playModeLocked()), old.roomPassword(), old.streamEnabled(),
-                            old.privateDj(), old.systemConfig()));
+                            old.privateDj(), old.systemConfig(), old.sourceEnabled()));
                 }
             }
 
             chatService.restore(data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
 
             applySettings(data.getSettings());
+            musicPlayerService.prepareRestoredQueue();
 
             log.info("Restored {} queue items, {} music history items and {} chat messages from {}",
                 data.getQueue() != null ? data.getQueue().size() : 0, 
@@ -178,11 +179,23 @@ public class QueuePersistenceService {
             if (cfg.maxChatHistorySize() != null) appProperties.getChat().setMaxHistorySize(cfg.maxChatHistorySize());
             if (cfg.minChatIntervalMs() != null) appProperties.getChat().setMinIntervalMs(cfg.minChatIntervalMs());
             if (cfg.maxChatMessageLength() != null) appProperties.getChat().setMaxMessageLength(cfg.maxChatMessageLength());
-            if (cfg.neteaseEnabled() != null) appProperties.getNetease().setEnabled(cfg.neteaseEnabled());
-            if (cfg.bilibiliEnabled() != null) appProperties.getBilibili().setEnabled(cfg.bilibiliEnabled());
+            if (cfg.neteaseEnabled() != null) {
+                appProperties.getNetease().setEnabled(cfg.neteaseEnabled());
+                musicPlayerService.restoreSourceEnabled("netease", cfg.neteaseEnabled());
+            }
+            if (cfg.bilibiliEnabled() != null) {
+                appProperties.getBilibili().setEnabled(cfg.bilibiliEnabled());
+                musicPlayerService.restoreSourceEnabled("bilibili", cfg.bilibiliEnabled());
+            }
             if (cfg.allowPlaylistClaim() != null) appProperties.getQueue().setAllowPlaylistClaim(cfg.allowPlaylistClaim());
             if (cfg.allowSeek() != null) appProperties.getPlayer().setAllowSeek(cfg.allowSeek());
             if (cfg.bilibiliMaxDurationMinutes() != null) appProperties.getBilibili().setMaxDurationMinutes(cfg.bilibiliMaxDurationMinutes());
+        }
+
+        if (s.sourceEnabled() != null) {
+            s.sourceEnabled().forEach((id, enabled) -> {
+                if (enabled != null) musicPlayerService.restoreSourceEnabled(id, enabled);
+            });
         }
 
         if (s.roomPassword() != null) authController.forceSetPassword(s.roomPassword());
@@ -214,7 +227,10 @@ public class QueuePersistenceService {
                         appProperties.getChat().getMaxMessageLength(),
                         appProperties.getQueue().isRetainPlaylist(),
                         appProperties.getQueue().isAllowPlaylistClaim(),
-                        appProperties.getPlayer().isAllowSeek()));
+                        appProperties.getPlayer().isAllowSeek()),
+                appProperties.getSources().entrySet().stream()
+                        .filter(entry -> entry.getValue().getEnabled() != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getEnabled())));
     }
 
     private File getPersistenceFile() {

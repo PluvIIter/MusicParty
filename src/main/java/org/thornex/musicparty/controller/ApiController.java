@@ -6,24 +6,20 @@ import org.thornex.musicparty.dto.AlbumInfo;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
-import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api")
 public class ApiController {
 
-    private final Map<String, IMusicApiService> apiServiceMap;
+    private final org.thornex.musicparty.source.SourceRegistry registry;
     private final AppProperties appProperties;
 
-    public ApiController(List<IMusicApiService> apiServices, AppProperties appProperties) {
-        this.apiServiceMap = apiServices.stream()
-                .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
+    public ApiController(org.thornex.musicparty.source.SourceRegistry registry, AppProperties appProperties) {
+        this.registry = registry;
         this.appProperties = appProperties;
     }
 
@@ -36,18 +32,7 @@ public class ApiController {
     }
 
     private IMusicApiService getService(String platform) {
-        if ("netease".equalsIgnoreCase(platform) && !appProperties.getNetease().isEnabled()) {
-            throw new ApiRequestException("网易云音乐源已被禁用");
-        }
-        if ("bilibili".equalsIgnoreCase(platform) && !appProperties.getBilibili().isEnabled()) {
-            throw new ApiRequestException("Bilibili 源已被禁用");
-        }
-
-        IMusicApiService service = apiServiceMap.get(platform);
-        if (service == null) {
-            throw new ApiRequestException("Platform not supported: " + platform);
-        }
-        return service;
+        return registry.getRequired(platform);
     }
 
     @GetMapping("/search/{platform}/{keyword}")

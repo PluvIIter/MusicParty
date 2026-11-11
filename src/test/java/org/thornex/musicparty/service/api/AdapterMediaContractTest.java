@@ -1,0 +1,62 @@
+package org.thornex.musicparty.service.api;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.reactive.function.client.ClientResponse;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.media.MediaConsumer;
+import org.thornex.musicparty.service.LocalCacheService;
+import reactor.core.publisher.Mono;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class AdapterMediaContractTest {
+    private ClientResponse json(String body) {
+        return ClientResponse.create(HttpStatus.OK).header("Content-Type", "application/json").body(body).build();
+    }
+
+    @Test void neteaseMetadataDoesNotRequireOrSendAccountCookie() {
+        AppProperties props = new AppProperties(); props.getNetease().setBaseUrl("http://sidecar.test"); props.getNetease().setCookie("MUSIC_U=secret");
+        List<String> routes = new ArrayList<>();
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            routes.add(request.url().getPath()); assertFalse(request.url().getQuery().contains("cookie="));
+            return Mono.just(json("{\"songs\":[{\"id\":1,\"name\":\"Track\",\"ar\":[],\"dt\":1000}]}"));
+        }).build();
+        var music = new NeteaseMusicApiService(client, props).getMusic("1").block();
+        assertEquals(List.of("/song/detail"), routes); assertEquals("https://music.163.com/song?id=1", music.externalUrl());
+    }
+
+    @Test void neteaseLosslessMediaCarriesActualFormatAndCredentialsOnlyOnResolve() {
+        AppProperties props = new AppProperties(); props.getNetease().setBaseUrl("http://sidecar.test"); props.getNetease().setCookie("MUSIC_U=secret");
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            assertTrue(request.url().getQuery().contains("cookie=MUSIC_U=secret"));
+            return Mono.just(json("{\"data\":[{\"url\":\"https://cdn.test/song.flac\",\"type\":\"flac\",\"br\":999000,\"time\":1000,\"freeTrialInfo\":null}]}"));
+        }).build();
+        var media = new NeteaseMusicApiService(client, props).resolveMedia("1", MediaConsumer.SERVER).block();
+        assertEquals(".flac", media.extension()); assertEquals("audio/flac", media.mimeType());
+        assertFalse(media.headers().containsKey("Cookie")); assertTrue(media.representationKey().contains("flac"));
+    }
+
+    @Test void bilibiliMetadataUsesNoAccountCookieAndNeverStartsDownload() {
+        AppProperties props = new AppProperties(); props.getBilibili().setBaseUrl("http://bili.test");
+        var cookie = mock(BilibiliCookieService.class); var cache = mock(LocalCacheService.class); var wbi = mock(BilibiliWbiService.class);
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            assertEquals("", request.headers().getFirst("Cookie"));
+            return Mono.just(json("{\"code\":0,\"data\":{\"cid\":10,\"title\":\"Track\",\"duration\":1,\"owner\":{\"name\":\"Artist\"}}}"));
+        }).build();
+        var music = new BilibiliMusicApiService(client, props, cache, wbi, cookie).getMusic("BV1abc").block();
+        assertEquals("BV1abc", music.id()); assertEquals("https://www.bilibili.com/video/BV1abc", music.externalUrl());
+        verifyNoInteractions(cookie, cache, wbi);
+    }
+
+    @Test void publicBilibiliCookieNeverContainsSessionSecrets() {
+        AppProperties props = new AppProperties(); props.getBilibili().setCookie("SESSDATA=secret; bili_jct=secret; buvid3=device; buvid4=device4");
+        var service = new BilibiliCookieService(WebClient.builder().build(), props);
+        assertEquals("buvid3=device; buvid4=device4", service.getPublicCookieHeader().block());
+    }
+}

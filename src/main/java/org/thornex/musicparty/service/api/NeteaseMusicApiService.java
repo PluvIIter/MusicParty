@@ -16,6 +16,11 @@ import org.thornex.musicparty.exception.ApiRequestException;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
 
+import org.thornex.musicparty.media.*;
+import org.thornex.musicparty.source.*;
+import java.time.Instant;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +38,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private final String initialCookieFromConfig;
     private final String quality;
     private volatile String currentCookie;
+    private final AtomicLong credentialRevision = new AtomicLong();
     private static final String PLATFORM = "netease";
 
     public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties) {
@@ -55,34 +61,12 @@ public class NeteaseMusicApiService implements IMusicApiService {
         }
     }
 
-    private void ensureConfigured() {
-        if (!StringUtils.hasText(currentCookie) || "YOUR_NETEASE_COOKIE_STRING_HERE".equals(currentCookie)) {
-            throw new ApiRequestException("尚未配置网易云 Cookie，请联系管理员设置");
-        }
-    }
-
     public void updateCookie(String newCookie) {
         this.currentCookie = newCookie;
         this.neteaseConfig.setCookie(newCookie);
-        checkCookie(newCookie).subscribe(isValid -> {
-            if (isValid) {
-                log.info("Netease cookie updated and verified successfully.");
-            } else {
-                log.warn("The newly updated Netease cookie appears to be invalid.");
-            }
-        });
+        credentialRevision.incrementAndGet();
     }
 
-    private Mono<Boolean> checkCookie(String cookie) {
-        return webClient.get()
-                .uri(baseUrl + "/user/account?cookie={cookie}", cookie)
-                .retrieve()
-                .bodyToMono(JsonNode.class)
-                .map(jsonNode -> jsonNode.has("profile") && !jsonNode.get("profile").isNull())
-                .onErrorReturn(false);
-    }
-
-    // UPDATED: Renamed method and removed encoding.
     private String getCookie() {
         return currentCookie != null ? currentCookie : "";
     }
@@ -93,29 +77,12 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 && !"YOUR_NETEASE_COOKIE_STRING_HERE".equals(neteaseConfig.getCookie());
     }
 
-    /** 拉取私人FM 推荐（返回原始 JSON，解析在 PrivateDjService） */
     public Mono<JsonNode> fetchPersonalFm() {
-        ensureConfigured();
-        return webClient.get()
-                .uri(baseUrl + "/personal_fm?cookie={cookie}", getCookie())
-                .retrieve()
-                .bodyToMono(JsonNode.class);
+        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 不支持Cookie账号推荐"));
     }
 
-    /** 拉取私人DJ 推荐（经纬度可选，可为 null） */
     public Mono<JsonNode> fetchAidjRcmd(Double latitude, Double longitude) {
-        ensureConfigured();
-        if (latitude != null) {
-            return webClient.get()
-                    .uri(baseUrl + "/aidj/content/rcmd?cookie={cookie}&latitude={lat}&longitude={lon}",
-                            getCookie(), latitude, longitude)
-                    .retrieve()
-                    .bodyToMono(JsonNode.class);
-        }
-        return webClient.get()
-                .uri(baseUrl + "/aidj/content/rcmd?cookie={cookie}", getCookie())
-                .retrieve()
-                .bodyToMono(JsonNode.class);
+        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 不支持Cookie账号推荐"));
     }
 
     // Helper to force HTTPS
@@ -135,16 +102,14 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private Mono<ApiRequestException> handleApiError(String apiName, org.springframework.web.reactive.function.client.ClientResponse response) {
         return response.bodyToMono(String.class)
                 .flatMap(errorBody -> Mono.error(new ApiRequestException(
-                        String.format("Netease API '%s' failed with status %d: %s", apiName, response.statusCode().value(), errorBody)
+                        String.format("Netease API '%s' failed with status %d", apiName, response.statusCode().value())
                 )));
     }
 
-    // UPDATED: All API calls now use the raw cookie from getCookie()
     @Override
     public Mono<List<Music>> searchMusic(String keyword) {
-        ensureConfigured();
         return webClient.get()
-                .uri(baseUrl + "/search?keywords={keyword}&cookie={cookie}", keyword, getCookie())
+                .uri(baseUrl + "/search?keywords={keyword}", keyword)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("search", response))
                 .bodyToMono(JsonNode.class)
@@ -171,23 +136,62 @@ public class NeteaseMusicApiService implements IMusicApiService {
     }
 
     @Override
-    public Mono<PlayableMusic> getPlayableMusic(String musicId) {
-        ensureConfigured();
-        Mono<Music> musicDetailsMono = getMusicDetails(musicId);
-        // 优先 xeapi /song/url/v1（支持更高音质），失败（404 或空 url）自动回退 eapi /song/url
-        Mono<String> musicUrlMono = resolveSongUrl(musicId);
+    public SourceDescriptor descriptor() {
+        return new SourceDescriptor(PLATFORM, "网易云音乐", "music",
+                new SourceCapabilities(true, true, true, true, true, false, true, true),
+                Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
+                List.of(new CollectionCategory("playlists", "公开歌单", "playlist", "CONTAINER")));
+    }
 
-        return Mono.zip(musicDetailsMono, musicUrlMono)
-                .map(tuple -> new PlayableMusic(
-                        tuple.getT1().id(),
-                        tuple.getT1().name(),
-                        tuple.getT1().artists(),
-                        tuple.getT1().duration(),
-                        tuple.getT1().platform(),
-                        upgradeToHttps(tuple.getT2()),
-                        upgradeToHttps(tuple.getT1().coverUrl()),
-                        false
-                ));
+    @Override
+    public long credentialRevision() { return credentialRevision.get(); }
+
+    @Override
+    public String externalUrl(String id) {
+        return "https://music.163.com/song?id=" + java.net.URLEncoder.encode(id, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public Mono<Music> getMusic(String musicId) {
+        return Mono.defer(() -> getMusicDetails(musicId)).map(music -> new Music(music.id(), music.name(), music.artists(),
+                music.duration(), music.platform(), music.coverUrl(), externalUrl(musicId)));
+    }
+
+    @Override
+    public Mono<ResolvedMedia> resolveMedia(String musicId, MediaConsumer consumer) {
+        return Mono.defer(() -> requestMedia(musicId, true, consumer)
+                .onErrorResume(error -> requestMedia(musicId, false, consumer)));
+    }
+
+    private Mono<ResolvedMedia> requestMedia(String id, boolean v1, MediaConsumer consumer) {
+        String route = v1 ? "/song/url/v1?id={id}&level={quality}&cookie={cookie}&timestamp={timestamp}"
+                : "/song/url?id={id}&br={quality}&cookie={cookie}&timestamp={timestamp}";
+        return webClient.get().uri(baseUrl + route, id, v1 ? quality : resolveBr(quality), getCookie(), System.currentTimeMillis())
+                .retrieve().bodyToMono(JsonNode.class).map(json -> {
+                    JsonNode data = json.path("data").path(0);
+                    String url = data.path("url").asText("");
+                    if (!url.startsWith("http://") && !url.startsWith("https://")) throw new ApiRequestException("无有效播放地址");
+                    String type = data.path("type").asText("mp3").toLowerCase();
+                    String mime = switch (type) {
+                        case "flac" -> "audio/flac";
+                        case "m4a", "mp4" -> "audio/mp4";
+                        case "ogg" -> "audio/ogg";
+                        default -> "audio/mpeg";
+                    };
+                    String extension = Set.of("flac", "m4a", "mp4", "ogg", "mp3").contains(type) ? "." + type : ".mp3";
+                    String representation = "audio:" + type + ":" + data.path("br").asText(quality)
+                            + ":trial:" + (data.hasNonNull("freeTrialInfo")) + ":" + data.path("time").asText("");
+                    return new ResolvedMedia(new ResourceKey(PLATFORM, id), representation, upgradeToHttps(url), mime,
+                            extension, Instant.now().plusSeconds(Math.min(600, Math.max(1, data.path("expi").asLong(600)))),
+                            consumer == MediaConsumer.SERVER ? Map.of("Referer", "https://music.163.com/", "User-Agent", "Mozilla/5.0") : Map.of(), true);
+                });
+    }
+
+    @Override
+    public Mono<PlayableMusic> getPlayableMusic(String musicId) {
+        return Mono.zip(getMusic(musicId), resolveMedia(musicId, MediaConsumer.BROWSER))
+                .map(pair -> new PlayableMusic(pair.getT1().id(), pair.getT1().name(), pair.getT1().artists(),
+                        pair.getT1().duration(), PLATFORM, pair.getT2().url(), pair.getT1().coverUrl(), false, "SONG", pair.getT1().externalUrl()));
     }
 
     /**
@@ -227,7 +231,6 @@ public class NeteaseMusicApiService implements IMusicApiService {
     }
 
     private Mono<String> requestSongUrl(String musicId, boolean v1, Long timestamp) {
-        ensureConfigured();
         String route = v1 ? "/song/url/v1?id={id}&level={quality}&cookie={cookie}"
                 : "/song/url?id={id}&br={quality}&cookie={cookie}";
         if (timestamp != null) route += "&timestamp=" + timestamp;
@@ -253,14 +256,14 @@ public class NeteaseMusicApiService implements IMusicApiService {
     }
 
     private Mono<Music> getMusicDetails(String musicId) {
-        ensureConfigured();
         return webClient.get()
-                .uri(baseUrl + "/song/detail?ids={musicId}&cookie={cookie}", musicId, getCookie())
+                .uri(baseUrl + "/song/detail?ids={musicId}", musicId)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("get song detail", response))
                 .bodyToMono(JsonNode.class)
                 .map(jsonNode -> {
-                    JsonNode song = jsonNode.path("songs").get(0);
+                    JsonNode song = jsonNode.path("songs").path(0);
+                    if (song.isMissingNode()) throw new ApiRequestException("歌曲不可用");
                     List<String> artists = new ArrayList<>();
                     JsonNode artistNode = song.has("artists") ? song.path("artists") : song.path("ar");
                     artistNode.forEach(artist -> artists.add(artist.path("name").asText()));
@@ -277,34 +280,66 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Playlist>> getUserPlaylists(String userId) {
-        ensureConfigured();
+        return publicCollections(userId, "playlists", 0, 50)
+                .map(org.thornex.musicparty.source.SourcePage::items);
+    }
+
+    @Override
+    public Mono<org.thornex.musicparty.source.SourcePage<Playlist>> publicCollections(
+            String userId, String category, int offset, int limit) {
+        if (!"playlists".equals(category)) return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 收藏类别不存在"));
         return webClient.get()
-                .uri(baseUrl + "/user/playlist?uid={userId}&cookie={cookie}", userId, getCookie())
+                .uri(baseUrl + "/user/playlist?uid={uid}&offset={offset}&limit={limit}", userId, offset, limit)
                 .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> handleApiError("get user playlists", response))
+                .onStatus(HttpStatusCode::isError, response -> handleApiError("get public playlists", response))
                 .bodyToMono(JsonNode.class)
-                .map(jsonNode -> {
-                    List<Playlist> playlists = new ArrayList<>();
-                    jsonNode.path("playlist").forEach(pl -> playlists.add(new Playlist(
-                            pl.path("id").asText(),
-                            pl.path("name").asText(),
-                            upgradeToHttps(pl.path("coverImgUrl").asText()),
-                            pl.path("trackCount").asInt(),
-                            PLATFORM
-                    )));
-                    return playlists;
+                .map(json -> {
+                    if (json.path("code").asInt(200) != 200 || !json.path("playlist").isArray()) {
+                        throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 该用户的公开歌单不可读取");
+                    }
+                    List<Playlist> items = new ArrayList<>();
+                    json.path("playlist").forEach(pl -> items.add(mapPlaylist(pl)));
+                    boolean more = json.has("more") ? json.path("more").asBoolean() : items.size() == limit;
+                    return new org.thornex.musicparty.source.SourcePage<>(items,
+                            more ? offset + json.path("playlist").size() : null, null);
+                });
+    }
+
+    private Playlist mapPlaylist(JsonNode pl) {
+        return new Playlist(pl.path("id").asText(), pl.path("name").asText(),
+                upgradeToHttps(pl.path("coverImgUrl").asText()), pl.path("trackCount").asInt(), PLATFORM);
+    }
+
+    @Override
+    public Mono<Playlist> playlistDetail(String playlistId) {
+        return webClient.get().uri(baseUrl + "/playlist/detail?id={id}", playlistId)
+                .retrieve().bodyToMono(JsonNode.class).map(json -> {
+                    JsonNode playlist = json.path("playlist");
+                    if (json.path("code").asInt(200) != 200 || playlist.path("id").asText("").isBlank()) {
+                        throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 公开歌单不可读取");
+                    }
+                    return mapPlaylist(playlist);
                 });
     }
 
     @Override
+    public Mono<org.thornex.musicparty.source.SourcePage<Music>> playlistPage(String id, int offset, int limit) {
+        return getPlaylistMusics(id, offset, limit).map(items ->
+                new org.thornex.musicparty.source.SourcePage<>(items,
+                        items.size() == limit ? offset + items.size() : null, null));
+    }
+
+    @Override
     public Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit) {
-        ensureConfigured();
         return webClient.get()
-                .uri(baseUrl + "/playlist/track/all?id={playlistId}&limit={limit}&offset={offset}&cookie={cookie}", playlistId, limit, offset, getCookie())
+                .uri(baseUrl + "/playlist/track/all?id={playlistId}&limit={limit}&offset={offset}", playlistId, limit, offset)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("get playlist tracks", response))
                 .bodyToMono(JsonNode.class)
                 .map(jsonNode -> {
+                    if (jsonNode.path("code").asInt(200) != 200 || !jsonNode.path("songs").isArray()) {
+                        throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 公开歌单内容不可读取");
+                    }
                     List<Music> musicList = new ArrayList<>();
                     jsonNode.path("songs").forEach(song -> {
                         JsonNode artistNode = song.has("artists") ? song.path("artists") : song.path("ar");
@@ -326,10 +361,8 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<UserSearchResult>> searchUsers(String keyword) {
-        ensureConfigured();
-        // type=1002 表示搜索用户
         return webClient.get()
-                .uri(baseUrl + "/search?keywords={keyword}&type=1002&cookie={cookie}", keyword, getCookie())
+                .uri(baseUrl + "/search?keywords={keyword}&type=1002", keyword)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .map(jsonNode -> {
@@ -350,7 +383,6 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<String> getLyric(String musicId) {
-        ensureConfigured();
         return webClient.get()
                 .uri(baseUrl + "/lyric?id={id}", musicId)
                 .retrieve()
@@ -361,12 +393,10 @@ public class NeteaseMusicApiService implements IMusicApiService {
                         return json.get("lrc").get("lyric").asText();
                     }
                     return ""; // 没有歌词
-                })
-                .onErrorReturn("");
+                });
     }
 
     private void validateAlbumId(String id) {
-        ensureConfigured();
         if (id == null || !id.matches("[1-9][0-9]{0,19}")) {
             throw new ApiRequestException("无效的歌曲或专辑 ID");
         }
@@ -374,7 +404,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     private Mono<JsonNode> fetchAlbumData(String route, String id) {
         return webClient.get()
-                .uri(baseUrl + route + "&cookie={cookie}", id, getCookie())
+                .uri(baseUrl + route + "", id)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> response.releaseBody()
                         .then(Mono.error(new ApiRequestException("专辑读取失败，请稍后重试"))))

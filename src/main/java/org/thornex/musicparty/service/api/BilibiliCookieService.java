@@ -121,6 +121,11 @@ public class BilibiliCookieService {
     }
 
     /** 完整 Cookie 头，确保设备指纹与 bili_ticket 已初始化（惰性 + 并发去重）。 */
+    public Mono<String> getPublicCookieHeader() {
+        return ensureFingerprint().then(Mono.fromSupplier(() -> "buvid3=" + (buvid3 == null ? "" : buvid3)
+                + "; buvid4=" + (buvid4 == null ? "" : buvid4)));
+    }
+
     public Mono<String> getCookieHeader() {
         return ensureFingerprint()
                 .then(ensureTicket())
@@ -283,7 +288,7 @@ public class BilibiliCookieService {
 
     private String buildCookie() {
         // 以完整 Cookie 为基础，运行期刷新 bili_ticket 后替换回，其余字段保持浏览器原样
-        String base = fullCookie;
+        String base = fullCookie == null ? "" : fullCookie;
         if (StringUtils.hasText(biliTicket)) {
             base = replaceCookie(base, "bili_ticket", biliTicket);
         }

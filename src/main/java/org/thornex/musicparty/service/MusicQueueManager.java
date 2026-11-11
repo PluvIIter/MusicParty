@@ -11,6 +11,7 @@ import org.thornex.musicparty.enums.TopResult;
 import org.thornex.musicparty.enums.Priority;
 
 import org.thornex.musicparty.enums.PlayMode;
+import org.thornex.musicparty.source.ResourceKey;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -51,7 +52,7 @@ public class MusicQueueManager {
         }
 
         // 防止重复添加
-        if (isMusicInQueue(music.id())) {
+        if (isMusicInQueue(music)) {
             return null;
         }
 
@@ -229,7 +230,7 @@ public class MusicQueueManager {
     }
 
     private static String musicKey(Music music) {
-        return music.platform() + ":" + music.id();
+        return ResourceKey.encode(music.platform(), music.id());
     }
 
     private boolean retryAllowed(Music music) {
@@ -468,8 +469,8 @@ public class MusicQueueManager {
     /** 确保队列中存在一个私人FM 合成标记项（幂等） */
     public synchronized void ensureFmMarker() {
         if (queue.size() >= appProperties.getQueue().getMaxSize()) return;
-        if (isMusicInQueue(FM_MARKER_ID)) return;
         Music fmMusic = new Music(FM_MARKER_ID, "私人FM", List.of("私人FM"), 0L, FM_MARKER_ID, null);
+        if (isMusicInQueue(fmMusic)) return;
         UserSummary fmUser = new UserSummary(FM_MARKER_USER_TOKEN, FM_MARKER_USER_TOKEN, "私人FM", false);
         queue.addLast(new MusicQueueItem(UUID.randomUUID().toString(), fmMusic, fmUser, QueueItemStatus.READY, Priority.REGULAR));
     }
@@ -487,7 +488,7 @@ public class MusicQueueManager {
     public synchronized boolean hasPlayableItems(Map<String, QueueItemStatus> statusMap) {
         return queue.stream()
                 .anyMatch(item -> {
-                    QueueItemStatus st = statusMap.getOrDefault(item.music().id(), QueueItemStatus.PENDING);
+                    QueueItemStatus st = statusMap.getOrDefault(musicKey(item.music()), QueueItemStatus.PENDING);
                     return retryAllowed(item.music()) && (st == QueueItemStatus.READY || st == QueueItemStatus.FAILED);
                 });
     }
@@ -533,12 +534,12 @@ public class MusicQueueManager {
         }
     }
 
-    private boolean isMusicInQueue(String musicId) {
-        return queue.stream().anyMatch(item -> item.music().id().equals(musicId));
+    private boolean isMusicInQueue(Music music) {
+        return queue.stream().anyMatch(item -> musicKey(item.music()).equals(musicKey(music)));
     }
 
     private boolean isReadyOrFailed(Map<String, QueueItemStatus> statusMap, MusicQueueItem item) {
-        QueueItemStatus status = statusMap.getOrDefault(item.music().id(), QueueItemStatus.PENDING);
+        QueueItemStatus status = statusMap.getOrDefault(musicKey(item.music()), QueueItemStatus.PENDING);
         return retryAllowed(item.music()) && (status == QueueItemStatus.READY || status == QueueItemStatus.FAILED);
     }
 

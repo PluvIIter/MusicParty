@@ -29,7 +29,7 @@ class PlaylistClaimServiceTest {
         properties=new AppProperties();properties.getQueue().setAllowPlaylistClaim(true);
         var events=mock(ApplicationEventPublisher.class);
         users=new UserService(events);queue=new MusicQueueManager(properties);
-        player=new MusicPlayerService(List.of(),users,mock(LocalCacheService.class),mock(LiveStreamService.class),queue,events,properties,mock(NeteaseMusicApiService.class),mock(PrivateDjService.class));
+        player=PlayerTestFactory.create(List.of(),users,mock(LocalCacheService.class),mock(LiveStreamService.class),queue,events,properties,mock(NeteaseMusicApiService.class),mock(PrivateDjService.class));
         persistence=mock(QueuePersistenceService.class);
         claims=new PlaylistClaimService(users,queue,player,persistence,properties);
         target=users.handleConnect("target-session","target","游客");

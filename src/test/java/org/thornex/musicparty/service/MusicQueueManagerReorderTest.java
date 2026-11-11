@@ -1,5 +1,7 @@
 package org.thornex.musicparty.service;
 
+import org.thornex.musicparty.source.ResourceKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -40,7 +42,7 @@ class MusicQueueManagerReorderTest {
 
     private Map<String, QueueItemStatus> ready() {
         Map<String, QueueItemStatus> statuses = new HashMap<>();
-        queue.getQueueSnapshot().forEach(item -> statuses.put(item.music().id(), QueueItemStatus.READY));
+        queue.getQueueSnapshot().forEach(item -> statuses.put(ResourceKey.encode(item.music().platform(), item.music().id()), QueueItemStatus.READY));
         return statuses;
     }
 

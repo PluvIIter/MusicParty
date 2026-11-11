@@ -51,7 +51,7 @@ class MusicPlayerServiceStaleRequestTest {
         when(api.getPlayableMusic("b")).thenReturn(second.asMono());
         when(api.getPlayableMusic("c")).thenReturn(Mono.never());
         publisher = mock(ApplicationEventPublisher.class);
-        player = new MusicPlayerService(List.of(api), users, mock(LocalCacheService.class),
+        player = PlayerTestFactory.create(List.of(api), users, mock(LocalCacheService.class),
                 mock(LiveStreamService.class), queue, publisher, properties, api, mock(PrivateDjService.class));
     }
 
@@ -76,6 +76,7 @@ class MusicPlayerServiceStaleRequestTest {
         verify(queue, times(2)).pollNext(any(), anyBoolean(), anyBoolean(), anyMap(), anySet());
         verifyNoInteractions(publisher);
         second.tryEmitValue(playable("b"));
+        PlayerTestFactory.await(() -> player.getCurrentPlayerState().nowPlaying() != null);
         assertEquals("b", player.getCurrentPlayerState().nowPlaying().music().id());
     }
 
@@ -83,8 +84,7 @@ class MusicPlayerServiceStaleRequestTest {
     void currentFailureStillNotifiesAndStartsNextSong() {
         player.playerLoop();
         first.tryEmitError(new IllegalStateException("current request failed"));
-
-        verify(api).getPlayableMusic("b");
+        verify(api, timeout(5000)).getPlayableMusic("b");
         assertTrue(player.getCurrentPlayerState().isLoading());
         verify(publisher).publishEvent(argThat((ApplicationEvent event) ->
                 event instanceof SystemMessageEvent message && message.getAction() == PlayerAction.ERROR_LOAD));

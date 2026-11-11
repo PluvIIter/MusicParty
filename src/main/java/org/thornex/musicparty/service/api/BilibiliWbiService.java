@@ -54,7 +54,7 @@ public class BilibiliWbiService {
             return Mono.just(keyCache.get("mixin_key"));
         }
 
-        return cookieService.getCookieHeader()
+        return cookieService.getPublicCookieHeader()
                 .flatMap(cookie -> {
                     // ① 优先使用 bili_ticket 收割的 WBI key
                     Optional<BilibiliCookieService.WbiKeys> fresh = cookieService.getFreshWbiKeys();

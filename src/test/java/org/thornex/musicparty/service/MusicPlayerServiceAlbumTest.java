@@ -42,7 +42,7 @@ class MusicPlayerServiceAlbumTest {
         album = new AlbumInfo("900", "Album", List.of("Artist"), null, 3,
                 List.of(music("1"), music("2"), music("3")));
         when(api.getAlbum("900")).thenReturn(Mono.just(album));
-        player = new MusicPlayerService(List.of(api), users, mock(LocalCacheService.class),
+        player = PlayerTestFactory.create(List.of(api), users, mock(LocalCacheService.class),
                 mock(LiveStreamService.class), queue, mock(ApplicationEventPublisher.class),
                 properties, api, mock(PrivateDjService.class));
     }

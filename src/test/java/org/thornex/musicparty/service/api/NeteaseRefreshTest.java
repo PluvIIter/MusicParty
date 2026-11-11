@@ -35,11 +35,12 @@ class NeteaseRefreshTest {
         assertEquals(2, requests.size()); assertTrue(requests.get(1).getQuery().contains("br=999000"));
         assertTrue(requests.get(1).getQuery().contains("timestamp="));
     }
-    @Test void invalidIdOrMissingCookieNeverContactsUpstream() {
+    @Test void invalidIdNeverContactsUpstreamButPublicAudioWorksWithoutCookie() {
         WebClient client = WebClient.builder().exchangeFunction(r -> { fail("Must not contact API"); return Mono.empty(); }).build();
         assertThrows(ApiRequestException.class, () -> new NeteaseMusicApiService(client, props()).refreshSongUrl("invalid").block());
         AppProperties blank = props(); blank.getNetease().setCookie("");
-        assertThrows(ApiRequestException.class, () -> new NeteaseMusicApiService(client, blank).refreshSongUrl("123").block());
+        WebClient anonymous = WebClient.builder().exchangeFunction(request -> Mono.just(json("{\"data\":[{\"url\":\"https://audio.test/public\"}]}"))).build();
+        assertEquals("https://audio.test/public", new NeteaseMusicApiService(anonymous, blank).refreshSongUrl("123").block());
     }
     @Test void bothFailuresAndEmptyUrlsReturnGenericError() {
         for (String body : List.of("{\"data\":[{\"url\":null}]}", "{\"private\":\"fixture-secret\"}")) {

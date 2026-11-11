@@ -1,5 +1,7 @@
 package org.thornex.musicparty.service;
 
+import org.thornex.musicparty.source.ResourceKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
@@ -26,7 +28,7 @@ class RetainedPlaylistTest {
 
     private Map<String, QueueItemStatus> ready() {
         Map<String, QueueItemStatus> result = new HashMap<>();
-        queue.getQueueSnapshot().forEach(item -> result.put(item.music().id(), QueueItemStatus.READY));
+        queue.getQueueSnapshot().forEach(item -> result.put(ResourceKey.encode(item.music().platform(), item.music().id()), QueueItemStatus.READY));
         return result;
     }
 

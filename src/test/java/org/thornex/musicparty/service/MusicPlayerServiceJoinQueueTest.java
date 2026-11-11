@@ -34,7 +34,7 @@ class MusicPlayerServiceJoinQueueTest {
         props = new AppProperties();
         queueManager = mock(MusicQueueManager.class);
         djService = mock(PrivateDjService.class);
-        service = new MusicPlayerService(
+        service = PlayerTestFactory.create(
                 List.of(),
                 mock(org.thornex.musicparty.service.UserService.class),
                 mock(org.thornex.musicparty.service.LocalCacheService.class),

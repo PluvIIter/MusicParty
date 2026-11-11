@@ -9,268 +9,281 @@ import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.thornex.musicparty.config.LocalResourceConfig;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.config.LocalResourceConfig;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.event.DownloadStatusEvent;
+import org.thornex.musicparty.media.MediaUrlPolicy;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.security.MessageDigest;
 import java.time.Duration;
-import java.util.Comparator;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 @Slf4j
 public class LocalCacheService {
-
     private final WebClient webClient;
-    private static final long DOWNLOAD_COOLDOWN_SECONDS = 3;
-
-    // 内存中维护缓存文件的元数据
-    private final Map<String, CacheEntry> cacheIndex = new ConcurrentHashMap<>();
-    private final AtomicLong currentTotalSize = new AtomicLong(0);
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
-    private final Sinks.Many<DownloadTask> downloadQueue = Sinks.many().unicast().onBackpressureBuffer();
+    private final Path root;
+    private final Map<String, CacheEntry> cacheIndex = new ConcurrentHashMap<>();
+    private final AtomicLong currentTotalSize = new AtomicLong();
+    private final Sinks.Many<DownloadTask> downloadQueue = Sinks.many().unicast()
+            .onBackpressureBuffer(new java.util.concurrent.ArrayBlockingQueue<>(256));
     private Disposable queueSubscription;
+    private final Object queueEmitter = new Object();
+    private static final long MAX_DOWNLOAD_BYTES = 512L * 1024 * 1024;
+    private static final Set<String> EXTENSIONS = Set.of(".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav");
 
-    private record DownloadTask(
-            String musicId,
-            Mono<DownloadSource> source,
-            Map<String, String> headers
-    ) {}
+    private record DownloadTask(String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {}
 
-    /**
-     * 下载源：URL + 文件扩展名。
-     * 扩展名随源变化（如 DASH 音频 .m4a、html5 兜底 MP4 .mp4），
-     * 因此无法在提交任务时预先固定。
-     */
-    public record DownloadSource(String url, String extension) {}
-
-    public LocalCacheService(WebClient webClient, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
-        this.webClient = webClient;
-        this.eventPublisher = eventPublisher;
-        this.appProperties = appProperties;
+    public record DownloadSource(String url, String extension, Map<String, String> headers, String mimeType, String representationKey) {
+        public DownloadSource(String url, String extension) { this(url, extension, Map.of(), "application/octet-stream", "default"); }
+        public DownloadSource(String url, String extension, Map<String, String> headers, String mimeType) {
+            this(url, extension, headers, mimeType, "default");
+        }
+        public DownloadSource { headers = Map.copyOf(headers); java.util.Objects.requireNonNull(representationKey); }
     }
 
     @Data
     public static class CacheEntry {
         private String id;
         private String fileName;
-        private CacheStatus status;
+        private String mimeType;
+        private String representationKey;
+        private volatile CacheStatus status;
         private long size;
-        private long lastAccessTime;
-        private String originalUrl; // 用于重试或记录
+        private volatile long lastAccessTime;
+        private int pins;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LocalCacheService(WebClient client, ApplicationEventPublisher publisher, AppProperties properties) {
+        this(client, publisher, properties, Paths.get(LocalResourceConfig.CACHE_DIR));
+    }
+
+    LocalCacheService(WebClient client, ApplicationEventPublisher publisher, AppProperties properties, Path root) {
+        this.webClient = client;
+        this.eventPublisher = publisher;
+        this.appProperties = properties;
+        this.root = root.toAbsolutePath().normalize();
     }
 
     @PostConstruct
     public void init() {
-        // 初始化时扫描目录，重建索引和计算大小
-        File dir = new File(LocalResourceConfig.CACHE_DIR);
-        if (!dir.exists()) dir.mkdirs();
-
-        File[] files = dir.listFiles();
-        if (files != null) {
-            for (File f : files) {
-                String id = f.getName().split("\\.")[0]; // 假设文件名是 id.mp3
-                CacheEntry entry = new CacheEntry();
-                entry.setId(id);
-                entry.setFileName(f.getName());
-                entry.setStatus(CacheStatus.COMPLETED);
-                entry.setSize(f.length());
-                entry.setLastAccessTime(System.currentTimeMillis());
-
-                cacheIndex.put(id, entry);
-                currentTotalSize.addAndGet(f.length());
+        try {
+            if (Files.isSymbolicLink(root)) throw new IOException("Media cache directory cannot be a symbolic link");
+            Files.createDirectories(root);
+            try (var files = Files.list(root)) {
+                files.filter(path -> path.getFileName().toString().endsWith(".index")).forEach(this::restore);
             }
+            java.util.Set<String> indexed = cacheIndex.values().stream().map(CacheEntry::getFileName).collect(java.util.stream.Collectors.toSet());
+            try (var files = Files.list(root)) {
+                files.filter(path -> {
+                    String name = path.getFileName().toString();
+                    return name.matches("[a-f0-9]{64}\\.[a-z0-9]+\\.part")
+                            || (name.matches("[a-f0-9]{64}\\.(mp3|m4a|mp4|flac|ogg|wav)") && !indexed.contains(name));
+                }).forEach(this::deleteControlled);
+            }
+        } catch (IOException error) {
+            throw new IllegalStateException("Cannot initialize media cache", error);
         }
-        log.info("LocalCacheService initialized. Current cache size: {} bytes", currentTotalSize.get());
+        queueSubscription = downloadQueue.asFlux().publishOn(Schedulers.boundedElastic(), 1).concatMap(task -> processTask(task)
+                .onErrorResume(error -> Mono.empty()).then(Mono.delay(Duration.ofSeconds(3)))).subscribe();
+    }
 
-        this.queueSubscription = downloadQueue.asFlux()
-                .concatMap(task ->
-                        processTask(task)
-                                .onErrorResume(e -> {
-                                    log.error("Unexpected error in download queue processing", e);
-                                    return Mono.empty(); // 吞掉异常，防止队列崩溃
-                                })
-                                // 🟢 关键：强制冷却时间，防止风控
-                                .then(Mono.delay(Duration.ofSeconds(DOWNLOAD_COOLDOWN_SECONDS)))
-                )
-                .subscribe();
+    private void restore(Path index) {
+        try {
+            Properties data = new Properties();
+            try (InputStream input = Files.newInputStream(index)) { data.load(input); }
+            String key = data.getProperty("key");
+            String file = data.getProperty("file");
+            String representation = data.getProperty("representation", "default");
+            if (key == null || file == null || !file.matches("[a-f0-9]{64}\\.(mp3|m4a|mp4|flac|ogg|wav)")
+                    || !file.startsWith(hash(key + ":representation:" + representation) + ".")) return;
+            Path path = controlled(file);
+            if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.size(path) == 0) return;
+            CacheEntry entry = new CacheEntry();
+            entry.setId(key); entry.setFileName(file); entry.setMimeType(data.getProperty("mime", "application/octet-stream"));
+            entry.setRepresentationKey(representation);
+            entry.setStatus(CacheStatus.COMPLETED); entry.setSize(Files.size(path));
+            entry.setLastAccessTime(Files.getLastModifiedTime(path).toMillis());
+            cacheIndex.put(key, entry); currentTotalSize.addAndGet(entry.getSize());
+        } catch (Exception error) { log.warn("Ignoring invalid media cache index"); }
     }
 
     @PreDestroy
-    public void cleanup() {
-        if (queueSubscription != null && !queueSubscription.isDisposed()) {
-            queueSubscription.dispose();
-        }
+    public void cleanup() { if (queueSubscription != null) queueSubscription.dispose(); }
+
+    public void submitDownload(String key, Mono<DownloadSource> source, Map<String, String> headers) {
+        submitDownload(key, source, headers, () -> {});
     }
 
-    /**
-     * 提交下载任务
-     * @param musicId 音乐ID（作为文件名）
-     * @param source 提供下载源（URL + 扩展名）的 Mono，链接可能是动态获取的
-     * @param headers 下载需要的请求头（Referer, Cookie等）
-     */
-    public synchronized void submitDownload(String musicId, Mono<DownloadSource> source, Map<String, String> headers) {
-        if (cacheIndex.containsKey(musicId) && cacheIndex.get(musicId).getStatus() == CacheStatus.COMPLETED) {
-            log.info("Music {} already cached.", musicId);
-            touch(musicId); // 更新访问时间
-            return;
+    public void submitDownload(String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {
+        synchronized (this) {
+            CacheStatus status = getStatus(key);
+            if (status == CacheStatus.COMPLETED || status == CacheStatus.PENDING || status == CacheStatus.DOWNLOADING) return;
+            CacheEntry entry = new CacheEntry();
+            entry.setId(key); entry.setStatus(CacheStatus.PENDING); entry.setLastAccessTime(System.currentTimeMillis());
+            cacheIndex.put(key, entry);
         }
-
-        // 2. 检查是否正在处理或排队 (关键去重)
-        if (cacheIndex.containsKey(musicId)) {
-            CacheStatus status = cacheIndex.get(musicId).getStatus();
-            if (status == CacheStatus.DOWNLOADING || status == CacheStatus.PENDING) {
-                log.debug("Task {} is already pending or downloading, skip enqueue.", musicId);
-                return; // 直接返回，不要重复 emit
-            }
-        }
-
-        // 初始化条目
-        CacheEntry entry = new CacheEntry();
-        entry.setId(musicId);
-        entry.setStatus(CacheStatus.PENDING); // 🟢 状态：排队中
-        entry.setLastAccessTime(System.currentTimeMillis());
-        cacheIndex.put(musicId, entry);
-
-        eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-
-        Sinks.EmitResult result = downloadQueue.tryEmitNext(new DownloadTask(musicId, source, headers));
-
-        if (result.isFailure()) {
-            log.error("Failed to enqueue download task for {}", musicId);
-            entry.setStatus(CacheStatus.FAILED);
-            eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-        } else {
-            log.info("Download enqueued: {}", musicId);
+        publish(key);
+        Sinks.EmitResult emitted;
+        synchronized (queueEmitter) { emitted = downloadQueue.tryEmitNext(new DownloadTask(key, source, Map.copyOf(headers), beforeCommit)); }
+        if (emitted.isFailure()) {
+            cacheIndex.get(key).setStatus(CacheStatus.FAILED); publish(key);
         }
     }
 
     private Mono<Void> processTask(DownloadTask task) {
-        String musicId = task.musicId();
-        CacheEntry entry = cacheIndex.get(musicId);
-
-        // 双重检查：如果任务在排队期间被移除了，就跳过
-        if (entry == null) return Mono.empty();
-
-        // 🟢 状态变更：PENDING -> DOWNLOADING
-        entry.setStatus(CacheStatus.DOWNLOADING);
-        eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-        log.info("Processing download: {}", musicId);
-
-        return task.source()
-                .flatMap(src -> {
-                    entry.setOriginalUrl(src.url());
-                    String fileName = musicId + src.extension();
-                    entry.setFileName(fileName);
-                    Path destPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName);
-
-                    return webClient.get()
-                            .uri(src.url())
-                            .headers(httpHeaders -> task.headers().forEach(httpHeaders::add))
-                            .retrieve()
-                            .bodyToFlux(DataBuffer.class)
-                            .collectList()
-                            .publishOn(Schedulers.boundedElastic())
-                            .doOnSuccess(dataBuffers -> {
-                                try {
-                                    try (var os = Files.newOutputStream(destPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-                                        for (DataBuffer buffer : dataBuffers) {
-                                            byte[] bytes = new byte[buffer.readableByteCount()];
-                                            buffer.read(bytes);
-                                            os.write(bytes);
-                                            DataBufferUtils.release(buffer);
-                                        }
-                                    }
-                                    long size = Files.size(destPath);
-                                    entry.setSize(size);
-                                    entry.setStatus(CacheStatus.COMPLETED);
-                                    currentTotalSize.addAndGet(size);
-                                    log.info("Download completed: {}", fileName);
-                                    eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-                                    ensureCapacity();
-                                } catch (IOException e) {
-                                    throw new RuntimeException("File write error", e);
-                                }
-                            });
-                })
-                // 错误处理
-                .doOnError(error -> {
-                    log.error("Download Task failed for {}: {}", musicId, error.getMessage());
-                    entry.setStatus(CacheStatus.FAILED);
-                    eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-                })
-                // 这里的 onErrorResume 保证即使这个任务失败，Flux 链也不会断，会继续执行 delay 和下一个任务
-                .onErrorResume(e -> Mono.empty())
-                .then(); // 转为 Mono<Void>
+        return Mono.defer(() -> {
+            CacheEntry entry = cacheIndex.get(task.key());
+            entry.setStatus(CacheStatus.DOWNLOADING); publish(task.key());
+            return task.source().switchIfEmpty(Mono.error(new IOException("No media source")))
+                    .flatMap(source -> download(task, entry, source)).timeout(Duration.ofMinutes(5))
+                    .doOnError(error -> { entry.setStatus(CacheStatus.FAILED); publish(task.key()); })
+                    .then();
+        });
     }
 
-    /**
-     * LRU 清理策略
-     */
-    private synchronized void ensureCapacity() {
-        if (currentTotalSize.get() <= appProperties.getCache().getMaxSize().toBytes()) return;
-
-        log.info("Cache limit exceeded. Cleaning up...");
-
-        // 按最后访问时间排序
-        cacheIndex.values().stream()
-                .filter(e -> e.getStatus() == CacheStatus.COMPLETED) // 只删已完成的
-                .sorted(Comparator.comparingLong(CacheEntry::getLastAccessTime))
-                .forEach(entry -> {
-                    if (currentTotalSize.get() <= appProperties.getCache().getMaxSize().toBytes()) return; // 容量够了就停
-
-                    try {
-                        Path path = Paths.get(LocalResourceConfig.CACHE_DIR, entry.getFileName());
-                        Files.deleteIfExists(path);
-                        currentTotalSize.addAndGet(-entry.getSize());
-                        cacheIndex.remove(entry.getId());
-                        log.info("Evicted: {}", entry.getFileName());
-                    } catch (IOException e) {
-                        log.error("Failed to delete {}", entry.getFileName(), e);
-                    }
-                });
+    private Mono<Void> download(DownloadTask task, CacheEntry entry, DownloadSource source) {
+        return Mono.fromCallable(() -> {
+            if (!EXTENSIONS.contains(source.extension())) throw new IOException("Unsupported media format");
+            MediaUrlPolicy.validateUrl(source.url());
+            Map<String, String> headers = new HashMap<>(task.headers()); headers.putAll(source.headers());
+            MediaUrlPolicy.validateHeaders(headers);
+            return headers;
+        }).subscribeOn(Schedulers.boundedElastic()).flatMap(headers -> {
+            String name = hash(task.key() + ":representation:" + source.representationKey()) + source.extension();
+            Path destination = controlled(name);
+            Path partial = controlled(name + ".part");
+            AtomicLong bytes = new AtomicLong();
+            long limit = Math.min(MAX_DOWNLOAD_BYTES, appProperties.getCache().getMaxSize().toBytes());
+            var buffers = webClient.get().uri(source.url()).headers(http -> headers.forEach(http::set))
+                    .exchangeToFlux(response -> {
+                        if (!response.statusCode().is2xxSuccessful()) return response.releaseBody()
+                                .thenMany(reactor.core.publisher.Flux.error(new IOException("Media download rejected")));
+                        String type = response.headers().contentType().map(Object::toString).orElse("");
+                        if (type.startsWith("text/") || type.contains("json")) return response.releaseBody()
+                                .thenMany(reactor.core.publisher.Flux.error(new IOException("Invalid media content")));
+                        return response.bodyToFlux(DataBuffer.class);
+                    }).handle((DataBuffer buffer, reactor.core.publisher.SynchronousSink<DataBuffer> sink) -> {
+                        if (bytes.addAndGet(buffer.readableByteCount()) > limit) {
+                            DataBufferUtils.release(buffer); sink.error(new IOException("Media exceeds cache quota"));
+                        } else sink.next(buffer);
+                    }).doOnDiscard(DataBuffer.class, DataBufferUtils::release);
+            return DataBufferUtils.write(buffers, partial, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
+                    .then(Mono.fromRunnable(() -> {
+                        try {
+                            validateFile(partial, source.extension());
+                            task.beforeCommit().run();
+                            synchronized (this) {
+                                reserve(bytes.get(), task.key());
+                                Files.move(partial, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                                Properties index = new Properties(); index.setProperty("key", task.key());
+                                index.setProperty("file", name); index.setProperty("mime", source.mimeType());
+                                index.setProperty("representation", source.representationKey());
+                                Path tempIndex = controlled(hash(task.key()) + ".index.part");
+                                try (var output = Files.newOutputStream(tempIndex)) { index.store(output, null); }
+                                Files.move(tempIndex, controlled(hash(task.key()) + ".index"), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                                entry.setFileName(name); entry.setMimeType(source.mimeType()); entry.setRepresentationKey(source.representationKey()); entry.setSize(bytes.get());
+                                entry.setLastAccessTime(System.currentTimeMillis()); entry.setStatus(CacheStatus.COMPLETED);
+                                currentTotalSize.addAndGet(bytes.get());
+                            }
+                            publish(task.key());
+                        } catch (IOException error) { throw new IllegalStateException("Cannot commit media cache", error); }
+                    }).subscribeOn(Schedulers.boundedElastic()))
+                    .doFinally(signal -> deleteControlled(partial));
+        }).then();
     }
 
-    /**
-     * 获取文件访问 URL
-     * 返回: /media/id.ext
-     */
-    public String getLocalUrl(String musicId) {
-        CacheEntry entry = cacheIndex.get(musicId);
-        if (entry != null && entry.getStatus() == CacheStatus.COMPLETED) {
-            touch(musicId);
-            return "/media/" + entry.getFileName();
+    private static void validateFile(Path path, String extension) throws IOException {
+        byte[] head;
+        try (InputStream input = Files.newInputStream(path)) { head = input.readNBytes(16); }
+        boolean valid = head.length >= 12 && switch (extension) {
+            case ".m4a", ".mp4" -> new String(head, 4, 4, StandardCharsets.US_ASCII).equals("ftyp");
+            case ".mp3" -> (head[0] == 'I' && head[1] == 'D' && head[2] == '3') || ((head[0] & 255) == 255 && (head[1] & 224) == 224);
+            case ".flac" -> new String(head, 0, 4, StandardCharsets.US_ASCII).equals("fLaC");
+            case ".ogg" -> new String(head, 0, 4, StandardCharsets.US_ASCII).equals("OggS");
+            case ".wav" -> new String(head, 0, 4, StandardCharsets.US_ASCII).equals("RIFF");
+            default -> false;
+        };
+        if (!valid) throw new IOException("Invalid media format");
+    }
+
+    private void reserve(long incoming, String except) throws IOException {
+        long limit = appProperties.getCache().getMaxSize().toBytes();
+        for (CacheEntry entry : cacheIndex.values().stream().filter(e -> e.getStatus() == CacheStatus.COMPLETED && e.getPins() == 0 && !e.getId().equals(except))
+                .sorted(Comparator.comparingLong(CacheEntry::getLastAccessTime)).toList()) {
+            if (currentTotalSize.get() + incoming <= limit) break;
+            Files.deleteIfExists(controlled(entry.getFileName())); Files.deleteIfExists(controlled(hash(entry.getId()) + ".index"));
+            cacheIndex.remove(entry.getId()); currentTotalSize.addAndGet(-entry.getSize());
         }
-        return null;
+        if (currentTotalSize.get() + incoming > limit) throw new IOException("Media cache full");
     }
 
-    public CacheStatus getStatus(String musicId) {
-        if (!cacheIndex.containsKey(musicId)) return null;
-        return cacheIndex.get(musicId).getStatus();
-    }
-    
-    public CacheEntry getCacheEntry(String musicId) {
-        return cacheIndex.get(musicId);
+    public synchronized AutoCloseable pin(String key) {
+        CacheEntry entry = cacheIndex.get(key);
+        if (entry == null || getStatus(key) != CacheStatus.COMPLETED) throw new IllegalStateException("Media not ready");
+        entry.setPins(entry.getPins() + 1);
+        return () -> { synchronized (this) { entry.setPins(Math.max(0, entry.getPins() - 1)); } };
     }
 
-    private void touch(String musicId) {
-        CacheEntry entry = cacheIndex.get(musicId);
-        if (entry != null) {
-            entry.setLastAccessTime(System.currentTimeMillis());
+    public Path localPath(String key) {
+        CacheEntry entry = getCacheEntry(key);
+        return entry != null && getStatus(key) == CacheStatus.COMPLETED ? controlled(entry.getFileName()) : null;
+    }
+
+    public String getLocalUrl(String key) {
+        CacheEntry entry = getCacheEntry(key);
+        return entry != null && getStatus(key) == CacheStatus.COMPLETED ? "/media/" + entry.getFileName() : null;
+    }
+
+    public CacheStatus getStatus(String key) {
+        CacheEntry entry = cacheIndex.get(key);
+        if (entry == null) return null;
+        if (entry.getStatus() == CacheStatus.COMPLETED && !Files.isRegularFile(controlled(entry.getFileName()), LinkOption.NOFOLLOW_LINKS)) {
+            if (cacheIndex.remove(key, entry)) currentTotalSize.addAndGet(-entry.getSize());
+            return null;
         }
+        return entry.getStatus();
+    }
+
+    public CacheEntry getCacheEntry(String key) {
+        CacheEntry entry = cacheIndex.get(key);
+        if (entry != null) entry.setLastAccessTime(System.currentTimeMillis());
+        return entry;
+    }
+
+    private Path controlled(String name) {
+        Path path = root.resolve(name).normalize();
+        if (!path.getParent().equals(root) || Files.isSymbolicLink(path)) throw new IllegalArgumentException("Invalid cache path");
+        return path;
+    }
+
+    private void deleteControlled(Path path) {
+        Path target = path.toAbsolutePath().normalize();
+        if (!target.getParent().equals(root)) throw new IllegalArgumentException("Invalid cache path");
+        try { Files.deleteIfExists(target); } catch (IOException error) { log.warn("Cannot remove media cache file"); }
+    }
+
+    private void publish(String key) {
+        int suffix = key.lastIndexOf(":credentials:");
+        eventPublisher.publishEvent(new DownloadStatusEvent(this, suffix < 0 ? key : key.substring(0, suffix)));
+    }
+
+    private static String hash(String key) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.getBytes(StandardCharsets.UTF_8))); }
+        catch (Exception error) { throw new IllegalStateException(error); }
     }
 }

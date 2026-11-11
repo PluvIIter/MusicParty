@@ -10,7 +10,6 @@ import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.dto.SettingsSnapshot;
 import org.thornex.musicparty.dto.PrivateDjSegment;
-import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.enums.PlayMode;
 import org.thornex.musicparty.enums.QueueItemStatus;
@@ -18,7 +17,10 @@ import org.thornex.musicparty.enums.TopResult;
 import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
-import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import org.thornex.musicparty.media.MediaDeliveryService;
+import org.thornex.musicparty.source.ResourceKey;
+import org.thornex.musicparty.source.SourceRegistry;
+import reactor.core.scheduler.Schedulers;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 import reactor.core.publisher.Mono;
 
@@ -30,16 +32,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class MusicPlayerService {
 
-    private final Map<String, IMusicApiService> apiServiceMap;
+    private final SourceRegistry sourceRegistry;
     private final UserService userService;
-    private final LocalCacheService localCacheService;
+    private final MediaDeliveryService mediaDeliveryService;
     // ChatService dependency removed to break circular reference
     private final LiveStreamService liveStreamService;
 
@@ -47,7 +48,6 @@ public class MusicPlayerService {
     private final MusicQueueManager queueManager;
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
-    private final NeteaseMusicApiService neteaseMusicApiService;
     private final PrivateDjService privateDjService;
 
     // --- Player State ---
@@ -102,23 +102,20 @@ public class MusicPlayerService {
     private long claimedPlaybackVersion = -1;
     private final Map<String, UserSummary> claimedPlaybackOwners = new HashMap<>();
 
-    public MusicPlayerService(List<IMusicApiService> apiServices, UserService userService,
-                              LocalCacheService localCacheService,
+    public MusicPlayerService(SourceRegistry sourceRegistry, UserService userService,
+                              MediaDeliveryService mediaDeliveryService,
                               LiveStreamService liveStreamService,
                               MusicQueueManager queueManager,
                               ApplicationEventPublisher eventPublisher,
                               AppProperties appProperties,
-                              NeteaseMusicApiService neteaseMusicApiService,
                               PrivateDjService privateDjService) {
-        this.apiServiceMap = apiServices.stream()
-                .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
+        this.sourceRegistry = sourceRegistry;
         this.userService = userService;
-        this.localCacheService = localCacheService;
+        this.mediaDeliveryService = mediaDeliveryService;
         this.liveStreamService = liveStreamService;
         this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
-        this.neteaseMusicApiService = neteaseMusicApiService;
         this.privateDjService = privateDjService;
         this.isFairShuffle = new AtomicBoolean(true);
         this.allowOfflineShuffle = new AtomicBoolean(false);
@@ -128,7 +125,7 @@ public class MusicPlayerService {
 
     @PostConstruct
     public void init() {
-        log.info("MusicPlayerService initialized with {} API services: {}", apiServiceMap.size(), apiServiceMap.keySet());
+        log.info("MusicPlayerService initialized with {} sources", sourceRegistry.descriptors().size());
         
         // 从配置初始化投票参数
         AppProperties.PlayerConfig playerConfig = appProperties.getPlayer();
@@ -153,11 +150,7 @@ public class MusicPlayerService {
                 log.info("Song finished: {}", music.name());
 
                 if (playMode.get() == PlayMode.REPEAT_ONE) {
-                    playbackId = UUID.randomUUID().toString();
-                    positionAnchor.set(0);
-                    timestampAnchor.set(System.currentTimeMillis());
-                    log.info("Repeat-one mode: restarting {}", music.name());
-                    broadcastFullPlayerState();
+                    restartCurrentSong(music);
                     return;
                 }
 
@@ -169,7 +162,8 @@ public class MusicPlayerService {
                             music.artists(),
                             music.duration(),
                             music.platform(),
-                            music.coverUrl()
+                            music.coverUrl(),
+                            music.externalUrl()
                     );
                     queueManager.addToHistory(finishedMusic);
                 }
@@ -188,6 +182,53 @@ public class MusicPlayerService {
                 playNextInQueue();
             }
         }
+    }
+
+    private void restartCurrentSong(PlayableMusic previous) {
+        if (isLoading.get()) return;
+        if ("VOICE".equals(previous.kind())) {
+            playbackId = UUID.randomUUID().toString();
+            positionAnchor.set(0);
+            timestampAnchor.set(System.currentTimeMillis());
+            broadcastFullPlayerState();
+            return;
+        }
+        long version = playHeadVersion.incrementAndGet();
+        isLoading.set(true);
+        String authorization = mediaDeliveryService.authorizationScope(previous.platform());
+        Mono.defer(() -> mediaDeliveryService.getPlayableMusic(previous.platform(), previous.id()))
+                .subscribeOn(Schedulers.boundedElastic())
+                .timeout(Duration.ofSeconds(10))
+                .subscribe(prepared -> {
+                    synchronized (this) {
+                        if (playHeadVersion.get() != version) return;
+                        if (!sourceRegistry.isEnabled(prepared.platform())
+                                || !Objects.equals(authorization, mediaDeliveryService.authorizationScope(prepared.platform()))) {
+                            currentMusic.set(null);
+                            playbackId = null;
+                            isLoading.set(false);
+                            playNextInQueue();
+                            return;
+                        }
+                        currentMusic.set(prepared);
+                        playbackId = UUID.randomUUID().toString();
+                        positionAnchor.set(0);
+                        timestampAnchor.set(System.currentTimeMillis());
+                        isLoading.set(false);
+                        broadcastFullPlayerState();
+                    }
+                }, error -> {
+                    synchronized (this) {
+                        if (playHeadVersion.get() != version) return;
+                        currentMusic.set(null);
+                        playbackId = null;
+                        isLoading.set(false);
+                        queueManager.getQueueSnapshot().stream()
+                                .filter(item -> ResourceKey.of(item.music()).equals(ResourceKey.of(previous)))
+                                .forEach(queueManager::markPlaybackFailed);
+                        playNextInQueue();
+                    }
+                });
     }
 
     private synchronized void playNextInQueue() {
@@ -222,19 +263,17 @@ public class MusicPlayerService {
             return;
         }
 
-        // Handle failed items
-        if (nextItem.status() == QueueItemStatus.FAILED ||
-                (statusMap.get(nextItem.music().id()) == QueueItemStatus.FAILED)) {
-            // B站下载失败不直接跳过：getPlayableMusic 会尝试 html5 直连兜底，
-            // 兜底也失败时再由下方 getPlayableMusic 的错误处理器跳过该曲。
-            if (!"bilibili".equalsIgnoreCase(nextItem.music().platform())) {
-                queueManager.markPlaybackFailed(nextItem);
-                log.warn("Skipping failed song: {}", nextItem.music().name());
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
-                playNextInQueue(); // Recursively try next
-                return;
+        if (statusMap.get(ResourceKey.encode(nextItem.music().platform(), nextItem.music().id())) == QueueItemStatus.FAILED) {
+            queueManager.markPlaybackFailed(nextItem);
+            if (sourceRegistry.isEnabled(nextItem.music().platform())) {
+                Mono.fromRunnable(() -> mediaDeliveryService.prefetch(nextItem.music()))
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .subscribe(null, error -> log.warn("Media preparation retry failed: {}", error.getMessage()));
             }
-            log.warn("Bilibili download failed for {}, attempting html5 direct-play rescue.", nextItem.music().name());
+            log.warn("Skipping failed song: {}", nextItem.music().name());
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
+            playNextInQueue();
+            return;
         }
 
         // 增加版本号，这表示"开始一次新的播放尝试"
@@ -246,8 +285,9 @@ public class MusicPlayerService {
         log.info("Playing next: {}", nextItem.music().name());
 
         try {
-            IMusicApiService service = getApiService(nextItem.music().platform());
-            service.getPlayableMusic(nextItem.music().id())
+            String authorization = mediaDeliveryService.authorizationScope(nextItem.music().platform());
+            Mono.defer(() -> mediaDeliveryService.getPlayableMusic(nextItem.music().platform(), nextItem.music().id()))
+                    .subscribeOn(Schedulers.boundedElastic())
                     .timeout(Duration.ofSeconds(10))
                     .subscribe(
                             playableMusic -> {
@@ -255,6 +295,13 @@ public class MusicPlayerService {
                                 // 如果在请求期间执行了 skip/stop，版本号会变，这里就应该丢弃结果
                                 synchronized (this) {
                                     if (playHeadVersion.get() == currentVersion) {
+                                        if (!sourceRegistry.isEnabled(playableMusic.platform())
+                                                || !Objects.equals(authorization, mediaDeliveryService.authorizationScope(playableMusic.platform()))) {
+                                            queueManager.markPlaybackFailed(nextItem);
+                                            isLoading.set(false);
+                                            playNextInQueue();
+                                            return;
+                                        }
                                         queueManager.clearPlaybackFailure(nextItem);
                                         applyNewSong(playableMusic, nextItem);
                                     } else {
@@ -263,15 +310,15 @@ public class MusicPlayerService {
                                 }
                             },
                             error -> {
-                        // 过期请求（切歌/重置已开始新的加载）的失败直接丢弃（#21）；
-                        // 当前请求失败则标记该曲目，避免反复重试同一首（#23）
-                        if (playHeadVersion.get() != currentVersion) return;
-                        queueManager.markPlaybackFailed(nextItem);
-                        log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
-                        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
-                        isLoading.set(false);
-                        broadcastFullPlayerState();
-                        playNextInQueue();
+                        synchronized (this) {
+                            if (playHeadVersion.get() != currentVersion) return;
+                            queueManager.markPlaybackFailed(nextItem);
+                            log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
+                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
+                            isLoading.set(false);
+                            broadcastFullPlayerState();
+                            playNextInQueue();
+                        }
                     });
         } catch (Exception e) {
             queueManager.markPlaybackFailed(nextItem);
@@ -284,7 +331,7 @@ public class MusicPlayerService {
     /** 播放源决策：托管 > (队列有有效歌曲则队列) > 填充空白 */
     boolean shouldPlayPrivateFmDj() {
         AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
-        if ("OFF".equals(c.getMode())) return false;
+        if ("OFF".equals(c.getMode()) || !privateDjService.isAvailable()) return false;
         if (c.isCustodyEnabled()) return true;
         if (c.isFillBlankEnabled()) {
             return !queueManager.hasPlayableItems(buildStatusMap());
@@ -297,7 +344,8 @@ public class MusicPlayerService {
         long version = playHeadVersion.incrementAndGet();
         isLoading.set(true);
         broadcastFullPlayerState();
-        privateDjService.nextSegment()
+        Mono.defer(privateDjService::nextSegment)
+                .subscribeOn(Schedulers.boundedElastic())
                 .timeout(Duration.ofSeconds(15))
                 .subscribe(
                         segment -> {
@@ -314,7 +362,8 @@ public class MusicPlayerService {
         long version = playHeadVersion.incrementAndGet();
         isLoading.set(true);
         broadcastFullPlayerState();
-        privateDjService.nextFmSegment()
+        Mono.defer(privateDjService::nextFmSegment)
+                .subscribeOn(Schedulers.boundedElastic())
                 .timeout(Duration.ofSeconds(15))
                 .subscribe(
                         segment -> {
@@ -334,7 +383,7 @@ public class MusicPlayerService {
      */
     void syncFmMarker() {
         AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
-        boolean shouldPresent = !"OFF".equals(c.getMode()) && c.isJoinQueueEnabled()
+        boolean shouldPresent = privateDjService.isAvailable() && !"OFF".equals(c.getMode()) && c.isJoinQueueEnabled()
                 && !c.isCustodyEnabled() && (playMode.get() == PlayMode.SHUFFLE || playMode.get() == PlayMode.ROUND_ROBIN);
         if (shouldPresent) {
             queueManager.ensureFmMarker();
@@ -352,23 +401,9 @@ public class MusicPlayerService {
     void setPausedForTest(boolean paused) { isPaused.set(paused); }
 
     private void loadFmDjPlayable(PrivateDjSegment segment, long version, boolean forceFm) {
-        Mono<PlayableMusic> playableMono;
-        if (segment instanceof PrivateDjSegment.Song s) {
-            // FM/DJ 推荐歌曲用 eapi /song/url 取直链（普通点播的 getPlayableMusic 用 /song/url/v1，
-            // 对 fee=1/8 推荐歌曲会 404），并从段信息直接构造，省一次 /song/detail。
-            playableMono = neteaseMusicApiService.getFmDjSongUrl(s.songId())
-                    .map(url -> new PlayableMusic(
-                            s.songId(), s.name(), s.artists(), s.durationMs(),
-                            "netease", url, s.coverUrl(), false));
-        } else if (segment instanceof PrivateDjSegment.Voice v) {
-            playableMono = Mono.just(new PlayableMusic(
-                    v.voiceId(), "AI DJ", List.of("私人DJ"), v.durationMs(),
-                    "netease", v.voiceUrl(), v.relatedCoverUrl(), false));
-        } else {
-            handleFmDjError(version, new IllegalStateException("Unknown segment"));
-            return;
-        }
-        playableMono.timeout(Duration.ofSeconds(10)).subscribe(
+        Mono.defer(() -> privateDjService.getPlayable(segment))
+                .subscribeOn(Schedulers.boundedElastic())
+                .timeout(Duration.ofSeconds(10)).subscribe(
                 pm -> {
                     synchronized (this) {
                         if (playHeadVersion.get() != version) return;
@@ -382,9 +417,11 @@ public class MusicPlayerService {
         currentLikedUserIds.clear();
         currentLikeMarkers.clear();
         skipVotes.clear();
-        currentMusic.set(music);
+        boolean voice = segment instanceof PrivateDjSegment.Voice;
+        currentMusic.set(new PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), music.platform(),
+                music.url(), music.coverUrl(), music.needsProxy(), voice ? "VOICE" : "SONG", music.externalUrl()));
         playbackId = UUID.randomUUID().toString();
-        currentIsVoice.set(segment instanceof PrivateDjSegment.Voice);
+        currentIsVoice.set(voice);
         currentEnqueuerId.set(MusicQueueManager.FM_MARKER_USER_TOKEN);
         boolean djMode = "DJ".equals(appProperties.getPrivateDj().getMode());
         currentEnqueuerName.set(forceFm ? "私人FM" : (djMode ? "私人DJ" : "私人FM"));
@@ -397,7 +434,7 @@ public class MusicPlayerService {
 
         if (segment instanceof PrivateDjSegment.Song s) {
             queueManager.addToHistory(new Music(s.songId(), s.name(), s.artists(),
-                    s.durationMs(), "netease", s.coverUrl()));
+                    s.durationMs(), music.platform(), s.coverUrl(), music.externalUrl()));
         }
 
         log.info("Now playing (private {}): {}", djMode ? "DJ" : "FM", music.name());
@@ -522,13 +559,13 @@ public class MusicPlayerService {
                         appProperties.getChat().getMaxHistorySize(),
                         appProperties.getChat().getMinIntervalMs(),
                         appProperties.getChat().getMaxMessageLength(),
-                        appProperties.getNetease().isEnabled(),
-                        appProperties.getBilibili().isEnabled(),
+                        sourceRegistry.isEnabled("netease"),
+                        sourceRegistry.isEnabled("bilibili"),
                         appProperties.getBilibili().getMaxDurationMinutes(),
                         isVoteSkipEnabled.get(),
                         voteSkipThreshold.get(),
                         voteSkipWaitTime.get(),
-                        neteaseMusicApiService.isCookieConfigured(),
+                        false,
                         new PlayerState.AppConfigSummary.PrivateDjConfigSummary(
                                 appProperties.getPrivateDj().getMode(),
                                 appProperties.getPrivateDj().isFillBlankEnabled(),
@@ -537,7 +574,9 @@ public class MusicPlayerService {
                         ),
                         appProperties.getQueue().isAllowPlaylistClaim(),
                         appProperties.getQueue().isRetainPlaylist(),
-                        appProperties.getPlayer().isAllowSeek()
+                        appProperties.getPlayer().isAllowSeek(),
+                        getSourceSettings(),
+                        privateDjService.isAvailable()
                 ),
                 queueManager.getMemberShufflePreferences()
         );
@@ -655,13 +694,9 @@ public class MusicPlayerService {
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
 
-        // Check platform enabled
-        if ("netease".equalsIgnoreCase(request.platform()) && !appProperties.getNetease().isEnabled()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "添加失败: 网易云音乐源已被禁用"));
-            return;
-        }
-        if ("bilibili".equalsIgnoreCase(request.platform()) && !appProperties.getBilibili().isEnabled()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "添加失败: Bilibili 源已被禁用"));
+        if (!sourceRegistry.isEnabled(request.platform())) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE,
+                    enqueuer.getToken(), "添加失败: 音源不可用"));
             return;
         }
 
@@ -675,19 +710,15 @@ public class MusicPlayerService {
             return;
         }
 
-        IMusicApiService service = getApiService(request.platform());
-        service.getPlayableMusic(request.musicId())
-                .subscribe(playableMusic -> {
-                            Music music = new Music(playableMusic.id(), playableMusic.name(), playableMusic.artists(), playableMusic.duration(), playableMusic.platform(), playableMusic.coverUrl());
-
-                            QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
-                            if ("bilibili".equals(request.platform())) {
-                                service.prefetchMusic(music.id());
-                            }
+        mediaDeliveryService.getMetadata(request.platform(), request.musicId())
+                .subscribe(music -> {
+                            if (!sourceRegistry.isEnabled(music.platform())) return;
+                            QueueItemStatus initialStatus = mediaDeliveryService.status(music);
 
                             MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
 
                             if (newItem != null) {
+                                mediaDeliveryService.prefetch(music);
                                 log.info("{} enqueued: {}", enqueuer.getName(), music.name());
                                 broadcastQueueUpdate();
                                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getToken(), music.name()));
@@ -695,7 +726,7 @@ public class MusicPlayerService {
                         },
                         error -> {
                             log.error("Enqueue failed for musicId: {}", request.musicId(), error);
-                            String msg = error.getMessage().contains("Could not get Bilibili video info") ? "无效资源或API受限" : error.getMessage();
+                            String msg = Objects.toString(error.getMessage(), "音源请求失败");
                             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "添加失败: " + msg));
                         });
     }
@@ -741,13 +772,9 @@ public class MusicPlayerService {
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
 
-        // Check platform enabled
-        if ("netease".equalsIgnoreCase(request.platform()) && !appProperties.getNetease().isEnabled()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "导入失败: 网易云音乐源已被禁用"));
-            return;
-        }
-        if ("bilibili".equalsIgnoreCase(request.platform()) && !appProperties.getBilibili().isEnabled()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "导入失败: Bilibili 源已被禁用"));
+        if (!sourceRegistry.isEnabled(request.platform())) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE,
+                    enqueuer.getToken(), "导入失败: 音源不可用"));
             return;
         }
 
@@ -770,14 +797,11 @@ public class MusicPlayerService {
         service.getPlaylistMusics(request.playlistId(), 0, importLimit)
                 .subscribe(musics -> {
                     int count = 0;
-                    QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
-
                     for (Music music : musics) {
-                        if ("bilibili".equals(request.platform())) {
-                            service.prefetchMusic(music.id());
-                        }
-                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
+                        if (!sourceRegistry.isEnabled(music.platform())) break;
+                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), mediaDeliveryService.status(music));
                         if (newItem != null) {
+                            mediaDeliveryService.prefetch(music);
                             count++;
                         }
                     }
@@ -797,38 +821,40 @@ public class MusicPlayerService {
             if (user.isEmpty() || user.get().isGuest()) {
                 return Mono.just(AlbumImportResult.failure(request, "请先设置昵称并加入房间，再添加专辑"));
             }
-            if (!"netease".equals(request.platform())) {
+            if (!sourceRegistry.descriptor(request.platform()).capabilities().album()) {
                 return Mono.just(AlbumImportResult.failure(request, "此音源暂不支持专辑"));
             }
-            if (!appProperties.getNetease().isEnabled()) {
-                return Mono.just(AlbumImportResult.failure(request, "网易云音乐源已被禁用"));
+            if (!sourceRegistry.isEnabled(request.platform())) {
+                return Mono.just(AlbumImportResult.failure(request, "音源已被禁用"));
             }
             return getApiService(request.platform()).getAlbum(request.albumId()).map(album -> {
                 Optional<User> current = userService.getUser(sessionId);
                 if (current.isEmpty() || current.get().isGuest()) {
                     return AlbumImportResult.failure(request, "已离开房间，未添加专辑");
                 }
-                if (!appProperties.getNetease().isEnabled()) {
-                    return AlbumImportResult.failure(request, "网易云音乐源已被禁用");
+                if (!sourceRegistry.isEnabled(request.platform())) {
+                    return AlbumImportResult.failure(request, "音源已被禁用");
                 }
                 User member = current.get();
                 UserSummary owner = new UserSummary(member.getToken(), member.getSessionId(), member.getName(), member.isGuest());
                 int added = 0, duplicates = 0, limited = 0;
+                List<Music> imported = new ArrayList<>();
                 synchronized (queueManager) {
                     Set<String> existing = queueManager.getQueueSnapshot().stream()
-                            .map(item -> item.music().id()).collect(Collectors.toCollection(HashSet::new));
+                            .map(item -> ResourceKey.encode(item.music().platform(), item.music().id())).collect(Collectors.toCollection(HashSet::new));
                     long mine = queueManager.getQueueSnapshot().stream()
                             .filter(item -> item.enqueuedBy().token().equals(owner.token())).count();
                     int quota = Math.max(0, Math.min(appProperties.getPlayer().getMaxPlaylistImportSize(),
                             appProperties.getQueue().getMaxUserSongs() - (int) mine));
                     for (Music song : album.songs()) {
-                        if (existing.contains(song.id())) { duplicates++; continue; }
+                        if (existing.contains(ResourceKey.encode(song.platform(), song.id()))) { duplicates++; continue; }
                         if (added >= quota) { limited++; continue; }
-                        if (queueManager.add(song, owner, QueueItemStatus.READY) != null) {
-                            added++; existing.add(song.id());
+                        if (queueManager.add(song, owner, mediaDeliveryService.status(song)) != null) {
+                            added++; imported.add(song); existing.add(ResourceKey.encode(song.platform(), song.id()));
                         } else { limited++; }
                     }
                 }
+                imported.forEach(mediaDeliveryService::prefetch);
                 broadcastQueueUpdate();
                 String message = "《" + album.name() + "》：已添加 " + added + " 首，重复跳过 " + duplicates + " 首"
                         + (limited > 0 ? "，受导入 / 点歌 / 队列上限限制 " + limited + " 首" : "");
@@ -951,7 +977,39 @@ public class MusicPlayerService {
         playNextInQueue();
     }
 
+    @Scheduled(fixedDelay = 10000)
+    public void prepareRestoredQueue() {
+        queueManager.getQueueSnapshot().stream().map(MusicQueueItem::music)
+                .filter(music -> !MusicQueueManager.FM_MARKER_ID.equals(music.platform()))
+                .filter(music -> sourceRegistry.isEnabled(music.platform()))
+                .filter(music -> mediaDeliveryService.status(music) == QueueItemStatus.PENDING)
+                .forEach(mediaDeliveryService::prefetch);
+    }
+
+    public void restoreSourceEnabled(String id, Boolean enabled) {
+        if (sourceRegistry.descriptors().stream().anyMatch(descriptor -> descriptor.id().equals(id))) {
+            sourceRegistry.update(id, enabled, null);
+        }
+    }
+
+    public Map<String, SourceSettings> getSourceSettings() {
+        return sourceRegistry.descriptors().stream().collect(Collectors.toMap(descriptor -> descriptor.id(),
+                descriptor -> new SourceSettings(sourceRegistry.isEnabled(descriptor.id()), sourceRegistry.deliveryMode(descriptor.id()))));
+    }
+
     public void updateConfig(AdminConfigUpdateRequest request) {
+        if (request.neteaseEnabled() != null) sourceRegistry.descriptor("netease");
+        if (request.bilibiliEnabled() != null) sourceRegistry.descriptor("bilibili");
+        if (request.sources() != null) {
+            request.sources().forEach((id, settings) -> {
+                if (settings == null) throw new ApiRequestException("Invalid source configuration");
+                sourceRegistry.descriptor(id);
+                if (settings.deliveryMode() != null && settings.deliveryMode() != sourceRegistry.deliveryMode(id)) {
+                    throw new ApiRequestException("DELIVERY_RESTART_REQUIRED: 修改交付类型需要更新部署配置并重启");
+                }
+            });
+            request.sources().forEach((id, settings) -> sourceRegistry.update(id, settings.enabled(), settings.deliveryMode()));
+        }
         if (request.retainPlaylist() != null) {
             synchronized (queueManager) {
                 appProperties.getQueue().setRetainPlaylist(request.retainPlaylist());
@@ -992,11 +1050,11 @@ public class MusicPlayerService {
             logMsg.append("MaxChatMessageLength=").append(request.maxChatMessageLength()).append(" ");
         }
         if (request.neteaseEnabled() != null) {
-            appProperties.getNetease().setEnabled(request.neteaseEnabled());
+            sourceRegistry.update("netease", request.neteaseEnabled(), null);
             logMsg.append("NeteaseEnabled=").append(request.neteaseEnabled()).append(" ");
         }
         if (request.bilibiliEnabled() != null) {
-            appProperties.getBilibili().setEnabled(request.bilibiliEnabled());
+            sourceRegistry.update("bilibili", request.bilibiliEnabled(), null);
             logMsg.append("BilibiliEnabled=").append(request.bilibiliEnabled()).append(" ");
         }
         if (request.bilibiliMaxDurationMinutes() != null) {
@@ -1017,6 +1075,9 @@ public class MusicPlayerService {
             logMsg.append("VoteSkipWaitTime=").append(request.voteSkipWaitTime()).append("s ");
         }
 
+        if (request.sources() != null || request.neteaseEnabled() != null || request.bilibiliEnabled() != null) {
+            prepareRestoredQueue();
+        }
         log.info(logMsg.toString().trim());
         
         // 关键增强：如果更新了投票相关配置，立即触发一次阈值检查
@@ -1174,7 +1235,7 @@ public class MusicPlayerService {
     @EventListener
     public void handleDownloadEvent(DownloadStatusEvent event) {
         boolean existsInQueue = queueManager.getQueueSnapshot().stream()
-                .anyMatch(item -> item.music().id().equals(event.getMusicId()));
+                .anyMatch(item -> ResourceKey.encode(item.music().platform(), item.music().id()).equals(event.getMusicId()));
 
         if (existsInQueue) {
             log.debug("Download status changed for {}, updating queue UI.", event.getMusicId());
@@ -1310,42 +1371,24 @@ public class MusicPlayerService {
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "房间密码已更改，请重新验证"));
     }
 
+    private QueueItemStatus deliveryStatus(Music music) {
+        if (MusicQueueManager.FM_MARKER_ID.equals(music.platform())) return QueueItemStatus.READY;
+        if (!sourceRegistry.isEnabled(music.platform())) return QueueItemStatus.PENDING;
+        return mediaDeliveryService.status(music);
+    }
+
     private List<MusicQueueItem> getQueueWithUpdatedStatus() {
-        return queueManager.getQueueSnapshot().stream().map(item -> {
-            if ("netease".equals(item.music().platform())) {
-                return item.status() == QueueItemStatus.READY ? item : item.withStatus(QueueItemStatus.READY);
-            }
-            if ("bilibili".equals(item.music().platform())) {
-                CacheStatus cacheStatus = localCacheService.getStatus(item.music().id());
-                QueueItemStatus newStatus = mapCacheStatusToEnum(cacheStatus);
-                if (item.status() != newStatus) {
-                    return item.withStatus(newStatus);
-                }
-            }
-            return item;
-        }).collect(Collectors.toList());
+        return queueManager.getQueueSnapshot().stream()
+                .map(item -> item.withStatus(deliveryStatus(item.music())))
+                .toList();
     }
 
     private Map<String, QueueItemStatus> buildStatusMap() {
         Map<String, QueueItemStatus> statusMap = new HashMap<>();
         for (MusicQueueItem item : queueManager.getQueueSnapshot()) {
-            if ("bilibili".equals(item.music().platform())) {
-                statusMap.put(item.music().id(), mapCacheStatusToEnum(localCacheService.getStatus(item.music().id())));
-            } else {
-                statusMap.put(item.music().id(), QueueItemStatus.READY);
-            }
+            statusMap.put(ResourceKey.encode(item.music().platform(), item.music().id()), deliveryStatus(item.music()));
         }
         return statusMap;
-    }
-
-    private QueueItemStatus mapCacheStatusToEnum(CacheStatus status) {
-        if (status == null) return QueueItemStatus.PENDING;
-        return switch (status) {
-            case COMPLETED -> QueueItemStatus.READY;
-            case DOWNLOADING -> QueueItemStatus.DOWNLOADING;
-            case FAILED -> QueueItemStatus.FAILED;
-            default -> QueueItemStatus.PENDING;
-        };
     }
 
     /*private void resetPauseState() {
@@ -1370,9 +1413,7 @@ public class MusicPlayerService {
     }
 
     private IMusicApiService getApiService(String platform) {
-        IMusicApiService service = apiServiceMap.get(platform);
-        if (service == null) throw new ApiRequestException("Unsupported platform: " + platform);
-        return service;
+        return sourceRegistry.getRequired(platform);
     }
 
     private String getUserToken(String sessionId) {

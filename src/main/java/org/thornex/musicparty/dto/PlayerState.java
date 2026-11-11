@@ -47,7 +47,9 @@ public record PlayerState(
             boolean allowPlaylistClaim,
             boolean retainPlaylist,
             /** 是否允许拖动进度条（管理面板开关，默认关闭）。 */
-            boolean allowSeek
+            boolean allowSeek,
+            java.util.Map<String, SourceSettings> sources,
+            boolean recommendationsAvailable
     ) {
         public record PrivateDjConfigSummary(
                 String mode,

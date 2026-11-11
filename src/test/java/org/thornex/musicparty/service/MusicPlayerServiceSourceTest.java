@@ -30,10 +30,11 @@ class MusicPlayerServiceSourceTest {
         NeteaseMusicApiService netease = mock(NeteaseMusicApiService.class);
         when(netease.getPlatformName()).thenReturn("netease");
         when(netease.getPlayableMusic(anyString())).thenReturn(reactor.core.publisher.Mono.error(new RuntimeException("test unavailable")));
-        MusicPlayerService player = new MusicPlayerService(List.of(netease), users, mock(LocalCacheService.class),
+        MusicPlayerService player = PlayerTestFactory.create(List.of(netease), users, mock(LocalCacheService.class),
                 mock(org.thornex.musicparty.service.stream.LiveStreamService.class), queue,
                 mock(ApplicationEventPublisher.class), config, netease, mock(PrivateDjService.class));
         player.playerLoop();
+        PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());
         verify(netease, times(2)).getPlayableMusic(anyString());
         assertEquals(2, queue.getQueueSnapshot().size());
         assertNull(player.getCurrentPlayerState().nowPlaying());
@@ -51,7 +52,7 @@ class MusicPlayerServiceSourceTest {
         queueManager = mock(MusicQueueManager.class);
         api = mock(NeteaseMusicApiService.class);
         when(api.getPlatformName()).thenReturn("netease"); // 构造器 toMap 需要非空 key
-        service = new MusicPlayerService(
+        service = PlayerTestFactory.create(
                 List.of(api),
                 mock(org.thornex.musicparty.service.UserService.class),
                 mock(org.thornex.musicparty.service.LocalCacheService.class),

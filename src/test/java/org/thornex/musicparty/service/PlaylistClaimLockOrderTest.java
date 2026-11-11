@@ -62,7 +62,7 @@ class PlaylistClaimLockOrderTest {
         when(netease.getPlayableMusic("track")).thenReturn(Mono.just(new PlayableMusic("track", "Track",
                 List.of("Fixture"), 180000, "netease", "fixture://audio", "", false)));
         var dj = mock(PrivateDjService.class);
-        player = new MusicPlayerService(List.of(netease), users, cache, stream, queue, events, properties, netease, dj);
+        player = PlayerTestFactory.create(List.of(netease), users, cache, stream, queue, events, properties, netease, dj);
         var chat = mock(ChatService.class);
         when(chat.getHistoryFull()).thenReturn(List.of());
         var auth = mock(AuthController.class);

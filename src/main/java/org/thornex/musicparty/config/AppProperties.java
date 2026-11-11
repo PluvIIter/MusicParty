@@ -9,6 +9,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AppProperties {
     private NeteaseApiConfig  netease  = new NeteaseApiConfig();
     private BilibiliApiConfig bilibili = new BilibiliApiConfig();
+    private java.util.Map<String, SourceConfig> sources = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Data
+    public static class SourceConfig {
+        private Boolean enabled;
+        private org.thornex.musicparty.source.DeliveryMode deliveryMode;
+    }
     private String adminPassword;
     private String baseUrl;
     private String authorName = "ThorNex";

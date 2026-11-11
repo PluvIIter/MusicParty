@@ -13,7 +13,7 @@ import static org.mockito.Mockito.*;
 class ExplicitPlayModeTest {
     final UserService users = mock(UserService.class);
     final MusicQueueManager queue = new MusicQueueManager(new AppProperties());
-    final MusicPlayerService player = new MusicPlayerService(List.of(), users, mock(LocalCacheService.class),
+    final MusicPlayerService player = PlayerTestFactory.create(List.of(), users, mock(LocalCacheService.class),
             mock(LiveStreamService.class), queue, mock(ApplicationEventPublisher.class), new AppProperties(),
             mock(NeteaseMusicApiService.class), mock(PrivateDjService.class));
 

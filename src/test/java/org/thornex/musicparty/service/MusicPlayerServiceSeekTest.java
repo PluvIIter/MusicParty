@@ -44,7 +44,7 @@ class MusicPlayerServiceSeekTest {
         when(api.getPlatformName()).thenReturn("netease");
         when(api.getPlayableMusic("a")).thenReturn(Mono.just(music("a")));
         publisher = mock(ApplicationEventPublisher.class);
-        player = new MusicPlayerService(List.of(api), users, mock(LocalCacheService.class),
+        player = PlayerTestFactory.create(List.of(api), users, mock(LocalCacheService.class),
                 mock(LiveStreamService.class), queue, publisher, properties, api, mock(PrivateDjService.class));
         start("a");
     }
@@ -120,6 +120,7 @@ class MusicPlayerServiceSeekTest {
 
         player.playerLoop();
 
+        PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());
         PlayerState repeated = player.getCurrentPlayerState();
         assertNotEquals(oldId, repeated.playbackId());
         assertEquals(0, repeated.seekNonce());
@@ -136,6 +137,7 @@ class MusicPlayerServiceSeekTest {
         when(queue.pollNext(any(), anyBoolean(), anyBoolean(), anyMap(), anySet())).thenReturn(item("a"));
         player.setPositionForTest(180_000);
         player.playerLoop();
+        PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());
         String retained = player.getCurrentPlayerState().playbackId();
         assertNotEquals(initial, retained);
         assertEquals("a", player.getCurrentPlayerState().nowPlaying().music().id());

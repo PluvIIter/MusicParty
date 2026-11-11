@@ -21,7 +21,7 @@ class MusicPlayerServiceStateTest {
     }
 
     private MusicPlayerService build(AppProperties props, NeteaseMusicApiService api, ApplicationEventPublisher publisher) {
-        return new MusicPlayerService(
+        return PlayerTestFactory.create(
                 List.of(),
                 mock(org.thornex.musicparty.service.UserService.class),
                 mock(org.thornex.musicparty.service.LocalCacheService.class),
@@ -35,7 +35,7 @@ class MusicPlayerServiceStateTest {
     }
 
     @Test
-    void configSummaryExposesPrivateDjAndCookieState() {
+    void configSummaryKeepsLegacySettingsWithoutCookieIdentity() {
         AppProperties props = new AppProperties();
         props.getPrivateDj().setMode("DJ");
         props.getPrivateDj().setCustodyEnabled(true);
@@ -44,7 +44,7 @@ class MusicPlayerServiceStateTest {
 
         PlayerState state = build(props, api).getCurrentPlayerState();
 
-        assertTrue(state.config().neteaseCookieConfigured());
+        assertFalse(state.config().neteaseCookieConfigured());
         assertEquals("DJ", state.config().privateDj().mode());
         assertTrue(state.config().privateDj().custodyEnabled());
     }

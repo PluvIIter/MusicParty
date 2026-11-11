@@ -1,5 +1,7 @@
 package org.thornex.musicparty.service;
 
+import org.thornex.musicparty.source.ResourceKey;
+
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -40,7 +42,7 @@ class FirstPlayPersistenceTest {
         persistence(restored, props).loadData();
         assertEquals(Set.of(old.queueId()), restored.getPlayedQueueIds());
         assertEquals(fresh.queueId(), restored.pollNext(PlayMode.ROUND_ROBIN, true, false,
-                Map.of("old", QueueItemStatus.READY, "new", QueueItemStatus.READY), Set.of("A")).queueId());
+                Map.of(ResourceKey.encode("netease", "old"), QueueItemStatus.READY, ResourceKey.encode("netease", "new"), QueueItemStatus.READY), Set.of("A")).queueId());
     }
     @Test void oldSnapshotMigratesOnlyKnownHistoryAndEmptyLedgerIsAuthoritative() throws Exception {
         AppProperties props = new AppProperties();

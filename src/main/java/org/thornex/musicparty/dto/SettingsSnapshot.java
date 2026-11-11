@@ -6,8 +6,13 @@ public record SettingsSnapshot(
         String roomPassword,            // null=未初始化(恢复跳过) / ""=无密码 / 其它=密码
         Boolean streamEnabled,          // 直播推流开关
         PrivateDjSettings privateDj,    // 私人电台配置
-        SystemConfigSettings systemConfig // 系统参数
+        SystemConfigSettings systemConfig,
+        java.util.Map<String, Boolean> sourceEnabled
 ) {
+    public SettingsSnapshot(PlayerSettings player, String roomPassword, Boolean streamEnabled,
+                            PrivateDjSettings privateDj, SystemConfigSettings systemConfig) {
+        this(player, roomPassword, streamEnabled, privateDj, systemConfig, null);
+    }
     public record PlayerSettings(
             String playMode,            // SEQUENTIAL / SHUFFLE / REPEAT_ONE
             Boolean fairShuffle,

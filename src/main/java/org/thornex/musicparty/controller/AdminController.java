@@ -178,7 +178,11 @@ public class AdminController {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
         synchronized (persistence) {
-            musicPlayerService.updateConfig(request);
+            try {
+                musicPlayerService.updateConfig(request);
+            } catch (org.thornex.musicparty.exception.ApiRequestException | IllegalArgumentException error) {
+                return ResponseEntity.badRequest().body(Map.of("message", error.getMessage()));
+            }
             persistence.saveNow();
         }
         return ResponseEntity.ok(Map.of("message", "系统配置已刷新"));
@@ -196,9 +200,8 @@ public class AdminController {
             if (!Set.of("OFF", "FM", "DJ").contains(request.mode())) {
                 return ResponseEntity.badRequest().body(Map.of("message", "模式仅支持 关闭/私人FM/私人DJ"));
             }
-            // 切到 FM/DJ 视为开启私人电台，需先配置网易云 Cookie；切到 OFF 关闭则无需校验
-            if (!"OFF".equals(request.mode()) && !neteaseMusicApiService.isCookieConfigured()) {
-                return ResponseEntity.badRequest().body(Map.of("message", "需先配置网易云 Cookie 才能开启私人电台"));
+            if (!"OFF".equals(request.mode()) && !privateDjService.isAvailable()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "CAPABILITY_UNAVAILABLE: 暂无支持公开推荐的音源"));
             }
             c.setMode(request.mode());
         }
