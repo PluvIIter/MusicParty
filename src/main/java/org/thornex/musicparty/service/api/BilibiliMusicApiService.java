@@ -230,14 +230,14 @@ public class BilibiliMusicApiService implements IMusicApiService {
     public Mono<ResolvedMedia> resolveMedia(String bvid, MediaConsumer consumer) {
         return Mono.defer(() -> getVideoCidWithCookie(bvid).flatMap(cid -> {
             if (consumer == MediaConsumer.BROWSER) {
-                return resolveHtml5Mp4Url(bvid, cid).map(url -> new ResolvedMedia(
-                        new ResourceKey(PLATFORM, bvid), "html5", BilibiliApiUtils.normalizeCoverUrl(url), "video/mp4", ".mp4",
-                        Instant.now().plusSeconds(600), Map.of(), true));
+                return resolveHtml5Mp4Url(bvid, cid).map(source -> new ResolvedMedia(
+                        new ResourceKey(PLATFORM, bvid), "html5", BilibiliApiUtils.normalizeCoverUrl(source.url()), "video/mp4", ".mp4",
+                        Instant.now().plusSeconds(600), Map.of(), true, source.timeline()));
             }
-            return resolveDownloadTarget(bvid).map(source -> new ResolvedMedia(
+            return resolveDownloadTarget(bvid, cid).map(source -> new ResolvedMedia(
                     new ResourceKey(PLATFORM, bvid), source.extension().equals(".mp4") ? "html5" : "dash",
                     source.url(), source.extension().equals(".mp4") ? "video/mp4" : "audio/mp4", source.extension(),
-                    Instant.now().plusSeconds(600), Map.of("Referer", "https://www.bilibili.com/", "User-Agent", USER_AGENT), false));
+                    Instant.now().plusSeconds(600), Map.of("Referer", "https://www.bilibili.com/", "User-Agent", USER_AGENT), false, source.timeline()));
         }));
     }
 
@@ -255,7 +255,14 @@ public class BilibiliMusicApiService implements IMusicApiService {
      * 前端 {@code <audio>} 元素可直接播放，无需服务器中转下载；且旧端点无需 WBI 签名。
      * {@code try_look=1} 可免登录取到 480P/720P 档位。</p>
      */
-    private Mono<String> resolveHtml5Mp4Url(String bvid, String cid) {
+    private record MediaUrl(String url, String extension, String timeline) {}
+
+    private String timeline(String cid, JsonNode data) {
+        return "cid:" + cid + ":duration:" + data.path("timelength").asText("")
+                + ":preview:" + data.path("is_preview").asBoolean(false);
+    }
+
+    private Mono<MediaUrl> resolveHtml5Mp4Url(String bvid, String cid) {
         return cookieService.getCookieHeader()
                 .flatMap(cookie -> {
                     String uri = UriComponentsBuilder
@@ -290,7 +297,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                 if (!StringUtils.hasText(url)) {
                                     return Mono.error(new ApiRequestException("Empty MP4 url"));
                                 }
-                                return Mono.just(url);
+                                return Mono.just(new MediaUrl(url, ".mp4", timeline(cid, json.path("data"))));
                             });
                 });
     }
@@ -301,7 +308,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
      * 后者对自动化/爬虫 IP 有 HTTP 412 反爬挑战（返回 HTML），纯 HTTP 客户端无法通过；
      * 旧端点不受该挑战，且 {@code fnval=16} 即可返回完整 DASH 音频流（普通账号含 30280 192K，大会员账号含 30250/30251）。</p>
      */
-    private Mono<String> resolveDashAudioUrl(String bvid, String cid) {
+    private Mono<MediaUrl> resolveDashAudioUrl(String bvid, String cid) {
         return cookieService.getCookieHeader()
                 .flatMap(cookie -> {
                     String uri = UriComponentsBuilder
@@ -332,7 +339,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                 if (url == null) {
                                     return Mono.error(new ApiRequestException("No audio url found in json"));
                                 }
-                                return Mono.just(url);
+                                return Mono.just(new MediaUrl(url, ".m4a", timeline(cid, jsonNode.path("data"))));
                             });
                 });
     }
@@ -342,15 +349,11 @@ public class BilibiliMusicApiService implements IMusicApiService {
      * <p>当 {@code /x/player/wbi/playurl} 被 B站风控以 HTTP 412 挑战拦截（返回 HTML 而非 JSON）时，
      * 退化为 html5 MP4（免 WBI、无 referer 鉴权，稳定可取），保证本地缓存仍能填满。</p>
      */
-    private Mono<LocalCacheService.DownloadSource> resolveDownloadTarget(String bvid) {
-        return getVideoCidWithCookie(bvid)
-                .flatMap(cid -> resolveDashAudioUrl(bvid, cid)
-                        .map(url -> new LocalCacheService.DownloadSource(url, ".m4a"))
-                        .onErrorResume(e -> {
-                            log.warn("DASH audio unavailable; resolving html5 MP4 for server download");
-                            return resolveHtml5Mp4Url(bvid, cid)
-                                    .map(url -> new LocalCacheService.DownloadSource(url, ".mp4"));
-                        }));
+    private Mono<MediaUrl> resolveDownloadTarget(String bvid, String cid) {
+        return resolveDashAudioUrl(bvid, cid).onErrorResume(error -> {
+            log.warn("DASH audio unavailable; resolving html5 MP4 for server download");
+            return resolveHtml5Mp4Url(bvid, cid);
+        });
     }
 
     /**
@@ -430,6 +433,16 @@ public class BilibiliMusicApiService implements IMusicApiService {
             return new org.thornex.musicparty.source.SourcePage<>(items.subList(start, end),
                     end < items.size() ? end : null, (long) items.size());
         });
+    }
+
+    @Override
+    public Mono<Playlist> containerDetail(String type, String id) {
+        return "favorites".equals(type) ? playlistDetail(id) : IMusicApiService.super.containerDetail(type, id);
+    }
+
+    @Override
+    public Mono<org.thornex.musicparty.source.SourcePage<Music>> containerPage(String type, String id, int offset, int limit) {
+        return "favorites".equals(type) ? playlistPage(id, offset, limit) : IMusicApiService.super.containerPage(type, id, offset, limit);
     }
 
     @Override

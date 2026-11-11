@@ -184,6 +184,15 @@ public class MusicPlayerService {
         }
     }
 
+    private boolean hasAuthorization(String source, String expected) {
+        try {
+            return sourceRegistry.isEnabled(source)
+                    && Objects.equals(expected, mediaDeliveryService.authorizationScope(source));
+        } catch (ApiRequestException error) {
+            return false;
+        }
+    }
+
     private void restartCurrentSong(PlayableMusic previous) {
         if (isLoading.get()) return;
         if ("VOICE".equals(previous.kind())) {
@@ -195,15 +204,18 @@ public class MusicPlayerService {
         }
         long version = playHeadVersion.incrementAndGet();
         isLoading.set(true);
-        String authorization = mediaDeliveryService.authorizationScope(previous.platform());
-        Mono.defer(() -> mediaDeliveryService.getPlayableMusic(previous.platform(), previous.id()))
+        Mono.defer(() -> {
+                    String authorization = mediaDeliveryService.authorizationScope(previous.platform());
+                    return mediaDeliveryService.getPlayableMusic(previous.platform(), previous.id())
+                            .map(prepared -> reactor.util.function.Tuples.of(authorization, prepared));
+                })
                 .subscribeOn(Schedulers.boundedElastic())
                 .timeout(Duration.ofSeconds(10))
-                .subscribe(prepared -> {
+                .subscribe(result -> {
                     synchronized (this) {
                         if (playHeadVersion.get() != version) return;
-                        if (!sourceRegistry.isEnabled(prepared.platform())
-                                || !Objects.equals(authorization, mediaDeliveryService.authorizationScope(prepared.platform()))) {
+                        PlayableMusic prepared = result.getT2();
+                        if (!hasAuthorization(prepared.platform(), result.getT1())) {
                             currentMusic.set(null);
                             playbackId = null;
                             isLoading.set(false);
@@ -295,8 +307,7 @@ public class MusicPlayerService {
                                 // 如果在请求期间执行了 skip/stop，版本号会变，这里就应该丢弃结果
                                 synchronized (this) {
                                     if (playHeadVersion.get() == currentVersion) {
-                                        if (!sourceRegistry.isEnabled(playableMusic.platform())
-                                                || !Objects.equals(authorization, mediaDeliveryService.authorizationScope(playableMusic.platform()))) {
+                                        if (!hasAuthorization(playableMusic.platform(), authorization)) {
                                             queueManager.markPlaybackFailed(nextItem);
                                             isLoading.set(false);
                                             playNextInQueue();
@@ -344,7 +355,7 @@ public class MusicPlayerService {
         long version = playHeadVersion.incrementAndGet();
         isLoading.set(true);
         broadcastFullPlayerState();
-        Mono.defer(privateDjService::nextSegment)
+        privateDjService.nextSegment()
                 .subscribeOn(Schedulers.boundedElastic())
                 .timeout(Duration.ofSeconds(15))
                 .subscribe(
@@ -362,7 +373,7 @@ public class MusicPlayerService {
         long version = playHeadVersion.incrementAndGet();
         isLoading.set(true);
         broadcastFullPlayerState();
-        Mono.defer(privateDjService::nextFmSegment)
+        privateDjService.nextFmSegment()
                 .subscribeOn(Schedulers.boundedElastic())
                 .timeout(Duration.ofSeconds(15))
                 .subscribe(
@@ -400,6 +411,15 @@ public class MusicPlayerService {
     void applyFmDjSegmentForTest(PlayableMusic music, PrivateDjSegment segment) { applyFmDjSegment(music, segment, false); }
     void setPausedForTest(boolean paused) { isPaused.set(paused); }
 
+    private boolean hasRecommendationAuthorization(String expected) {
+        try {
+            return privateDjService.isAvailable()
+                    && Objects.equals(expected, privateDjService.authorizationScope());
+        } catch (ApiRequestException error) {
+            return false;
+        }
+    }
+
     private void loadFmDjPlayable(PrivateDjSegment segment, long version, boolean forceFm) {
         String recommendationScope;
         try { recommendationScope = privateDjService.authorizationScope(); }
@@ -410,8 +430,7 @@ public class MusicPlayerService {
                 pm -> {
                     synchronized (this) {
                         if (playHeadVersion.get() != version) return;
-                        if (!privateDjService.isAvailable()
-                                || !Objects.equals(recommendationScope, privateDjService.authorizationScope())) {
+                        if (!hasRecommendationAuthorization(recommendationScope)) {
                             handleFmDjError(version, new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐音源或凭据已变化"));
                             return;
                         }
@@ -426,8 +445,9 @@ public class MusicPlayerService {
         currentLikeMarkers.clear();
         skipVotes.clear();
         boolean voice = segment instanceof PrivateDjSegment.Voice;
-        currentMusic.set(new PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), music.platform(),
-                music.url(), music.coverUrl(), music.needsProxy(), voice ? "VOICE" : "SONG", music.externalUrl()));
+        String kind = voice ? "VOICE" : "SONG";
+        currentMusic.set(kind.equals(music.kind()) ? music : new PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), music.platform(),
+                music.url(), music.coverUrl(), music.needsProxy(), kind, music.externalUrl()));
         playbackId = UUID.randomUUID().toString();
         currentIsVoice.set(voice);
         currentEnqueuerId.set(MusicQueueManager.FM_MARKER_USER_TOKEN);

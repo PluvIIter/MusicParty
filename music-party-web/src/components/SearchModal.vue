@@ -10,6 +10,7 @@
             <!-- 关闭按钮 (移动端避开刘海区域) -->
             <button
                 @click="emit('close')"
+                aria-label="关闭搜索"
                 class="absolute top-[env(safe-area-inset-top)] right-0 p-4 hover:text-accent z-50"
             >
                 <X class="w-6 h-6" />
@@ -396,6 +397,13 @@
                             <div v-if="isLoadingMore" class="flex justify-center text-accent">
                                 <Loader2 class="w-6 h-6 animate-spin" />
                             </div>
+                            <button
+                                v-else-if="hasMore"
+                                @click="loadMoreTracks"
+                                class="px-4 py-2 text-xs font-bold text-accent border border-line"
+                            >
+                                加载更多曲目
+                            </button>
                             <div v-else-if="!hasMore && songs.length > 0" class="text-xs font-mono text-ink-subtle">
                                 -- END OF PLAYLIST --
                             </div>
@@ -421,7 +429,8 @@ import { useSourcesStore } from '../stores/sources';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { usePlaylistLogic } from '../composables/usePlaylistLogic';
 import { useLikedSongs } from '../composables/useLikedSongs';
-import { resourceKey, openExternal } from '../domain/sources';
+import { resourceKey, openExternal, safeExternalUrl } from '../domain/sources';
+import { musicApi } from '../api/music';
 import { useToast } from '../composables/useToast';
 import {
     X,
@@ -473,10 +482,16 @@ const {
     bindUser,
     loadPlaylist,
     handleScroll,
+    loadMoreTracks,
     fetchPlaylists,
     collectionCursor,
-    cancel,
-} = usePlaylistLogic(platform, songs, listMode, loading);
+} = usePlaylistLogic(
+    platform,
+    songs,
+    listMode,
+    loading,
+    computed(() => props.isOpen && mode.value === 'search')
+);
 watch(() => [bindings.value[platform.value], categoryId.value], cancelSearch, { flush: 'sync' });
 const handleSearchAction = async () => {
     if (mode.value === 'likesong' || !sources.supports(platform.value, 'search')) return;
@@ -528,7 +543,25 @@ const handleAddClick = (song) => {
     timers.add(timer);
 };
 const addLikedClick = handleAddClick;
-const openLikedSource = (song) => openExternal(song.externalUrl);
+const sourceLinks = new Map();
+const openLikedSource = async (song) => {
+    if (song.externalUrl) return openExternal(song.externalUrl);
+    const key = resourceKey(song);
+    if (sourceLinks.has(key)) return openExternal(sourceLinks.get(key));
+    const tab = window.open('about:blank', '_blank');
+    if (tab) tab.opener = null;
+    try {
+        const result = await musicApi.getExternalUrl(song.platform, song.id);
+        const url = safeExternalUrl(result.externalUrl);
+        if (!url) throw new Error('此音乐源暂不提供源页面链接');
+        sourceLinks.set(key, url);
+        if (tab && !tab.closed) tab.location.replace(url);
+        else openExternal(url);
+    } catch (e) {
+        tab?.close();
+        error(e.response?.data?.message || e.message || '源页面链接读取失败');
+    }
+};
 watch(listMode, (value) => {
     if (value === 'search' || value === 'collection') mobileView.value = 'songs';
 });
@@ -536,7 +569,6 @@ watch(
     mode,
     () => {
         cancelSearch();
-        cancel();
     },
     { flush: 'sync' }
 );
@@ -544,12 +576,11 @@ watch(
     () => props.isOpen,
     (open) => {
         if (open) {
-            mobileView.value = 'playlists';
+            mobileView.value = listMode.value === 'playlist' || listMode.value === 'collection' ? 'songs' : 'playlists';
             sources.load();
         } else {
             selectedAlbumSong.value = null;
             cancelSearch();
-            cancel();
         }
     }
 );

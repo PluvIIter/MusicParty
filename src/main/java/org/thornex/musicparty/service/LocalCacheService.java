@@ -295,7 +295,9 @@ public class LocalCacheService {
 
     private void publish(String key) {
         int suffix = key.lastIndexOf(":credentials:");
-        eventPublisher.publishEvent(new DownloadStatusEvent(this, suffix < 0 ? key : key.substring(0, suffix)));
+        String resource = suffix < 0 ? key : key.substring(0, suffix);
+        int variant = resource.lastIndexOf(":variant:");
+        eventPublisher.publishEvent(new DownloadStatusEvent(this, variant < 0 ? resource : resource.substring(0, variant)));
     }
 
     private static String hash(String key) {

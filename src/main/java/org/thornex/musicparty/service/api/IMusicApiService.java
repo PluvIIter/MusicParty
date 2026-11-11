@@ -48,5 +48,12 @@ public interface IMusicApiService {
     default Mono<Playlist> playlistDetail(String playlistId) {
         return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持容器详情"));
     }
+    default Mono<Playlist> containerDetail(String type, String id) {
+        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持此容器类型"));
+    }
+    default Mono<org.thornex.musicparty.source.SourcePage<Music>> containerPage(
+            String type, String id, int offset, int limit) {
+        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持此容器类型"));
+    }
     default void prefetchMusic(String musicId) {};
 }

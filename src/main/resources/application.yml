@@ -18,10 +18,8 @@ app:
     back-words: ${APP_BACK_WORDS:THORNEX}
     sources:
       netease:
-        enabled: ${NETEASE_ENABLED:true}
         delivery-mode: ${NETEASE_DELIVERY_MODE:DIRECT_URL}
       bilibili:
-        enabled: ${BILIBILI_ENABLED:true}
         delivery-mode: ${BILIBILI_DELIVERY_MODE:SERVER_DOWNLOAD}
     netease:
       # The base URL of your deployed NeteaseCloudMusicApi instance

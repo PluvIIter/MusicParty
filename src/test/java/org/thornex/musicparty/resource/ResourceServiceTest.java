@@ -41,9 +41,9 @@ class ResourceServiceTest {
     @Test
     void emptyFilteredPageStillAdvancesAndImportTraversesNextPage() {
         var adapter = adapter();
-        when(adapter.playlistPage("42", 0, 20)).thenReturn(Mono.just(new SourcePage<>(List.of(), 20, null)));
+        when(adapter.containerPage("favorites", "42", 0, 20)).thenReturn(Mono.just(new SourcePage<>(List.of(), 20, null)));
         var track = new Music("same", "Song", List.of("Artist"), 1000, "fixture", "");
-        when(adapter.playlistPage("42", 20, 20)).thenReturn(Mono.just(new SourcePage<>(List.of(track), null, null)));
+        when(adapter.containerPage("favorites", "42", 20, 20)).thenReturn(Mono.just(new SourcePage<>(List.of(track), null, null)));
         var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
         assertEquals(List.of(track), service.importTracks("fixture", "favorites", "42", 100).block());
     }
@@ -76,6 +76,42 @@ class ResourceServiceTest {
     }
 
     @Test
+    void identicalContainerIdsKeepTheirTypesThroughAdapterCalls() {
+        var adapter = adapter();
+        when(adapter.descriptor()).thenReturn(new SourceDescriptor("fixture", "Fixture", "music",
+                new SourceCapabilities(true, true, false, true, true, false, false, true),
+                Set.of(DeliveryMode.DIRECT_URL), List.of(
+                        new CollectionCategory("one", "One", "favorites", "CONTAINER"),
+                        new CollectionCategory("two", "Two", "playlist", "CONTAINER"))));
+        when(adapter.containerDetail("favorites", "same")).thenReturn(Mono.just(new Playlist("same", "Favorite", "", 0, "fixture")));
+        when(adapter.containerDetail("playlist", "same")).thenReturn(Mono.just(new Playlist("same", "Playlist", "", 0, "fixture")));
+        when(adapter.containerPage(eq("favorites"), eq("same"), anyInt(), anyInt())).thenReturn(Mono.just(new SourcePage<>(List.of(), null, 0L)));
+        when(adapter.containerPage(eq("playlist"), eq("same"), anyInt(), anyInt())).thenReturn(Mono.just(new SourcePage<>(List.of(), null, 0L)));
+        var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
+        assertEquals("Favorite", service.container("fixture", "favorites", "same").block().name());
+        assertEquals("Playlist", service.container("fixture", "playlist", "same").block().name());
+        service.tracks("fixture", "favorites", "same", null, 20).block();
+        service.tracks("fixture", "playlist", "same", null, 20).block();
+        verify(adapter).containerPage("favorites", "same", 0, 20);
+        verify(adapter).containerPage("playlist", "same", 0, 20);
+        verify(adapter, never()).playlistPage(anyString(), anyInt(), anyInt());
+        verify(adapter, never()).playlistDetail(anyString());
+    }
+
+    @Test
+    void externalUrlMetadataRemainsAvailableWhenSourceIsDisabledWithoutFetchingMedia() {
+        var adapter = adapter();
+        when(adapter.externalUrl("opaque")).thenReturn("https://example.test/opaque");
+        var registry = new SourceRegistry(List.of(adapter), new AppProperties());
+        registry.update("fixture", false, null);
+        var service = new ResourceService(registry, new ResourceCursor());
+        assertEquals("https://example.test/opaque", service.externalUrl("fixture", "opaque"));
+        assertThrows(RuntimeException.class, () -> service.externalUrl("fixture", "bad" + (char) 0 + "id"));
+        verify(adapter, never()).getMusic(anyString());
+        verify(adapter, never()).resolveMedia(anyString(), any());
+    }
+
+    @Test
     void cursorRejectsTamperingAndInvalidOrNonProgressingOffsets() {
         var cursors = new ResourceCursor();
         String token = cursors.issue("binding", 20);
@@ -83,7 +119,7 @@ class ResourceServiceTest {
         assertThrows(RuntimeException.class, () -> cursors.read(token + "x", "binding"));
         assertThrows(RuntimeException.class, () -> cursors.read(token, "other"));
         var adapter = adapter();
-        when(adapter.playlistPage("42", 0, 20)).thenReturn(Mono.just(new SourcePage<>(List.of(), 0, null)));
+        when(adapter.containerPage("favorites", "42", 0, 20)).thenReturn(Mono.just(new SourcePage<>(List.of(), 0, null)));
         var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), cursors);
         assertThrows(RuntimeException.class, () -> service.tracks("fixture", "favorites", "42", null, 20).block());
     }

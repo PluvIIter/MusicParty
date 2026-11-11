@@ -5,7 +5,7 @@ import { musicApi } from '../api/music.js';
 import { useToast } from './useToast';
 import { createRequestScope, isCanceled } from '../domain/sources';
 
-export function usePlaylistLogic(platform, songs, listMode, loading) {
+export function usePlaylistLogic(platform, songs, listMode, loading, active = ref(true)) {
     const userStore = useUserStore();
     const sources = useSourcesStore();
     const { error } = useToast();
@@ -27,6 +27,8 @@ export function usePlaylistLogic(platform, songs, listMode, loading) {
     const collectionRequests = createRequestScope();
     const trackRequests = createRequestScope();
     const userRequests = createRequestScope();
+    let pendingCollections = null;
+    let pendingTracks = null;
     const report = (e, request) => {
         if (request.current() && !isCanceled(e)) error(e.response?.data?.message || e.message || '读取失败');
     };
@@ -46,8 +48,11 @@ export function usePlaylistLogic(platform, songs, listMode, loading) {
             !sources.supports(platform.value, 'personalCollections')
         )
             return;
+        pendingCollections = { append };
+        if (!active.value) return;
         const selected = category.value;
         if (selected.entryKind === 'TRACK') listMode.value = 'collection';
+        pendingCollections = { append };
         const request = collectionRequests.start();
         isPlaylistsLoading.value = true;
         try {
@@ -67,7 +72,10 @@ export function usePlaylistLogic(platform, songs, listMode, loading) {
         } catch (e) {
             report(e, request);
         } finally {
-            if (request.current()) isPlaylistsLoading.value = false;
+            if (request.current()) {
+                pendingCollections = null;
+                isPlaylistsLoading.value = false;
+            }
         }
     };
     const searchUser = async () => {
@@ -94,6 +102,8 @@ export function usePlaylistLogic(platform, songs, listMode, loading) {
     };
     const fetchTracks = async (append = false) => {
         if (!currentContainer.value) return;
+        pendingTracks = { append };
+        if (!active.value) return;
         const request = trackRequests.start();
         const container = currentContainer.value;
         if (append) isLoadingMore.value = true;
@@ -113,6 +123,7 @@ export function usePlaylistLogic(platform, songs, listMode, loading) {
             report(e, request);
         } finally {
             if (request.current()) {
+                pendingTracks = null;
                 loading.value = false;
                 isLoadingMore.value = false;
             }
@@ -125,6 +136,23 @@ export function usePlaylistLogic(platform, songs, listMode, loading) {
         nextCursor.value = null;
         await fetchTracks();
     };
+    const loadMoreTracks = () => {
+        if (active.value && hasMore.value && !loading.value && !isLoadingMore.value) return fetchTracks(true);
+    };
+    watch(
+        active,
+        (value) => {
+            if (!value) {
+                cancel();
+                return;
+            }
+            const collections = pendingCollections;
+            const tracks = pendingTracks;
+            if (collections) fetchCollections(collections.append);
+            if (tracks && currentContainer.value) fetchTracks(tracks.append);
+        },
+        { flush: 'sync' }
+    );
     const handleScroll = (event) => {
         const el = event.target;
         if (
@@ -141,6 +169,8 @@ export function usePlaylistLogic(platform, songs, listMode, loading) {
         () => {
             trackRequests.cancel();
             collectionRequests.cancel();
+            pendingTracks = null;
+            pendingCollections = null;
             isPlaylistsLoading.value = false;
             isLoadingMore.value = false;
             loading.value = false;
@@ -163,6 +193,8 @@ export function usePlaylistLogic(platform, songs, listMode, loading) {
         () => [platform.value, bindings.value[platform.value], categoryId.value],
         () => {
             cancel();
+            pendingCollections = null;
+            pendingTracks = null;
             currentContainer.value = null;
             songs.value = [];
             playlists.value = [];
@@ -193,6 +225,7 @@ export function usePlaylistLogic(platform, songs, listMode, loading) {
         loadPlaylist,
         fetchPlaylists: fetchCollections,
         handleScroll,
+        loadMoreTracks,
         collectionCursor,
         cancel,
     };

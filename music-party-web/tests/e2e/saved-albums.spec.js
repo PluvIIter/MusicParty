@@ -18,29 +18,43 @@ const track = (name, platform = 'future-source') => ({
     duration: 1000,
     externalUrl: 'javascript:alert(1)',
 });
-async function fixture(page) {
+async function fixture(
+    page,
+    {
+        emptyFirst = false,
+        deferCollections = false,
+        deferTracks = false,
+        legacyLikes = false,
+        externalUrl = 'https://example.com/adapter-safe/disabled-track',
+    } = {}
+) {
     const reads = [],
         sent = [],
         pending = [];
     let push;
-    await page.addInitScript(() => {
-        localStorage.setItem('mp_username', 'PublicTester');
-        localStorage.setItem('mp_user_token', 'tester');
-        localStorage.setItem('mp_tutorial_done_v1', 'true');
-        localStorage.setItem('mp_pwa_hint_shown', 'true');
-        localStorage.setItem(
-            'mp_liked_songs',
-            JSON.stringify([
-                {
-                    id: 'same',
-                    name: 'Disabled snapshot',
-                    platform: 'disabled-source',
-                    artists: ['Saved artist'],
-                    externalUrl: 'javascript:alert(1)',
-                },
-            ])
-        );
-    });
+    await page.addInitScript(
+        ({ legacyLikes }) => {
+            localStorage.setItem('mp_username', 'PublicTester');
+            localStorage.setItem('mp_user_token', 'tester');
+            localStorage.setItem('mp_tutorial_done_v1', 'true');
+            localStorage.setItem('mp_pwa_hint_shown', 'true');
+            localStorage.setItem(
+                'mp_liked_songs',
+                JSON.stringify([
+                    {
+                        id: 'same',
+                        name: 'Disabled snapshot',
+                        platform: 'disabled-source',
+                        artists: ['Saved artist'],
+                        ...(legacyLikes
+                            ? { url: 'https://untrusted.invalid/expired-audio' }
+                            : { externalUrl: 'javascript:alert(1)' }),
+                    },
+                ])
+            );
+        },
+        { legacyLikes }
+    );
     await page.route('**/api/**', async (route) => {
         const url = new URL(route.request().url()),
             path = url.pathname;
@@ -53,6 +67,7 @@ async function fixture(page) {
                 schemaVersion: 2,
                 sources: [descriptor('future-source', true), descriptor('other-source'), descriptor('disabled-source')],
             };
+        else if (path.endsWith('/external-url')) body = { externalUrl };
         else if (path.endsWith('/users/search'))
             body = { items: [{ id: 'public-user', name: 'Public user' }], nextCursor: null };
         else if (path.endsWith('/tracks/search')) {
@@ -87,7 +102,10 @@ async function fixture(page) {
                       nextCursor: null,
                   };
         } else if (path.includes('/containers/') && path.endsWith('/tracks'))
-            body = { items: [track('Container song')], nextCursor: null };
+            body =
+                emptyFirst && !url.searchParams.get('cursor')
+                    ? { items: [], nextCursor: 'second-page' }
+                    : { items: [track('Container song')], nextCursor: null };
         else if (path.endsWith('/album'))
             body = {
                 id: 'album',
@@ -96,6 +114,17 @@ async function fixture(page) {
                 collectionType: 'album',
                 trackCount: 1,
             };
+        if (
+            (deferCollections && path.includes('/collections/')) ||
+            (deferTracks && path.includes('/containers/') && path.endsWith('/tracks'))
+        ) {
+            return new Promise((resolve) =>
+                pending.push(async () => {
+                    await route.fulfill({ json: body }).catch(() => {});
+                    resolve();
+                })
+            );
+        }
         return route.fulfill({ json: body });
     });
     await page.routeWebSocket('**/ws', (socket) => {
@@ -161,6 +190,78 @@ async function fixture(page) {
     await expect(page.getByRole('button', { name: 'future-source', exact: true })).toBeVisible();
     return { reads, sent, release: () => Promise.all(pending.splice(0).map((fn) => fn())) };
 }
+
+test('empty first container page has an explicit reachable next-page action', async ({ page }) => {
+    const server = await fixture(page, { emptyFirst: true });
+    await page.getByRole('textbox', { name: '公开用户 ID', exact: true }).fill('uid');
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await page.getByText('Public mix', { exact: true }).click();
+    const more = page.getByRole('button', { name: '加载更多曲目', exact: true });
+    await expect(more).toBeVisible();
+    await more.click();
+    await expect(page.getByText('Container song', { exact: true })).toBeVisible();
+    expect(server.reads.some((url) => url.searchParams.get('cursor') === 'second-page')).toBe(true);
+});
+
+for (const switchToLikes of [false, true])
+    test(`canceled collections resume after ${switchToLikes ? 'LIKESONG' : 'close'} without changing the binding`, async ({
+        page,
+    }) => {
+        const server = await fixture(page, { deferCollections: true });
+        await page.getByRole('textbox', { name: '公开用户 ID', exact: true }).fill('uid');
+        await page.getByRole('button', { name: '保存', exact: true }).click();
+        await expect.poll(() => server.reads.filter((url) => url.pathname.includes('/collections/')).length).toBe(1);
+        if (switchToLikes) await page.getByRole('button', { name: '点赞的音乐', exact: true }).click();
+        else await page.getByRole('button', { name: '关闭搜索', exact: true }).click();
+        await server.release();
+        if (switchToLikes) await page.getByRole('button', { name: 'future-source', exact: true }).click();
+        else await page.locator('#tutorial-search').click();
+        await expect.poll(() => server.reads.filter((url) => url.pathname.includes('/collections/')).length).toBe(2);
+        await server.release();
+        await expect(page.getByText('Public mix', { exact: true })).toBeVisible();
+    });
+
+test('canceled container tracks resume on reopen without a new source selection', async ({ page }) => {
+    const server = await fixture(page, { deferTracks: true });
+    await page.getByRole('textbox', { name: '公开用户 ID', exact: true }).fill('uid');
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await page.getByText('Public mix', { exact: true }).click();
+    await expect.poll(() => server.reads.filter((url) => url.pathname.includes('/containers/')).length).toBe(1);
+    await page.getByRole('button', { name: '关闭搜索', exact: true }).click();
+    await server.release();
+    await page.locator('#tutorial-search').click();
+    await expect.poll(() => server.reads.filter((url) => url.pathname.includes('/containers/')).length).toBe(2);
+    await server.release();
+    await expect(page.getByText('Container song', { exact: true })).toBeVisible();
+});
+
+test('legacy disabled LIKESONG opens only adapter metadata without mutating snapshots', async ({ page }) => {
+    const server = await fixture(page, { legacyLikes: true });
+    await page.getByRole('button', { name: '点赞的音乐', exact: true }).click();
+    const saved = await page.evaluate(() => localStorage.getItem('mp_liked_songs'));
+    const popupPromise = page.waitForEvent('popup');
+    await page.getByTitle('打开源页面').click();
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL('https://example.com/adapter-safe/disabled-track');
+    expect(
+        server.reads.some((url) => url.pathname === '/api/v2/sources/disabled-source/tracks/same/external-url')
+    ).toBe(true);
+    expect(await popup.evaluate(() => window.opener)).toBe(null);
+    expect(await page.evaluate(() => localStorage.getItem('mp_liked_songs'))).toBe(saved);
+    await expect(page.getByText('Disabled snapshot', { exact: true })).toBeVisible();
+    expect(server.sent.some((item) => item.destination === '/app/enqueue')).toBe(false);
+    await popup.close();
+});
+
+test('legacy link mapping rejects unsafe schemes without opening the stored audio URL', async ({ page }) => {
+    await fixture(page, { legacyLikes: true, externalUrl: 'javascript:alert(1)' });
+    await page.getByRole('button', { name: '点赞的音乐', exact: true }).click();
+    const saved = await page.evaluate(() => localStorage.getItem('mp_liked_songs'));
+    await page.getByTitle('打开源页面').click();
+    await expect(page.getByText('此音乐源暂不提供源页面链接', { exact: true })).toBeVisible();
+    await expect.poll(() => page.context().pages().length).toBe(1);
+    expect(await page.evaluate(() => localStorage.getItem('mp_liked_songs'))).toBe(saved);
+});
 
 test('unknown source discovers generic public categories with explicit browser-only targets', async ({ page }) => {
     const server = await fixture(page);

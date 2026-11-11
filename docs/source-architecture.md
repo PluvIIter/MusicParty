@@ -10,7 +10,7 @@
 - `media/MediaDeliveryService`：直链或服务器下载、解析合并、准备状态、媒体租约、恢复、缓存授权与服务器输入。
 - `service/LocalCacheService`：流式有界下载、临时文件原子提交、带representation的哈希文件名/索引、LRU与播放/HTTP/Radio pin。
 - 房间调度：只使用Registry与MediaDelivery；保留queueId、playbackId、seekNonce、公平轮询、首播账本及保留歌单行为。
-- `ContainerImportService`：通用容器批量入队，受配额、身份重验、内容来源校验、请求幂等与总预算约束。
+- `ContainerImportService`：通用容器批量入队，元数据与分页共用完整30秒预算；提交在用户、音源、队列的固定锁序下重验身份与音源epoch，受配额、来源校验和请求幂等约束。提交后的预取失败不把已成功入队伪报为失败。
 - Vue：`stores/sources`发现目录，通用搜索/收藏类别/容器读取；`useLikedSongs`仍是独立本机数据。
 
 ## 配置
@@ -31,7 +31,7 @@ app:
 
 环境变量为 `NETEASE_ENABLED`、`BILIBILI_ENABLED`、`NETEASE_DELIVERY_MODE`、`BILIBILI_DELIVERY_MODE`。连接地址/媒体Cookie/音质保留在各适配器技术配置。源能力没有部署开关。交付模式需改部署重启；管理台可启停，不能借运行时设置覆盖部署模式。
 
-旧enabled配置和存档迁移至同一有效源状态；存档只保存启停、不保存交付模式。未知已删除源不映射至另一音源。`SourceRegistry.update`改变epoch，旧媒体票据不能在禁用再启用后复活。
+旧enabled配置和存档迁移至同一有效源状态；内置配置不再用新字段默认true覆盖旧CLI/YAML中的false，显式新sources配置优先。存档只保存启停、不保存交付模式。未知已删除源不映射至另一音源。`SourceRegistry.update`改变epoch，旧媒体票据不能在禁用再启用后复活。
 
 ## 公开收藏合同
 
@@ -44,11 +44,13 @@ app:
 
 列表为 `ResourcePage {items,nextCursor,total}`；终止仅由nextCursor=null确定。过滤失效条目后仍可能返回空页+下一游标。游标绑定source、target、类别/容器、limit和目录版本；不能跨目标重用。
 
-类别entryKind支持TRACK（直接歌曲列表）和CONTAINER（歌单/专辑/收藏夹）。TRACK由`publicCollectionTracks`返回Music，CONTAINER由`publicCollections`返回Playlist映射Container；不会把歌曲收藏伪装为容器。新源按能力实现对应方法。
+类别entryKind支持TRACK（直接歌曲列表）和CONTAINER（歌单/专辑/收藏夹）。TRACK由`publicCollectionTracks`返回Music，CONTAINER由`publicCollections`返回Playlist映射Container；不会把歌曲收藏伪装为容器。容器详情和曲目分页向适配器明确传递collectionType与id，不再把不同类型都当作同一个playlist；兼容旧playlist方法时必须验证类别。新源按能力实现对应方法。
 
 当前实现网易公开歌单、B站公开收藏夹。未实现“配置Cookie账号收藏”；网易 `album/sublist` 只面向登录账号，不满足公开绑定目标约束，旧入口返回410，界面不再下发该类别。公开专辑详情与歌曲所属专辑保留，两者不是收藏专辑类别。
 
 公开请求不携带配置账号Cookie；B站只允许匿名设备buvid信息用于公共接口。绑定UID不证明账号所有权。不公开、上游拒绝和网络失败不得返回伪造成功空收藏。未绑定明确提示绑定，不回退Cookie账号。
+
+兼容的旧搜索、收藏、曲目、专辑及歌词接口复用ResourceService的能力、参数与超时约束，并与v2共享房间访问检查及结构化错误；旧专辑详情不再读取已分离的legacy启用字段。只有公开页面装饰配置保留无需房间口令访问。
 
 ## 私人 FM/DJ 的明确例外
 
@@ -66,15 +68,17 @@ app:
 
 直链必须原生浏览器可用且不要求秘密header。服务器下载整文件准备后以随机短期媒体ticket交付，支持Range/后缀Range；旧公开静态媒体目录不再开放。ticket核验源、凭据revision与启用epoch。恢复同实例不改playbackId、seekNonce、房间锚点或队列；不同representation（例如整曲变试听）拒绝沿用时间轴。
 
-Radio从同一媒体服务获取SERVER输入，不按平台补头或全局降级HTTPS。凭据或epoch变更使旧准备结果/运行输入失效；旧异步结果不能重装载。
+Radio从同一媒体服务获取SERVER输入，不按平台补头或全局降级HTTPS，并执行适配器的radioInput能力门禁。媒体区分编码representation与内容timeline：浏览器和服务器可使用不同格式，但不能把整曲改成试听后继续沿用旧进度。Radio只接受本进程签发、保留原timeline的播放对象；未知重建对象拒绝输入。凭据或epoch变更使旧准备结果/运行输入失效；清空或切换时作废准备请求，迟到成功或空完成不会遗留解析标记。首次临时断流刷新后可立即重启，连续故障才进入退避，停止转码时同步释放pin并恢复静音填充。
 
-缓存资产包含representation与授权命名空间。为避免进程重启后revision归零使旧VIP音频被其他凭据复用，当前采用随机进程授权session：重启后旧文件保留索引和LRU计量，但必须重新下载授权，而不直接签发旧文件。未来可实现重新授权后复用同内容字节；本轮不作此优化承诺。
+缓存资产包含representation、timeline与授权命名空间；同源同ID的不同内容版本使用不同下载资产，逻辑资源状态通过当前版本映射读取。播放pin绑定实际签发的资产，不随尚未接受的刷新候选移动。为避免进程重启后revision归零使旧VIP音频被其他凭据复用，当前采用随机进程授权session：重启后旧文件保留索引和LRU计量，但必须重新下载授权，而不直接签发旧文件。未来可实现重新授权后复用同内容字节；本轮不作此优化承诺。
 
 ## 前端、本机数据与部署
 
 源标签、能力、专辑入口、类别、容器以及源站externalUrl由目录/适配器结果驱动。图标/action使用本地白名单，不执行服务器脚本、组件或任意URL模板。媒体SW缓存原有CDN allowlist保留为安全优化策略，不作为源发现或能力判断。
 
-绑定目标本机保存，请求显式传入；移除后端绑定命令。切源、换目标、换容器与关闭弹窗时用请求代次/取消保护。LIKESONG不按启用源过滤，既有来源/快照保留；禁用源仅在点播时提示不可用，不换源、不删除点赞。
+绑定目标本机保存，请求显式传入；移除后端绑定命令。切源、换目标、换容器与关闭弹窗时用请求代次/取消保护；重新打开或从本机喜欢返回时恢复被取消的读取，保留分页游标且不重复追加。容器提供显式“加载更多”，空页带下一游标或不足以滚动时也能继续读取。
+
+LIKESONG不按启用源过滤，既有来源/快照保留；禁用源仅在点播时提示不可用，不换源、不删除点赞。升级前缺少externalUrl的条目通过经过房间鉴权的适配器元数据端点解析源页面，允许已禁用的已知音源，不发起媒体解析，也不打开旧音频URL或改写存量点赞记录。
 
 Windows启动器使用`sources`映射，迁移旧JSON包括显式false，只在需要时启动网易sidecar，传递相同Java源参数。配置文件0600保存，Cookie字段掩码并标为仅音频。Docker新增交付环境变量；如仅用B站可执行 `docker compose up -d --no-deps music-party`（须同时关闭网易源），不要求主应用等待可选源可达。
 

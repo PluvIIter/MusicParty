@@ -36,6 +36,7 @@ final class PlayerTestFactory {
         when(sources.getRequired(anyString())).thenAnswer(invocation -> adapters.stream()
                 .filter(api -> api.getPlatformName().equals(invocation.getArgument(0))).findFirst().orElseThrow());
         MediaDeliveryService media = mock(MediaDeliveryService.class);
+        when(media.authorizationScope(anyString())).thenReturn("fixture-scope");
         when(media.status(any(Music.class))).thenReturn(QueueItemStatus.READY);
         when(media.getPlayableMusic(anyString(), anyString())).thenAnswer(invocation -> adapters.stream()
                 .filter(api -> api.getPlatformName().equals(invocation.getArgument(0))).findFirst().orElseThrow()

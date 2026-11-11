@@ -124,6 +124,30 @@ class SourceIndependentRoomTest {
     }
 
     @Test
+    void repeatOneRecoversWhenAuthorizationFailsAfterSourceDisabled() {
+        when(media.status(any())).thenReturn(QueueItemStatus.READY);
+        when(media.getPlayableMusic("third-source", "same-id")).thenReturn(Mono.just(playable()));
+        when(media.authorizationScope("third-source")).thenAnswer(invocation -> {
+            sources.getRequired("third-source");
+            return "scope";
+        });
+        queue.add(track("third-source"), owner, QueueItemStatus.READY);
+        player.playerLoop();
+        PlayerTestFactory.await(() -> player.getCurrentPlayerState().nowPlaying() != null);
+        player.setPlayModeForTest(PlayMode.REPEAT_ONE);
+        sources.update("third-source", false, null);
+        player.setPositionForTest(1000);
+        assertDoesNotThrow(player::playerLoop);
+        PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());
+        assertNull(player.getCurrentPlayerState().nowPlaying());
+        sources.update("third-source", true, null);
+        queue.add(track("third-source"), owner, QueueItemStatus.READY);
+        player.playerLoop();
+        PlayerTestFactory.await(() -> player.getCurrentPlayerState().nowPlaying() != null);
+        assertFalse(player.getCurrentPlayerState().isLoading());
+    }
+
+    @Test
     void disabledSourceResultCannotCommitAfterResolvingBeforeRoomMonitor() {
         properties.getQueue().setRetainPlaylist(true);
         queue.add(track("third-source"), owner, QueueItemStatus.READY);

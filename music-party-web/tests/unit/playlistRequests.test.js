@@ -59,10 +59,65 @@ function setup() {
         mode = ref('search'),
         loading = ref(false);
     scope = effectScope();
-    const state = scope.run(() => usePlaylistLogic(platform, songs, mode, loading));
-    return { platform, songs, mode, loading, state, requests };
+    const active = ref(true);
+    const state = scope.run(() => usePlaylistLogic(platform, songs, mode, loading, active));
+    return { platform, songs, mode, loading, active, state, requests };
 }
 describe('public collection request ownership', () => {
+    it('exposes explicit next-page loading after an empty first page', async () => {
+        const { state, songs, requests } = setup();
+        state.loadPlaylist({ id: 'empty', collectionType: 'playlist' });
+        requests.at(-1).resolve({ items: [], nextCursor: 'next' });
+        await flush();
+        expect(state.hasMore.value).toBe(true);
+        state.loadMoreTracks();
+        expect(requests.at(-1).args.slice(0, 4)).toEqual(['unknown', 'playlist', 'empty', 'next']);
+        requests.at(-1).resolve(page('visible'));
+        await flush();
+        expect(songs.value).toEqual([{ id: 'visible' }]);
+    });
+    it('resumes canceled collections and discards responses from before suspension', async () => {
+        const { active, state, requests } = setup();
+        active.value = false;
+        requests[0].resolve(page('canceled'));
+        await flush();
+        expect(state.playlists.value).toEqual([]);
+        active.value = true;
+        expect(requests.at(-1).args.slice(0, 3)).toEqual(['unknown', 'lists', 'U']);
+        requests.at(-1).resolve(page('resumed'));
+        await flush();
+        expect(state.playlists.value).toEqual([{ id: 'resumed' }]);
+    });
+    it('resumes exact canceled track cursor without duplicating committed pages', async () => {
+        const { active, state, songs, requests } = setup();
+        requests[0].resolve(page('list'));
+        await flush();
+        state.loadPlaylist({ id: 'container', collectionType: 'playlist' });
+        requests.at(-1).resolve(page('first', 'next'));
+        await flush();
+        state.loadMoreTracks();
+        const canceled = requests.at(-1);
+        active.value = false;
+        canceled.resolve(page('stale'));
+        await flush();
+        active.value = true;
+        expect(requests.at(-1).args.slice(0, 4)).toEqual(['unknown', 'playlist', 'container', 'next']);
+        requests.at(-1).resolve(page('second'));
+        await flush();
+        expect(songs.value).toEqual([{ id: 'first' }, { id: 'second' }]);
+    });
+    it('does not issue inactive target requests and resumes only the latest binding', async () => {
+        const { active, state, requests } = setup();
+        active.value = false;
+        mocks.user.bindings.unknown = 'replacement';
+        expect(requests).toHaveLength(1);
+        active.value = true;
+        expect(requests.at(-1).args[2]).toBe('replacement');
+        requests[0].resolve(page('stale'));
+        requests.at(-1).resolve(page('replacement'));
+        await flush();
+        expect(state.playlists.value).toEqual([{ id: 'replacement' }]);
+    });
     it('passes the explicit public target and ignores late source responses and errors', async () => {
         const { platform, state, requests } = setup();
         expect(requests[0].args.slice(0, 3)).toEqual(['unknown', 'lists', 'U']);

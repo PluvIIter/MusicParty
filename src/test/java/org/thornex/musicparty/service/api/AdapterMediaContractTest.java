@@ -54,6 +54,47 @@ class AdapterMediaContractTest {
         verifyNoInteractions(cookie, cache, wbi);
     }
 
+    @Test void neteaseTimelineIgnoresCodecButSeparatesTrialWindows() {
+        AppProperties props = new AppProperties(); props.getNetease().setBaseUrl("http://sidecar.test");
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            int call = calls.getAndIncrement();
+            String type = call == 0 ? "mp3" : "flac";
+            String trial = call < 2 ? "null" : "{\"start\":100,\"end\":900}";
+            return Mono.just(json("{\"data\":[{\"url\":\"https://cdn.test/song\",\"type\":\"" + type
+                    + "\",\"time\":1000,\"freeTrialInfo\":" + trial + "}]}"));
+        }).build();
+        var adapter = new NeteaseMusicApiService(client, props);
+        var browser = adapter.resolveMedia("1", MediaConsumer.BROWSER).block();
+        var server = adapter.resolveMedia("1", MediaConsumer.SERVER).block();
+        var trial = adapter.resolveMedia("1", MediaConsumer.SERVER).block();
+        assertNotEquals(browser.representationKey(), server.representationKey());
+        assertEquals(browser.timelineKey(), server.timelineKey());
+        assertNotEquals(server.timelineKey(), trial.timelineKey());
+    }
+
+    @Test void bilibiliHtml5AndDashShareTimelineOnlyForSameFullVideo() {
+        AppProperties props = new AppProperties(); props.getBilibili().setBaseUrl("http://bili.test");
+        var cookie = mock(BilibiliCookieService.class);
+        when(cookie.getCookieHeader()).thenReturn(Mono.just("SESSDATA=media"));
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            if (request.url().getPath().contains("view")) {
+                return Mono.just(json("{\"code\":0,\"data\":{\"cid\":10}}"));
+            }
+            if (request.url().getQuery().contains("fnval=1&")) {
+                return Mono.just(json("{\"code\":0,\"data\":{\"timelength\":1000,\"is_preview\":0,\"durl\":[{\"url\":\"https://cdn.test/video\"}]}}"));
+            }
+            return Mono.just(json("{\"code\":0,\"data\":{\"timelength\":1000,\"is_preview\":0,\"dash\":{\"audio\":[{\"id\":30280,\"baseUrl\":\"https://cdn.test/audio\"}]}}}"));
+        }).build();
+        var adapter = new BilibiliMusicApiService(client, props, mock(LocalCacheService.class), mock(BilibiliWbiService.class), cookie);
+        var browser = adapter.resolveMedia("BV1abc", MediaConsumer.BROWSER).block();
+        var server = adapter.resolveMedia("BV1abc", MediaConsumer.SERVER).block();
+        assertEquals("html5", browser.representationKey());
+        assertEquals("dash", server.representationKey());
+        assertEquals(browser.timelineKey(), server.timelineKey());
+        assertTrue(server.timelineKey().contains("cid:10"));
+    }
+
     @Test void publicBilibiliCookieNeverContainsSessionSecrets() {
         AppProperties props = new AppProperties(); props.getBilibili().setCookie("SESSDATA=secret; bili_jct=secret; buvid3=device; buvid4=device4");
         var service = new BilibiliCookieService(WebClient.builder().build(), props);

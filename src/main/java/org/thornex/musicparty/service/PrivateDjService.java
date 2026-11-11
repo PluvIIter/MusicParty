@@ -25,9 +25,11 @@ public class PrivateDjService {
     private String activeScope;
     private String activeMode;
     private long generation;
+    private long selectionGeneration;
     private Mono<List<PrivateDjSegment>> pending;
 
-    private record Origin(RecommendationProvider provider, String scope, long generation) {}
+    private record Origin(RecommendationProvider provider, String scope, long generation, String configuredMode) {}
+    private record Request(String mode, String configuredMode, long generation) {}
 
     public PrivateDjService(List<RecommendationProvider> providers, SourceRegistry sources, AppProperties properties) {
         var registered = new HashMap<String, RecommendationProvider>();
@@ -60,11 +62,27 @@ public class PrivateDjService {
         return scope(selected()) + ":" + properties.getPrivateDj().getMode() + ":" + generation;
     }
 
-    public Mono<PrivateDjSegment> nextSegment() { return next(properties.getPrivateDj().getMode()); }
-    public Mono<PrivateDjSegment> nextFmSegment() { return next("FM"); }
-    public Mono<PrivateDjSegment> nextDjSegment() { return next("DJ"); }
+    public Mono<PrivateDjSegment> nextSegment() { return next(request(null)); }
+    public Mono<PrivateDjSegment> nextFmSegment() { return next(request("FM")); }
+    public Mono<PrivateDjSegment> nextDjSegment() { return next(request("DJ")); }
+
+    private synchronized Request request(String forcedMode) {
+        String configured = properties.getPrivateDj().getMode();
+        return new Request(forcedMode == null ? configured : forcedMode, configured, selectionGeneration);
+    }
+
+    private boolean current(Request request) {
+        return selectionGeneration == request.generation()
+                && request.configuredMode().equals(properties.getPrivateDj().getMode())
+                && !"OFF".equals(request.configuredMode());
+    }
 
     public synchronized void invalidate() {
+        selectionGeneration++;
+        resetBatch();
+    }
+
+    private void resetBatch() {
         batch.clear();
         origins.clear();
         activeScope = null;
@@ -91,8 +109,12 @@ public class PrivateDjService {
         return provider.sourceId() + ":" + provider.credentialRevision() + ":" + sources.authorizationEpoch(provider.sourceId());
     }
 
-    private Mono<PrivateDjSegment> next(String mode) {
+    private Mono<PrivateDjSegment> next(Request request) {
         return Mono.defer(() -> {
+            String mode = request.mode();
+            synchronized (this) {
+                if (!current(request)) return Mono.error(new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐模式已变化"));
+            }
             if (!"FM".equals(mode) && !"DJ".equals(mode)) {
                 return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 私人FM/DJ已关闭"));
             }
@@ -104,12 +126,13 @@ public class PrivateDjService {
             long version;
             Mono<List<PrivateDjSegment>> fetch;
             synchronized (this) {
+                if (!current(request)) return Mono.error(new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐模式已变化"));
                 if (!expected.equals(activeScope) || !mode.equals(activeMode)) {
-                    invalidate();
+                    resetBatch();
                     activeScope = expected;
                     activeMode = mode;
                 }
-                if (!batch.isEmpty()) return Mono.just(remember(batch.removeFirst(), provider, expected));
+                if (!batch.isEmpty()) return Mono.just(remember(batch.removeFirst(), provider, expected, request.configuredMode()));
                 version = generation;
                 if (pending == null) {
                     pending = Mono.defer(() -> provider.nextSegments(mode)).timeout(Duration.ofSeconds(15)).cache();
@@ -118,7 +141,7 @@ public class PrivateDjService {
             }
             return fetch.flatMap(segments -> {
                 synchronized (this) {
-                    if (generation != version || selected() != provider || !expected.equals(scope(provider))) {
+                    if (!current(request) || generation != version || selected() != provider || !expected.equals(scope(provider))) {
                         return Mono.error(new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐音源或凭据已变化"));
                     }
                     if (pending == fetch) {
@@ -126,7 +149,7 @@ public class PrivateDjService {
                         batch.addAll(segments);
                     }
                     if (batch.isEmpty()) return Mono.error(new ApiRequestException("RECOMMENDATIONS_EMPTY: 推荐没有返回可播放内容"));
-                    return Mono.just(remember(batch.removeFirst(), provider, expected));
+                    return Mono.just(remember(batch.removeFirst(), provider, expected, request.configuredMode()));
                 }
             }).doOnError(error -> {
                 synchronized (this) { if (pending == fetch) pending = null; }
@@ -134,9 +157,9 @@ public class PrivateDjService {
         });
     }
 
-    private PrivateDjSegment remember(PrivateDjSegment segment, RecommendationProvider provider, String expected) {
+    private PrivateDjSegment remember(PrivateDjSegment segment, RecommendationProvider provider, String expected, String configuredMode) {
         if (origins.size() >= 256) origins.clear();
-        origins.put(segment, new Origin(provider, expected, generation));
+        origins.put(segment, new Origin(provider, expected, generation, configuredMode));
         return segment;
     }
 
@@ -144,12 +167,14 @@ public class PrivateDjService {
         return Mono.defer(() -> {
             Origin origin;
             synchronized (this) { origin = origins.get(segment); }
-            if (origin == null || selected() != origin.provider() || !origin.scope().equals(scope(origin.provider()))) {
+            if (origin == null || !origin.configuredMode().equals(properties.getPrivateDj().getMode())
+                    || selected() != origin.provider() || !origin.scope().equals(scope(origin.provider()))) {
                 throw new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐内容已失效，请重新获取");
             }
             return origin.provider().getPlayable(segment).map(playable -> {
                 synchronized (this) {
-                    if (origin.generation() != generation || selected() != origin.provider()
+                    if (origin.generation() != generation || !origin.configuredMode().equals(properties.getPrivateDj().getMode())
+                            || selected() != origin.provider()
                             || !origin.scope().equals(scope(origin.provider()))) {
                         throw new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐音源或凭据已变化");
                     }

@@ -34,6 +34,9 @@ class VoiceMediaDeliveryTest {
         registry = mock(SourceRegistry.class); adapter = mock(IMusicApiService.class); cache = mock(LocalCacheService.class);
         when(registry.getRequired("stub")).thenReturn(adapter); when(registry.isEnabled("stub")).thenReturn(true);
         when(registry.deliveryMode("stub")).thenReturn(DeliveryMode.DIRECT_URL);
+        when(registry.descriptor("stub")).thenReturn(new org.thornex.musicparty.source.SourceDescriptor("stub", "Stub", "music",
+                new org.thornex.musicparty.source.SourceCapabilities(true, false, false, false, false, true, true, true),
+                java.util.Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD), java.util.List.of()));
         delivery = new MediaDeliveryService(registry, cache);
     }
 

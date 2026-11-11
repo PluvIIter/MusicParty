@@ -109,6 +109,21 @@ class MusicPlayerServiceJoinQueueTest {
     }
 
     @Test
+    void markerCapturesRecommendationRequestBeforeSchedulingWorker() {
+        props.getPrivateDj().setMode("DJ");
+        var captured = new java.util.concurrent.atomic.AtomicBoolean();
+        Thread selector = Thread.currentThread();
+        when(djService.nextFmSegment()).thenAnswer(invocation -> {
+            assertSame(selector, Thread.currentThread());
+            assertTrue(Thread.holdsLock(service));
+            captured.set(true);
+            return Mono.empty();
+        });
+        synchronized (service) { service.playFmMarkerNextForTest(null); }
+        assertTrue(captured.get());
+    }
+
+    @Test
     void restoredUnsupportedDjDoesNotSilentlyInstallFmMarker() {
         props.getPrivateDj().setMode("DJ");
         props.getPrivateDj().setJoinQueueEnabled(true);
@@ -144,6 +159,34 @@ class MusicPlayerServiceJoinQueueTest {
         emitter.get(2, java.util.concurrent.TimeUnit.SECONDS);
         assertNull(service.getCurrentPlayerState().nowPlaying());
         verify(queueManager, never()).addToHistory(any());
+    }
+
+    @Test
+    void recommendationAuthorizationFailureInsideCommitClearsLoading() throws Exception {
+        props.getPrivateDj().setMode("DJ");
+        when(djService.isAvailable()).thenReturn(true);
+        when(djService.authorizationScope()).thenReturn("scope")
+                .thenThrow(new org.thornex.musicparty.exception.ApiRequestException("SOURCE_DISABLED"));
+        var segment = new PrivateDjSegment.Song("song", "Song", List.of(), 1000, null);
+        var response = reactor.core.publisher.Sinks.<PlayableMusic>one();
+        when(djService.getPlayable(segment)).thenReturn(response.asMono());
+        var loading = (java.util.concurrent.atomic.AtomicBoolean)
+                org.springframework.test.util.ReflectionTestUtils.getField(service, "isLoading");
+        loading.set(true);
+        var load = MusicPlayerService.class.getDeclaredMethod("loadFmDjPlayable", PrivateDjSegment.class, long.class, boolean.class);
+        load.setAccessible(true);
+        load.invoke(service, segment, 0L, false);
+        verify(djService, timeout(2000)).getPlayable(segment);
+        response.tryEmitValue(new PlayableMusic("song", "Song", List.of(), 1000, "netease", "https://audio.invalid/song", null, false));
+        PlayerTestFactory.await(() -> !loading.get());
+        assertNull(service.getCurrentPlayerState().nowPlaying());
+    }
+
+    @Test
+    void fmSongPreservesIssuedMediaInstanceForRadioTimeline() {
+        var song = new PlayableMusic("song", "Song", List.of(), 1000, "netease", "https://audio.invalid/song", null, false);
+        service.applyFmDjSegmentForTest(song, new PrivateDjSegment.Song("song", "Song", List.of(), 1000, null));
+        assertSame(song, service.getCurrentPlayerState().nowPlaying().music());
     }
 
     @Test

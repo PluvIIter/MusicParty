@@ -1,51 +1,49 @@
 package org.thornex.musicparty.controller;
 
+import java.util.Map;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 import org.thornex.musicparty.config.AppProperties;
-import org.thornex.musicparty.service.api.NeteaseMusicApiService;
-import org.thornex.musicparty.service.api.SavedAlbumsService;
+import org.thornex.musicparty.resource.ResourceAccess;
+import org.thornex.musicparty.resource.ResourceService;
 import reactor.core.publisher.Mono;
-import java.util.Map;
 
 @RestController
 public class SavedAlbumsController {
     private final AuthController auth;
     private final AppProperties properties;
-    private final SavedAlbumsService savedAlbums;
-    private final NeteaseMusicApiService musicApi;
-    public SavedAlbumsController(AuthController auth, AppProperties properties, SavedAlbumsService savedAlbums, NeteaseMusicApiService musicApi) {
-        this.auth = auth; this.properties = properties; this.savedAlbums = savedAlbums; this.musicApi = musicApi;
+    private final ResourceService resources;
+
+    public SavedAlbumsController(AuthController auth, AppProperties properties, ResourceService resources) {
+        this.auth = auth;
+        this.properties = properties;
+        this.resources = resources;
     }
-    private boolean allowed(String password) {
-        String admin = properties.getAdminPassword();
-        if (admin != null && !admin.isBlank() && admin.equals(password)) return true;
-        String room = auth.getRawPassword();
-        return room != null && (room.isEmpty() || room.equals(password));
-    }
-    private ResponseEntity<Object> reply(int status, Object body) {
-        return ResponseEntity.status(status).cacheControl(CacheControl.noStore()).body(body);
-    }
-    private ResponseEntity<Object> error(int status, String message) { return reply(status, Map.of("message", message)); }
 
     @GetMapping("/api/user/albums/netease")
     public Mono<ResponseEntity<Object>> saved(@RequestHeader(value = "X-Room-Password", required = false) String password,
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "25") int limit) {
-        if (!allowed(password)) return Mono.just(error(403, "请先进入房间"));
-        return Mono.just(reply(410, Map.of("code", "CAPABILITY_UNAVAILABLE",
-                "message", "不再提供配置 Cookie 账号的收藏；仅支持绑定用户的公开收藏")));
+        return Mono.fromSupplier(() -> {
+            ResourceAccess.authorize(password, auth, properties);
+            return ResponseEntity.status(410).cacheControl(CacheControl.noStore()).body((Object) Map.of(
+                    "code", "CAPABILITY_UNAVAILABLE", "message", "不再提供配置 Cookie 账号的收藏；仅支持绑定用户的公开收藏"));
+        }).onErrorResume(error -> Mono.just(reply(error)));
     }
 
     @GetMapping("/api/album/netease/detail/{albumId}")
     public Mono<ResponseEntity<Object>> detail(@PathVariable("albumId") String albumId,
             @RequestHeader(value = "X-Room-Password", required = false) String password) {
-        if (!allowed(password)) return Mono.just(error(403, "请先进入房间"));
-        if (albumId == null || !albumId.matches("[1-9][0-9]{0,19}")) return Mono.just(error(400, "无效的专辑 ID"));
-        if (!properties.getNetease().isEnabled()) return Mono.just(error(409, "网易云音乐源已被禁用"));
-        return Mono.defer(() -> musicApi.getAlbum(albumId)).map(album -> reply(200, album))
-                .onErrorReturn(error(502, "专辑读取失败，请检查账号和音乐接口后重试"));
+        return Mono.defer(() -> {
+            ResourceAccess.authorize(password, auth, properties);
+            return resources.albumInfo("netease", albumId, false)
+                    .map(album -> ResponseEntity.ok().cacheControl(CacheControl.noStore()).body((Object) album));
+        }).onErrorResume(error -> Mono.just(reply(error)));
+    }
+
+    private ResponseEntity<Object> reply(Throwable error) {
+        var response = ResourceAccess.failure(error instanceof Exception exception ? exception : new RuntimeException(error));
+        return ResponseEntity.status(response.getStatusCode()).headers(response.getHeaders()).body(response.getBody());
     }
 }

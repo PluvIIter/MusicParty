@@ -1,6 +1,7 @@
 package org.thornex.musicparty.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.media.MediaDeliveryService;
@@ -14,6 +15,7 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ContainerImportService {
     private final ResourceService resources;
     private final SourceRegistry sources;
@@ -56,17 +58,12 @@ public class ContainerImportService {
     private Mono<Result> importContainer(Request request, String sessionId, String token) {
         return Mono.defer(() -> {
             sources.getRequired(request.platform());
+            long epoch = sources.authorizationEpoch(request.platform());
             int maximum = Math.max(1, Math.min(1000, properties.getPlayer().getMaxPlaylistImportSize()));
             return resources.container(request.platform(), request.collectionType(), request.containerId())
                     .zipWith(resources.importTracks(request.platform(), request.collectionType(), request.containerId(), maximum))
+                    .timeout(Duration.ofSeconds(30))
                     .map(response -> {
-                        sources.getRequired(request.platform());
-                        var member = users.getUser(sessionId);
-                        if (member.isEmpty() || member.get().isGuest() || !token.equals(member.get().getToken())) {
-                            return failure(request, "已离开房间，未导入歌曲");
-                        }
-                        User user = member.get();
-                        UserSummary owner = new UserSummary(token, sessionId, user.getName(), false);
                         response.getT2().forEach(track -> {
                             if (!request.platform().equals(track.platform())) throw new IllegalArgumentException("Mismatched source");
                             ResourceKey.of(track);
@@ -74,20 +71,39 @@ public class ContainerImportService {
                         List<Music> imported = new ArrayList<>();
                         int duplicates = 0;
                         int limited = Math.max(0, response.getT1().trackCount() - response.getT2().size());
-                        synchronized (queue) {
-                            Set<String> existing = new HashSet<>();
-                            queue.getQueueSnapshot().forEach(item -> existing.add(ResourceKey.of(item.music()).encoded()));
-                            for (Music track : response.getT2()) {
-                                if (!request.platform().equals(track.platform())) throw new IllegalArgumentException("Mismatched source");
-                                String identity = ResourceKey.of(track).encoded();
-                                if (existing.contains(identity)) { duplicates++; continue; }
-                                if (queue.add(track, owner, media.status(track)) == null) { limited++; continue; }
-                                imported.add(track);
-                                existing.add(identity);
+                        Map<String, org.thornex.musicparty.enums.QueueItemStatus> statuses = new HashMap<>();
+                        response.getT2().forEach(track -> statuses.put(ResourceKey.of(track).encoded(), media.status(track)));
+                        synchronized (users) {
+                            synchronized (sources) {
+                                synchronized (queue) {
+                                    sources.getRequired(request.platform());
+                                    if (epoch != sources.authorizationEpoch(request.platform())) {
+                                        return failure(request, "音源配置已改变，未导入歌曲");
+                                    }
+                                    var member = users.getUser(sessionId);
+                                    if (member.isEmpty() || member.get().isGuest() || !token.equals(member.get().getToken())
+                                            || !sessionId.equals(member.get().getSessionId())) {
+                                        return failure(request, "已离开房间，未导入歌曲");
+                                    }
+                                    UserSummary owner = new UserSummary(token, sessionId, member.get().getName(), false);
+                                    Set<String> existing = new HashSet<>();
+                                    queue.getQueueSnapshot().forEach(item -> existing.add(ResourceKey.of(item.music()).encoded()));
+                                    for (Music track : response.getT2()) {
+                                        String identity = ResourceKey.of(track).encoded();
+                                        if (existing.contains(identity)) { duplicates++; continue; }
+                                        if (queue.add(track, owner, statuses.get(identity)) == null) { limited++; continue; }
+                                        imported.add(track);
+                                        existing.add(identity);
+                                    }
+                                }
                             }
                         }
-                        imported.forEach(media::prefetch);
-                        player.broadcastQueueUpdate();
+                        imported.forEach(track -> {
+                            try { media.prefetch(track); }
+                            catch (RuntimeException error) { log.debug("Post-import prefetch deferred for {}", ResourceKey.of(track)); }
+                        });
+                        try { player.broadcastQueueUpdate(); }
+                        catch (RuntimeException error) { log.warn("Queue imported; update broadcast failed", error); }
                         String message = "已添加 " + imported.size() + " 首，重复跳过 " + duplicates + " 首，上限限制 " + limited + " 首";
                         return new Result(request.requestId(), request.containerId(), response.getT1().name(), response.getT1().trackCount(),
                                 imported.size(), duplicates, limited, message, false);

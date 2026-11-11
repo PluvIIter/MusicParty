@@ -107,12 +107,14 @@ public class LiveStreamService {
 
     // 转码会话状态（用于"仅在必要时重启"的判断）
     private volatile String runningSourceKey;
+    private String runningInputIdentity;
     private volatile long runningStartPosMs;
     private volatile long runningStartTimeMs;
     private volatile boolean hasProducedFirstByte;
     private volatile long launchStartPosMs;
     private volatile long lastSeekRestartTimeMs;
     private volatile long lastCrashRestartTimeMs;
+    private boolean recoveryLaunchPending;
 
     public LiveStreamService(MediaDeliveryService delivery, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
         this.delivery = delivery;
@@ -325,6 +327,13 @@ public class LiveStreamService {
     }
 
     private void checkState() {
+        synchronized (this) {
+            if (!isEnabled.get() || currentMusic == null || isPaused || !delivery.sourceAvailable(currentMusic.platform())) {
+                inputGeneration++;
+                resolvingResource = null;
+                recoveryLaunchPending = false;
+            }
+        }
         requestInput(false);
         synchronized (this) { checkPreparedState(); }
     }
@@ -360,14 +369,15 @@ public class LiveStreamService {
         if (!alive) {
             // 同一源近期崩溃过则进入冷却，避免每次事件都重新拉起死源（绕过 handleTranscoderExit 的冷却）
             long now = System.currentTimeMillis();
-            if (target.key().equals(runningSourceKey) && now - lastCrashRestartTimeMs < CRASH_RESTART_BACKOFF_MS) {
+            if (!recoveryLaunchPending && target.key().equals(runningSourceKey) && now - lastCrashRestartTimeMs < CRASH_RESTART_BACKOFF_MS) {
                 log.warn("Stream: source recently crashed, skipping restart (backoff)");
                 return;
             }
+            recoveryLaunchPending = false;
             startTranscoding(target);
             return;
         }
-        if (!target.key().equals(runningSourceKey)) {
+        if (!target.key().equals(runningSourceKey) || !java.util.Objects.equals(preparedResource, runningInputIdentity)) {
             log.info("Stream: source changed -> restarting for {}", currentMusic.name());
             doRestart();
             return;
@@ -409,6 +419,7 @@ public class LiveStreamService {
 
         long launchPos = estimatePlayerPosition();
         runningSourceKey = target.key();
+        runningInputIdentity = preparedResource;
         launchStartPosMs = launchPos;
         runningStartPosMs = launchPos;
         runningStartTimeMs = 0; // 锚点置无效：新进程产出首字节时才会重新锚定
@@ -555,7 +566,7 @@ public class LiveStreamService {
         if (process == null || process.isAlive()) {
             return;
         }
-        transcoderProcess = null;
+        stopTranscoding();
 
         // 退出码 0：只在"确实产出过音频 且 位置接近歌曲末尾"时才视为自然播完；
         // 否则（未产出首字节 / 远未到末尾就退出）是异常，需要重启恢复
@@ -583,6 +594,7 @@ public class LiveStreamService {
                 return;
             }
             lastCrashRestartTimeMs = now;
+            recoveryLaunchPending = true;
             log.warn("Stream: transcoder died unexpectedly, restarting");
             preparedTarget = null;
             requestInput(true);
@@ -625,6 +637,7 @@ public class LiveStreamService {
             return;
         }
         lastCrashRestartTimeMs = now;
+        recoveryLaunchPending = true;
         stopTranscoding();
         preparedTarget = null;
         requestInput(true);
@@ -639,6 +652,7 @@ public class LiveStreamService {
         PlayableMusic music = currentMusic;
         if (!isEnabled.get() || music == null || isPaused || !delivery.sourceAvailable(music.platform())) return;
         String resource = inputIdentity(music);
+        if (resource == null) return;
         long generation;
         synchronized (this) {
             if (resource.equals(resolvingResource) || (!refresh && resource.equals(preparedResource) && preparedTarget != null)) return;
@@ -647,9 +661,10 @@ public class LiveStreamService {
         }
         delivery.serverInput(music).subscribeOn(Schedulers.boundedElastic()).subscribe(input -> {
             synchronized (this) {
-                if (generation != inputGeneration || currentMusic == null || !delivery.sourceAvailable(currentMusic.platform())
-                        || !resource.equals(inputIdentity(currentMusic))) return;
+                if (generation != inputGeneration) return;
                 resolvingResource = null;
+                if (!isEnabled.get() || isPaused || currentMusic == null || !delivery.sourceAvailable(currentMusic.platform())
+                        || !resource.equals(inputIdentity(currentMusic))) return;
                 preparedResource = resource;
                 preparedTarget = new TranscodeTarget(input.location(), input.headers(), input.key());
                 checkPreparedState();
@@ -663,17 +678,24 @@ public class LiveStreamService {
                 }
             }
             log.warn("Stream: media input unavailable");
+        }, () -> {
+            synchronized (this) {
+                if (generation == inputGeneration) resolvingResource = null;
+            }
         });
     }
 
     private String inputIdentity(PlayableMusic music) {
-        return ResourceKey.encode(music.platform(), music.id()) + ":auth:" + delivery.authorizationScope(music.platform());
+        try {
+            return ResourceKey.encode(music.platform(), music.id()) + ":auth:" + delivery.authorizationScope(music.platform())
+                    + ":timeline:" + delivery.timelineIdentity(music);
+        } catch (RuntimeException error) { return null; }
     }
 
     private TranscodeTarget resolveTarget() {
         if (currentMusic == null || !delivery.sourceAvailable(currentMusic.platform())
                 || ("VOICE".equals(currentMusic.kind()) && !delivery.inputAvailable(currentMusic))
-                || !inputIdentity(currentMusic).equals(preparedResource)) return null;
+                || inputIdentity(currentMusic) == null || !inputIdentity(currentMusic).equals(preparedResource)) return null;
         return preparedTarget;
     }
 

@@ -22,6 +22,61 @@ public class ResourceService {
         this.cursors = cursors;
     }
 
+    public Mono<List<Music>> search(String source, String query) {
+        validateQuery(query);
+        var adapter = registry.getRequired(source);
+        if (!registry.descriptor(source).capabilities().search()) throw unsupported("此音源不支持搜索");
+        return Mono.defer(() -> adapter.searchMusic(query)).timeout(Duration.ofSeconds(12))
+                .map(items -> items.stream().map(this::withExternalUrl).toList());
+    }
+
+    public Mono<List<org.thornex.musicparty.dto.UserSearchResult>> users(String source, String query) {
+        validateQuery(query);
+        var adapter = registry.getRequired(source);
+        if (!registry.descriptor(source).capabilities().userSearch()) throw unsupported("此音源不支持用户搜索");
+        return Mono.defer(() -> adapter.searchUsers(query)).timeout(Duration.ofSeconds(12));
+    }
+
+    public Mono<String> lyrics(String source, String id) {
+        validateId(id);
+        var adapter = registry.getRequired(source);
+        if (!registry.descriptor(source).capabilities().lyrics()) throw unsupported("此音源不支持歌词");
+        return Mono.defer(() -> adapter.getLyric(id)).timeout(Duration.ofSeconds(12));
+    }
+
+    public Mono<org.thornex.musicparty.dto.AlbumInfo> albumInfo(String source, String id, boolean byTrack) {
+        validateId(id);
+        var adapter = registry.getRequired(source);
+        if (!registry.descriptor(source).capabilities().album()) throw unsupported("此音源不支持专辑");
+        return Mono.defer(() -> byTrack ? adapter.getAlbumForSong(id) : adapter.getAlbum(id))
+                .timeout(Duration.ofSeconds(12));
+    }
+
+    public Mono<List<Playlist>> legacyCollections(String source, String userId) {
+        validateId(userId);
+        var adapter = registry.getRequired(source);
+        if (!registry.descriptor(source).capabilities().personalCollections()) throw unsupported("此音源不支持公开收藏");
+        return Mono.defer(() -> adapter.getUserPlaylists(userId)).timeout(Duration.ofSeconds(12));
+    }
+
+    public Mono<List<Music>> legacyTracks(String source, String id, int offset, int limit) {
+        validateId(id);
+        validateLimit(limit);
+        if (offset < 0 || offset > 100_000) throw new ApiRequestException("INVALID_LIMIT: 无效分页偏移");
+        var adapter = registry.getRequired(source);
+        String type = registry.descriptor(source).collectionCategories().stream()
+                .filter(item -> "CONTAINER".equals(item.entryKind())).map(CollectionCategory::collectionType)
+                .distinct().reduce((left, right) -> { throw unsupported("请使用包含容器类型的资源接口"); })
+                .orElseThrow(() -> unsupported("此音源不支持容器"));
+        return Mono.defer(() -> adapter.containerPage(type, id, offset, limit)).timeout(Duration.ofSeconds(12))
+                .map(page -> page.items().stream().map(this::withExternalUrl).toList());
+    }
+
+    public String externalUrl(String source, String id) {
+        validateId(id);
+        return registry.externalUrl(source, id);
+    }
+
     public List<CollectionCategory> categories(String source) {
         registry.getRequired(source);
         return registry.descriptor(source).collectionCategories();
@@ -52,18 +107,16 @@ public class ResourceService {
         validateId(id);
         var adapter = registry.getRequired(source);
         if ("album".equals(type)) {
-            if (!registry.descriptor(source).capabilities().album()) return Mono.error(unsupported("此音源不支持专辑"));
-            return adapter.getAlbum(id).map(album -> new ContainerResource(album.id(), album.name(), source,
+            return albumInfo(source, id, false).map(album -> new ContainerResource(album.id(), album.name(), source,
                     "album", album.coverUrl(), album.trackCount()));
         }
         requireContainerType(source, type);
-        return adapter.playlistDetail(id).map(item -> container(item, type));
+        return Mono.defer(() -> adapter.containerDetail(type, id)).timeout(Duration.ofSeconds(12))
+                .map(item -> container(item, type));
     }
 
     public Mono<ContainerResource> albumForTrack(String source, String id) {
-        validateId(id);
-        if (!registry.descriptor(source).capabilities().album()) return Mono.error(unsupported("此音源不支持专辑"));
-        return registry.getRequired(source).getAlbumForSong(id).map(album -> new ContainerResource(
+        return albumInfo(source, id, true).map(album -> new ContainerResource(
                 album.id(), album.name(), source, "album", album.coverUrl(), album.trackCount()));
     }
 
@@ -75,7 +128,7 @@ public class ResourceService {
         int offset = cursors.read(cursor, binding);
         if ("album".equals(type)) {
             if (!registry.descriptor(source).capabilities().album()) return Mono.error(unsupported("此音源不支持专辑"));
-            return adapter.getAlbum(id).map(album -> {
+            return albumInfo(source, id, false).map(album -> {
                 int start = Math.min(offset, album.songs().size());
                 int end = Math.min(start + limit, album.songs().size());
                 return new ResourcePage<>(album.songs().subList(start, end).stream().map(this::withExternalUrl).toList(),
@@ -83,7 +136,7 @@ public class ResourceService {
             });
         }
         requireContainerType(source, type);
-        return adapter.playlistPage(id, offset, limit).timeout(Duration.ofSeconds(12))
+        return Mono.defer(() -> adapter.containerPage(type, id, offset, limit)).timeout(Duration.ofSeconds(12))
                 .map(page -> new ResourcePage<>(page.items().stream().map(this::withExternalUrl).toList(),
                         next(page, binding, offset), page.total()));
     }
@@ -122,7 +175,7 @@ public class ResourceService {
 
     private void requireContainerType(String source, String type) {
         if (registry.descriptor(source).collectionCategories().stream()
-                .noneMatch(item -> item.collectionType().equals(type))) throw unsupported("容器类型不支持");
+                .noneMatch(item -> "CONTAINER".equals(item.entryKind()) && item.collectionType().equals(type))) throw unsupported("容器类型不支持");
     }
 
     private ContainerResource container(Playlist playlist, String type) {
@@ -138,6 +191,12 @@ public class ResourceService {
     public static void validateId(String id) {
         if (id == null || id.isBlank() || id.length() > 512 || id.chars().anyMatch(Character::isISOControl)) {
             throw new ApiRequestException("INVALID_RESOURCE: 无效资源或公开用户标识");
+        }
+    }
+
+    public static void validateQuery(String query) {
+        if (query == null || query.isBlank() || query.length() > 200 || query.chars().anyMatch(Character::isISOControl)) {
+            throw new ApiRequestException("INVALID_RESOURCE: 搜索词须为1到200个字符");
         }
     }
 

@@ -82,7 +82,7 @@ public class PlaybackRecoveryController {
         if (inFlight != null && Objects.equals(cachedPlayback, playbackId) && Objects.equals(cachedSource, track.platform())
                 && Objects.equals(cachedAuthorizationScope, authorizationScope) && System.currentTimeMillis() - cachedAt < 5000) return inFlight;
         cachedPlayback = playbackId; cachedSource = track.platform(); cachedAuthorizationScope = authorizationScope; cachedAt = System.currentTimeMillis();
-        inFlight = delivery.refreshSongUrl(track.platform(), track.id()).timeout(Duration.ofSeconds(20))
+        inFlight = delivery.refreshSongUrl(track).timeout(Duration.ofSeconds(20))
                 .map(url -> {
                     if (!Objects.equals(delivery.authorizationScope(track.platform()), authorizationScope)) throw new ApiRequestException("媒体凭据已更新，请重试");
                     return new PlayableMusic(track.id(), track.name(), track.artists(), track.duration(), track.platform(), url, track.coverUrl(), false, track.kind(), track.externalUrl());

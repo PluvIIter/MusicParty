@@ -56,6 +56,12 @@ public class SourceRegistry {
         return true;
     }
 
+    public String externalUrl(String id, String resourceId) {
+        IMusicApiService adapter = adapters.get(id);
+        if (adapter == null) throw new ApiRequestException("SOURCE_NOT_FOUND: 音源不存在");
+        return adapter.externalUrl(resourceId);
+    }
+
     public SourceDescriptor descriptor(String id) {
         IMusicApiService adapter = adapters.get(id);
         if (adapter == null) throw new ApiRequestException("SOURCE_NOT_FOUND: 音源不存在");

@@ -136,6 +136,46 @@ class PrivateDjServiceTest {
     }
 
     @Test
+    void requestCreatedBeforeDisableCannotBecomeNewGenerationOnSubscribe() {
+        var request = service.nextSegment();
+        properties.getPrivateDj().setMode("OFF");
+        service.invalidate();
+        assertThrows(ApiRequestException.class, request::block);
+        verify(provider, never()).nextSegments(anyString());
+    }
+
+    @Test
+    void disableDuringAuthorizationSnapshotRejectsOldRequestBeforeBatchCreation() throws Exception {
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(provider.credentialRevision()).thenAnswer(invocation -> {
+            entered.countDown();
+            assertTrue(release.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            return 0L;
+        });
+        var future = java.util.concurrent.CompletableFuture.supplyAsync(() -> service.nextSegment().block());
+        try {
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            properties.getPrivateDj().setMode("OFF");
+            service.invalidate();
+        } finally {
+            release.countDown();
+        }
+        assertThrows(java.util.concurrent.ExecutionException.class,
+                () -> future.get(5, java.util.concurrent.TimeUnit.SECONDS));
+        verify(provider, never()).nextSegments(anyString());
+    }
+
+    @Test
+    void forcedFmMarkerStillRejectsRequestAfterConfiguredModeChanges() {
+        properties.getPrivateDj().setMode("DJ");
+        var request = service.nextFmSegment();
+        properties.getPrivateDj().setMode("FM");
+        service.invalidate();
+        assertThrows(ApiRequestException.class, request::block);
+    }
+
+    @Test
     void concurrentRequestsShareOneFetchButReceiveDifferentSegments() {
         Sinks.One<List<PrivateDjSegment>> response = Sinks.one();
         when(provider.nextSegments("FM")).thenReturn(response.asMono());

@@ -85,6 +85,49 @@ class ContainerImportServiceTest {
     }
 
     @Test
+    void totalDeadlineIncludesNeverCompletingContainerMetadata() {
+        when(resources.container(anyString(), anyString(), anyString())).thenReturn(Mono.never());
+        assertTrue(imports.enqueue(request, "session").block(java.time.Duration.ofSeconds(35)).error());
+        assertTrue(queue.getQueueSnapshot().isEmpty());
+    }
+
+    @Test
+    void disableAndReenableDuringFetchRejectsOriginalAuthorizationEpoch() {
+        Sinks.One<List<Music>> response = Sinks.one();
+        when(resources.importTracks(anyString(), anyString(), anyString(), anyInt())).thenReturn(response.asMono());
+        when(sources.authorizationEpoch("third")).thenReturn(0L);
+        var result = imports.enqueue(request, "session").toFuture();
+        when(sources.authorizationEpoch("third")).thenReturn(2L);
+        response.tryEmitValue(List.of(track));
+        assertTrue(result.join().error());
+        assertTrue(queue.getQueueSnapshot().isEmpty());
+    }
+
+    @Test
+    void commitRevalidatesMemberInsideQueueGate() {
+        when(users.getUser("session")).thenAnswer(invocation -> {
+            if (Thread.holdsLock(queue)) {
+                assertTrue(Thread.holdsLock(users));
+                assertTrue(Thread.holdsLock(sources));
+                return Optional.empty();
+            }
+            return Optional.of(new User("member", "session", "Listener"));
+        });
+        assertTrue(imports.enqueue(request, "session").block().error());
+        assertTrue(queue.getQueueSnapshot().isEmpty());
+    }
+
+    @Test
+    void postCommitPrefetchFailureDoesNotReportImportFailure() {
+        doThrow(new IllegalStateException("disabled after commit")).when(media).prefetch(any());
+        var result = imports.enqueue(request, "session").block();
+        assertFalse(result.error());
+        assertEquals(1, result.added());
+        assertEquals(result, imports.enqueue(request, "session").block());
+        assertEquals(1, queue.getQueueSnapshot().size());
+    }
+
+    @Test
     void malformedMixedSourceBatchIsRejectedBeforeAnyInsertion() {
         when(resources.importTracks(eq("third"), eq("favorites"), eq("opaque:id"), anyInt()))
                 .thenReturn(Mono.just(List.of(track, new Music("2", "Other", List.of(), 1000, "other", null))));

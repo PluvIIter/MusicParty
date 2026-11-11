@@ -228,9 +228,12 @@ public class NeteaseMusicApiService implements IMusicApiService {
                     String extension = Set.of("flac", "m4a", "mp4", "ogg", "mp3").contains(type) ? "." + type : ".mp3";
                     String representation = "audio:" + type + ":" + data.path("br").asText(quality)
                             + ":trial:" + (data.hasNonNull("freeTrialInfo")) + ":" + data.path("time").asText("");
+                    String timeline = "trial:" + data.hasNonNull("freeTrialInfo") + ":duration:" + data.path("time").asText("")
+                            + ":start:" + data.path("freeTrialInfo").path("start").asText("")
+                            + ":end:" + data.path("freeTrialInfo").path("end").asText("");
                     return new ResolvedMedia(new ResourceKey(PLATFORM, id), representation, upgradeToHttps(url), mime,
                             extension, Instant.now().plusSeconds(Math.min(600, Math.max(1, data.path("expi").asLong(600)))),
-                            consumer == MediaConsumer.SERVER ? Map.of("Referer", "https://music.163.com/", "User-Agent", "Mozilla/5.0") : Map.of(), true);
+                            consumer == MediaConsumer.SERVER ? Map.of("Referer", "https://music.163.com/", "User-Agent", "Mozilla/5.0") : Map.of(), true, timeline);
                 });
     }
 
@@ -355,6 +358,16 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private Playlist mapPlaylist(JsonNode pl) {
         return new Playlist(pl.path("id").asText(), pl.path("name").asText(),
                 upgradeToHttps(pl.path("coverImgUrl").asText()), pl.path("trackCount").asInt(), PLATFORM);
+    }
+
+    @Override
+    public Mono<Playlist> containerDetail(String type, String id) {
+        return "playlist".equals(type) ? playlistDetail(id) : IMusicApiService.super.containerDetail(type, id);
+    }
+
+    @Override
+    public Mono<org.thornex.musicparty.source.SourcePage<Music>> containerPage(String type, String id, int offset, int limit) {
+        return "playlist".equals(type) ? playlistPage(id, offset, limit) : IMusicApiService.super.containerPage(type, id, offset, limit);
     }
 
     @Override

@@ -28,6 +28,30 @@ public class MediaDeliveryService {
     private final Map<String, Mono<ResolvedMedia>> resolutions = new ConcurrentHashMap<>();
     private final Map<String, Ticket> tickets = new ConcurrentHashMap<>();
     private final Map<String, String> representations = new ConcurrentHashMap<>();
+    private final Map<String, String> downloadAliases = new ConcurrentHashMap<>();
+    private final java.util.Set<String> failedDownloads = ConcurrentHashMap.newKeySet();
+    private PlayableMusic activePlayback;
+    private final Map<PlaybackIdentity, String> playbackTimelines = new java.util.HashMap<>();
+    private final Map<PlaybackIdentity, String> playbackAssets = new java.util.HashMap<>();
+    private final java.lang.ref.ReferenceQueue<PlayableMusic> playbackReferences = new java.lang.ref.ReferenceQueue<>();
+
+    private static final class PlaybackIdentity extends java.lang.ref.WeakReference<PlayableMusic> {
+        private final int hash;
+        PlaybackIdentity(PlayableMusic music, java.lang.ref.ReferenceQueue<PlayableMusic> queue) {
+            super(music, queue);
+            hash = System.identityHashCode(music);
+        }
+        @Override public int hashCode() { return hash; }
+        @Override public boolean equals(Object other) {
+            return this == other || other instanceof PlaybackIdentity identity && get() != null && get() == identity.get();
+        }
+    }
+    private final Map<String, String> assetTimelines = java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > 4096;
+        }
+    });
     private AutoCloseable playbackPin;
     private String playbackAsset;
     private final Map<String, VoiceAsset> voices = new ConcurrentHashMap<>();
@@ -87,14 +111,20 @@ public class MediaDeliveryService {
                 if (registry.deliveryMode(sourceId) == DeliveryMode.DIRECT_URL) {
                     return resolve(sourceId, id, MediaConsumer.BROWSER, false).map(media -> {
                         representations.put(ResourceKey.encode(sourceId, id), media.representationKey());
-                        return playable(music, media.url());
+                        PlayableMusic prepared = playable(music, media.url());
+                        rememberTimeline(prepared, media.timelineKey());
+                        return prepared;
                     });
                 }
-                prefetch(music);
-                return awaitReady(music).map(key -> {
+                return prepareDownload(music).flatMap(key -> awaitDownload(music.platform(), key)).map(key -> {
                     var entry = cache.getCacheEntry(key);
                     if (entry != null && entry.getRepresentationKey() != null) representations.put(ResourceKey.encode(sourceId, id), entry.getRepresentationKey());
-                    return playable(music, issueTicket(sourceId, key));
+                    PlayableMusic prepared = playable(music, issueTicket(sourceId, key));
+                    String timeline = assetTimelines.get(key);
+                    if (timeline == null && entry != null) timeline = entry.getRepresentationKey();
+                    if (timeline != null) rememberTimeline(prepared, timeline);
+                    synchronized (this) { playbackAssets.put(new PlaybackIdentity(prepared, playbackReferences), key); }
+                    return prepared;
                 });
             });
         });
@@ -177,29 +207,48 @@ public class MediaDeliveryService {
     }
 
     public void prefetch(Music music) {
-        var adapter = registry.getRequired(music.platform());
+        registry.getRequired(music.platform());
         if (registry.deliveryMode(music.platform()) != DeliveryMode.SERVER_DOWNLOAD) return;
-        long revision = adapter.credentialRevision();
-        String resource = ResourceKey.encode(music.platform(), music.id());
-        long epoch = registry.authorizationEpoch(music.platform());
-        String key = resource + ":credentials:" + revision + ":epoch:" + epoch + ":session:" + authorizationSession;
-        cache.submitDownload(key, resolve(music.platform(), music.id(), MediaConsumer.SERVER, false)
-                        .map(media -> new LocalCacheService.DownloadSource(media.url(), media.extension(), media.headers(), media.mimeType(), media.representationKey())),
-                Map.of(), () -> {
-                    if (registry.getRequired(music.platform()).credentialRevision() != revision || registry.authorizationEpoch(music.platform()) != epoch) {
-                        throw new ApiRequestException("媒体凭据已更新，请重新准备");
-                    }
-                });
+        String logical = assetKey(music.platform(), music.id());
+        prepareDownload(music).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                .subscribe(key -> failedDownloads.remove(logical), error -> failedDownloads.add(logical));
     }
 
-    private Mono<String> awaitReady(Music music) {
-        return Flux.interval(Duration.ZERO, Duration.ofMillis(100)).concatMap(tick -> Mono.fromCallable(() -> {
-            registry.getRequired(music.platform());
-            String key = assetKey(music.platform(), music.id());
+    private Mono<String> prepareDownload(Music music) {
+        return Mono.defer(() -> {
+            String scope = authorizationScope(music.platform());
+            String logical = assetKey(music.platform(), music.id());
+            return resolve(music.platform(), music.id(), MediaConsumer.SERVER, false).map(media -> {
+                requireAuthorization(music.platform(), scope);
+                int separator = logical.lastIndexOf(":credentials:");
+                String version = fingerprint(media.timelineKey().length() + ":" + media.timelineKey() + media.representationKey());
+                String key = logical.substring(0, separator) + ":variant:" + version + logical.substring(separator);
+                assetTimelines.put(key, media.timelineKey());
+                downloadAliases.put(logical, key);
+                failedDownloads.remove(logical);
+                cache.submitDownload(key, Mono.just(new LocalCacheService.DownloadSource(media.url(), media.extension(), media.headers(),
+                                media.mimeType(), media.representationKey() + ":timeline:" + media.timelineKey())), Map.of(),
+                        () -> requireAuthorization(music.platform(), scope));
+                return key;
+            });
+        });
+    }
+
+    private static String fingerprint(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException error) { throw new IllegalStateException(error); }
+    }
+
+    private Mono<String> awaitDownload(String sourceId, String key) {
+        String scope = authorizationScope(sourceId);
+        return Flux.interval(Duration.ZERO, Duration.ofMillis(100)).map(tick -> {
+            requireAuthorization(sourceId, scope);
             CacheStatus status = cache.getStatus(key);
             if (status == CacheStatus.FAILED) throw new ApiRequestException("媒体准备失败");
             return status == CacheStatus.COMPLETED ? key : "";
-        })).filter(key -> !key.isEmpty()).next().timeout(Duration.ofMinutes(5));
+        }).filter(value -> !value.isEmpty()).next().timeout(Duration.ofMinutes(5));
     }
 
     private String assetKey(String sourceId, String id) {
@@ -210,7 +259,10 @@ public class MediaDeliveryService {
     public QueueItemStatus status(Music music) {
         if (!registry.isEnabled(music.platform())) return QueueItemStatus.FAILED;
         if (registry.deliveryMode(music.platform()) == DeliveryMode.DIRECT_URL) return QueueItemStatus.READY;
-        CacheStatus status = cache.getStatus(assetKey(music.platform(), music.id()));
+        String logical = assetKey(music.platform(), music.id());
+        if (failedDownloads.contains(logical)) return QueueItemStatus.FAILED;
+        String alias = downloadAliases.get(logical);
+        CacheStatus status = alias == null ? null : cache.getStatus(alias);
         if (status == null || status == CacheStatus.PENDING) return QueueItemStatus.PENDING;
         return switch (status) {
             case COMPLETED -> QueueItemStatus.READY;
@@ -220,16 +272,41 @@ public class MediaDeliveryService {
         };
     }
 
+    public Mono<String> refreshSongUrl(PlayableMusic current) {
+        return Mono.defer(() -> {
+            if (!"SONG".equals(current.kind())) return Mono.error(new ApiRequestException("MEDIA_KIND_UNAVAILABLE"));
+            String source = current.platform();
+            String scope = authorizationScope(source);
+            return playbackTimeline(current).flatMap(timeline -> {
+                if (registry.deliveryMode(source) == DeliveryMode.SERVER_DOWNLOAD) {
+                    return getMetadata(source, current.id()).flatMap(metadata -> {
+                        return prepareDownload(metadata).flatMap(key -> awaitDownload(source, key)).map(key -> {
+                            requireAuthorization(source, scope);
+                            requireTimeline(timeline, cachedTimeline(key));
+                            return issueTicket(source, key);
+                        });
+                    });
+                }
+                return resolve(source, current.id(), MediaConsumer.BROWSER, false).map(media -> {
+                    requireAuthorization(source, scope);
+                    requireTimeline(timeline, media.timelineKey());
+                    return media.url();
+                });
+            });
+        });
+    }
+
     public Mono<String> refreshSongUrl(String sourceId, String id) {
         return Mono.defer(() -> {
             registry.getRequired(sourceId);
             if (registry.deliveryMode(sourceId) == DeliveryMode.SERVER_DOWNLOAD) {
                 String previous = representations.get(ResourceKey.encode(sourceId, id));
                 return getMetadata(sourceId, id).flatMap(music -> {
-                    prefetch(music);
-                    return awaitReady(music).map(key -> {
+                    return prepareDownload(music).flatMap(key -> awaitDownload(sourceId, key)).map(key -> {
                         var entry = cache.getCacheEntry(key);
                         String current = entry == null ? null : entry.getRepresentationKey();
+                        int timelineMarker = current == null ? -1 : current.indexOf(":timeline:");
+                        if (timelineMarker >= 0) current = current.substring(0, timelineMarker);
                         if (previous != null && !previous.equals(current)) throw new ApiRequestException("MEDIA_CONTENT_CHANGED");
                         return issueTicket(sourceId, key);
                     });
@@ -245,7 +322,7 @@ public class MediaDeliveryService {
 
     public Mono<ServerInput> serverInput(PlayableMusic music) {
         return Mono.defer(() -> {
-            registry.getRequired(music.platform());
+            requireRadio(music.platform());
             if ("VOICE".equals(music.kind())) {
                 VoiceAsset asset = voiceAsset(music);
                 if (registry.deliveryMode(music.platform()) == DeliveryMode.SERVER_DOWNLOAD) {
@@ -254,23 +331,83 @@ public class MediaDeliveryService {
                     return Mono.just(new ServerInput(path.toString(), Map.of(), asset.assetKey()));
                 }
                 return MediaUrlPolicy.validate(asset.media()).map(media -> {
+                    requireRadio(music.platform());
                     voiceAsset(music);
-                    return new ServerInput(media.url(), media.headers(), ResourceKey.encode(music.platform(), music.id()) + ":" + media.representationKey());
+                    return new ServerInput(media.url(), media.headers(), ResourceKey.encode(music.platform(), music.id()) + ":" + media.representationKey() + ":timeline:" + media.timelineKey());
                 });
             }
             if (!"SONG".equals(music.kind())) return Mono.error(new ApiRequestException("MEDIA_KIND_UNAVAILABLE"));
-            String key = assetKey(music.platform(), music.id());
-            var path = cache.localPath(key);
-            if (path != null) return Mono.just(new ServerInput(path.toString(), Map.of(), key));
-            if (registry.deliveryMode(music.platform()) == DeliveryMode.SERVER_DOWNLOAD) {
-                return getMetadata(music.platform(), music.id()).flatMap(metadata -> {
-                    prefetch(metadata);
-                    return awaitReady(metadata).map(asset -> new ServerInput(cache.localPath(asset).toString(), Map.of(), asset));
+            String scope = authorizationScope(music.platform());
+            return playbackTimeline(music).flatMap(timeline -> {
+                requireRadio(music.platform());
+                requireAuthorization(music.platform(), scope);
+                if (registry.deliveryMode(music.platform()) == DeliveryMode.SERVER_DOWNLOAD) {
+                    return getMetadata(music.platform(), music.id()).flatMap(metadata -> {
+                        return prepareDownload(metadata).flatMap(asset -> awaitDownload(music.platform(), asset)).map(asset -> {
+                            requireRadio(music.platform());
+                            requireAuthorization(music.platform(), scope);
+                            requireTimeline(timeline, cachedTimeline(asset));
+                            var readyPath = cache.localPath(asset);
+                            if (readyPath == null) throw new ApiRequestException("MEDIA_UNAVAILABLE");
+                            return new ServerInput(readyPath.toString(), Map.of(), asset);
+                        });
+                    });
+                }
+                return resolve(music.platform(), music.id(), MediaConsumer.SERVER, false).map(media -> {
+                    requireRadio(music.platform());
+                    requireAuthorization(music.platform(), scope);
+                    requireTimeline(timeline, media.timelineKey());
+                    return new ServerInput(media.url(), media.headers(), ResourceKey.encode(music.platform(), music.id()) + ":" + media.representationKey() + ":timeline:" + media.timelineKey());
                 });
-            }
-            return resolve(music.platform(), music.id(), MediaConsumer.SERVER, false)
-                    .map(media -> new ServerInput(media.url(), media.headers(), ResourceKey.encode(music.platform(), music.id()) + ":" + media.representationKey()));
+            });
         });
+    }
+
+    private synchronized void prunePlaybackTimelines() {
+        java.lang.ref.Reference<? extends PlayableMusic> expired;
+        while ((expired = playbackReferences.poll()) != null) {
+            playbackTimelines.remove(expired);
+            playbackAssets.remove(expired);
+        }
+    }
+
+    private synchronized void rememberTimeline(PlayableMusic music, String timeline) {
+        prunePlaybackTimelines();
+        playbackTimelines.put(new PlaybackIdentity(music, playbackReferences), timeline);
+    }
+
+    private synchronized Mono<String> playbackTimeline(PlayableMusic music) {
+        prunePlaybackTimelines();
+        String timeline = playbackTimelines.get(new PlaybackIdentity(music, null));
+        return timeline == null ? Mono.error(new ApiRequestException("MEDIA_CONTENT_CHANGED")) : Mono.just(timeline);
+    }
+
+    public synchronized String timelineIdentity(PlayableMusic music) {
+        if ("VOICE".equals(music.kind())) return voiceAsset(music).media().timelineKey();
+        prunePlaybackTimelines();
+        String timeline = playbackTimelines.get(new PlaybackIdentity(music, null));
+        if (timeline == null) throw new ApiRequestException("MEDIA_CONTENT_CHANGED");
+        return timeline;
+    }
+
+    private String cachedTimeline(String key) {
+        String timeline = assetTimelines.get(key);
+        if (timeline == null) {
+            var entry = cache.getCacheEntry(key);
+            timeline = entry == null ? null : entry.getRepresentationKey();
+            int marker = timeline == null ? -1 : timeline.indexOf(":timeline:");
+            if (marker >= 0) timeline = timeline.substring(marker + ":timeline:".length());
+        }
+        return timeline;
+    }
+
+    private void requireTimeline(String expected, String actual) {
+        if (expected == null || !expected.equals(actual)) throw new ApiRequestException("MEDIA_CONTENT_CHANGED");
+    }
+
+    private void requireRadio(String sourceId) {
+        registry.getRequired(sourceId);
+        if (!registry.descriptor(sourceId).capabilities().radioInput()) throw new ApiRequestException("CAPABILITY_UNAVAILABLE: radioInput");
     }
 
     public String authorizationScope(String sourceId) {
@@ -278,14 +415,14 @@ public class MediaDeliveryService {
     }
 
     public boolean inputAvailable(PlayableMusic music) {
-        if (!registry.isEnabled(music.platform())) return false;
+        if (!sourceAvailable(music.platform())) return false;
         if (!"VOICE".equals(music.kind())) return true;
         try { voiceAsset(music); return true; }
         catch (RuntimeException error) { return false; }
     }
 
     public boolean sourceAvailable(String sourceId) {
-        return registry.isEnabled(sourceId);
+        return registry.isEnabled(sourceId) && registry.descriptor(sourceId).capabilities().radioInput();
     }
 
     public AutoCloseable pinInput(ServerInput input) {
@@ -295,10 +432,13 @@ public class MediaDeliveryService {
     @org.springframework.context.event.EventListener
     public synchronized void onPlayerState(org.thornex.musicparty.event.PlayerStateEvent event) {
         var now = event.getState().nowPlaying();
+        activePlayback = now == null ? null : now.music();
+        prunePlaybackTimelines();
         String next = null;
         if (now != null && registry.isEnabled(now.music().platform())) {
             try {
-                next = "VOICE".equals(now.music().kind()) ? voiceAsset(now.music()).assetKey() : assetKey(now.music().platform(), now.music().id());
+                next = "VOICE".equals(now.music().kind()) ? voiceAsset(now.music()).assetKey()
+                        : playbackAssets.get(new PlaybackIdentity(now.music(), null));
             } catch (ApiRequestException ignored) { }
         }
         if (java.util.Objects.equals(next, playbackAsset)) return;
