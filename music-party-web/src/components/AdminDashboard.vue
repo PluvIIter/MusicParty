@@ -112,9 +112,9 @@
                                         <!-- Shuffle Controls -->
                                         <div
                                             v-if="playerStore.isShuffle || playerStore.isRoundRobin"
-                                            class="grid grid-cols-2 gap-3 pb-3 border-b border-line"
+                                            class="pb-3 border-b border-line"
                                         >
-                                            <div class="flex items-center justify-between border-l border-line pl-3">
+                                            <div class="flex items-center justify-between">
                                                 <div class="flex flex-col">
                                                     <span class="text-[10px] font-bold text-ink">{{
                                                         playerStore.allowOfflineShuffle ? '含离线' : '仅在线'
