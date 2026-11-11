@@ -193,25 +193,27 @@ public class AdminController {
                                              @RequestBody AdminPrivateDjUpdateRequest request) {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
-        AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
+        synchronized (musicPlayerService) {
+            AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
 
-        // 模式即开关：OFF=关闭 / FM=私人FM / DJ=私人DJ
-        if (request.mode() != null) {
-            if (!Set.of("OFF", "FM", "DJ").contains(request.mode())) {
-                return ResponseEntity.badRequest().body(Map.of("message", "模式仅支持 关闭/私人FM/私人DJ"));
+            // 模式即开关：OFF=关闭 / FM=私人FM / DJ=私人DJ
+            if (request.mode() != null) {
+                if (!Set.of("OFF", "FM", "DJ").contains(request.mode())) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "模式仅支持 关闭/私人FM/私人DJ"));
+                }
+                if (!"OFF".equals(request.mode()) && !privateDjService.isAvailable()) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "CAPABILITY_UNAVAILABLE: 配置的私人FM/DJ音源未启用或没有推荐实现"));
+                }
+                c.setMode(request.mode());
             }
-            if (!"OFF".equals(request.mode()) && !privateDjService.isAvailable()) {
-                return ResponseEntity.badRequest().body(Map.of("message", "CAPABILITY_UNAVAILABLE: 暂无支持公开推荐的音源"));
-            }
-            c.setMode(request.mode());
+            if (request.fillBlankEnabled() != null) c.setFillBlankEnabled(request.fillBlankEnabled());
+            if (request.joinQueueEnabled() != null) c.setJoinQueueEnabled(request.joinQueueEnabled());
+            if (request.custodyEnabled() != null) c.setCustodyEnabled(request.custodyEnabled());
+
+            privateDjService.invalidate();
+            musicPlayerService.broadcastFullPlayerState();
+            return ResponseEntity.ok(Map.of("message", "私人电台/私人DJ 配置已更新"));
         }
-        if (request.fillBlankEnabled() != null) c.setFillBlankEnabled(request.fillBlankEnabled());
-        if (request.joinQueueEnabled() != null) c.setJoinQueueEnabled(request.joinQueueEnabled());
-        if (request.custodyEnabled() != null) c.setCustodyEnabled(request.custodyEnabled());
-
-        privateDjService.invalidate();
-        musicPlayerService.broadcastFullPlayerState();
-        return ResponseEntity.ok(Map.of("message", "私人电台/私人DJ 配置已更新"));
     }
 
     // Keep compatibility for now or remove if sure

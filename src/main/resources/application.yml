@@ -37,6 +37,8 @@ app:
       cookie: ${BILIBILI_COOKIE:}
       enabled: ${BILIBILI_ENABLED:true}
       max-duration-minutes: ${BILIBILI_MAX_DURATION_MINUTES:10}
+    private-dj:
+      source: ${PRIVATE_DJ_SOURCE:netease}
     queue:
       max-size: ${QUEUE_MAX_SIZE:1000}
       history-size: ${QUEUE_HISTORY_SIZE:50}

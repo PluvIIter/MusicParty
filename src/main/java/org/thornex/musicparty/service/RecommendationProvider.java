@@ -8,6 +8,7 @@ import java.util.List;
 
 public interface RecommendationProvider {
     String sourceId();
+    default long credentialRevision() { return 0; }
     Mono<List<PrivateDjSegment>> nextSegments(String mode);
     Mono<PlayableMusic> getPlayable(PrivateDjSegment segment);
 }

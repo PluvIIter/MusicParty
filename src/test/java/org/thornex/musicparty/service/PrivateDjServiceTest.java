@@ -28,6 +28,7 @@ class PrivateDjServiceTest {
     void setUp() {
         properties = new AppProperties();
         properties.getPrivateDj().setMode("FM");
+        properties.getPrivateDj().setSource("public-feed");
         sources = mock(SourceRegistry.class);
         provider = mock(RecommendationProvider.class);
         when(provider.sourceId()).thenReturn("public-feed");
@@ -65,7 +66,8 @@ class PrivateDjServiceTest {
         assertFalse(service.isAvailable());
         ApiRequestException error = assertThrows(ApiRequestException.class, () -> service.nextSegment().block());
         assertTrue(error.getMessage().contains("CAPABILITY_UNAVAILABLE"));
-        verifyNoInteractions(provider);
+        verify(provider, never()).nextSegments(anyString());
+        verify(provider, never()).getPlayable(any());
     }
 
     @Test
@@ -90,11 +92,49 @@ class PrivateDjServiceTest {
     }
 
     @Test
+    void configuredSourceNeverFallsBackToAnotherAvailableProvider() {
+        properties.getPrivateDj().setSource("missing");
+        assertFalse(service.isAvailable());
+        assertThrows(ApiRequestException.class, () -> service.nextSegment().block());
+        verify(provider, never()).nextSegments(anyString());
+    }
+
+    @Test
+    void credentialChangeDiscardsBatchAndRejectsHandedOutSegment() {
+        var old = service.nextSegment().block();
+        when(provider.credentialRevision()).thenReturn(1L);
+        assertThrows(ApiRequestException.class, () -> service.getPlayable(old).block());
+        assertEquals(first, service.nextSegment().block());
+        verify(provider, times(2)).nextSegments("FM");
+    }
+
+    @Test
+    void selectionChangesWhileFetchingCannotCommitOldBatch() {
+        Sinks.One<List<PrivateDjSegment>> response = Sinks.one();
+        when(provider.nextSegments("FM")).thenReturn(response.asMono());
+        var future = service.nextSegment().toFuture();
+        properties.getPrivateDj().setSource("missing");
+        response.tryEmitValue(List.of(first));
+        assertTrue(future.isCompletedExceptionally());
+    }
+
+    @Test
+    void concurrentRequestsShareOneFetchButReceiveDifferentSegments() {
+        Sinks.One<List<PrivateDjSegment>> response = Sinks.one();
+        when(provider.nextSegments("FM")).thenReturn(response.asMono());
+        var one = service.nextSegment().toFuture();
+        var two = service.nextSegment().toFuture();
+        response.tryEmitValue(List.of(first, second));
+        assertNotEquals(one.join(), two.join());
+        verify(provider).nextSegments("FM");
+    }
+
+    @Test
     void playableResolutionUsesProviderRatherThanInventingTrackSource() {
         service.nextSegment().block();
         var playable = new PlayableMusic("1", "First", List.of(), 1000, "public-feed", "https://audio.invalid", null, false);
         when(provider.getPlayable(first)).thenReturn(Mono.just(playable));
         assertSame(playable, service.getPlayable(first).block());
-        verify(sources, times(2)).getRequired("public-feed");
+        verify(sources, atLeastOnce()).getRequired("public-feed");
     }
 }

@@ -34,6 +34,7 @@ public class AppProperties {
     /** 私人电台/私人DJ 模块配置（仅运行时生效） */
     @Data
     public static class PrivateDjConfig {
+        private String source = "netease";
         private String mode = "OFF";              // 三态开关：OFF=关闭 / FM=私人FM / DJ=私人DJ（选模式即开关，无需总开关）
         private boolean fillBlankEnabled = false; // 填充空白
         private boolean joinQueueEnabled = false; // 加入队列

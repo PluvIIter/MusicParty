@@ -35,6 +35,23 @@ class LiveStreamMediaInputTest {
         service.cleanup();
     }
 
+    @Test void expiredOrUnassociatedVoiceStopsPreparedRadioTarget() throws Exception {
+        var delivery = mock(MediaDeliveryService.class);
+        when(delivery.sourceAvailable("third")).thenReturn(true); when(delivery.authorizationScope("third")).thenReturn("scope");
+        var service = new LiveStreamService(delivery, mock(ApplicationEventPublisher.class), new AppProperties());
+        var voice = new PlayableMusic("voice:opaque", "DJ", List.of(), 10000, "third", "https://cdn.test/voice", "", false, "VOICE");
+        ReflectionTestUtils.setField(service, "currentMusic", voice);
+        Class<?> type = Class.forName(LiveStreamService.class.getName() + "$TranscodeTarget");
+        var constructor = type.getDeclaredConstructor(String.class, Map.class, String.class); constructor.setAccessible(true);
+        Object target = constructor.newInstance(voice.url(), Map.of(), "voice-representation");
+        ReflectionTestUtils.setField(service, "preparedTarget", target);
+        ReflectionTestUtils.setField(service, "preparedResource", ResourceKey.encode("third", voice.id()) + ":auth:scope");
+        when(delivery.inputAvailable(voice)).thenReturn(true);
+        assertSame(target, ReflectionTestUtils.invokeMethod(service, "resolveTarget"));
+        when(delivery.inputAvailable(voice)).thenReturn(false);
+        assertNull(ReflectionTestUtils.invokeMethod(service, "resolveTarget"));
+    }
+
     @Test void preparedTargetIsIsolatedBySourceAndTrackIdentity() throws Exception {
         var delivery = mock(MediaDeliveryService.class);
         when(delivery.sourceAvailable("third")).thenReturn(true); when(delivery.authorizationScope("third")).thenReturn("scope");

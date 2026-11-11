@@ -149,7 +149,7 @@ public class MusicPlayerService {
             if (currentPos >= music.duration() && music.duration() > 0) {
                 log.info("Song finished: {}", music.name());
 
-                if (playMode.get() == PlayMode.REPEAT_ONE) {
+                if (playMode.get() == PlayMode.REPEAT_ONE && !currentIsVoice.get()) {
                     restartCurrentSong(music);
                     return;
                 }
@@ -401,12 +401,20 @@ public class MusicPlayerService {
     void setPausedForTest(boolean paused) { isPaused.set(paused); }
 
     private void loadFmDjPlayable(PrivateDjSegment segment, long version, boolean forceFm) {
+        String recommendationScope;
+        try { recommendationScope = privateDjService.authorizationScope(); }
+        catch (Exception error) { handleFmDjError(version, error); return; }
         Mono.defer(() -> privateDjService.getPlayable(segment))
                 .subscribeOn(Schedulers.boundedElastic())
                 .timeout(Duration.ofSeconds(10)).subscribe(
                 pm -> {
                     synchronized (this) {
                         if (playHeadVersion.get() != version) return;
+                        if (!privateDjService.isAvailable()
+                                || !Objects.equals(recommendationScope, privateDjService.authorizationScope())) {
+                            handleFmDjError(version, new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐音源或凭据已变化"));
+                            return;
+                        }
                         applyFmDjSegment(pm, segment, forceFm);
                     }
                 },
@@ -446,14 +454,15 @@ public class MusicPlayerService {
 
     private void handleFmDjError(long version, Throwable error) {
         if (playHeadVersion.get() != version) return;
-        log.error("Private FM/DJ segment failed: {}", error.getMessage());
+        log.warn("Private FM/DJ segment failed: {}", error instanceof ApiRequestException ? error.getMessage() : "upstream unavailable");
         int fails = fmDjFailCount.incrementAndGet();
         long backoff = Math.min(5_000L << Math.min(fails - 1, 4), FM_DJ_MAX_BACKOFF_MS);
         fmDjRetryAt.set(System.currentTimeMillis() + backoff);
         isLoading.set(false);
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this,
-                SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "私人FM/DJ 获取失败，稍后自动重试"));
+                SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
+                error instanceof ApiRequestException ? "私人FM/DJ: " + error.getMessage() : "私人FM/DJ 获取失败，稍后自动重试"));
     }
 
     private long calculateCurrentPosition() {

@@ -671,7 +671,9 @@ public class LiveStreamService {
     }
 
     private TranscodeTarget resolveTarget() {
-        if (currentMusic == null || !delivery.sourceAvailable(currentMusic.platform()) || !inputIdentity(currentMusic).equals(preparedResource)) return null;
+        if (currentMusic == null || !delivery.sourceAvailable(currentMusic.platform())
+                || ("VOICE".equals(currentMusic.kind()) && !delivery.inputAvailable(currentMusic))
+                || !inputIdentity(currentMusic).equals(preparedResource)) return null;
         return preparedTarget;
     }
 

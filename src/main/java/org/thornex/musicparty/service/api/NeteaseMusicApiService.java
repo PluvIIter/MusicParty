@@ -78,11 +78,58 @@ public class NeteaseMusicApiService implements IMusicApiService {
     }
 
     public Mono<JsonNode> fetchPersonalFm() {
-        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 不支持Cookie账号推荐"));
+        return fetchRecommendations("/personal_fm?cookie={cookie}&timestamp={timestamp}", null, null);
     }
 
     public Mono<JsonNode> fetchAidjRcmd(Double latitude, Double longitude) {
-        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 不支持Cookie账号推荐"));
+        return Mono.defer(() -> {
+            if ((latitude == null) != (longitude == null)
+                    || (latitude != null && (!Double.isFinite(latitude) || !Double.isFinite(longitude)
+                    || Math.abs(latitude) > 90 || Math.abs(longitude) > 180))) {
+                return Mono.error(new ApiRequestException("推荐位置参数无效"));
+            }
+            String route = "/aidj/content/rcmd?cookie={cookie}&timestamp={timestamp}";
+            if (latitude != null) route += "&latitude={latitude}&longitude={longitude}";
+            return fetchRecommendations(route, latitude, longitude);
+        });
+    }
+
+    private Mono<JsonNode> fetchRecommendations(String route, Double latitude, Double longitude) {
+        return Mono.defer(() -> {
+            if (!isCookieConfigured()) {
+                return Mono.error(new ApiRequestException("RECOMMENDATION_AUTH_REQUIRED: 请配置网易云 Cookie"));
+            }
+            long revision = credentialRevision.get();
+            Object[] parameters = latitude == null
+                    ? new Object[]{getCookie(), System.currentTimeMillis()}
+                    : new Object[]{getCookie(), System.currentTimeMillis(), latitude, longitude};
+            return webClient.get().uri(baseUrl + route, parameters).retrieve()
+                    .onStatus(HttpStatusCode::isError, response -> response.releaseBody().thenReturn(
+                            new ApiRequestException(response.statusCode().value() == 401 || response.statusCode().value() == 403
+                                    ? "RECOMMENDATION_AUTH_REQUIRED: 网易云 Cookie 无效或已过期"
+                                    : "RECOMMENDATION_UNAVAILABLE: 网易云推荐请求失败")))
+                    .bodyToMono(JsonNode.class)
+                    .switchIfEmpty(Mono.error(new ApiRequestException("RECOMMENDATION_UNAVAILABLE: 网易云推荐返回空响应")))
+                    .map(json -> {
+                        if (credentialRevision.get() != revision) throw new ApiRequestException("推荐凭据已更新，请重试");
+                        validateRecommendationResponse(json);
+                        return json;
+                    });
+        }).timeout(Duration.ofSeconds(15))
+                .onErrorMap(error -> error instanceof ApiRequestException ? error
+                        : new ApiRequestException("RECOMMENDATION_UNAVAILABLE: 网易云推荐请求失败"));
+    }
+
+    static void validateRecommendationResponse(JsonNode json) {
+        int code = json.path("code").asInt(-1);
+        int dataCode = json.path("data").path("code").asInt(200);
+        if (code == 301 || code == 302 || code == 401 || code == 403
+                || dataCode == 301 || dataCode == 302 || dataCode == 401 || dataCode == 403) {
+            throw new ApiRequestException("RECOMMENDATION_AUTH_REQUIRED: 网易云 Cookie 无效或已过期");
+        }
+        if (code != 200 || dataCode != 200) {
+            throw new ApiRequestException("RECOMMENDATION_UNAVAILABLE: 网易云推荐业务请求失败");
+        }
     }
 
     // Helper to force HTTPS
@@ -138,7 +185,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     @Override
     public SourceDescriptor descriptor() {
         return new SourceDescriptor(PLATFORM, "网易云音乐", "music",
-                new SourceCapabilities(true, true, true, true, true, false, true, true),
+                new SourceCapabilities(true, true, true, true, true, true, true, true),
                 Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
                 List.of(new CollectionCategory("playlists", "公开歌单", "playlist", "CONTAINER")));
     }

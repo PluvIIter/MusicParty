@@ -96,6 +96,24 @@ class LocalCacheServiceTest {
         } finally { cache.cleanup(); }
     }
 
+    @Test void voiceLaneBypassesBlockedSongAndPrefetchBacklog() throws Exception {
+        LocalCacheService cache = cache(new AppProperties(), mp3(64), new CopyOnWriteArrayList<>());
+        java.util.concurrent.CountDownLatch songStarted = new java.util.concurrent.CountDownLatch(1);
+        try {
+            cache.submitDownload("blocked-song", Mono.defer(() -> {
+                songStarted.countDown(); return Mono.never();
+            }), Map.of());
+            assertTrue(songStarted.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            for (int i = 0; i < 32; i++) cache.submitDownload("backlog-" + i, Mono.never(), Map.of());
+            long start = System.nanoTime();
+            cache.submitVoiceDownload("priority-voice", Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/voice", ".mp3")), Map.of(), () -> {});
+            await(cache, "priority-voice", CacheStatus.COMPLETED);
+            assertTrue(Duration.ofNanos(System.nanoTime() - start).compareTo(Duration.ofSeconds(3)) < 0);
+            assertEquals(CacheStatus.DOWNLOADING, cache.getStatus("blocked-song"));
+            assertEquals(CacheStatus.PENDING, cache.getStatus("backlog-31"));
+        } finally { cache.cleanup(); }
+    }
+
     @Test void legacyBareFilesNeverGuessSource() throws Exception {
         Files.write(directory.resolve("123.mp3"), mp3(64));
         LocalCacheService cache = cache(new AppProperties(), mp3(64), new CopyOnWriteArrayList<>());

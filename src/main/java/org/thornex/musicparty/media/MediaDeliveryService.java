@@ -3,6 +3,7 @@ package org.thornex.musicparty.media;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.PlayableMusic;
+import org.thornex.musicparty.dto.PrivateDjSegment;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
@@ -29,6 +30,14 @@ public class MediaDeliveryService {
     private final Map<String, String> representations = new ConcurrentHashMap<>();
     private AutoCloseable playbackPin;
     private String playbackAsset;
+    private final Map<String, VoiceAsset> voices = new ConcurrentHashMap<>();
+    private static final Duration VOICE_LIFETIME = Duration.ofMinutes(30);
+    private final Map<VoiceRequest, VoicePreparation> voicePreparations = new ConcurrentHashMap<>();
+    private record VoiceRequest(String sourceId, PrivateDjSegment.Voice segment, String authorizationScope) {}
+    private record VoicePreparation(Instant expiresAt, Mono<PlayableMusic> result) {}
+
+    private record VoiceAsset(String sourceId, String id, String authorizationScope, ResolvedMedia media,
+                              String assetKey, String deliveredUrl) {}
 
     record Ticket(String sourceId, String assetKey, long revision, long epoch, Instant expiresAt) {}
 
@@ -89,6 +98,82 @@ public class MediaDeliveryService {
                 });
             });
         });
+    }
+
+    public Mono<PlayableMusic> prepareVoice(String sourceId, PrivateDjSegment.Voice voice) {
+        return Mono.defer(() -> {
+            String scope = authorizationScope(sourceId);
+            if (voice.durationMs() <= 0 || voice.durationMs() > 600000) return Mono.error(new ApiRequestException("VOICE_DURATION_INVALID"));
+            Instant now = Instant.now();
+            voicePreparations.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));
+            VoiceRequest request = new VoiceRequest(sourceId, voice, scope);
+            VoicePreparation preparation = voicePreparations.computeIfAbsent(request, ignored -> {
+                if (voicePreparations.size() >= 1024) throw new ApiRequestException("VOICE_MEDIA_CAPACITY_EXCEEDED");
+                String id = "voice:" + UUID.randomUUID();
+                Mono<PlayableMusic> result = prepareVoiceAsset(sourceId, voice, scope, id)
+                        .cache(value -> VOICE_LIFETIME, error -> Duration.ZERO, () -> Duration.ZERO);
+                return new VoicePreparation(now.plus(VOICE_LIFETIME), result);
+            });
+            return preparation.result().map(music -> {
+                voiceAsset(music);
+                return music;
+            });
+        });
+    }
+
+    private Mono<PlayableMusic> prepareVoiceAsset(String sourceId, PrivateDjSegment.Voice voice, String scope, String id) {
+        return Mono.defer(() -> {
+            requireAuthorization(sourceId, scope);
+            Instant expiresAt = Instant.now().plus(VOICE_LIFETIME);
+            ResolvedMedia media = new ResolvedMedia(new ResourceKey(sourceId, id), "voice:" + id,
+                    voice.voiceUrl(), "audio/mpeg", ".mp3", expiresAt, Map.of(), true);
+            return MediaUrlPolicy.validate(media).flatMap(validated -> {
+                requireAuthorization(sourceId, scope);
+                Mono<String> delivered;
+                String key = assetKey(sourceId, id);
+                if (registry.deliveryMode(sourceId) == DeliveryMode.SERVER_DOWNLOAD) {
+                    cache.submitVoiceDownload(key, Mono.fromCallable(() -> {
+                                requireAuthorization(sourceId, scope);
+                                if (!expiresAt.isAfter(Instant.now())) throw new ApiRequestException("VOICE_MEDIA_EXPIRED");
+                                return new LocalCacheService.DownloadSource(validated.url(), validated.extension(), validated.headers(),
+                                        validated.mimeType(), validated.representationKey());
+                            }), Map.of(), () -> requireAuthorization(sourceId, scope));
+                    delivered = awaitVoice(sourceId, key, scope, expiresAt).map(asset -> issueTicket(sourceId, asset, expiresAt));
+                } else {
+                    delivered = Mono.just(validated.url());
+                }
+                return delivered.map(url -> {
+                    requireAuthorization(sourceId, scope);
+                    voices.entrySet().removeIf(entry -> !entry.getValue().media().expiresAt().isAfter(Instant.now()));
+                    if (voices.size() >= 1024) throw new ApiRequestException("VOICE_MEDIA_CAPACITY_EXCEEDED");
+                    voices.put(ResourceKey.encode(sourceId, id), new VoiceAsset(sourceId, id, scope, validated, key, url));
+                    return new PlayableMusic(id, "DJ 语音", java.util.List.of("DJ"), Math.max(0, voice.durationMs()),
+                            sourceId, url, voice.relatedCoverUrl(), false, "VOICE", null);
+                });
+            });
+        });
+    }
+
+    private Mono<String> awaitVoice(String sourceId, String key, String scope, Instant expiresAt) {
+        return Flux.interval(Duration.ZERO, Duration.ofMillis(100)).map(tick -> {
+            requireAuthorization(sourceId, scope);
+            if (!expiresAt.isAfter(Instant.now())) throw new ApiRequestException("VOICE_MEDIA_EXPIRED");
+            CacheStatus status = cache.getStatus(key);
+            if (status == CacheStatus.FAILED) throw new ApiRequestException("VOICE_MEDIA_PREPARATION_FAILED");
+            return status == CacheStatus.COMPLETED ? key : "";
+        }).filter(value -> !value.isEmpty()).next().timeout(Duration.ofMinutes(5));
+    }
+
+    private void requireAuthorization(String sourceId, String scope) {
+        if (!scope.equals(authorizationScope(sourceId))) throw new ApiRequestException("媒体凭据已更新，请重新准备");
+    }
+
+    private VoiceAsset voiceAsset(PlayableMusic music) {
+        VoiceAsset asset = voices.get(ResourceKey.encode(music.platform(), music.id()));
+        if (asset == null || !asset.deliveredUrl().equals(music.url())) throw new ApiRequestException("VOICE_MEDIA_UNAVAILABLE");
+        requireAuthorization(music.platform(), asset.authorizationScope());
+        if (!asset.media().expiresAt().isAfter(Instant.now())) throw new ApiRequestException("VOICE_MEDIA_EXPIRED");
+        return asset;
     }
 
     public void prefetch(Music music) {
@@ -161,7 +246,19 @@ public class MediaDeliveryService {
     public Mono<ServerInput> serverInput(PlayableMusic music) {
         return Mono.defer(() -> {
             registry.getRequired(music.platform());
-            if (!"SONG".equals(music.kind())) return Mono.error(new ApiRequestException("VOICE媒体不能按歌曲重新解析"));
+            if ("VOICE".equals(music.kind())) {
+                VoiceAsset asset = voiceAsset(music);
+                if (registry.deliveryMode(music.platform()) == DeliveryMode.SERVER_DOWNLOAD) {
+                    var path = cache.localPath(asset.assetKey());
+                    if (path == null) return Mono.error(new ApiRequestException("VOICE_MEDIA_UNAVAILABLE"));
+                    return Mono.just(new ServerInput(path.toString(), Map.of(), asset.assetKey()));
+                }
+                return MediaUrlPolicy.validate(asset.media()).map(media -> {
+                    voiceAsset(music);
+                    return new ServerInput(media.url(), media.headers(), ResourceKey.encode(music.platform(), music.id()) + ":" + media.representationKey());
+                });
+            }
+            if (!"SONG".equals(music.kind())) return Mono.error(new ApiRequestException("MEDIA_KIND_UNAVAILABLE"));
             String key = assetKey(music.platform(), music.id());
             var path = cache.localPath(key);
             if (path != null) return Mono.just(new ServerInput(path.toString(), Map.of(), key));
@@ -180,6 +277,13 @@ public class MediaDeliveryService {
         return authorizationSession + ":" + registry.getRequired(sourceId).credentialRevision() + ":" + registry.authorizationEpoch(sourceId);
     }
 
+    public boolean inputAvailable(PlayableMusic music) {
+        if (!registry.isEnabled(music.platform())) return false;
+        if (!"VOICE".equals(music.kind())) return true;
+        try { voiceAsset(music); return true; }
+        catch (RuntimeException error) { return false; }
+    }
+
     public boolean sourceAvailable(String sourceId) {
         return registry.isEnabled(sourceId);
     }
@@ -191,7 +295,12 @@ public class MediaDeliveryService {
     @org.springframework.context.event.EventListener
     public synchronized void onPlayerState(org.thornex.musicparty.event.PlayerStateEvent event) {
         var now = event.getState().nowPlaying();
-        String next = now == null || !registry.isEnabled(now.music().platform()) ? null : assetKey(now.music().platform(), now.music().id());
+        String next = null;
+        if (now != null && registry.isEnabled(now.music().platform())) {
+            try {
+                next = "VOICE".equals(now.music().kind()) ? voiceAsset(now.music()).assetKey() : assetKey(now.music().platform(), now.music().id());
+            } catch (ApiRequestException ignored) { }
+        }
         if (java.util.Objects.equals(next, playbackAsset)) return;
         if (playbackPin != null) {
             try { playbackPin.close(); } catch (Exception ignored) { }
@@ -204,7 +313,12 @@ public class MediaDeliveryService {
     }
 
     private String issueTicket(String source, String assetKey) {
+        return issueTicket(source, assetKey, Instant.now().plusSeconds(1800));
+    }
+
+    private String issueTicket(String source, String assetKey, Instant expiresAt) {
         Instant now = Instant.now();
+        if (!expiresAt.isAfter(now)) throw new ApiRequestException("媒体访问已过期");
         tickets.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));
         long revision = registry.getRequired(source).credentialRevision();
         long epoch = registry.authorizationEpoch(source);
@@ -212,7 +326,7 @@ public class MediaDeliveryService {
         int namespaceEnd = assetKey.lastIndexOf(":credentials:");
         if (namespaceEnd < 0 || !assetKey.substring(namespaceEnd).equals(scopeSuffix)) throw new ApiRequestException("媒体凭据已更新，请重试");
         String token = UUID.randomUUID().toString();
-        tickets.put(token, new Ticket(source, assetKey, revision, epoch, now.plusSeconds(1800)));
+        tickets.put(token, new Ticket(source, assetKey, revision, epoch, expiresAt));
         return "/media/" + token;
     }
 

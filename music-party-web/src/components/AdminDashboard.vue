@@ -723,8 +723,8 @@ const privateDjSwitches = [
 ];
 
 const setPrivateDjMode = async (mode) => {
-    if (mode !== 'OFF' && !sources.enabled.some((source) => source.capabilities.recommendations)) {
-        error('当前音乐源不支持公开推荐');
+    if (mode !== 'OFF' && playerStore.config.recommendationsAvailable === false) {
+        error('部署指定的私人FM/DJ音源未启用或不支持此功能');
         return;
     }
     try {

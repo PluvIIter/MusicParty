@@ -40,6 +40,9 @@ public class LocalCacheService {
     private final AtomicLong currentTotalSize = new AtomicLong();
     private final Sinks.Many<DownloadTask> downloadQueue = Sinks.many().unicast()
             .onBackpressureBuffer(new java.util.concurrent.ArrayBlockingQueue<>(256));
+    private final Sinks.Many<DownloadTask> voiceQueue = Sinks.many().unicast()
+            .onBackpressureBuffer(new java.util.concurrent.ArrayBlockingQueue<>(16));
+    private Disposable voiceSubscription;
     private Disposable queueSubscription;
     private final Object queueEmitter = new Object();
     private static final long MAX_DOWNLOAD_BYTES = 512L * 1024 * 1024;
@@ -98,6 +101,8 @@ public class LocalCacheService {
         } catch (IOException error) {
             throw new IllegalStateException("Cannot initialize media cache", error);
         }
+        voiceSubscription = voiceQueue.asFlux().publishOn(Schedulers.boundedElastic(), 1)
+                .concatMap(task -> processTask(task).onErrorResume(error -> Mono.empty())).subscribe();
         queueSubscription = downloadQueue.asFlux().publishOn(Schedulers.boundedElastic(), 1).concatMap(task -> processTask(task)
                 .onErrorResume(error -> Mono.empty()).then(Mono.delay(Duration.ofSeconds(3)))).subscribe();
     }
@@ -123,13 +128,24 @@ public class LocalCacheService {
     }
 
     @PreDestroy
-    public void cleanup() { if (queueSubscription != null) queueSubscription.dispose(); }
+    public void cleanup() {
+        if (queueSubscription != null) queueSubscription.dispose();
+        if (voiceSubscription != null) voiceSubscription.dispose();
+    }
 
     public void submitDownload(String key, Mono<DownloadSource> source, Map<String, String> headers) {
         submitDownload(key, source, headers, () -> {});
     }
 
     public void submitDownload(String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {
+        submit(downloadQueue, key, source, headers, beforeCommit);
+    }
+
+    public void submitVoiceDownload(String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {
+        submit(voiceQueue, key, source, headers, beforeCommit);
+    }
+
+    private void submit(Sinks.Many<DownloadTask> queue, String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {
         synchronized (this) {
             CacheStatus status = getStatus(key);
             if (status == CacheStatus.COMPLETED || status == CacheStatus.PENDING || status == CacheStatus.DOWNLOADING) return;
@@ -139,7 +155,7 @@ public class LocalCacheService {
         }
         publish(key);
         Sinks.EmitResult emitted;
-        synchronized (queueEmitter) { emitted = downloadQueue.tryEmitNext(new DownloadTask(key, source, Map.copyOf(headers), beforeCommit)); }
+        synchronized (queueEmitter) { emitted = queue.tryEmitNext(new DownloadTask(key, source, Map.copyOf(headers), beforeCommit)); }
         if (emitted.isFailure()) {
             cacheIndex.get(key).setStatus(CacheStatus.FAILED); publish(key);
         }

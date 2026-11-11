@@ -109,6 +109,32 @@ class MusicPlayerServiceJoinQueueTest {
     }
 
     @Test
+    void modeChangeRejectsPlayableAlreadyWaitingForRoomCommit() throws Exception {
+        props.getPrivateDj().setMode("DJ");
+        when(djService.isAvailable()).thenReturn(true);
+        when(djService.authorizationScope()).thenReturn("netease:DJ:1");
+        var segment = new PrivateDjSegment.Voice("https://audio.invalid/voice", "voice", 1000, null, null);
+        var playable = new PlayableMusic("voice", "DJ", List.of(), 1000, "netease", "https://audio.invalid/voice", null, false, "VOICE", null);
+        var response = reactor.core.publisher.Sinks.<PlayableMusic>one();
+        var callbackEntered = new java.util.concurrent.CountDownLatch(1);
+        when(djService.getPlayable(segment)).thenReturn(response.asMono().doOnNext(value -> callbackEntered.countDown()));
+        var load = MusicPlayerService.class.getDeclaredMethod("loadFmDjPlayable", PrivateDjSegment.class, long.class, boolean.class);
+        load.setAccessible(true);
+        java.util.concurrent.CompletableFuture<reactor.core.publisher.Sinks.EmitResult> emitter;
+        synchronized (service) {
+            load.invoke(service, segment, 0L, false);
+            verify(djService, timeout(2000)).getPlayable(segment);
+            emitter = java.util.concurrent.CompletableFuture.supplyAsync(() -> response.tryEmitValue(playable));
+            assertTrue(callbackEntered.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            props.getPrivateDj().setMode("OFF");
+            when(djService.authorizationScope()).thenReturn("netease:OFF:2");
+        }
+        emitter.get(2, java.util.concurrent.TimeUnit.SECONDS);
+        assertNull(service.getCurrentPlayerState().nowPlaying());
+        verify(queueManager, never()).addToHistory(any());
+    }
+
+    @Test
     void voiceSegmentNeverEntersHistory() {
         PlayableMusic voice = new PlayableMusic(
                 "voice1", "AI DJ", List.of("私人DJ"), 1000L,
