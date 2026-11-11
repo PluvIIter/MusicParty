@@ -1,7 +1,8 @@
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue';
-import { LoadConfig, SaveConfig, StartServices, StopServices, GetServiceStatuses, OpenBrowser } from './wailsjs/go/main/App';
+import { LoadConfig, SaveConfig, StartServices, StopServices, GetServiceStatuses, GetSourceDescriptors, OpenBrowser } from './wailsjs/go/main/App';
 import { EventsOn } from './wailsjs/runtime';
+import { sourceSettingsRows, deliveryModeLabel } from './sourceSettings';
 
 const config = reactive({
   serverIp: '0.0.0.0',
@@ -12,9 +13,8 @@ const config = reactive({
   backWords: 'THORNEX',
   neteaseCookie: '',
   neteaseQuality: 'exhigh',
-  neteaseEnabled: true,
   biliCookie: '',
-  bilibiliEnabled: true,
+  sources: {},
   queueMaxSize: 1000,
   queueHistorySize: 50,
   queueMaxUserSongs: 100,
@@ -29,6 +29,10 @@ const config = reactive({
   authBlockDuration: 300
 });
 
+const descriptors = ref([]);
+const sourceRows = computed(() => sourceSettingsRows(descriptors.value, config.sources));
+const configReady = ref(false);
+const errorMessage = ref('');
 const isRunning = ref(false);
 const logs = ref([]);
 const logContainer = ref(null);
@@ -47,14 +51,20 @@ const systemUrl = computed(() => {
 });
 
 onMounted(async () => {
-  const cfg = await LoadConfig();
-  if (cfg) Object.assign(config, cfg);
+  try {
+    const [cfg, manifest] = await Promise.all([LoadConfig(), GetSourceDescriptors()]);
+    if (cfg) Object.assign(config, cfg);
+    descriptors.value = manifest || [];
+    configReady.value = true;
+  } catch (error) {
+    errorMessage.value = String(error);
+  }
   
   // 轮询服务状态
   setInterval(async () => {
     if (isRunning.value) {
       const statuses = await GetServiceStatuses();
-      Object.assign(serviceStatuses, statuses);
+      Object.assign(serviceStatuses, { NETEASE_API: false, JAVA_SERVER: false }, statuses);
     } else {
       serviceStatuses.NETEASE_API = false;
       serviceStatuses.JAVA_SERVER = false;
@@ -89,18 +99,23 @@ const scrollToBottom = () => {
 };
 
 const toggleServices = async () => {
-  if (isRunning.value) {
-    await StopServices();
-    isRunning.value = false;
-    isJavaReady.value = false;
-    isApiReady.value = false;
-  } else {
-    await SaveConfig(JSON.parse(JSON.stringify(config)));
-    isRunning.value = true;
-    isJavaReady.value = false;
-    isApiReady.value = false;
-    logs.value = [];
-    await StartServices();
+  errorMessage.value = '';
+  try {
+    if (isRunning.value) {
+      await StopServices();
+      isRunning.value = false;
+      isJavaReady.value = false;
+      isApiReady.value = false;
+    } else {
+      await SaveConfig(JSON.parse(JSON.stringify(config)));
+      isJavaReady.value = false;
+      isApiReady.value = false;
+      logs.value = [];
+      await StartServices();
+      isRunning.value = true;
+    }
+  } catch (error) {
+    errorMessage.value = String(error);
   }
 };
 
@@ -190,37 +205,28 @@ const openWeb = () => {
 
           <!-- 接口设置 -->
           <div v-if="activeTab === 'api'" class="space-y-4">
-            <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
+            <p class="text-[10px] text-medical-500">Cookie 仅用于受限音频解析；公开用户资料和个人收藏使用网页中绑定的公开用户 ID。</p>
+            <div v-for="source in sourceRows" :key="source.id" class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="flex items-center justify-between border-b border-medical-100 pb-2 mb-2">
-                <h3 class="text-[10px] font-black uppercase">网易云音乐 (Netease)</h3>
-                <input type="checkbox" v-model="config.neteaseEnabled" class="w-4 h-4 accent-medical-900" />
+                <h3 class="text-[10px] font-black uppercase">{{ source.label }}</h3>
+                <input type="checkbox" v-model="config.sources[source.id].enabled" :aria-label="`启用 ${source.label}`" class="w-4 h-4 accent-medical-900" />
               </div>
-              <div class="space-y-4" :class="!config.neteaseEnabled ? 'opacity-40 grayscale pointer-events-none' : ''">
+              <fieldset :disabled="!config.sources[source.id].enabled" class="space-y-4 disabled:opacity-40">
                 <div class="space-y-1">
-                  <label class="text-[10px] font-bold text-medical-500 uppercase">账号 Cookie</label>
-                  <textarea v-model="config.neteaseCookie" placeholder="用于获取高清音质和私人歌单" rows="3" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900 resize-none"></textarea>
-                </div>
-                <div class="space-y-1">
-                  <label class="text-[10px] font-bold text-medical-500 uppercase">解析音质上限</label>
-                  <select v-model="config.neteaseQuality" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
-                    <option value="standard">标准</option>
-                    <option value="higher">较高</option>
-                    <option value="exhigh">极高</option>
-                    <option value="lossless">无损</option>
-                    <option value="hires">高解析度</option>
+                  <label :for="`delivery-${source.id}`" class="text-[10px] font-bold text-medical-500 uppercase">音频交付方式</label>
+                  <select :id="`delivery-${source.id}`" v-model="config.sources[source.id].deliveryMode" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
+                    <option v-for="mode in source.supportedModes" :key="mode" :value="mode">{{ deliveryModeLabel(mode) }}</option>
                   </select>
                 </div>
-              </div>
-            </div>
-            <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
-              <div class="flex items-center justify-between border-b border-medical-100 pb-2 mb-2">
-                <h3 class="text-[10px] font-black uppercase">Bilibili</h3>
-                <input type="checkbox" v-model="config.bilibiliEnabled" class="w-4 h-4 accent-medical-900" />
-              </div>
-              <div class="space-y-1" :class="!config.bilibiliEnabled ? 'opacity-40 grayscale pointer-events-none' : ''">
-                <label class="text-[10px] font-bold text-medical-500 uppercase">Cookie</label>
-                <input v-model="config.biliCookie" placeholder="浏览器完整Cookie串(含SESSDATA)" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
-              </div>
+                <div v-for="field in source.connectionFields" :key="field.key" class="space-y-1">
+                  <label :for="`connection-${field.key}`" class="text-[10px] font-bold text-medical-500 uppercase">{{ field.label }}</label>
+                  <select v-if="field.kind === 'select'" :id="`connection-${field.key}`" v-model="config[field.key]" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
+                    <option v-for="option in field.options" :key="option.value" :value="option.value">{{ option.label }}</option>
+                  </select>
+                  <input v-else :id="`connection-${field.key}`" v-model="config[field.key]" :type="field.kind" :placeholder="field.placeholder" autocomplete="off" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
+                  <p v-if="field.placeholder" class="text-[9px] text-medical-400">{{ field.placeholder }}</p>
+                </div>
+              </fieldset>
             </div>
           </div>
 
@@ -280,8 +286,10 @@ const openWeb = () => {
           </div>
         </div>
 
+        <p v-if="errorMessage" role="alert" class="text-xs text-red-600">{{ errorMessage }}</p>
         <!-- 操作按钮 -->
-        <button 
+        <button
+          :disabled="!configReady"
           @click="toggleServices"
           :class="isRunning ? 'bg-red-600 hover:bg-red-700 shadow-red-100' : 'bg-medical-900 hover:bg-black shadow-medical-200'"
           class="w-full py-4 text-white font-black text-xl transition-all chamfer-br active:scale-95 shadow-lg"

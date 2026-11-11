@@ -30,7 +30,8 @@
 *   **房间权限**：支持设置房间密码，或管理员指令实时锁定/解锁房间。
 *   **实时互动**：内置聊天室、点赞动效、系统日志广播。
 *   **智能队列**：支持顺序播放、轮询播放、随机播放和单曲循环；轮询防止单人霸榜，个人歌单支持拖动排序。
-*   **私人电台 / 私人DJ**：接入网易云推荐，支持私人FM 持续推歌与私人DJ（AI 语音点评+歌曲）两种模式。
+*   **公开个人收藏**：绑定用户只作为公开收藏查询目标，不是平台登录；需要目标用户专属 Cookie 的类别不提供。原 Cookie 账号收藏专辑和私人 FM / DJ 暂不提供，推荐扩展由公开能力提供者实现。
+*   **动态音源能力**：搜索、专辑和收藏分类由后端音源目录声明；交付可选择直链或服务器下载，不需要在前端添加平台名单。本机 LIKESONG 始终独立保存、展示。
 *   **直播音频流**：可以开启直播音频流，使用一个简单的链接来实时收听，用于类似于vrChat等类似场景。
 
 ## Docker 部署（推荐）
@@ -89,7 +90,9 @@ docker run -d \
 | `NETEASE_API_URL`         | 是  | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。           |
 | `BASE_URL`                | 否  | 服务的域名（带协议）。用户获取直播流链接时，拼接在前面。默认为 `http://localhost:8848`。                    |
 | `BILIBILI_ENABLED`        | 否  | B站源是否开启。                                                                    |
-| `BILIBILI_COOKIE`         | 否  | B站账号的**完整 Cookie**（浏览器登录后复制的完整 Cookie 串，含 buvid3/SESSDATA/bili_jct 等）。不填仅 B站源不可用，不影响其他音乐源；填入后可用 B站源并解析高音质 DASH 音频。 |
+| `BILIBILI_COOKIE`         | 否  | 仅用于受限音频取流；公开搜索和收藏使用匿名设备信息，不依赖目标用户 Cookie。上游风控仍可能拒绝匿名请求。 |
+| `NETEASE_DELIVERY_MODE` | 否 | `DIRECT_URL`（默认）或 `SERVER_DOWNLOAD`。 |
+| `BILIBILI_DELIVERY_MODE` | 否 | `SERVER_DOWNLOAD`（默认）或 `DIRECT_URL`；直链格式及可用性取决于上游。 |
 | `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。                                          |
 | `NETEASE_QUALITY`         | 否  | 网易云音质等级。可选：`standard`, `higher`, `exhigh`, `lossless`, `hires`。默认 `exhigh`。 |
 | `QUEUE_MAX_SIZE`          | 否  | 播放队列最大长度，默认 `1000`。                                                         |

@@ -38,7 +38,8 @@ build/
 /scripts/publish-image.ps1
 /data/queue-data.json
 
-/docs/
+/docs/*
+!/docs/source-architecture.md
 /secrets/
 /.frontend-audit/
 /.superpowers/
