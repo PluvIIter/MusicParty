@@ -50,14 +50,30 @@ export function useQueueReorder(player, userStore) {
             // Synthetic events and older touch browsers may not have an active pointer.
         }
     };
+    // 插入点吸附到「卡片之间的空隙」：只有指针落在间隙带内才算有效目标
+    const GAP_HIT_PX = 8;
     const updateTarget = (current) => {
-        const row = document.elementFromPoint(current.x, current.y)?.closest('[data-queue-id]');
-        const targetIndex = items.value.findIndex(({ queueId }) => queueId === row?.dataset.queueId);
         current.hasTarget = false;
-        if (targetIndex < 0 || row.dataset.queueId === current.queueId) return;
-        const rect = row.getBoundingClientRect();
-        const before = current.y < rect.top + rect.height / 2;
-        current.beforeQueueId = before ? row.dataset.queueId : (items.value[targetIndex + 1]?.queueId ?? null);
+        const rows = Array.from(document.querySelectorAll('[data-queue-id]'));
+        if (!rows.length) return;
+        let best = null;
+        for (const row of rows) {
+            const rect = row.getBoundingClientRect();
+            // 每张卡片上方的空隙
+            const distance = Math.abs(current.y - rect.top);
+            if (distance <= GAP_HIT_PX && (!best || distance < best.distance)) {
+                best = { beforeQueueId: row.dataset.queueId, distance };
+            }
+            // 列表末尾的空隙（最后一首卡片下方）
+            if (row === rows[rows.length - 1]) {
+                const tailDistance = Math.abs(current.y - rect.bottom);
+                if (tailDistance <= GAP_HIT_PX && (!best || tailDistance < best.distance)) {
+                    best = { beforeQueueId: null, distance: tailDistance };
+                }
+            }
+        }
+        if (!best) return;
+        current.beforeQueueId = best.beforeQueueId;
         current.hasTarget = isValidReorder(
             player.queue,
             userStore.userToken,

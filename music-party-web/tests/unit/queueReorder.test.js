@@ -19,17 +19,19 @@ describe('pointer and keyboard queue reorder', () => {
         preventDefault: vi.fn(),
         button: 0,
     });
-    const target = (id) => {
-        const row = {
-            dataset: { queueId: id },
-            getBoundingClientRect: () => ({ top: 0, height: 100 }),
-            closest: () => null,
-        };
-        Object.defineProperty(document, 'elementFromPoint', {
-            configurable: true,
-            value: () => ({ closest: () => row }),
+    // 插入点吸附到卡片之间的空隙：用真实 DOM 行模拟一列 100px 高、间距 8px 的卡片
+    const mountRows = (ids) => {
+        document.body.innerHTML = '';
+        ids.forEach((id, index) => {
+            const row = document.createElement('div');
+            row.dataset.queueId = id;
+            const top = 100 + index * 108;
+            row.getBoundingClientRect = () => ({ top, height: 100, bottom: top + 100 });
+            document.body.appendChild(row);
         });
     };
+    const gapY = (index) => 96 + index * 108;
+    const tailY = (count) => 100 + (count - 1) * 108 + 104;
     beforeEach(() => {
         player = reactive({
             queue: [item('a'), item('other', 'other'), item('b'), item('c')],
@@ -49,25 +51,25 @@ describe('pointer and keyboard queue reorder', () => {
     });
     afterEach(() => app.unmount());
     it('uses pointer capture, waits for release and never mutates the queue locally', () => {
+        mountRows(['a', 'other', 'b', 'c']);
         reorder.start(player.queue[3], pointer());
-        target('a');
-        reorder.move(pointer(30));
+        reorder.move(pointer(gapY(0)));
         expect(handle.setPointerCapture).toHaveBeenCalledWith(1);
         expect(player.reorderSong).not.toHaveBeenCalled();
-        reorder.finish(pointer(30));
+        reorder.finish(pointer(gapY(0)));
         expect(player.reorderSong).toHaveBeenCalledExactlyOnceWith('c', 'a');
         expect(player.queue.map(({ queueId }) => queueId)).toEqual(['a', 'other', 'b', 'c']);
     });
     it('moves another member song before an owned target in sequential mode', () => {
+        mountRows(['a', 'other', 'b', 'c']);
         reorder.start(player.queue[1], pointer());
-        target('a');
-        reorder.finish(pointer(30));
+        reorder.finish(pointer(gapY(0)));
         expect(player.reorderSong).toHaveBeenCalledExactlyOnceWith('other', 'a');
     });
     it('uses another member row as a sequential pointer target', () => {
+        mountRows(['a', 'other', 'b', 'c']);
         reorder.start(player.queue[3], pointer());
-        target('other');
-        reorder.finish(pointer(30));
+        reorder.finish(pointer(gapY(1)));
         expect(player.reorderSong).toHaveBeenCalledExactlyOnceWith('c', 'other');
     });
     it('arrow keys navigate all member regular songs in sequential mode', () => {
@@ -79,26 +81,26 @@ describe('pointer and keyboard queue reorder', () => {
         ]);
     });
     it('drops after the last eligible song with a null target', () => {
+        mountRows(['a', 'other', 'b', 'c']);
         reorder.start(player.queue[0], pointer());
-        target('c');
-        reorder.move(pointer(80));
-        reorder.finish(pointer(80));
+        reorder.move(pointer(tailY(4)));
+        reorder.finish(pointer(tailY(4)));
         expect(player.reorderSong).toHaveBeenCalledExactlyOnceWith('a', null);
     });
     it('ignores a different pointer and other-member targets in round-robin', () => {
         player.playMode = 'ROUND_ROBIN';
+        mountRows(['a', 'other', 'b', 'c']);
         reorder.start(player.queue[0], pointer());
-        target('other');
-        reorder.move(pointer(30));
-        reorder.finish(pointer(30, 2));
+        reorder.move(pointer(gapY(1)));
+        reorder.finish(pointer(gapY(1), 2));
         expect(reorder.drag.value).not.toBeNull();
-        reorder.finish(pointer(30));
+        reorder.finish(pointer(gapY(1)));
         expect(player.reorderSong).not.toHaveBeenCalled();
     });
     it('cancels a cross-member drag before releasing in a different mode', () => {
+        mountRows(['a', 'other', 'b', 'c']);
         reorder.start(player.queue[1], pointer());
-        target('a');
-        reorder.move(pointer(30));
+        reorder.move(pointer(gapY(0)));
         expect(reorder.drag.value.hasTarget).toBe(true);
         player.playMode = 'ROUND_ROBIN';
         expect(reorder.drag.value).toBeNull();
@@ -108,9 +110,9 @@ describe('pointer and keyboard queue reorder', () => {
     it.each(['queue replacement', 'in-place queue change', 'disconnect', 'guest', 'mode', 'escape', 'pointercancel'])(
         'cancels stale drag on %s',
         (change) => {
+            mountRows(['a', 'other', 'b', 'c']);
             reorder.start(player.queue[3], pointer());
-            target('a');
-            reorder.move(pointer(30));
+            reorder.move(pointer(gapY(0)));
             if (change === 'queue replacement') player.queue = [...player.queue];
             if (change === 'in-place queue change') player.queue[0].priority = 'USER_TOP';
             if (change === 'disconnect') player.connected = false;
@@ -140,8 +142,8 @@ describe('pointer and keyboard queue reorder', () => {
             hasPointerCapture: () => false,
         };
         handle.closest = () => container;
+        mountRows(['a', 'other', 'b', 'c']);
         reorder.start(player.queue[0], pointer());
-        target('other');
         reorder.move(pointer(90));
         frame();
         frame();

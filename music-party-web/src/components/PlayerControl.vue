@@ -120,6 +120,7 @@
                     id="tutorial-random-mobile"
                     :model-value="player.playMode"
                     :disabled="!player.connected || player.isPlayModeLocked || userStore.isGuest"
+                    boxed
                     @select="player.setPlayMode"
                 />
                 <button

@@ -11,13 +11,14 @@
                     :disabled="!player.connected || userStore.isGuest"
                     :aria-label="`我的选曲：${memberShuffle ? '随机' : '顺序'}`"
                     :title="
-                        memberShuffle ? '轮到我时随机选曲；点击改为顺序' : '轮到我时按我的歌单顺序选曲；点击改为随机'
+                        memberShuffle
+                            ? '轮到我时随机选曲（点击改为顺序）'
+                            : '轮到我时按我的歌单顺序选曲（点击改为随机）'
                     "
-                    class="p-1.5 border border-line text-xs flex items-center gap-1 text-ink-muted hover:text-accent disabled:opacity-40 disabled:cursor-not-allowed"
-                    @click="player.setMemberShuffle(!memberShuffle)"
+                    class="p-1.5 border border-line text-ink-muted hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    @click="toggleMemberShuffle"
                 >
                     <component :is="memberShuffle ? Shuffle : ListOrdered" class="w-4 h-4" aria-hidden="true" />
-                    {{ memberShuffle ? '个人随机' : '个人顺序' }}
                 </button>
                 <button
                     type="button"
@@ -57,7 +58,7 @@
             <!-- Top Songs (Always at top) -->
             <div v-if="topItems.length > 0" class="mb-4">
                 <div class="text-xs font-mono text-ink-subtle mb-2 pl-1">TOP PRIORITY</div>
-                <QueueItem v-for="(item, idx) in topItems" :key="item.queueId" :item="item" :index="idx" />
+                <QueueItem v-for="(item, idx) in topItems" :key="item.queueId" :item="item" />
             </div>
 
             <!-- User Groups (Drawers) -->
@@ -117,7 +118,7 @@
         <!-- Normal Mode: Virtual List -->
         <div v-else v-bind="containerProps" data-queue-scroll class="flex-1 overflow-y-auto p-2">
             <div v-bind="wrapperProps">
-                <QueueItem v-for="{ data: item, index } in list" :key="item.queueId" :item="item" :index="index" />
+                <QueueItem v-for="{ data: item, index } in list" :key="item.queueId" :item="item" />
             </div>
         </div>
 
@@ -268,6 +269,12 @@ const claiming = ref('');
 const clearing = ref(false);
 const mineCount = computed(() => queue.value.filter((item) => item.enqueuedBy.token === userStore.userToken).length);
 const toast = useToast();
+// 个人选曲偏好只影响自己，切换后仅本机弹提示
+const toggleMemberShuffle = () => {
+    const next = !memberShuffle.value;
+    player.setMemberShuffle(next);
+    toast.success(next ? '个人选曲：随机' : '个人选曲：顺序');
+};
 const canClaim = (group) =>
     player.config.allowPlaylistClaim === true &&
     group.token !== userStore.userToken &&

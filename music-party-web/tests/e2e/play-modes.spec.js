@@ -196,7 +196,7 @@ for (const mobile of [false, true]) {
         const fixture = await room(page);
         const trigger = page.locator(mobile ? '#tutorial-random-mobile' : '#tutorial-random');
         for (const [value, label] of [
-            ['SHUFFLE', '完全随机'],
+            ['SHUFFLE', '随机播放'],
             ['ROUND_ROBIN', '轮询播放'],
             ['REPEAT_ONE', '单曲循环'],
             ['SEQUENTIAL', '顺序播放'],

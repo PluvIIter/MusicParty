@@ -74,24 +74,18 @@
                                             />
                                             <span class="text-[10px] font-bold font-mono">切歌</span>
                                         </button>
-                                        <label class="flex flex-col gap-2 text-[10px] font-bold text-ink">
-                                            播放模式
-                                            <select
-                                                aria-label="管理员播放模式"
-                                                :value="playerStore.playMode"
-                                                :disabled="!playerStore.connected"
-                                                class="p-2 bg-surface border border-line text-xs min-w-0 disabled:opacity-40"
-                                                @change="execPlayerAction('SET_PLAY_MODE', $event.target.value)"
-                                            >
-                                                <option
-                                                    v-for="mode in PLAY_MODES"
-                                                    :key="mode.value"
-                                                    :value="mode.value"
-                                                >
-                                                    {{ mode.label }}
-                                                </option>
-                                            </select>
-                                        </label>
+                                        <button
+                                            @click="modeDialogOpen = true"
+                                            :disabled="!playerStore.connected || playerStore.isPlayModeLocked"
+                                            :title="`${currentMode.label}：${currentMode.description}`"
+                                            class="flex flex-col items-center justify-center p-4 bg-surface border border-line hover:border-accent hover:text-accent transition-all group disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            <component
+                                                :is="currentMode.icon"
+                                                class="w-6 h-6 mb-2 group-hover:scale-110 transition-transform"
+                                            />
+                                            <span class="text-[10px] font-bold font-mono">{{ currentMode.label }}</span>
+                                        </button>
                                     </div>
 
                                     <!-- Permission Locks -->
@@ -550,7 +544,53 @@
                 </div>
             </div>
         </div>
+
+
     </Transition>
+
+        <!-- 播放模式选择 -->
+        <Teleport to="body">
+            <div
+                v-if="modeDialogOpen"
+                class="fixed inset-0 z-[130] bg-brand/50 backdrop-blur-sm flex items-center justify-center p-4"
+                @click.self="modeDialogOpen = false"
+            >
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="选择播放模式"
+                    class="w-full max-w-sm bg-surface-raised border border-line shadow-xl p-4 space-y-3"
+                >
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-ink">播放模式</h3>
+                        <button type="button" @click="modeDialogOpen = false" aria-label="关闭播放模式选择">
+                            <X class="w-4 h-4 text-ink-muted" />
+                        </button>
+                    </div>
+                    <div class="space-y-1">
+                        <button
+                            v-for="mode in modes"
+                            :key="mode.value"
+                            type="button"
+                            @click="selectPlayMode(mode.value)"
+                            class="w-full flex items-center gap-3 p-2 text-left border transition-colors"
+                            :class="
+                                playerStore.playMode === mode.value
+                                    ? 'border-accent text-accent bg-accent/10'
+                                    : 'border-line text-ink hover:bg-surface-sunken'
+                            "
+                        >
+                            <component :is="mode.icon" class="w-4 h-4 shrink-0" />
+                            <span class="flex-1 min-w-0">
+                                <span class="block text-xs font-bold">{{ mode.label }}</span>
+                                <span class="block text-[10px] text-ink-muted">{{ mode.description }}</span>
+                            </span>
+                            <Check v-if="playerStore.playMode === mode.value" class="w-4 h-4 shrink-0" />
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
 </template>
 
 <script setup>
@@ -564,6 +604,11 @@ import { PLAY_MODES } from '../domain/playModes';
 import {
     Settings,
     X,
+    Check,
+    ListOrdered,
+    Shuffle,
+    Repeat,
+    Repeat1,
     Pause,
     Play,
     SkipForward,
@@ -582,6 +627,17 @@ import {
 const adminStore = useAdminStore();
 const playerStore = usePlayerStore();
 const { success, error, warning } = useToast();
+
+// 播放模式：方块按钮 + 弹窗选择（与暂停/切歌按钮同款）
+const MODE_ICONS = { SEQUENTIAL: ListOrdered, SHUFFLE: Shuffle, ROUND_ROBIN: Repeat, REPEAT_ONE: Repeat1 };
+const modes = computed(() => PLAY_MODES.map((mode) => ({ ...mode, icon: MODE_ICONS[mode.value] })));
+const currentMode = computed(() => modes.value.find((mode) => mode.value === playerStore.playMode) || modes.value[0]);
+const modeDialogOpen = ref(false);
+const selectPlayMode = (mode) => {
+    modeDialogOpen.value = false;
+    if (mode !== playerStore.playMode) execPlayerAction('SET_PLAY_MODE', mode);
+};
+
 
 const claimSettingsBusy = ref(false);
 const togglePlaylistClaim = async () => {

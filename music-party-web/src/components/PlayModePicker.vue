@@ -11,6 +11,7 @@
             :aria-label="`播放模式：${current.label}`"
             :title="disabled ? '离线、游客或播放模式已锁定' : `${current.label}：${current.description}`"
             class="p-2 text-ink-muted hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            :class="boxed ? 'bg-surface-sunken rounded-sm' : ''"
             @click="toggle"
         >
             <component :is="icons[current.value]" class="w-5 h-5" aria-hidden="true" />
@@ -58,6 +59,8 @@ const props = defineProps({
     id: { type: String, default: undefined },
     modelValue: { type: String, default: 'SEQUENTIAL' },
     disabled: { type: Boolean, default: false },
+    // 移动端控制条里需要和其它按钮一致的方块背景
+    boxed: { type: Boolean, default: false },
 });
 const emit = defineEmits(['select']);
 const icons = { SEQUENTIAL: ListOrdered, SHUFFLE: Shuffle, ROUND_ROBIN: Repeat, REPEAT_ONE: Repeat1 };
