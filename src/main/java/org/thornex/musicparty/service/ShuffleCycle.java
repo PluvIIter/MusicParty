@@ -16,10 +16,15 @@ final class ShuffleCycle {
     }
 
     MusicQueueItem choose(List<MusicQueueItem> eligible, boolean perMember) {
+        // 首播优先只针对真实歌曲；FM 作为“万能候选”并入本轮池子，
+        // 由轮次账本保证每轮最多一次，避免保留关闭时 FM 永远排不上。
         List<MusicQueueItem> fresh = eligible.stream()
-                .filter(item -> !MusicQueueManager.FM_MARKER_ID.equals(item.music().platform())
-                        && !heard.contains(item.queueId())).toList();
-        if (!fresh.isEmpty()) eligible = fresh;
+                .filter(item -> !isFmMarker(item) && !heard.contains(item.queueId())).toList();
+        if (!fresh.isEmpty()) {
+            List<MusicQueueItem> pool = new ArrayList<>(fresh);
+            eligible.stream().filter(ShuffleCycle::isFmMarker).forEach(pool::add);
+            eligible = pool;
+        }
         String scope = perMember ? memberScope(eligible.getFirst()) : "all";
         Round round = rounds.computeIfAbsent(scope, ignored -> new Round());
         List<MusicQueueItem> unplayed = eligible.stream()
@@ -33,6 +38,10 @@ final class ShuffleCycle {
                 .filter(item -> !key(item).equals(round.last)).toList();
         if (!withoutLast.isEmpty()) unplayed = withoutLast;
         return unplayed.get(ThreadLocalRandom.current().nextInt(unplayed.size()));
+    }
+
+    static boolean isFmMarker(MusicQueueItem item) {
+        return MusicQueueManager.FM_MARKER_ID.equals(item.music().platform());
     }
 
     void selected(MusicQueueItem item) {

@@ -263,6 +263,36 @@ class MusicQueueManagerPlaybackModesTest {
         assertEquals(1, queue.getQueueSnapshot().size());
     }
 
+    @Test
+    void totalShufflePicksFmWhileRealSongsAreStillUnheard() {
+        // 保留关闭时每轮都清空账本，FM 不能因为“首播优先”被永久饿死
+        properties.getQueue().setRetainPlaylist(false);
+        int fmPicked = 0;
+        for (int run = 0; run < 60; run++) {
+            MusicQueueManager manager = new MusicQueueManager(properties);
+            manager.add(new Music("s1", "s1", List.of("Artist"), 1000, "netease", null),
+                    new UserSummary("A", "A", "A", false), QueueItemStatus.READY);
+            manager.ensureFmMarker();
+            Map<String, QueueItemStatus> statuses = new HashMap<>();
+            manager.getQueueSnapshot().forEach(item -> statuses.put(item.music().id(), QueueItemStatus.READY));
+            MusicQueueItem picked = manager.pollNext(PlayMode.SHUFFLE, false, true, statuses, Set.of());
+            if (MusicQueueManager.FM_MARKER_ID.equals(picked.music().platform())) fmPicked++;
+        }
+        assertTrue(fmPicked > 0, "保留关闭时 FM 也应参与随机选曲");
+    }
+
+    @Test
+    void retainedTotalShufflePicksFmOncePerRoundEvenBeforeAllSongsHeard() {
+        properties.getQueue().setRetainPlaylist(true);
+        for (int i = 0; i < 3; i++) add("a" + i, "A");
+        int fmPicked = 0;
+        for (int i = 0; i < 8; i++) {
+            queue.ensureFmMarker();
+            if (MusicQueueManager.FM_MARKER_ID.equals(pick(PlayMode.SHUFFLE, false).music().platform())) fmPicked++;
+        }
+        assertEquals(2, fmPicked, "三轮真实歌曲 + FM 共 4 首，8 次播放应含 2 次 FM");
+    }
+
     @ParameterizedTest
     @EnumSource(PlayMode.class)
     void retainedSelectionRotatesStableIdsAndConsumesPinOnce(PlayMode mode) {
