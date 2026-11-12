@@ -22,9 +22,10 @@ public final class MediaUrlPolicy {
     public static void validateUrl(String value) {
         try {
             URI uri = URI.create(value);
+            // 端口不做白名单：B 站 DASH 音频走 mcdn.bilivideo.cn:8082、备份 edge CDN 走 :4483，
+            // 限制 80/443 会把这些合法媒体地址全部拒掉。SSRF 防护依赖下面的地址段校验。
             if (!("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))
-                    || uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null
-                    || (uri.getPort() != -1 && uri.getPort() != 80 && uri.getPort() != 443)) {
+                    || uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null) {
                 throw new IllegalArgumentException();
             }
             for (InetAddress address : InetAddress.getAllByName(uri.getHost())) {

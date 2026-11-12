@@ -253,6 +253,9 @@ class MediaDeliveryServiceTest {
             assertThrows(RuntimeException.class, () -> MediaUrlPolicy.validateUrl(url));
         }
         assertThrows(RuntimeException.class, () -> MediaUrlPolicy.validateHeaders(Map.of("Referer", "safe\r\nCookie: secret")));
+
+        assertDoesNotThrow(() -> MediaUrlPolicy.validateUrl("https://93.184.216.34:8082/v1/resource/a.m4s"));
+        assertDoesNotThrow(() -> MediaUrlPolicy.validateUrl("https://93.184.216.34:4483/upgcxcode/a.m4s"));
     }
 
     @Test void downloadFailureRetriesWithDeclaredFallbackRepresentation() {
