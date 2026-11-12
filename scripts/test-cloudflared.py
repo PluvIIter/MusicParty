@@ -121,11 +121,15 @@ def smoke(bundle):
     require(re.search(rf"(?m)^cloudflared version {re.escape(VERSION)}(?:\s|$)", result.stdout + result.stderr),
             f"Unexpected version: {result.stdout} {result.stderr}")
     with tempfile.TemporaryDirectory(prefix="cloudflared-help-") as working:
-        help_result = subprocess.run([str(bundle / "cloudflared.exe"), "tunnel", "--help"], cwd=working, env=env,
+        config = Path(working) / "config.json"
+        config.write_text("{}\n", encoding="utf-8")
+        help_result = subprocess.run([str(bundle / "cloudflared.exe"), "tunnel", "--config", str(config),
+                                      "--no-autoupdate", "--output", "json", "--protocol", "http2",
+                                      "--metrics", "127.0.0.1:0", "--url", "http://127.0.0.1:8080", "--help"], cwd=working, env=env,
                                      stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
     require(help_result.returncode == 0, "Bundled tunnel command help failed")
     help_text = help_result.stdout + help_result.stderr
-    for option in ["--config", "--no-autoupdate", "--output", "--protocol", "--url", "--metrics"]:
+    for option in ["--config", "--no-autoupdate", "--output", "--url", "--metrics"]:
         require(option in help_text, f"Bundled cloudflared does not declare required option: {option}")
     print("Offline --version and tunnel --help smoke passed with empty PATH; no service or tunnel was started.")
 
