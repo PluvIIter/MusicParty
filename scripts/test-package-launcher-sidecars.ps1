@@ -162,6 +162,7 @@ if ($env:SIDECAR_FIXTURE_MODE -eq 'cloud-native') {
         throw "build-local did not fail at the first native command: $($buildOutput -join "`n")"
     }
     if (Test-Path -LiteralPath (Join-Path $mockRepo 'src')) { throw 'build-local continued after npm failed.' }
+    $global:LASTEXITCODE = 0
     Write-Host 'Offline sidecar packaging tests passed.'
 } finally {
     $env:SIDECAR_FIXTURE_MODE = $oldMode
