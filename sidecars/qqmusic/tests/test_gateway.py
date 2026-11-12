@@ -63,6 +63,10 @@ class FixtureClient:
         await self.close()
 
 
+def public_playlist_detail(request):
+    return {"dirinfo": {"id": request.args[0], "title": "Verified fixture", "songnum": 1, "picurl": "", "dir_show": 0}}
+
+
 def gateway(responses):
     public = FixtureClient(responses)
     authenticated = []
@@ -104,9 +108,10 @@ async def test_user_reference_preserves_verified_uin_and_euin_never_docid_or_nam
 
 @pytest.mark.asyncio
 async def test_public_collection_uses_global_tid_and_checks_complete_list():
-    entries = [{"tid": 123456, "dirId": 7, "dirName": "First", "songNum": 1, "picUrl": "", "invalid": False},
-               {"tid": 123457, "dirId": 8, "dirName": "Second", "songNum": 2, "picUrl": "", "invalid": False}]
-    g, public, _ = gateway({"user.get_created_songlist": {"total": 2, "bFinish": True, "v_playlist": entries}})
+    entries = [{"tid": 123456, "dirId": 7, "dirName": "First", "songNum": 1, "picUrl": "", "invalid": False, "dirShow": 0},
+               {"tid": 123457, "dirId": 8, "dirName": "Second", "songNum": 2, "picUrl": "", "invalid": False, "dirShow": 0}]
+    g, public, _ = gateway({"user.get_created_songlist": {"total": 2, "bFinish": True, "v_playlist": entries},
+                            "songlist.get_detail": public_playlist_detail})
     result = await g.execute("collections", {"userId": user_ref("123"), "category": "playlists", "limit": 1})
     assert result["items"][0]["id"] == "123456"
     assert result["nextOffset"] == 1

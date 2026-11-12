@@ -57,7 +57,24 @@ final class QqMusicTestSupport {
         }).build();
     }
 
+    static String timeline(String songMid, String mediaMid, long duration) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest((songMid + ":" + mediaMid + ":" + duration + ":full").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (Exception error) { throw new AssertionError(error); }
+    }
+
+    static JsonNode media(String quality, String mediaMid) {
+        boolean flac = "FLAC".equals(quality);
+        return MAPPER.createObjectNode().put("id", "songMID").put("mediaMid", mediaMid)
+                .put("representationKey", quality + ":" + mediaMid + ":12345")
+                .put("url", "https://93.184.216.34/" + quality + mediaMid)
+                .put("mimeType", flac ? "audio/flac" : "audio/mpeg").put("extension", flac ? ".flac" : ".mp3")
+                .put("expiresAt", java.time.Instant.now().plusSeconds(600).toString()).put("browserSafe", true)
+                .put("timelineKey", timeline("songMID", mediaMid, 180000)).set("headers", MAPPER.createObjectNode());
+    }
+
     static QqMusicApiService api(AppProperties properties, WebClient client, QqMusicCredentialService credentials) {
-        return new QqMusicApiService(new QqMusicGateway(client, properties), credentials, properties, MAPPER);
+        return new QqMusicApiService(new QqMusicGateway(client, properties, credentials), credentials, properties, MAPPER);
     }
 }

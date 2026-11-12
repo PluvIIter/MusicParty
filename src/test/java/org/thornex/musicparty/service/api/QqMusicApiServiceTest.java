@@ -31,13 +31,13 @@ class QqMusicApiServiceTest {
     private String timeline() {
         try {
             return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest("songMID:180000:full".getBytes(StandardCharsets.UTF_8)));
+                    .digest("songMID:mediaMID:180000:full".getBytes(StandardCharsets.UTF_8)));
         } catch (Exception error) { throw new AssertionError(error); }
     }
 
     private String media(String quality, String expiry, String headers, boolean browserSafe) {
         boolean flac = "FLAC".equals(quality);
-        return "{\"id\":\"songMID\",\"representationKey\":\"" + quality + ":mediaMID:12345\",\"url\":\"https://cdn.test/song\",\"mimeType\":\""
+        return "{\"id\":\"songMID\",\"mediaMid\":\"mediaMID\",\"representationKey\":\"" + quality + ":mediaMID:12345\",\"url\":\"https://cdn.test/song\",\"mimeType\":\""
                 + (flac ? "audio/flac" : "audio/mpeg") + "\",\"extension\":\"" + (flac ? ".flac" : ".mp3")
                 + "\",\"expiresAt\":\"" + expiry + "\",\"browserSafe\":" + browserSafe + ",\"headers\":" + headers + ",\"timelineKey\":\"" + timeline() + "\"}";
     }
@@ -246,6 +246,65 @@ class QqMusicApiServiceTest {
                 media("MP3_128", Instant.now().minusSeconds(1).toString(), "{}", true))) {
             var invalid = api(properties, mediaClient((request, body) -> Mono.just(data(json(value)))), credentials);
             assertThrows(ApiRequestException.class, () -> invalid.resolveMedia("songMID", MediaConsumer.BROWSER).block());
+        }
+    }
+
+    @Test
+    void credentialChangeWhileMetadataWaitsNeverDispatchesOldPrivateMedia() {
+        for (String replacement : List.of("", "{\"musicid\":123,\"musickey\":\"new\"}")) {
+            for (boolean metadataSucceeds : List.of(true, false)) {
+                var properties = properties();
+                var credentials = new QqMusicCredentialService(properties, MAPPER);
+                credentials.updateCookie("{\"musicid\":123,\"musickey\":\"old\"}");
+                Sinks.One<org.springframework.web.reactive.function.client.ClientResponse> metadata = Sinks.one();
+                var privateRequests = new java.util.concurrent.atomic.AtomicInteger();
+                var api = api(properties, client((request, body) -> {
+                    if (request.url().getPath().equals("/v1/track")) {
+                        assertFalse(body.has("credential"));
+                        return metadata.asMono();
+                    }
+                    privateRequests.incrementAndGet();
+                    return Mono.just(data(json(media("MP3_128", Instant.now().plusSeconds(600).toString(), "{}", true))));
+                }), credentials);
+                var result = api.resolveMedia("songMID", MediaConsumer.SERVER).toFuture();
+                credentials.updateCookie(replacement);
+                if (metadataSucceeds) metadata.tryEmitValue(data(json(TRACK)));
+                else metadata.tryEmitError(new IllegalStateException("old metadata failed"));
+                var failure = assertThrows(java.util.concurrent.CompletionException.class, result::join);
+                assertInstanceOf(ApiRequestException.class, failure.getCause());
+                if (metadataSucceeds) assertTrue(failure.getCause().getMessage().startsWith("CREDENTIAL_CHANGED"));
+                assertEquals(0, privateRequests.get());
+            }
+        }
+    }
+
+    @Test
+    void mediaMidIsRequiredMatchesRepresentationAndBindsTimelineAcrossQualities() {
+        var properties = properties();
+        var credentials = new QqMusicCredentialService(properties, MAPPER);
+        var api = api(properties, mediaClient((request, body) -> Mono.just(data(QqMusicTestSupport.media(
+                body.path("params").path("quality").asText(), "mediaMID")))), credentials);
+        var first = api.resolveMedia("songMID", MediaConsumer.SERVER).block();
+        properties.getQqmusic().setQuality("FLAC");
+        var lossless = api.resolveMedia("songMID", MediaConsumer.SERVER).block();
+        assertEquals(first.timelineKey(), lossless.timelineKey());
+        assertNotEquals(first.representationKey(), lossless.representationKey());
+        var other = api(properties, mediaClient((request, body) -> Mono.just(data(QqMusicTestSupport.media("FLAC", "otherMID")))), credentials);
+        assertNotEquals(first.timelineKey(), other.resolveMedia("songMID", MediaConsumer.SERVER).block().timelineKey());
+        var numeric = api(properties, mediaClient((request, body) -> Mono.just(data(QqMusicTestSupport.media("FLAC", "123456")))), credentials);
+        assertEquals(QqMusicTestSupport.timeline("songMID", "123456", 180000), numeric.resolveMedia("songMID", MediaConsumer.SERVER).block().timelineKey());
+        for (String mediaMid : List.of("", "bad:id", "bad/path", "bad mid")) {
+            var value = QqMusicTestSupport.media("FLAC", "mediaMID");
+            ((com.fasterxml.jackson.databind.node.ObjectNode) value).put("mediaMid", mediaMid);
+            var invalid = api(properties, mediaClient((request, body) -> Mono.just(data(value))), credentials);
+            assertThrows(ApiRequestException.class, () -> invalid.resolveMedia("songMID", MediaConsumer.SERVER).block());
+        }
+        for (boolean missing : List.of(true, false)) {
+            var value = QqMusicTestSupport.media("FLAC", "mediaMID");
+            if (missing) ((com.fasterxml.jackson.databind.node.ObjectNode) value).remove("mediaMid");
+            else ((com.fasterxml.jackson.databind.node.ObjectNode) value).put("representationKey", "FLAC:otherMID:12345");
+            var invalid = api(properties, mediaClient((request, body) -> Mono.just(data(value))), credentials);
+            assertThrows(ApiRequestException.class, () -> invalid.resolveMedia("songMID", MediaConsumer.SERVER).block());
         }
     }
 

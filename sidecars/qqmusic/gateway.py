@@ -35,6 +35,13 @@ def identifier(value):
     return value
 
 
+def media_identifier(value):
+    value = text(value, 128)
+    if not re.fullmatch(r"[A-Za-z0-9]+", value):
+        raise GatewayError("INVALID_INPUT", 400)
+    return value
+
+
 def number(value, maximum=10**20, allow_zero=False):
     if isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value):
         value = int(value)
@@ -247,7 +254,29 @@ class Gateway:
             if not isinstance(entries, list) or not raw.get("bFinish") or len(entries) != total or len(entries) > 2000:
                 raise GatewayError("COLLECTION_INCOMPLETE")
             selected = entries[offset:offset + limit]
-            items = [container(item) for item in selected if not item.get("invalid", False)]
+            candidates = [item for item in selected if isinstance(item, dict) and not item.get("invalid", False)
+                          and type(item.get("dirShow")) is int and item["dirShow"] in (0, 1)]
+            permits = asyncio.Semaphore(4)
+
+            async def verified(item):
+                pid = container(item)["id"]
+                async with permits:
+                    try:
+                        return await self.execute("container", {"type": "playlist", "id": pid})
+                    except GatewayError as failure:
+                        if failure.code == "COLLECTION_NOT_PUBLIC":
+                            return None
+                        raise
+
+            verification_tasks = [asyncio.create_task(verified(item)) for item in candidates]
+            try:
+                verified_items = await asyncio.gather(*verification_tasks)
+            finally:
+                for task in verification_tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*verification_tasks, return_exceptions=True)
+            items = [item for item in verified_items if item is not None]
             return {"items": items, "nextOffset": offset + len(selected) if offset + len(selected) < total else None, "total": total}
         if operation in {"container", "tracks"}:
             if params.get("type") != "playlist":
@@ -258,6 +287,8 @@ class Gateway:
             request = replace(request, param={**request.param, "song_begin": offset})
             raw = await self.raw(request)
             raw_info = raw.get("dirinfo", {})
+            if not isinstance(raw_info, dict) or str(raw_info.get("id")) != str(pid):
+                raise GatewayError("UPSTREAM_INVALID")
             if raw_info.get("dir_show") == 2:
                 raise GatewayError("COLLECTION_NOT_PUBLIC", 403)
             info = container(raw_info)
@@ -298,7 +329,7 @@ class Gateway:
             song = await self.detail(mid)
             file_type = getattr(SongFileType, quality)
             files = song.get("file", {})
-            media_mid = identifier(files.get("media_mid"))
+            media_mid = media_identifier(files.get("media_mid"))
             if not isinstance(files, dict) or any(type(files.get(field)) is not int or files[field] < 0 for field in ("size_try", "try_begin", "try_end")):
                 raise GatewayError("MEDIA_UNAVAILABLE")
             expected_size = number(files.get({"MP3_128": "size_128mp3", "MP3_320": "size_320mp3", "FLAC": "size_flac"}[quality]), 1024**3)
@@ -357,8 +388,8 @@ def map_media(mid, media_mid, quality, filename, size, duration, files, raw):
     if files.get("size_try", 0) and size <= files["size_try"]:
         raise GatewayError("MEDIA_CONTENT_CHANGED")
     url = safe_url("https://isure.stream.qqmusic.qq.com/" + path, media=True)
-    timeline = hashlib.sha256(f"{mid}:{duration}:full".encode()).hexdigest()
-    return {"id": mid, "representationKey": f"{quality}:{media_mid}:{size}", "url": url,
+    timeline = hashlib.sha256(f"{mid}:{media_mid}:{duration}:full".encode("utf-8")).hexdigest()
+    return {"id": mid, "mediaMid": media_mid, "representationKey": f"{quality}:{media_mid}:{size}", "url": url,
             "mimeType": "audio/flac" if quality == "FLAC" else "audio/mpeg", "extension": ".flac" if quality == "FLAC" else ".mp3",
             "expiresAt": (datetime.now(timezone.utc) + timedelta(seconds=expiration - 30)).isoformat().replace("+00:00", "Z"),
             "browserSafe": True, "headers": {}, "timelineKey": timeline}

@@ -38,8 +38,15 @@ def static_check():
         require(match and match[1] == expected, f"Unexpected PowerShell pin: {name}")
     for expected in ["[string]$OutputDir", "Get-FileHash", "-Algorithm SHA256", "refusing to overwrite",
                      "ArgumentList.Add('--version')", "WaitForExit(30000)", "source-manifest.json",
-                     "vendor/modules.txt", "notice-files.json", "if (-not $IsWindows)"]:
+                     "vendor/modules.txt", "notice-files.json", "if (-not $IsWindows)",
+                     "[IO.Compression.ZipFile]::OpenRead($sourceZip)", "$entry.Open()",
+                     "$hasher.ComputeHash($stream)", "sourcePrefix = $sourcePrefix", "storage = 'archive'",
+                     "Archive-internal source prefix: $sourcePrefix"]:
         require(expected in script, f"Missing package contract: {expected}")
+    require("$sourceDir" not in script and "sourceDirectory" not in script,
+            "Package must retain corresponding source only in the complete archive")
+    require(script.count("::ExtractToFile(") == 1 and "$sourcePrefix + 'LICENSE'" in script,
+            "Package must extract only the root license, not the source tree")
     require("/latest" not in script, "Package script must not resolve latest")
     require(not re.search(r"(?mi)^\s*(?:&.*\b(?:tunnel|service)\b|Start-Process|Install-Package)", script),
             "Package smoke must not install a service or create a tunnel")
@@ -58,9 +65,11 @@ def check_official_release():
 def validate_layout(bundle):
     executable = bundle / "cloudflared.exe"
     notices = bundle / "cloudflared-notices"
+    source_archive = f"cloudflared-{VERSION}-source.zip"
+    prefix = f"cloudflared-{COMMIT}/"
+    storage = {"sourceArchive": source_archive, "sourcePrefix": prefix, "storage": "archive"}
     required = ["LICENSE", "NOTICE", "bundle-manifest.json", "source-manifest.json", "notice-files.json",
-                f"cloudflared-{VERSION}-source.zip", "source/LICENSE", "source/go.mod", "source/go.sum",
-                "source/vendor/modules.txt", "source/cmd/cloudflared/main.go"]
+                source_archive]
     require(executable.is_file(), "Missing cloudflared.exe")
     for name in required:
         require((notices / name).is_file(), f"Missing notice/source file: {name}")
@@ -75,40 +84,62 @@ def validate_layout(bundle):
     for key, value in {"version": VERSION, "sourceCommit": COMMIT, "binarySha256": BINARY_SHA256,
                        "sourceSha256": SOURCE_SHA256, "binaryUrl": BINARY_URL, "sourceUrl": SOURCE_URL,
                        "releaseUrl": RELEASE_URL, "platform": "windows-amd64",
-                       "smokeCommand": "cloudflared.exe --version"}.items():
+                       "smokeCommand": "cloudflared.exe --version", **storage}.items():
         require(manifest[key] == value, f"Manifest mismatch: {key}")
     require(re.match(rf"cloudflared version {re.escape(VERSION)}(?:\s|$)", manifest["smokeOutput"]),
             "Manifest has no successful version smoke output")
-    source = notices / "source"
-    require((notices / "LICENSE").read_bytes() == (source / "LICENSE").read_bytes(), "License mismatch")
-    require("Apache License" in (notices / "LICENSE").read_text(encoding="utf-8"), "Missing Apache license")
+    require("sourceDirectory" not in manifest and not (notices / "source").exists(),
+            "Corresponding source must be retained only in the archive")
     inventory = json.loads((notices / "source-manifest.json").read_text(encoding="utf-8"))
     require(inventory["commit"] == COMMIT and inventory["files"], "Missing source inventory")
-    actual = {p.relative_to(source).as_posix() for p in source.rglob("*") if p.is_file()}
-    require(actual == set(inventory["files"]), "Source inventory differs from exported files")
-    for name, digest in inventory["files"].items():
-        target = (source / name).resolve(strict=True)
-        require(target.is_relative_to(source), f"Source path escapes bundle: {name}")
-        require(sha256(target) == digest, f"Source checksum mismatch: {name}")
-    archive_path = notices / f"cloudflared-{VERSION}-source.zip"
+    for key, value in storage.items():
+        require(inventory[key] == value, f"Source inventory mismatch: {key}")
+    archive_path = notices / source_archive
     require(sha256(archive_path) == SOURCE_SHA256, "Source archive checksum mismatch")
-    prefix = f"cloudflared-{COMMIT}/"
     with zipfile.ZipFile(archive_path) as archive:
-        files = {entry.filename[len(prefix):]: entry for entry in archive.infolist() if not entry.is_dir()}
-        require(set(files) == actual, "Source export is not the complete official archive")
-        for name, entry in files.items():
+        files = {}
+        entry_names = set()
+        for entry in archive.infolist():
             require(entry.filename.startswith(prefix), "Archive has unexpected source root")
-            require(hashlib.sha256(archive.read(entry)).hexdigest() == inventory["files"][name],
-                    f"Source export differs from official archive: {name}")
+            relative = entry.filename[len(prefix):]
+            if not relative:
+                continue
+            path = relative.rstrip("/")
+            require(path and "\\" not in relative
+                    and not re.search(r'//|(^|/)\.\.?(/|$)|[<>:"|?*\x00-\x1f]|^/|[. ](/|$)', relative)
+                    and (entry.external_attr >> 16) & 0xF000 != 0xA000,
+                    f"Unsafe source archive entry: {relative}")
+            require(path.casefold() not in entry_names, f"Duplicate source entry: {relative}")
+            entry_names.add(path.casefold())
+            if not entry.is_dir():
+                files[relative] = entry
+        require(set(files) == set(inventory["files"]), "Source inventory differs from complete official archive")
+        require({"LICENSE", "go.mod", "go.sum", "vendor/modules.txt", "cmd/cloudflared/main.go"} <= files.keys(),
+                "Missing corresponding source")
+        for name, entry in files.items():
+            with archive.open(entry) as source:
+                require(hashlib.file_digest(source, "sha256").hexdigest() == inventory["files"][name],
+                        f"Source archive checksum mismatch: {name}")
+        license_bytes = archive.read(files["LICENSE"])
+        require((notices / "LICENSE").read_bytes() == license_bytes, "License mismatch")
+        require(re.search(r"Apache License\s+Version 2\.0", license_bytes.decode("utf-8")), "Missing Apache license")
     notice_files = json.loads((notices / "notice-files.json").read_text(encoding="utf-8"))
-    expected = {name for name in actual if re.fullmatch(r"(?:LICENSE|NOTICE|COPYING|COPYRIGHT|AUTHORS|PATENTS)(?:[._-].*)?",
-                                                       name.rsplit("/", 1)[-1], re.IGNORECASE)}
-    require(set(notice_files) == expected, "Dependency notice index incomplete")
-    vendor_count = sum(name.startswith("vendor/") for name in expected)
+    expected = {prefix + name for name in files
+                if re.fullmatch(r"(?:LICENSE|NOTICE|COPYING|COPYRIGHT|AUTHORS|PATENTS)(?:[._-].*)?",
+                                name.rsplit("/", 1)[-1], re.IGNORECASE)}
+    require(isinstance(notice_files, list) and len(notice_files) == len(expected) and set(notice_files) == expected,
+            "Dependency notice archive-entry index incomplete")
+    vendor_count = sum(name.startswith(prefix + "vendor/") for name in expected)
     require(vendor_count >= 100 and manifest["vendorNoticeCount"] == vendor_count, "Missing vendored notices")
-    require(any(name.startswith("vendor/") and name.endswith("/NOTICE") for name in expected),
+    require(any(name.startswith(prefix + "vendor/") and name.endswith("/NOTICE") for name in expected),
             "Missing original dependency NOTICE files")
-    print("Bundled executable, full official source and vendored notice integrity passed.")
+    notice = (notices / "NOTICE").read_text(encoding="utf-8")
+    for text in [source_archive, SOURCE_SHA256, f"Archive-internal source prefix: {prefix}",
+                 f"{prefix}LICENSE", "notice-files.json", "archive entry"]:
+        require(text in notice, f"Packaging NOTICE lacks archive location: {text}")
+    if "NOTICE" in files:
+        require(f"{prefix}NOTICE" in notice, "Packaging NOTICE lacks upstream NOTICE archive entry")
+    print("Bundled executable, complete source archive and vendored notice integrity passed.")
 
 
 def smoke(bundle):

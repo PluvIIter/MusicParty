@@ -42,7 +42,6 @@ foreach ($target in @($executable, $notices)) {
 }
 $null = [IO.Directory]::CreateDirectory($bundle)
 $null = New-Item -ItemType Directory -Path $notices
-$sourceDir = Join-Path $notices 'source'
 $sourceZip = Join-Path $notices "cloudflared-$version-source.zip"
 $download = Join-Path $notices 'cloudflared.download'
 
@@ -59,9 +58,8 @@ Assert-Sha256 -Path $download -Expected $binarySha256
 Invoke-WebRequest -Uri $sourceUrl -OutFile $sourceZip
 Assert-Sha256 -Path $sourceZip -Expected $sourceSha256
 
-$null = [IO.Directory]::CreateDirectory($sourceDir)
-$sourceBoundary = $sourceDir + [IO.Path]::DirectorySeparatorChar
 $inventory = [ordered]@{}
+$entryNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $archive = [IO.Compression.ZipFile]::OpenRead($sourceZip)
 try {
     foreach ($entry in $archive.Entries) {
@@ -70,55 +68,65 @@ try {
         }
         $relative = $entry.FullName.Substring($sourcePrefix.Length)
         if ($relative.Length -eq 0) { continue }
-        if ($relative.Contains('\') -or $relative -match '(^|/)\.\.?(/|$)|[<>:"|?*]' -or (($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000) {
+        $path = $relative.TrimEnd('/')
+        if ($path.Length -eq 0 -or $relative.Contains('\') -or $relative -match '//|(^|/)\.\.?(/|$)|[<>:"|?*\x00-\x1f]|^/|[. ](/|$)' -or (($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000) {
             throw "Unsafe source archive entry: $relative"
         }
-        $destination = [IO.Path]::GetFullPath((Join-Path $sourceDir $relative))
-        if (-not $destination.StartsWith($sourceBoundary, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Source archive path escaped the bundle: $relative"
+        if (-not $entryNames.Add($path)) { throw "Duplicate source entry: $relative" }
+        if ($entry.FullName.EndsWith('/')) { continue }
+        $stream = $entry.Open()
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try {
+            $inventory[$relative] = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $hasher.Dispose()
+            $stream.Dispose()
         }
-        if ($entry.FullName.EndsWith('/')) {
-            $null = [IO.Directory]::CreateDirectory($destination)
-            continue
-        }
-        if ($inventory.Contains($relative)) { throw "Duplicate source entry: $relative" }
-        $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
-        [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destination, $false)
-        $inventory[$relative] = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
     }
+    foreach ($required in @('LICENSE', 'go.mod', 'go.sum', 'vendor/modules.txt', 'cmd/cloudflared/main.go')) {
+        if (-not $inventory.Contains($required)) { throw "Missing corresponding source: $required" }
+    }
+    [IO.Compression.ZipFileExtensions]::ExtractToFile($archive.GetEntry($sourcePrefix + 'LICENSE'), (Join-Path $notices 'LICENSE'), $false)
 } finally {
     $archive.Dispose()
 }
-foreach ($required in @('LICENSE', 'go.mod', 'go.sum', 'vendor/modules.txt', 'cmd/cloudflared/main.go')) {
-    if (-not $inventory.Contains($required)) { throw "Missing corresponding source: $required" }
-}
-$licensePath = Join-Path $sourceDir 'LICENSE'
-if ((Get-Content -LiteralPath $licensePath -Raw) -notmatch 'Apache License\s+Version 2\.0') {
+if ((Get-Content -LiteralPath (Join-Path $notices 'LICENSE') -Raw) -notmatch 'Apache License\s+Version 2\.0') {
     throw 'Upstream Apache 2.0 license is missing.'
 }
-Copy-Item -LiteralPath $licensePath -Destination (Join-Path $notices 'LICENSE')
 $noticePaths = @($inventory.Keys | Where-Object { ($_ -split '/')[-1] -match '^(LICENSE|NOTICE|COPYING|COPYRIGHT|AUTHORS|PATENTS)([._-].*)?$' })
 $vendorNotices = @($noticePaths | Where-Object { $_.StartsWith('vendor/') })
 if ($vendorNotices.Count -lt 100) { throw 'Vendored dependency license/notice files are incomplete.' }
-$upstreamNotice = Join-Path $sourceDir 'NOTICE'
-if (Test-Path -LiteralPath $upstreamNotice -PathType Leaf) {
-    Copy-Item -LiteralPath $upstreamNotice -Destination (Join-Path $notices 'NOTICE')
+if (-not @($vendorNotices | Where-Object { $_.EndsWith('/NOTICE') }).Count) { throw 'Original dependency NOTICE files are missing.' }
+$upstreamNotice = if ($inventory.Contains('NOTICE')) {
+    "The upstream NOTICE is preserved at ${sourcePrefix}NOTICE inside the source archive."
 } else {
-    $notice = @"
+    'This upstream revision has no top-level NOTICE file.'
+}
+$notice = @"
 cloudflared $version, distributed unmodified from Cloudflare's official release.
 Project: https://github.com/cloudflare/cloudflared
-License: Apache License 2.0; see LICENSE and source/LICENSE.
+License: Apache License 2.0; see LICENSE and ${sourcePrefix}LICENSE inside the source archive.
 Corresponding source commit: $commit
-Source archive: $sourceUrl
-This upstream revision has no top-level NOTICE file. This packaging notice is not an upstream NOTICE.
-The complete upstream source and vendored Go dependencies are retained in source/.
-Their original license, copyright and NOTICE files are preserved at their original paths;
-notice-files.json indexes them without replacing source-file copyright notices.
+Source archive: $(Split-Path -Leaf $sourceZip)
+Source archive URL: $sourceUrl
+Source archive SHA256: $sourceSha256
+Archive-internal source prefix: $sourcePrefix
+$upstreamNotice
+This packaging notice is not an upstream NOTICE.
+The complete upstream source and vendored Go dependencies are retained only in the source archive.
+Their original license, copyright and NOTICE files remain at their archive-internal paths;
+notice-files.json indexes complete archive entry names, including the prefix above.
+source-manifest.json hashes every source file relative to that archive-internal prefix.
 "@
-    Set-Content -LiteralPath (Join-Path $notices 'NOTICE') -Value $notice -Encoding utf8NoBOM
-}
-$noticePaths | ConvertTo-Json -AsArray | Set-Content -LiteralPath (Join-Path $notices 'notice-files.json') -Encoding utf8NoBOM
-[ordered]@{ commit = $commit; files = $inventory } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $notices 'source-manifest.json') -Encoding utf8NoBOM
+Set-Content -LiteralPath (Join-Path $notices 'NOTICE') -Value $notice -Encoding utf8NoBOM
+@($noticePaths | ForEach-Object { $sourcePrefix + $_ }) | ConvertTo-Json -AsArray | Set-Content -LiteralPath (Join-Path $notices 'notice-files.json') -Encoding utf8NoBOM
+[ordered]@{
+    commit = $commit
+    sourceArchive = Split-Path -Leaf $sourceZip
+    sourcePrefix = $sourcePrefix
+    storage = 'archive'
+    files = $inventory
+} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $notices 'source-manifest.json') -Encoding utf8NoBOM
 
 # A failed build keeps its evidence in notices and must be retried in a clean release directory.
 [IO.File]::Move($download, $executable, $false)
@@ -162,7 +170,8 @@ $manifest = [ordered]@{
     sourceSha256 = $sourceSha256
     sourceSha256Provenance = 'SHA256 of the complete official commit archive, independently downloaded when pinning this script.'
     sourceArchive = "cloudflared-$version-source.zip"
-    sourceDirectory = 'source'
+    sourcePrefix = $sourcePrefix
+    storage = 'archive'
     vendorNoticeCount = $vendorNotices.Count
     smokeCommand = 'cloudflared.exe --version'
     smokeOutput = $versionOutput.Trim()

@@ -57,8 +57,8 @@ func readyGate(t *testing.T, gate *tunnelGate, client *http.Client) {
 func TestGateStreamsWithoutWaitingForBackendCompletion(t *testing.T) {
 	release := make(chan struct{})
 	gate, _ := gateBackend(t, "127.0.0.1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v2/sources" {
-			fmt.Fprint(w, `{"schemaVersion":2,"sources":[]}`)
+		if r.URL.Path == "/api/auth/status" {
+			fmt.Fprint(w, `{"isSetup":true,"hasProtection":true}`)
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -105,8 +105,8 @@ func TestGateStreamsWithoutWaitingForBackendCompletion(t *testing.T) {
 func TestGateWebSocketUpgradeAndBidirectionalFrames(t *testing.T) {
 	serverErr := make(chan error, 1)
 	gate, _ := gateBackend(t, "127.0.0.1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v2/sources" {
-			fmt.Fprint(w, `{"schemaVersion":2,"sources":[]}`)
+		if r.URL.Path == "/api/auth/status" {
+			fmt.Fprint(w, `{"isSetup":true,"hasProtection":true}`)
 			return
 		}
 		connection, buffer, err := w.(http.Hijacker).Hijack()
@@ -202,8 +202,8 @@ func TestGateAndReadinessNeverUseInheritedHTTPProxy(t *testing.T) {
 		}
 	}
 	gate, _ := gateBackend(t, host, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v2/sources" {
-			fmt.Fprint(w, `{"schemaVersion":2,"sources":[]}`)
+		if r.URL.Path == "/api/auth/status" {
+			fmt.Fprint(w, `{"isSetup":true,"hasProtection":true}`)
 			return
 		}
 		fmt.Fprint(w, "direct application")
@@ -219,6 +219,48 @@ func TestGateAndReadinessNeverUseInheritedHTTPProxy(t *testing.T) {
 	body, _ := io.ReadAll(response.Body)
 	if string(body) != "direct application" || proxyCalls.Load() != 0 {
 		t.Fatal("gate or readiness used inherited proxy")
+	}
+}
+
+func TestGateReadinessUsesPublicStatusWithoutPasswordHeaders(t *testing.T) {
+	for _, password := range []string{" leading and trailing ", "admin123", "", "   "} {
+		t.Run(strconv.Quote(password), func(t *testing.T) {
+			var calls atomic.Int32
+			gate, _ := gateBackend(t, "127.0.0.1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Path != "/api/auth/status" || r.Method != http.MethodGet {
+					http.Error(w, "wrong readiness route", http.StatusNotFound)
+					return
+				}
+				if _, exists := r.Header["X-Room-Password"]; exists || r.Header.Get("Authorization") != "" {
+					http.Error(w, "readiness must not carry credentials", http.StatusForbidden)
+					return
+				}
+				fmt.Fprint(w, `{"isSetup":false,"hasProtection":false}`)
+			}))
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := gate.waitBackend(ctx, &http.Client{Timeout: time.Second}, password, &process.Handle{Done: make(chan struct{})}); err != nil {
+				t.Fatal(err)
+			}
+			if calls.Load() == 0 || !gate.open.Load() {
+				t.Fatal("public application status did not open the gate")
+			}
+		})
+	}
+}
+
+func TestGateReadinessRejectsIncompleteOrNonBooleanStatus(t *testing.T) {
+	for _, body := range []string{`{}`, `{"isSetup":true}`, `{"isSetup":null,"hasProtection":false}`, `{"isSetup":true,"hasProtection":"false"}`, `{"schemaVersion":2,"sources":[]}`} {
+		gate, _ := gateBackend(t, "127.0.0.1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, body)
+		}))
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+		err := gate.waitBackend(ctx, &http.Client{Timeout: time.Second}, "unused", &process.Handle{Done: make(chan struct{})})
+		cancel()
+		if err == nil || gate.open.Load() {
+			t.Fatal("invalid public status was treated as application readiness")
+		}
 	}
 }
 

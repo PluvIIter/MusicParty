@@ -149,7 +149,9 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
             if (consumer == null) throw invalid();
             var snapshot = credentials.snapshot();
             snapshot.requireValid();
-            return getMusic(id).flatMap(metadata -> gateway.authenticatedRequest(operation,
+            return getMusic(id).flatMap(metadata -> {
+                credentials.requireCurrent(snapshot);
+                return gateway.authenticatedRequest(operation,
                     Map.of("id", id, "quality", quality, "consumer", consumer.name()), snapshot)
                     .map(node -> {
                         credentials.requireCurrent(snapshot);
@@ -166,13 +168,16 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
                         if (!node.path("browserSafe").isBoolean()) throw invalid();
                         boolean browserSafe = node.path("browserSafe").booleanValue();
                         if (consumer == MediaConsumer.BROWSER && (!browserSafe || !headers.isEmpty())) throw invalid();
+                        String mediaMid = text(node, "mediaMid", 128);
+                        if (!mediaMid.matches("[A-Za-z0-9]{1,128}")) throw invalid();
                         String representation = text(node, "representationKey", 512);
-                        if (!representation.matches(java.util.regex.Pattern.quote(quality) + ":[A-Za-z0-9]+:[1-9][0-9]{0,18}")) throw invalid();
-                        String expectedTimeline = timeline(id, metadata.duration());
+                        if (!representation.matches(java.util.regex.Pattern.quote(quality + ":" + mediaMid) + ":[1-9][0-9]{0,18}")) throw invalid();
+                        String expectedTimeline = timeline(id, mediaMid, metadata.duration());
                         if (!expectedTimeline.equals(text(node, "timelineKey", 512))) throw new ApiRequestException("MEDIA_CONTENT_CHANGED");
                         return new ResolvedMedia(new ResourceKey(SOURCE, id), representation,
                                 requiredUrl(node, "url"), mime, extension, expiry, headers, browserSafe, expectedTimeline);
-                    }));
+                    });
+            });
         });
     }
 
@@ -271,10 +276,10 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
         catch (Exception error) { throw invalid(); }
     }
 
-    private String timeline(String id, long duration) {
+    private String timeline(String id, String mediaMid, long duration) {
         try {
             byte[] hash = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest((id + ":" + duration + ":full").getBytes(StandardCharsets.UTF_8));
+                    .digest((id + ":" + mediaMid + ":" + duration + ":full").getBytes(StandardCharsets.UTF_8));
             return java.util.HexFormat.of().formatHex(hash);
         } catch (java.security.NoSuchAlgorithmException error) { throw new IllegalStateException(error); }
     }

@@ -126,6 +126,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Test repeatable sidecar packaging without downloads
+        shell: pwsh
+        run: ./scripts/test-package-launcher-sidecars.ps1
       - name: Package and verify cloudflared without opening a tunnel
         shell: pwsh
         run: |
@@ -146,4 +149,11 @@ jobs:
           Push-Location launcher
           go build -mod=mod -o "${{ runner.temp }}/MusicParty-compile-check.exe" .
           if ($LASTEXITCODE -ne 0) { throw 'Windows launcher compilation failed' }
+          $env:LAUNCHER_EXTRACT_TEST_DIR = "${{ runner.temp }}/launcher-extracted"
+          go test -mod=mod -run '^TestExtractPublishedAssets$' .
+          if ($LASTEXITCODE -ne 0) { throw 'Embedded launcher assets could not be extracted' }
           Pop-Location
+          python scripts/test-cloudflared.py --output-dir "${{ runner.temp }}/launcher-extracted/bin"
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted cloudflared assets are incomplete' }
+          python scripts/test-qqmusic-bundle.py --bundle "${{ runner.temp }}/launcher-extracted/bin/qqmusic"
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted QQ runtime is incomplete' }

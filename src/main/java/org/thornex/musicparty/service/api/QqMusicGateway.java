@@ -22,10 +22,12 @@ public class QqMusicGateway {
             "COLLECTION_CHANGED", "COLLECTION_NOT_PUBLIC", "PAGINATION_STALLED", "MEDIA_UNAVAILABLE", "MEDIA_CONTENT_CHANGED");
     private final WebClient client;
     private final AppProperties properties;
+    private final QqMusicCredentialService credentials;
 
-    public QqMusicGateway(WebClient client, AppProperties properties) {
+    public QqMusicGateway(WebClient client, AppProperties properties, QqMusicCredentialService credentials) {
         this.client = client.mutate().codecs(config -> config.defaultCodecs().maxInMemorySize(2 * 1024 * 1024)).build();
         this.properties = properties;
+        this.credentials = credentials;
     }
 
     public Mono<JsonNode> publicRequest(String operation, Map<String, Object> params) {
@@ -37,16 +39,24 @@ public class QqMusicGateway {
         if (!Set.of("media", "media-fallback", "fm").contains(operation)) {
             return Mono.error(new ApiRequestException("INVALID_REQUEST: 无效QQ音乐操作"));
         }
-        snapshot.requireValid();
-        if ("fm".equals(operation) && !snapshot.configured()) {
-            return Mono.error(new ApiRequestException("RECOMMENDATION_AUTH_REQUIRED: 请配置QQ音乐凭据"));
-        }
-        Map<String, Object> body = snapshot.configured() ? Map.of("params", params, "credential", snapshot.credential()) : Map.of("params", params);
-        return request(operation, body);
+        return Mono.defer(() -> {
+            credentials.requireCurrent(snapshot);
+            snapshot.requireValid();
+            if ("fm".equals(operation) && !snapshot.configured()) {
+                return Mono.error(new ApiRequestException("RECOMMENDATION_AUTH_REQUIRED: 请配置QQ音乐凭据"));
+            }
+            Map<String, Object> body = snapshot.configured() ? Map.of("params", params, "credential", snapshot.credential()) : Map.of("params", params);
+            return request(operation, body, () -> credentials.requireCurrent(snapshot));
+        }).doOnNext(ignored -> credentials.requireCurrent(snapshot));
     }
 
     private Mono<JsonNode> request(String operation, Map<String, Object> body) {
+        return request(operation, body, () -> {});
+    }
+
+    private Mono<JsonNode> request(String operation, Map<String, Object> body, Runnable authorize) {
         return Mono.defer(() -> {
+            authorize.run();
             String token = properties.getQqmusic().getGatewayToken();
             if (token == null || token.length() < 16 || token.length() > 512 || !token.chars().allMatch(value -> value >= 33 && value <= 126)) {
                 return Mono.error(new ApiRequestException("GATEWAY_NOT_CONFIGURED: QQ音乐网关令牌未配置"));

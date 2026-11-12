@@ -69,7 +69,10 @@ const pollStatuses = async () => {
   const poll = statusPoll.begin();
   const current = () => statusPoll.current(poll) && !isStopping.value;
   const updateTunnel = next => {
-    if (!current() || !tunnelPollingActive || (!isRunning.value && !isStarting.value)) return;
+    if (!current() || !tunnelPollingActive) return;
+    if (!isRunning.value && !isStarting.value && (next.state === 'ready' || next.state === 'starting')) return;
+    // A run's terminal failure stays visible until an explicit stop or a new start.
+    if (tunnelStatus.value.state === 'failed' && next.state !== 'failed') return;
     if (next.url !== tunnelStatus.value.url) tunnelActionMessage.value = '';
     tunnelStatus.value = next;
   };
@@ -81,8 +84,11 @@ const pollStatuses = async () => {
       if (isRunning.value && !isStarting.value && !statuses.JAVA_SERVER) {
         isRunning.value = false;
         isJavaReady.value = false;
-        tunnelPollingActive = false;
-        resetTunnel('stopped');
+        isApiReady.value = false;
+        if (tunnelStatus.value.state === 'ready' || tunnelStatus.value.state === 'starting') {
+          tunnelStatus.value = { ...tunnelStatus.value, state: 'starting', url: '' };
+          tunnelActionMessage.value = '';
+        }
       }
     }),
     GetTunnelStatus()
@@ -189,8 +195,17 @@ const toggleServices = async () => {
   } catch (error) {
     if (serviceAttempt.current(attempt) || stopping) {
       isStarting.value = false;
-      tunnelPollingActive = false;
-      resetTunnel('failed');
+      isRunning.value = false;
+      isJavaReady.value = false;
+      isApiReady.value = false;
+      if (!stopping) {
+        const tunnelError = tunnelStatus.value.error || String(error);
+        statusPoll.reset();
+        tunnelStatus.value = config.cloudflareTunnelEnabled
+          ? { enabled: true, state: 'failed', url: '', error: tunnelError }
+          : emptyTunnelStatus();
+        tunnelActionMessage.value = '';
+      }
       errorMessage.value = String(error);
     }
   } finally {

@@ -59,7 +59,7 @@ func newTunnelGate(cfg *config.AppConfig) (*tunnelGate, error) {
 
 func (gate *tunnelGate) close() { gate.open.Store(false); gate.server.Close() }
 
-func (gate *tunnelGate) waitBackend(ctx context.Context, client *http.Client, password string, handle *process.Handle) error {
+func (gate *tunnelGate) waitBackend(ctx context.Context, client *http.Client, _ string, handle *process.Handle) error {
 	localClient := *client
 	localClient.Transport = &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: time.Second}).DialContext}
 	client = &localClient
@@ -71,26 +71,16 @@ func (gate *tunnelGate) waitBackend(ctx context.Context, client *http.Client, pa
 			return fmt.Errorf("Java server exited before tunnel application readiness")
 		default:
 		}
-		endpoint := "/api/v2/sources"
-		if strings.TrimSpace(password) == "" {
-			endpoint = "/api/auth/status"
-		}
-		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, gate.target+endpoint, nil)
-		request.Header.Set("X-Room-Password", password)
+		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, gate.target+"/api/auth/status", nil)
 		response, err := client.Do(request)
 		if err == nil {
 			var body struct {
-				SchemaVersion int               `json:"schemaVersion"`
-				Sources       []json.RawMessage `json:"sources"`
-				IsSetup       *bool             `json:"isSetup"`
-				HasProtection *bool             `json:"hasProtection"`
+				IsSetup       *bool `json:"isSetup"`
+				HasProtection *bool `json:"hasProtection"`
 			}
 			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 1024*1024)).Decode(&body)
 			response.Body.Close()
-			ready := body.SchemaVersion == 2 && body.Sources != nil
-			if endpoint == "/api/auth/status" {
-				ready = body.IsSetup != nil && body.HasProtection != nil
-			}
+			ready := body.IsSetup != nil && body.HasProtection != nil
 			if response.StatusCode == 200 && decodeErr == nil && ready {
 				select {
 				case <-handle.Done:

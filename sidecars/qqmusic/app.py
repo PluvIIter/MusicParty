@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from qqmusic_api.core.exceptions import CredentialExpiredError, CredentialInvalidError, RatelimitedError
+from qqmusic_api.core.exceptions import CredentialExpiredError, CredentialInvalidError, RatelimitedError, TimeoutNetworkError
 
 from gateway import Gateway, GatewayError
 
@@ -95,7 +95,7 @@ def create_app(gateway=None, token=None, timeout=20.0):
             return error("SOURCE_AUTH_REQUIRED", 401)
         except RatelimitedError:
             return error("SOURCE_RATE_LIMITED", 429)
-        except TimeoutError:
+        except (TimeoutError, TimeoutNetworkError):
             return error("UPSTREAM_TIMEOUT", 504)
         except (ValueError, UnicodeError, TypeError):
             return error("INVALID_INPUT", 400)
