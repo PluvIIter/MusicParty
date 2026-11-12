@@ -41,16 +41,19 @@ class AdapterMediaContractTest {
         assertFalse(media.headers().containsKey("Cookie")); assertTrue(media.representationKey().contains("flac"));
     }
 
-    @Test void bilibiliMetadataUsesNoAccountCookieAndNeverStartsDownload() {
+    @Test void bilibiliMetadataUsesDeviceCookieButNeverAccountCookieOrDownload() {
         AppProperties props = new AppProperties(); props.getBilibili().setBaseUrl("http://bili.test");
         var cookie = mock(BilibiliCookieService.class); var wbi = mock(BilibiliWbiService.class);
+        when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device; buvid4=device4"));
         WebClient client = WebClient.builder().exchangeFunction(request -> {
-            assertEquals("", request.headers().getFirst("Cookie"));
+            // 只允许设备指纹，不能带 SESSDATA 等账号凭据：境外 IP 匿名 view 会被 412
+            assertEquals("buvid3=device; buvid4=device4", request.headers().getFirst("Cookie"));
             return Mono.just(json("{\"code\":0,\"data\":{\"cid\":10,\"title\":\"Track\",\"duration\":1,\"owner\":{\"name\":\"Artist\"}}}"));
         }).build();
         var music = new BilibiliMusicApiService(client, props, wbi, cookie).getMusic("BV1abc").block();
         assertEquals("BV1abc", music.id()); assertEquals("https://www.bilibili.com/video/BV1abc", music.externalUrl());
-        verifyNoInteractions(cookie, wbi);
+        verify(cookie).getPublicCookieHeader();
+        verifyNoInteractions(wbi);
     }
 
     @Test void neteaseTimelineIgnoresCodecButSeparatesTrialWindows() {

@@ -1,11 +1,15 @@
 package org.thornex.musicparty.util;
 
+import org.springframework.core.codec.DecodingException;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.exception.ApiRequestException;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.time.Duration;
 import java.util.List;
 
 public class BilibiliApiUtils {
@@ -58,9 +62,9 @@ public class BilibiliApiUtils {
      * 🟢 核心方法：一次请求获取 CID 和 视频详情
      */
     public static Mono<BilibiliVideoInfo> getVideoInfo(String bvid, WebClient webClient, String baseUrl, String cookie) {
-        return buildRequest(baseUrl + "/x/web-interface/view?bvid=" + bvid, cookie, webClient)
+        return withRiskControlHandling(buildRequest(baseUrl + "/x/web-interface/view?bvid=" + bvid, cookie, webClient)
                 .retrieve()
-                .bodyToMono(JsonNode.class)
+                .bodyToMono(JsonNode.class))
                 .handle((jsonNode, sink) -> {
                     if (jsonNode.path("code").asInt() != 0) {
                         sink.error(new ApiRequestException("Could not get Bilibili video info: " + jsonNode.path("message").asText()));
@@ -84,5 +88,27 @@ public class BilibiliApiUtils {
 
                     sink.next(new BilibiliVideoInfo(cid, music));
                 });
+    }
+
+    /**
+     * B 站风控（HTTP 412/403 挑战页、或挑战页正文非 JSON）重试一次并转成友好错误。
+     * view 接口此前没有这层处理，单次 412 会直接以
+     * "412 Precondition Failed from GET ..." 的形式冒到用户提示里。
+     */
+    public static <T> Mono<T> withRiskControlHandling(Mono<T> source) {
+        return source
+                .retryWhen(Retry.backoff(1, Duration.ofMillis(800))
+                        .filter(BilibiliApiUtils::isRiskControl)
+                        .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
+                .onErrorMap(BilibiliApiUtils::isRiskControl,
+                        error -> new ApiRequestException("B 站风控拦截，请稍后重试"));
+    }
+
+    static boolean isRiskControl(Throwable error) {
+        if (error instanceof WebClientResponseException response) {
+            int status = response.getStatusCode().value();
+            return status == 412 || status == 403;
+        }
+        return error instanceof DecodingException;
     }
 }
