@@ -31,6 +31,7 @@ public class MediaDeliveryService {
     private final Map<String, Mono<ResolvedMedia>> fallbackResolutions = new ConcurrentHashMap<>();
     private final Map<String, Ticket> tickets = new ConcurrentHashMap<>();
     private final Map<String, String> downloadAliases = new ConcurrentHashMap<>();
+    private final Map<String, Mono<String>> downloads = new ConcurrentHashMap<>();
     private final java.util.Set<String> failedDownloads = ConcurrentHashMap.newKeySet();
     private PlayableMusic activePlayback;
     private final Map<PlaybackIdentity, String> playbackTimelines = new java.util.HashMap<>();
@@ -83,25 +84,32 @@ public class MediaDeliveryService {
     }
 
     private Mono<ResolvedMedia> resolve(String sourceId, String id, MediaConsumer consumer) {
+        return Mono.defer(() -> resolve(sourceId, id, consumer, authorizationScope(sourceId), false));
+    }
+
+    private Mono<ResolvedMedia> resolve(String sourceId, String id, MediaConsumer consumer, String scope, boolean fallback) {
         return Mono.defer(() -> {
+            requireAuthorization(sourceId, scope);
             var adapter = registry.getRequired(sourceId);
-            if (resolutions.size() > 1024) resolutions.clear();
-            long revision = adapter.credentialRevision();
-            long epoch = registry.authorizationEpoch(sourceId);
-            String key = ResourceKey.encode(sourceId, id) + ":" + revision + ":" + epoch + ":" + consumer;
-            return resolutions.computeIfAbsent(key, ignored -> Mono.defer(() -> {
-                        registry.getRequired(sourceId);
-                        return adapter.resolveMedia(id, consumer);
-                    }).timeout(Duration.ofSeconds(20)).flatMap(MediaUrlPolicy::validate)
+            var pending = fallback ? fallbackResolutions : resolutions;
+            if (pending.size() > 1024) pending.clear();
+            String key = ResourceKey.encode(sourceId, id) + ":" + scope + ":" + consumer;
+            return pending.computeIfAbsent(key, ignored -> Mono.defer(() -> {
+                        requireAuthorization(sourceId, scope);
+                        return fallback ? adapter.resolveFallbackMedia(id) : adapter.resolveMedia(id, consumer);
+                    }).timeout(Duration.ofSeconds(20))
+                    .switchIfEmpty(Mono.error(new ApiRequestException("MEDIA_UNAVAILABLE")))
+                    .flatMap(MediaUrlPolicy::validate)
+                    .cache(Duration.ofSeconds(fallback ? 30 : 5)))
                     .map(media -> {
+                        requireAuthorization(sourceId, scope);
                         if (!media.resource().equals(new ResourceKey(sourceId, id))) throw new ApiRequestException("MEDIA_CONTENT_CHANGED");
-                        if (registry.getRequired(sourceId).credentialRevision() != revision || registry.authorizationEpoch(sourceId) != epoch) throw new ApiRequestException("媒体凭据已更新，请重试");
                         if (media.expiresAt() != null && !media.expiresAt().isAfter(Instant.now())) throw new ApiRequestException("媒体地址已过期");
                         if (consumer == MediaConsumer.BROWSER && (!media.browserSafe() || !media.headers().isEmpty())) {
                             throw new ApiRequestException("此媒体无法直接交付浏览器");
                         }
                         return media;
-                    }).cache(Duration.ofSeconds(5)));
+                    });
         });
     }
 
@@ -207,13 +215,10 @@ public class MediaDeliveryService {
     public void prefetch(Music music) {
         registry.getRequired(music.platform());
         if (registry.deliveryMode(music.platform()) != DeliveryMode.SERVER_DOWNLOAD) return;
-        String logical = assetKey(music.platform(), music.id());
-        prepareDownload(music).onErrorResume(error -> prepareFallbackDownload(music))
+        downloadWithFallback(music)
                 .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-                .subscribe(key -> failedDownloads.remove(logical), error -> {
-            failedDownloads.add(logical);
-            log.warn("Media preparation failed for {}:{}: {}", music.platform(), music.id(), error.toString());
-        });
+                .subscribe(key -> {}, error -> log.warn("Media preparation failed for {}:{}: {}",
+                        music.platform(), music.id(), error.toString()));
     }
 
     /**
@@ -224,61 +229,84 @@ public class MediaDeliveryService {
         if (registry.deliveryMode(music.platform()) != DeliveryMode.SERVER_DOWNLOAD) return;
         String logical = assetKey(music.platform(), music.id());
         failedDownloads.remove(logical);
-        String alias = downloadAliases.get(logical);
+        String alias = downloadAliases.remove(logical);
         if (alias != null) cache.clearFailure(alias);
         prefetch(music);
     }
 
-    private Mono<String> prepareDownload(Music music) {
-        return Mono.defer(() -> resolve(music.platform(), music.id(), MediaConsumer.SERVER)
-                .map(media -> submitResolved(music, media)));
+    private Mono<String> prepareDownload(Music music, String scope, String logical, boolean fallback) {
+        return resolve(music.platform(), music.id(), MediaConsumer.SERVER, scope, fallback)
+                .flatMap(media -> {
+                    Mono<String> existing = fallback ? Mono.empty() : readyFallback(music, media, scope, logical);
+                    return existing.switchIfEmpty(Mono.fromCallable(() -> submitResolved(music, media, scope, logical)));
+                })
+                .flatMap(key -> awaitDownload(music.platform(), key, scope));
     }
 
-    /** 主表示解析/下载失败后，改用音源声明的降级表示再下载一次（解析结果短时复用，避免反复打上游）。 */
-    private Mono<String> prepareFallbackDownload(Music music) {
+    private Mono<String> readyFallback(Music music, ResolvedMedia primary, String scope, String logical) {
+        String primaryKey = resolvedKey(primary, logical);
+        String ready = downloadAliases.get(logical);
+        if (ready == null || ready.equals(primaryKey) || cache.getStatus(primaryKey) != CacheStatus.FAILED
+                || cache.getStatus(ready) != CacheStatus.COMPLETED) return Mono.empty();
+        return resolve(music.platform(), music.id(), MediaConsumer.SERVER, scope, true)
+                .filter(media -> resolvedKey(media, logical).equals(ready))
+                .filter(media -> cache.getStatus(ready) == CacheStatus.COMPLETED)
+                .map(media -> ready)
+                .onErrorResume(error -> Mono.empty());
+    }
+
+    private Mono<String> downloadWithFallback(Music music) {
         return Mono.defer(() -> {
-            if (fallbackResolutions.size() > 1024) fallbackResolutions.clear();
-            String logical = assetKey(music.platform(), music.id());
-            var adapter = registry.getRequired(music.platform());
-            return fallbackResolutions.computeIfAbsent(logical,
-                    key -> adapter.resolveFallbackMedia(music.id())
-                            .doOnSuccess(media -> log.warn("Media download for {}:{} failed; falling back to {}",
-                                    music.platform(), music.id(), media.representationKey()))
-                            .cache(Duration.ofSeconds(30)))
-                    .map(media -> submitResolved(music, media));
+            String scope = authorizationScope(music.platform());
+            String logical = assetKey(music.platform(), music.id(), scope);
+            requireAuthorization(music.platform(), scope);
+            return downloads.computeIfAbsent(logical, ignored -> {
+                var preparation = new java.util.concurrent.atomic.AtomicReference<Mono<String>>();
+                Mono<String> result = prepareDownload(music, scope, logical, false)
+                        .onErrorResume(error -> {
+                            requireAuthorization(music.platform(), scope);
+                            log.warn("Media download for {}:{} failed; trying declared fallback: {}",
+                                    music.platform(), music.id(), error.toString());
+                            return prepareDownload(music, scope, logical, true).onErrorResume(fallbackError -> {
+                                if (fallbackError instanceof ApiRequestException api && api.getMessage() != null
+                                        && api.getMessage().startsWith("CAPABILITY_UNAVAILABLE")) return Mono.error(error);
+                                return Mono.error(fallbackError);
+                            });
+                        })
+                        .doOnSuccess(key -> {
+                            failedDownloads.remove(logical);
+                            downloads.remove(logical, preparation.get());
+                            cache.publishStatus(logical);
+                        })
+                        .doOnError(error -> {
+                            failedDownloads.add(logical);
+                            downloads.remove(logical, preparation.get());
+                            cache.publishStatus(logical);
+                        }).cache();
+                preparation.set(result);
+                return result;
+            });
         });
     }
 
-    /** 下载并等待完成；首次失败时按音源能力降级一次，仍失败才向上抛错。 */
-    private Mono<String> downloadWithFallback(Music music) {
-        return prepareDownload(music).flatMap(key -> awaitDownload(music.platform(), key))
-                .onErrorResume(error -> prepareFallbackDownload(music)
-                        .onErrorResume(fallbackError -> {
-                            if (fallbackError instanceof ApiRequestException api && api.getMessage() != null
-                                    && api.getMessage().startsWith("CAPABILITY_UNAVAILABLE")) {
-                                return Mono.error(error);
-                            }
-                            log.warn("Media fallback download failed for {}:{}: {}", music.platform(), music.id(),
-                                    fallbackError.toString());
-                            return Mono.error(fallbackError);
-                        })
-                        .flatMap(key -> awaitDownload(music.platform(), key)));
-    }
-
-    private String submitResolved(Music music, ResolvedMedia media) {
-        String scope = authorizationScope(music.platform());
+    private String submitResolved(Music music, ResolvedMedia media, String scope, String logical) {
         requireAuthorization(music.platform(), scope);
-        String logical = assetKey(music.platform(), music.id());
-        int separator = logical.lastIndexOf(":credentials:");
-        String version = fingerprint(media.timelineKey().length() + ":" + media.timelineKey() + media.representationKey());
-        String key = logical.substring(0, separator) + ":variant:" + version + logical.substring(separator);
+        String key = resolvedKey(media, logical);
         assetTimelines.put(key, media.timelineKey());
         downloadAliases.put(logical, key);
-        failedDownloads.remove(logical);
-        cache.submitDownload(key, Mono.just(new LocalCacheService.DownloadSource(media.url(), media.extension(),
-                media.headers(), media.mimeType(), media.representationKey() + ":timeline:" + media.timelineKey())),
-                Map.of(), () -> requireAuthorization(music.platform(), scope));
+        cache.submitDownload(key, Mono.fromCallable(() -> {
+                    requireAuthorization(music.platform(), scope);
+                    if (media.expiresAt() != null && !media.expiresAt().isAfter(Instant.now())) throw new ApiRequestException("媒体地址已过期");
+                    return new LocalCacheService.DownloadSource(media.url(), media.extension(), media.headers(),
+                            media.mimeType(), media.representationKey() + ":timeline:" + media.timelineKey());
+                }), Map.of(), () -> requireAuthorization(music.platform(), scope));
         return key;
+    }
+
+    private String resolvedKey(ResolvedMedia media, String logical) {
+        int separator = logical.lastIndexOf(":credentials:");
+        String version = fingerprint(media.timelineKey().length() + ":" + media.timelineKey() + media.representationKey());
+        return logical.substring(0, separator) + ":variant:" + version + logical.substring(separator);
     }
 
     private static String fingerprint(String value) {
@@ -288,19 +316,23 @@ public class MediaDeliveryService {
         } catch (java.security.NoSuchAlgorithmException error) { throw new IllegalStateException(error); }
     }
 
-    private Mono<String> awaitDownload(String sourceId, String key) {
-        String scope = authorizationScope(sourceId);
+    private Mono<String> awaitDownload(String sourceId, String key, String scope) {
+        // The cache worker owns the download timeout; queued tasks may wait longer than five minutes.
         return Flux.interval(Duration.ZERO, Duration.ofMillis(100)).map(tick -> {
             requireAuthorization(sourceId, scope);
             CacheStatus status = cache.getStatus(key);
-            if (status == CacheStatus.FAILED) throw new ApiRequestException("媒体准备失败");
+            if (status == null || status == CacheStatus.FAILED) throw new ApiRequestException("媒体准备失败");
             return status == CacheStatus.COMPLETED ? key : "";
-        }).filter(value -> !value.isEmpty()).next().timeout(Duration.ofMinutes(5));
+        }).filter(value -> !value.isEmpty()).next();
     }
 
     private String assetKey(String sourceId, String id) {
-        String resource = ResourceKey.encode(sourceId, id);
-        return resource + ":credentials:" + registry.getRequired(sourceId).credentialRevision() + ":epoch:" + registry.authorizationEpoch(sourceId) + ":session:" + authorizationSession;
+        return assetKey(sourceId, id, authorizationScope(sourceId));
+    }
+
+    private String assetKey(String sourceId, String id, String scope) {
+        String[] parts = scope.split(":");
+        return ResourceKey.encode(sourceId, id) + ":credentials:" + parts[1] + ":epoch:" + parts[2] + ":session:" + parts[0];
     }
 
     public QueueItemStatus status(Music music) {
@@ -310,6 +342,7 @@ public class MediaDeliveryService {
         if (failedDownloads.contains(logical)) return QueueItemStatus.FAILED;
         String alias = downloadAliases.get(logical);
         CacheStatus status = alias == null ? null : cache.getStatus(alias);
+        if (status == CacheStatus.FAILED && downloads.containsKey(logical)) return QueueItemStatus.DOWNLOADING;
         if (status == null || status == CacheStatus.PENDING) return QueueItemStatus.PENDING;
         return switch (status) {
             case COMPLETED -> QueueItemStatus.READY;
@@ -327,7 +360,8 @@ public class MediaDeliveryService {
             return playbackTimeline(current).flatMap(timeline -> {
                 if (registry.deliveryMode(source) == DeliveryMode.SERVER_DOWNLOAD) {
                     return getMetadata(source, current.id()).flatMap(metadata -> {
-                        return prepareDownload(metadata).flatMap(key -> awaitDownload(source, key)).map(key -> {
+                        String logical = assetKey(source, current.id(), scope);
+                        return prepareDownload(metadata, scope, logical, false).map(key -> {
                             requireAuthorization(source, scope);
                             requireTimeline(timeline, cachedTimeline(key));
                             return issueTicket(source, key);

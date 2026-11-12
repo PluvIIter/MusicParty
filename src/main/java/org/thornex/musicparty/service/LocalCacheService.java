@@ -44,6 +44,7 @@ public class LocalCacheService {
             .onBackpressureBuffer(new java.util.concurrent.ArrayBlockingQueue<>(16));
     private Disposable voiceSubscription;
     private Disposable queueSubscription;
+    private boolean closed;
     private final Object queueEmitter = new Object();
     private static final long MAX_DOWNLOAD_BYTES = 512L * 1024 * 1024;
     private static final Set<String> EXTENSIONS = Set.of(".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav");
@@ -126,8 +127,20 @@ public class LocalCacheService {
 
     @PreDestroy
     public void cleanup() {
+        List<String> interrupted = new ArrayList<>();
+        synchronized (this) {
+            if (closed) return;
+            closed = true;
+            for (CacheEntry entry : cacheIndex.values()) {
+                if (entry.getStatus() == CacheStatus.PENDING || entry.getStatus() == CacheStatus.DOWNLOADING) {
+                    entry.setStatus(CacheStatus.FAILED);
+                    interrupted.add(entry.getId());
+                }
+            }
+        }
         if (queueSubscription != null) queueSubscription.dispose();
         if (voiceSubscription != null) voiceSubscription.dispose();
+        interrupted.forEach(this::publishStatus);
     }
 
     public void submitDownload(String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {
@@ -140,29 +153,35 @@ public class LocalCacheService {
 
     private void submit(Sinks.Many<DownloadTask> queue, String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {
         synchronized (this) {
+            if (closed) throw new IllegalStateException("Media cache is closed");
             CacheStatus status = getStatus(key);
             if (status == CacheStatus.COMPLETED || status == CacheStatus.PENDING || status == CacheStatus.DOWNLOADING) return;
             CacheEntry entry = new CacheEntry();
             entry.setId(key); entry.setStatus(CacheStatus.PENDING); entry.setLastAccessTime(System.currentTimeMillis());
             cacheIndex.put(key, entry);
         }
-        publish(key);
+        publishStatus(key);
         Sinks.EmitResult emitted;
         synchronized (queueEmitter) { emitted = queue.tryEmitNext(new DownloadTask(key, source, Map.copyOf(headers), beforeCommit)); }
         if (emitted.isFailure()) {
-            cacheIndex.get(key).setStatus(CacheStatus.FAILED); publish(key);
+            cacheIndex.get(key).setStatus(CacheStatus.FAILED); publishStatus(key);
         }
     }
 
     private Mono<Void> processTask(DownloadTask task) {
         return Mono.defer(() -> {
-            CacheEntry entry = cacheIndex.get(task.key());
-            entry.setStatus(CacheStatus.DOWNLOADING); publish(task.key());
+            CacheEntry entry;
+            synchronized (this) {
+                if (closed) return Mono.empty();
+                entry = cacheIndex.get(task.key());
+                entry.setStatus(CacheStatus.DOWNLOADING);
+            }
+            publishStatus(task.key());
             return task.source().switchIfEmpty(Mono.error(new IOException("No media source")))
                     .flatMap(source -> download(task, entry, source)).timeout(Duration.ofMinutes(5))
                     .doOnError(error -> {
                         entry.setStatus(CacheStatus.FAILED);
-                        publish(task.key());
+                        publishStatus(task.key());
                         log.warn("Media download failed for {}: {}", task.key(), error.toString());
                     })
                     .then();
@@ -201,6 +220,7 @@ public class LocalCacheService {
                             validateFile(partial, source.extension());
                             task.beforeCommit().run();
                             synchronized (this) {
+                                if (closed) throw new IOException("Media cache is closed");
                                 reserve(bytes.get(), task.key());
                                 Files.move(partial, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
                                 Properties index = new Properties(); index.setProperty("key", task.key());
@@ -213,7 +233,7 @@ public class LocalCacheService {
                                 entry.setLastAccessTime(System.currentTimeMillis()); entry.setStatus(CacheStatus.COMPLETED);
                                 currentTotalSize.addAndGet(bytes.get());
                             }
-                            publish(task.key());
+                            publishStatus(task.key());
                         } catch (IOException error) { throw new IllegalStateException("Cannot commit media cache", error); }
                     }).subscribeOn(Schedulers.boundedElastic()))
                     .doFinally(signal -> deleteControlled(partial));
@@ -271,10 +291,12 @@ public class LocalCacheService {
      * 清除失败标记，允许同一 key 重新提交下载（用户重新点同一首失败曲目时使用）。
      */
     public void clearFailure(String key) {
-        CacheEntry entry = cacheIndex.get(key);
-        if (entry == null || entry.getStatus() != CacheStatus.FAILED) return;
-        entry.setStatus(CacheStatus.PENDING);
-        publish(key);
+        synchronized (this) {
+            CacheEntry entry = cacheIndex.get(key);
+            if (entry == null || entry.getStatus() != CacheStatus.FAILED) return;
+            cacheIndex.remove(key, entry);
+        }
+        publishStatus(key);
     }
 
     public CacheEntry getCacheEntry(String key) {
@@ -295,7 +317,7 @@ public class LocalCacheService {
         try { Files.deleteIfExists(target); } catch (IOException error) { log.warn("Cannot remove media cache file"); }
     }
 
-    private void publish(String key) {
+    public void publishStatus(String key) {
         int suffix = key.lastIndexOf(":credentials:");
         String resource = suffix < 0 ? key : key.substring(0, suffix);
         int variant = resource.lastIndexOf(":variant:");

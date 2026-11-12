@@ -127,6 +127,69 @@ class LocalCacheServiceTest {
         finally { cache.cleanup(); }
     }
 
+    @Test void clearingFailureLeavesNoPendingEntryAndConcurrentResubmissionRunsOnce() {
+        var attempts = new java.util.concurrent.atomic.AtomicInteger();
+        LocalCacheService cache = cache(new AppProperties(), mp3(64), new CopyOnWriteArrayList<>());
+        try {
+            Mono<LocalCacheService.DownloadSource> source = Mono.defer(() -> {
+                if (attempts.incrementAndGet() == 1) return Mono.error(new IllegalStateException("first attempt"));
+                return Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/audio", ".mp3",
+                        Map.of(), "audio/mpeg", "test-audio"));
+            });
+            cache.submitDownload("retry", source, Map.of(), () -> {});
+            await(cache, "retry", CacheStatus.FAILED);
+            cache.clearFailure("retry");
+            assertNull(cache.getStatus("retry"));
+            java.util.stream.IntStream.range(0, 20).parallel()
+                    .forEach(i -> cache.submitDownload("retry", source, Map.of(), () -> {}));
+            await(cache, "retry", CacheStatus.COMPLETED);
+            assertEquals(2, attempts.get());
+            cache.clearFailure("retry");
+            assertEquals(CacheStatus.COMPLETED, cache.getStatus("retry"));
+        } finally { cache.cleanup(); }
+    }
+
+    @Test void clearingFailurePublishesWithoutHoldingCacheLock() {
+        var reference = new java.util.concurrent.atomic.AtomicReference<LocalCacheService>();
+        var events = new java.util.concurrent.atomic.AtomicInteger();
+        LocalCacheService cache = new LocalCacheService(WebClient.create(), event -> {
+            assertFalse(Thread.holdsLock(reference.get()));
+            events.incrementAndGet();
+        }, new AppProperties(), directory);
+        reference.set(cache);
+        cache.submitDownload("retry", Mono.never(), Map.of(), () -> {});
+        cache.getCacheEntry("retry").setStatus(CacheStatus.FAILED);
+        cache.clearFailure("retry");
+        assertNull(cache.getStatus("retry"));
+        assertEquals(2, events.get());
+    }
+
+    @Test void cleanupFailsBothLanesAndRejectsFurtherSubmissions() {
+        var events = new CopyOnWriteArrayList<String>();
+        LocalCacheService cache = cache(new AppProperties(), mp3(64), events);
+        try {
+            cache.submitDownload("song", Mono.never(), Map.of(), () -> {});
+            await(cache, "song", CacheStatus.DOWNLOADING);
+            cache.submitDownload("queued-song", Mono.never(), Map.of(), () -> {});
+            cache.submitVoiceDownload("voice", Mono.never(), Map.of(), () -> {});
+            await(cache, "voice", CacheStatus.DOWNLOADING);
+            cache.submitVoiceDownload("queued-voice", Mono.never(), Map.of(), () -> {});
+            int before = events.size();
+            cache.cleanup();
+            for (String key : java.util.List.of("song", "queued-song", "voice", "queued-voice")) {
+                assertEquals(CacheStatus.FAILED, cache.getStatus(key));
+                assertTrue(events.subList(before, events.size()).contains(key));
+            }
+            assertThrows(IllegalStateException.class,
+                    () -> cache.submitDownload("late", Mono.never(), Map.of(), () -> {}));
+            assertThrows(IllegalStateException.class,
+                    () -> cache.submitVoiceDownload("late-voice", Mono.never(), Map.of(), () -> {}));
+            assertNull(cache.getStatus("late"));
+            cache.cleanup();
+            assertEquals(before + 4, events.size());
+        } finally { cache.cleanup(); }
+    }
+
     @Test void bareFilesNeverGuessSource() throws Exception {
         Files.write(directory.resolve("123.mp3"), mp3(64));
         LocalCacheService cache = cache(new AppProperties(), mp3(64), new CopyOnWriteArrayList<>());
