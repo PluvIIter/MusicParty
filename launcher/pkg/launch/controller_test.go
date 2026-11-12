@@ -223,6 +223,54 @@ func TestAssetsReplaceSameLengthFiles(t *testing.T) {
 	}
 }
 
+func TestQqAssetsReplaceWholeOwnedTreeWithoutTouchingDeviceData(t *testing.T) {
+	dir := t.TempDir()
+	oldFiles := map[string]string{
+		"bin/qqmusic/app.py": "old",
+		"bin/qqmusic/python/Lib/site-packages/removed_module.py": "obsolete",
+		"bin/qqmusic/python/Lib/site-packages/obsolete.pth":      "import removed_module",
+		"data/qqmusic-device.json":                               "keep-device-state",
+	}
+	for relative, value := range oldFiles {
+		path := filepath.Join(dir, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assets := fstest.MapFS{
+		"bin/qqmusic/app.py":                                     &fstest.MapFile{Data: []byte("new")},
+		"bin/qqmusic/gateway.py":                                 &fstest.MapFile{Data: []byte("gateway")},
+		"bin/qqmusic/python/python313._pth":                      &fstest.MapFile{Data: []byte("..\nLib/site-packages\n")},
+		"bin/qqmusic/python/Lib/site-packages/current_module.py": &fstest.MapFile{Data: []byte("current")},
+	}
+	if err := ExtractAssets(assets, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, relative := range []string{"bin/qqmusic/python/Lib/site-packages/removed_module.py", "bin/qqmusic/python/Lib/site-packages/obsolete.pth"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(relative))); !os.IsNotExist(err) {
+			t.Fatalf("obsolete runtime asset retained: %s", relative)
+		}
+	}
+	for relative, want := range map[string]string{"bin/qqmusic/app.py": "new", "bin/qqmusic/python/Lib/site-packages/current_module.py": "current", "data/qqmusic-device.json": "keep-device-state"} {
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(relative)))
+		if err != nil || string(data) != want {
+			t.Fatalf("unexpected asset or device data: %s", relative)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".qqmusic-") {
+			t.Fatal("temporary runtime replacement tree remains")
+		}
+	}
+}
+
 func TestWindowsPackagedGatewayReadiness(t *testing.T) {
 	bundle := os.Getenv("QQMUSIC_TEST_BUNDLE")
 	if bundle == "" {

@@ -30,7 +30,7 @@ $pythonHashSource = "$pythonUrl.spdx.json"
 # Pin the CPython package checksum from the release's official SPDX document, not a dependency checksum.
 $pythonSha256 = '91d828c2da3a029b41699e918674a0cb379c02cf20dab9c501306885f837402a'
 
-$hostCommand = Get-Command $HostPython -CommandType Application -ErrorAction Stop
+$hostCommand = Get-Command $HostPython -CommandType Application -ErrorAction Stop | Select-Object -First 1
 $hostExecutable = $hostCommand.Source
 & $hostExecutable -I -c 'import struct, sys; assert sys.version_info[:2] == (3, 13) and struct.calcsize("P") == 8 and sys.platform == "win32", "Use setup-python 3.13 x64"'
 if ($LASTEXITCODE -ne 0) { throw 'Host Python must be CPython 3.13 x64 on Windows.' }

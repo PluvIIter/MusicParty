@@ -104,7 +104,16 @@ jobs:
           python-version: '3.13'
       - name: Package and smoke-test embedded QQ runtime
         shell: pwsh
-        run: ./scripts/package-qqmusic.ps1 -OutputDir "${{ runner.temp }}/qqmusic-bundle"
+        run: |
+          try {
+            ./scripts/package-qqmusic.ps1 -OutputDir "${{ runner.temp }}/qqmusic-bundle"
+          } catch {
+            $diagnostic = ($_ | Format-List * -Force | Out-String)
+            Write-Output "::error::$($diagnostic.Replace("`r", '').Replace("`n", '%0A'))"
+            Write-Error $diagnostic -ErrorAction Continue
+            $diagnostic | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+            throw
+          }
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'

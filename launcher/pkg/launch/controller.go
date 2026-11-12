@@ -211,7 +211,7 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 			select {
 			case <-ctx.Done():
 				manager.StopAll()
-			case <-handle.Done():
+			case <-handle.Done:
 				cancel()
 				manager.StopAll()
 				c.mu.Lock()
