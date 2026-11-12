@@ -67,6 +67,16 @@ export const adminApi = {
             }
         ),
 
+    // 更新平台凭据（COOKIE）
+    setCookie: (adminPwd, platform, value) =>
+        client.post(
+            '/api/admin/config/cookie',
+            { platform, value },
+            {
+                headers: { 'X-Admin-Password': adminPwd },
+            }
+        ),
+
     // 更新系统配置
     updateConfig: (adminPwd, config) =>
         client.post('/api/admin/config/update', config, {

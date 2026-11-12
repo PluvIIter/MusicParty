@@ -542,9 +542,22 @@
                                                 ></div>
                                             </button>
                                         </div>
-                                        <p class="text-[10px] text-ink-subtle">
-                                            交付模式：{{ plat.deliveryMode }}（部署配置，重启生效）
-                                        </p>
+                                        <div v-if="plat.supportsCookie" class="flex gap-2">
+                                            <input
+                                                type="password"
+                                                v-model="cookieInputs[plat.id]"
+                                                :aria-label="plat.label + ' COOKIE'"
+                                                :placeholder="'输入新 ' + plat.label + ' COOKIE...'"
+                                                class="flex-1 min-w-0 bg-surface border border-line px-2 py-1 text-[10px] outline-none focus:border-accent font-mono"
+                                            />
+                                            <button
+                                                @click="updateCookie(plat.id, cookieInputs[plat.id])"
+                                                :disabled="!(cookieInputs[plat.id] || '').trim()"
+                                                class="bg-brand text-ink-inverse px-2 text-[10px] font-bold hover:bg-accent hover:text-accent-contrast disabled:opacity-40 disabled:hover:bg-brand disabled:hover:text-ink-inverse transition-colors"
+                                            >
+                                                更新
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -714,16 +727,30 @@ const locks = computed(() => [
     { key: 'SHUFFLE', cnLabel: '锁定模式', value: playerStore.isPlayModeLocked },
 ]);
 
+const COOKIE_SOURCES = new Set(['netease', 'bilibili']);
+const cookieInputs = ref({});
 const platforms = computed(() =>
     [...new Set([...sources.sources.map((source) => source.id), ...Object.keys(playerStore.config.sources || {})])].map(
         (id) => ({
             id,
             label: sources.descriptor(id)?.label || id,
             enabled: playerStore.config.sources?.[id]?.enabled ?? sources.isEnabled(id),
-            deliveryMode: playerStore.config.sources?.[id]?.deliveryMode || sources.descriptor(id)?.delivery?.mode,
+            supportsCookie: COOKIE_SOURCES.has(id),
         })
     )
 );
+
+const updateCookie = async (platform, value) => {
+    const cookie = (value || '').trim();
+    if (!cookie) return;
+    try {
+        const data = await adminApi.setCookie(adminStore.adminPassword, platform, cookie);
+        success(data.message);
+        cookieInputs.value[platform] = '';
+    } catch {
+        error('凭据更新失败');
+    }
+};
 
 // 私人电台/私人DJ 状态（来自 config.privateDj，服务端广播；mode 即开关：OFF=关闭/FM=私人FM/DJ=私人DJ）
 const privateDj = computed(
