@@ -19,22 +19,25 @@ import (
 )
 
 type Controller struct {
-	BinDir       string
-	DeviceDir    string
-	GatewayDir   string
-	ReadyTimeout time.Duration
-	Client       *http.Client
-	Log          func(string)
-	startMu      sync.Mutex
-	mu           sync.RWMutex
-	manager      *process.ServiceManager
-	cancel       context.CancelFunc
-	ready        bool
-	bundled      bool
+	BinDir        string
+	DeviceDir     string
+	GatewayDir    string
+	ReadyTimeout  time.Duration
+	TunnelTimeout time.Duration
+	tunnel        TunnelStatus
+	gate          *tunnelGate
+	Client        *http.Client
+	Log           func(string)
+	startMu       sync.Mutex
+	mu            sync.RWMutex
+	manager       *process.ServiceManager
+	cancel        context.CancelFunc
+	ready         bool
+	bundled       bool
 }
 
 func NewController(binDir, deviceDir string, log func(string)) *Controller {
-	return &Controller{BinDir: binDir, DeviceDir: deviceDir, ReadyTimeout: 30 * time.Second,
+	return &Controller{BinDir: binDir, DeviceDir: deviceDir, ReadyTimeout: 30 * time.Second, TunnelTimeout: 45 * time.Second, tunnel: TunnelStatus{State: "off"},
 		Client: &http.Client{Timeout: time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, Log: log}
 }
 
@@ -44,7 +47,16 @@ func (c *Controller) Stop() {
 		c.cancel()
 	}
 	manager := c.manager
+	if c.gate != nil {
+		c.gate.close()
+		c.gate = nil
+	}
 	c.ready = false
+	if c.tunnel.Enabled {
+		c.tunnel.State = "stopped"
+		c.tunnel.URL = ""
+		c.tunnel.Error = ""
+	}
 	c.mu.Unlock()
 	if manager != nil {
 		manager.StopAll()
@@ -72,29 +84,41 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 	manager := process.NewServiceManager()
 	c.mu.Lock()
 	previous := c.manager
+	if c.gate != nil {
+		c.gate.close()
+		c.gate = nil
+	}
 	if c.cancel != nil {
 		c.cancel()
 	}
 	c.manager, c.cancel, c.ready, c.bundled = manager, cancel, false, false
+	c.tunnel = TunnelStatus{State: "off"}
+	if cfg != nil && cfg.CloudflareTunnelEnabled {
+		c.tunnel = TunnelStatus{Enabled: true, State: "starting"}
+	}
 	c.mu.Unlock()
 	if previous != nil {
 		previous.StopAll()
 	}
-	go func() { <-ctx.Done(); manager.StopAll() }()
-	if ctx.Err() != nil {
-		return fmt.Errorf("service startup canceled")
-	}
+	go func() { <-ctx.Done(); c.deactivateTunnel(manager, "stopped", ""); manager.StopAll() }()
 	defer func() {
 		if err != nil {
+			c.deactivateTunnel(manager, "failed", "服务启动失败，隧道已停止")
 			cancel()
 			manager.StopAll()
 			c.mu.Lock()
 			if c.manager == manager {
 				c.ready = false
+				if c.tunnel.Enabled && c.tunnel.State != "stopped" {
+					c.tunnel = TunnelStatus{Enabled: true, State: "failed", Error: "服务启动失败，隧道已停止"}
+				}
 			}
 			c.mu.Unlock()
 		}
 	}()
+	if ctx.Err() != nil {
+		return fmt.Errorf("service startup canceled")
+	}
 	go func() {
 		for {
 			select {
@@ -183,6 +207,27 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 	if info, statErr := os.Stat(filepath.Join(c.BinDir, "server.jar")); statErr != nil || info.IsDir() {
 		return fmt.Errorf("bundled server.jar is missing")
 	}
+	var tunnelHandle *process.Handle
+	var gate *tunnelGate
+	var publicURL string
+	if active.CloudflareTunnelEnabled {
+		var gateErr error
+		gate, gateErr = newTunnelGate(&active)
+		if gateErr != nil {
+			return gateErr
+		}
+		c.mu.Lock()
+		c.gate = gate
+		c.mu.Unlock()
+		tunnelCtx, tunnelCancel := context.WithTimeout(ctx, c.TunnelTimeout)
+		tunnelHandle, publicURL, err = c.startTunnel(tunnelCtx, manager, gate.origin)
+		tunnelCancel()
+		if err != nil {
+			return err
+		}
+		active.BaseURL = publicURL
+		handles = append(handles, tunnelHandle)
+	}
 	args, err := active.JavaArgs(filepath.Join(c.BinDir, "server.jar"))
 	if err != nil {
 		return err
@@ -201,6 +246,21 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 	if ctx.Err() != nil {
 		return fmt.Errorf("service startup canceled")
 	}
+	if tunnelHandle != nil {
+		readyCtx, readyCancel := context.WithTimeout(ctx, c.ReadyTimeout)
+		readyErr := gate.waitBackend(readyCtx, c.Client, active.AdminPassword, javaHandle)
+		readyCancel()
+		if readyErr != nil {
+			return readyErr
+		}
+	}
+	if tunnelHandle != nil {
+		c.mu.Lock()
+		if c.manager == manager && ctx.Err() == nil {
+			c.tunnel = TunnelStatus{Enabled: true, State: "ready", URL: publicURL}
+		}
+		c.mu.Unlock()
+	}
 	for _, handle := range handles {
 		select {
 		case <-handle.Done:
@@ -212,11 +272,15 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 			case <-ctx.Done():
 				manager.StopAll()
 			case <-handle.Done:
+				c.deactivateTunnel(manager, "failed", "服务进程已退出，隧道已停止")
 				cancel()
 				manager.StopAll()
 				c.mu.Lock()
 				if c.manager == manager {
 					c.ready = false
+					if c.tunnel.Enabled && c.tunnel.State != "stopped" {
+						c.tunnel = TunnelStatus{Enabled: true, State: "failed", Error: "服务进程已退出，隧道已停止"}
+					}
 				}
 				c.mu.Unlock()
 			}

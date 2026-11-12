@@ -13,13 +13,15 @@ import (
 )
 
 type Spec struct {
-	Name    string
-	Command string
-	Args    []string
-	Dir     string
-	Env     map[string]string
-	Secrets []string
-	Quiet   bool
+	Name     string
+	Command  string
+	Args     []string
+	Dir      string
+	Env      map[string]string
+	UnsetEnv []string
+	Secrets  []string
+	Quiet    bool
+	OnLine   func(string)
 }
 
 type Handle struct {
@@ -72,7 +74,7 @@ func (m *ServiceManager) Start(spec Spec) (*Handle, error) {
 	}
 	cmd := exec.CommandContext(m.ctx, spec.Command, spec.Args...)
 	cmd.Dir = spec.Dir
-	cmd.Env = Environment(os.Environ(), spec.Env)
+	cmd.Env = Environment(WithoutEnvironment(os.Environ(), spec.UnsetEnv), spec.Env)
 	configureProcess(cmd)
 	cmd.Cancel = func() error { return killProcessTree(cmd) }
 	cmd.WaitDelay = 2 * time.Second
@@ -113,6 +115,24 @@ func (m *ServiceManager) Start(spec Spec) (*Handle, error) {
 	return handle, nil
 }
 
+func WithoutEnvironment(base []string, remove []string) []string {
+	result := make([]string, 0, len(base))
+	for _, entry := range base {
+		key, _, _ := strings.Cut(entry, "=")
+		excluded := false
+		for _, name := range remove {
+			if strings.EqualFold(key, name) {
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
 func Environment(base []string, overrides map[string]string) []string {
 	result := make([]string, 0, len(base)+len(overrides))
 	for _, entry := range base {
@@ -135,7 +155,7 @@ func Environment(base []string, overrides map[string]string) []string {
 }
 
 func (m *ServiceManager) capture(spec Spec, reader io.Reader) {
-	if spec.Quiet {
+	if spec.Quiet && spec.OnLine == nil {
 		io.Copy(io.Discard, reader)
 		return
 	}
@@ -148,7 +168,12 @@ func (m *ServiceManager) capture(spec Spec, reader io.Reader) {
 				line = strings.ReplaceAll(line, secret, "[REDACTED]")
 			}
 		}
-		m.log(fmt.Sprintf("[%s] %s", spec.Name, line))
+		if spec.OnLine != nil {
+			spec.OnLine(line)
+		}
+		if !spec.Quiet {
+			m.log(fmt.Sprintf("[%s] %s", spec.Name, line))
+		}
 	}
 	if scanner.Err() != nil {
 		io.Copy(io.Discard, reader)

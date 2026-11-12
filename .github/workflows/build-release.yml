@@ -136,6 +136,9 @@ jobs:
       - name: Package embedded QQ Music gateway
         run: ./scripts/package-qqmusic.ps1 -OutputDir launcher/bin/qqmusic
 
+      - name: Package Cloudflare Tunnel
+        run: ./scripts/package-cloudflared.ps1 -OutputDir launcher/bin
+
       - name: Prepare Assets
         run: |
           if (-not (Test-Path "launcher/bin")) {

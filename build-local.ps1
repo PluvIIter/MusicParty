@@ -29,7 +29,11 @@ echo "--- 5. Packaging QQ Music Gateway ---"
 & "$PSScriptRoot/scripts/package-qqmusic.ps1" -OutputDir "$PSScriptRoot/launcher/bin/qqmusic"
 if ($LASTEXITCODE -ne 0) { throw "QQ gateway packaging failed" }
 
-echo "--- 6. Building Wails Launcher ---"
+echo "--- 6. Packaging Cloudflare Tunnel ---"
+& "$PSScriptRoot/scripts/package-cloudflared.ps1" -OutputDir "$PSScriptRoot/launcher/bin"
+if ($LASTEXITCODE -ne 0) { throw "Cloudflare Tunnel packaging failed" }
+
+echo "--- 7. Building Wails Launcher ---"
 cd launcher
 wails build -platform windows/amd64
 cd ..

@@ -37,19 +37,20 @@ type AppConfig struct {
 	QqmusicCookie       string                  `json:"qqmusicCookie"`
 	QqmusicQuality      string                  `json:"qqmusicQuality"`
 
-	QueueMaxSize          int    `json:"queueMaxSize"`
-	QueueHistorySize      int    `json:"queueHistorySize"`
-	QueueMaxUserSongs     int    `json:"queueMaxUserSongs"`
-	MaxPlaylistImportSize int    `json:"maxPlaylistImportSize"`
-	ChatMaxHistorySize    int    `json:"chatMaxHistorySize"`
-	ChatMinIntervalMs     int    `json:"chatMinIntervalMs"`
-	ChatMaxMessageLength  int    `json:"chatMaxMessageLength"`
-	CacheMaxSize          string `json:"cacheMaxSize"`
-	AuthRateLimitEnabled  bool   `json:"authRateLimitEnabled"`
-	AuthMaxAttempts       int    `json:"authMaxAttempts"`
-	AuthWindowSeconds     int    `json:"authWindowSeconds"`
-	AuthBlockDuration     int    `json:"authBlockDuration"`
-	AutoStart             bool   `json:"autoStart"`
+	QueueMaxSize            int    `json:"queueMaxSize"`
+	QueueHistorySize        int    `json:"queueHistorySize"`
+	QueueMaxUserSongs       int    `json:"queueMaxUserSongs"`
+	MaxPlaylistImportSize   int    `json:"maxPlaylistImportSize"`
+	ChatMaxHistorySize      int    `json:"chatMaxHistorySize"`
+	ChatMinIntervalMs       int    `json:"chatMinIntervalMs"`
+	ChatMaxMessageLength    int    `json:"chatMaxMessageLength"`
+	CacheMaxSize            string `json:"cacheMaxSize"`
+	AuthRateLimitEnabled    bool   `json:"authRateLimitEnabled"`
+	AuthMaxAttempts         int    `json:"authMaxAttempts"`
+	AuthWindowSeconds       int    `json:"authWindowSeconds"`
+	AuthBlockDuration       int    `json:"authBlockDuration"`
+	AutoStart               bool   `json:"autoStart"`
+	CloudflareTunnelEnabled bool   `json:"cloudflareTunnelEnabled"`
 }
 
 func DefaultConfig() *AppConfig {
@@ -95,6 +96,9 @@ func DecodeConfig(data []byte) (*AppConfig, error) {
 var sourceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 func (c *AppConfig) Validate() error {
+	if c.CloudflareTunnelEnabled && (strings.TrimSpace(c.AdminPassword) == "" || c.AdminPassword == "admin123") {
+		return fmt.Errorf("Cloudflare Tunnel requires a non-default administrator password")
+	}
 	if c.Sources == nil {
 		return fmt.Errorf("sources configuration is required")
 	}

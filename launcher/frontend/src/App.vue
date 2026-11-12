@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted, reactive, computed } from 'vue';
-import { LoadConfig, SaveConfig, StartServices, StopServices, GetServiceStatuses, GetSourceDescriptors, OpenBrowser } from './wailsjs/go/main/App';
+import { ref, onMounted, onUnmounted, reactive, computed } from 'vue';
+import { LoadConfig, SaveConfig, StartServices, StopServices, GetServiceStatuses, GetTunnelStatus, GetSourceDescriptors, OpenBrowser } from './wailsjs/go/main/App';
+import { emptyTunnelStatus, normalizeTunnelStatus, tunnelUrl, copyTunnelUrl, createStatusPoll } from './tunnelStatus';
 import { createServiceAttempt } from './serviceAttempt';
 import { EventsOn } from './wailsjs/runtime';
 import { sourceSettingsRows, deliveryModeLabel, connectionFieldsFor } from './sourceSettings';
@@ -9,6 +10,7 @@ const config = reactive({
   serverIp: '0.0.0.0',
   serverPort: '8080',
   baseUrl: 'http://localhost:8080',
+  cloudflareTunnelEnabled: false,
   adminPassword: '',
   authorName: 'ThorNex',
   backWords: 'THORNEX',
@@ -43,6 +45,50 @@ const isRunning = ref(false);
 const isStarting = ref(false);
 const isStopping = ref(false);
 const serviceAttempt = createServiceAttempt();
+const statusPoll = createStatusPoll();
+const tunnelStatus = ref(emptyTunnelStatus());
+const publicUrl = computed(() => tunnelUrl(tunnelStatus.value));
+const tunnelActionMessage = ref('');
+const configLocked = computed(() => isStarting.value || isRunning.value || isStopping.value);
+const tunnelStateLabel = computed(() => ({
+  off: '已关闭', starting: '连接中', ready: '已就绪', failed: '连接失败', stopped: '已停止',
+})[tunnelStatus.value.state]);
+let statusInterval;
+let unsubscribeLogs;
+let tunnelPollingActive = false;
+
+const resetTunnel = (state = 'off') => {
+  statusPoll.reset();
+  tunnelStatus.value = emptyTunnelStatus(state);
+  tunnelActionMessage.value = '';
+};
+
+const pollStatuses = async () => {
+  if (isStopping.value) return;
+  const poll = statusPoll.begin();
+  const current = () => statusPoll.current(poll) && !isStopping.value;
+  const updateTunnel = next => {
+    if (!current() || !tunnelPollingActive || (!isRunning.value && !isStarting.value)) return;
+    if (next.url !== tunnelStatus.value.url) tunnelActionMessage.value = '';
+    tunnelStatus.value = next;
+  };
+  await Promise.allSettled([
+    GetServiceStatuses().then(value => {
+      if (!current()) return;
+      const statuses = value || {};
+      Object.assign(serviceStatuses, { NETEASE_API: false, JAVA_SERVER: false, QQMUSIC_API: false }, statuses);
+      if (isRunning.value && !isStarting.value && !statuses.JAVA_SERVER) {
+        isRunning.value = false;
+        isJavaReady.value = false;
+        tunnelPollingActive = false;
+        resetTunnel('stopped');
+      }
+    }),
+    GetTunnelStatus()
+      .then(status => updateTunnel(normalizeTunnelStatus(status)))
+      .catch(error => updateTunnel(emptyTunnelStatus('failed', String(error)))),
+  ]);
+};
 const logs = ref([]);
 const logContainer = ref(null);
 const activeTab = ref('basic');
@@ -70,17 +116,9 @@ onMounted(async () => {
     errorMessage.value = String(error);
   }
   
-  // 轮询服务状态
-  setInterval(async () => {
-    const statuses = await GetServiceStatuses();
-    Object.assign(serviceStatuses, { NETEASE_API: false, JAVA_SERVER: false, QQMUSIC_API: false }, statuses);
-    if (isRunning.value && !isStarting.value && !statuses.JAVA_SERVER) {
-      isRunning.value = false;
-      isJavaReady.value = false;
-    }
-  }, 2000);
+  statusInterval = setInterval(pollStatuses, 2000);
 
-  EventsOn("log", (msg) => {
+  unsubscribeLogs = EventsOn("log", (msg) => {
     logs.value.push({
       id: Date.now() + Math.random(),
       time: new Date().toLocaleTimeString(),
@@ -97,6 +135,12 @@ onMounted(async () => {
     if (logs.value.length > 1000) logs.value.shift();
     scrollToBottom();
   });
+});
+
+onUnmounted(() => {
+  clearInterval(statusInterval);
+  unsubscribeLogs?.();
+  statusPoll.reset();
 });
 
 const scrollToBottom = () => {
@@ -116,6 +160,9 @@ const toggleServices = async () => {
     if (stopping) {
       serviceAttempt.cancel();
       isStopping.value = true;
+      tunnelPollingActive = false;
+      resetTunnel('stopped');
+      Object.assign(serviceStatuses, { NETEASE_API: false, JAVA_SERVER: false, QQMUSIC_API: false });
       await StopServices();
       isStarting.value = false;
       isRunning.value = false;
@@ -123,19 +170,26 @@ const toggleServices = async () => {
       isApiReady.value = false;
     } else {
       isStarting.value = true;
+      tunnelPollingActive = false;
+      resetTunnel();
       await SaveConfig(JSON.parse(JSON.stringify(config)));
       if (!serviceAttempt.current(attempt)) return;
       isJavaReady.value = false;
       isApiReady.value = false;
       logs.value = [];
+      statusPoll.reset();
+      tunnelPollingActive = true;
       await StartServices();
       if (!serviceAttempt.current(attempt)) return;
       isRunning.value = true;
       isStarting.value = false;
+      void pollStatuses();
     }
   } catch (error) {
     if (serviceAttempt.current(attempt) || stopping) {
       isStarting.value = false;
+      tunnelPollingActive = false;
+      resetTunnel('failed');
       errorMessage.value = String(error);
     }
   } finally {
@@ -150,6 +204,28 @@ const copyLogs = () => {
 
 const openWeb = () => {
   OpenBrowser(systemUrl.value);
+};
+
+const copyPublicUrl = async () => {
+  const url = publicUrl.value;
+  tunnelActionMessage.value = '';
+  try {
+    await copyTunnelUrl(tunnelStatus.value, navigator.clipboard?.writeText.bind(navigator.clipboard));
+    if (url === publicUrl.value) tunnelActionMessage.value = '已复制公网地址';
+  } catch (error) {
+    if (url === publicUrl.value) tunnelActionMessage.value = `复制失败：${String(error)}`;
+  }
+};
+
+const openPublicUrl = async () => {
+  const url = tunnelUrl(tunnelStatus.value);
+  if (!url) return;
+  tunnelActionMessage.value = '';
+  try {
+    await OpenBrowser(url);
+  } catch (error) {
+    if (url === publicUrl.value) tunnelActionMessage.value = `打开失败：${String(error)}`;
+  }
 };
 </script>
 
@@ -199,30 +275,51 @@ const openWeb = () => {
               <div class="space-y-1">
                 <label class="text-[10px] font-bold text-medical-500 uppercase">监听地址</label>
                 <p class="text-[9px] text-medical-400">保持 0.0.0.0 以允许所有设备访问</p>
-                <input v-model="config.serverIp" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
+                <input :disabled="configLocked" v-model="config.serverIp" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
               </div>
               <div class="space-y-1">
                 <label class="text-[10px] font-bold text-medical-500 uppercase">服务端口</label>
-                <input v-model="config.serverPort" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
+                <input :disabled="configLocked" v-model="config.serverPort" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
               </div>
               <div class="space-y-1">
                 <label class="text-[10px] font-bold text-medical-500 uppercase">公网访问地址 (Base URL)</label>
                 <p class="text-[9px] text-medical-400">用于生成直播流链接，如 http://1.2.3.4:8080</p>
-                <input v-model="config.baseUrl" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
+                <input :disabled="configLocked" v-model="config.baseUrl" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-medical-900" />
               </div>
               <div class="space-y-1">
                 <label class="text-[10px] font-bold text-medical-500 uppercase">管理员控制台密码</label>
-                <input v-model="config.adminPassword" type="text" placeholder="留空则默认为 admin123" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900" />
+                <input :disabled="configLocked" v-model="config.adminPassword" type="text" placeholder="留空则默认为 admin123" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900" />
               </div>
+            </div>
+            <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <label for="cloudflareTunnel" class="text-[10px] font-black uppercase">Cloudflare 公网隧道</label>
+                <input id="cloudflareTunnel" type="checkbox" v-model="config.cloudflareTunnelEnabled" :disabled="configLocked" class="w-4 h-4 accent-medical-900 disabled:opacity-40" />
+              </div>
+              <p class="text-[10px] text-medical-500">开启将把本机服务公开到互联网，请设置管理员与房间密码（不能使用空管理员密码或 admin123）；Quick Tunnel临时域名每次重启变化，不保证在线率/大流量音频</p>
+              <p class="text-[9px] text-medical-400">默认关闭，仅在下次启动时生效；运行或启动期间不可修改配置。</p>
+              <div class="text-[10px] font-mono" role="status" aria-live="polite">
+                <span class="text-medical-400">隧道状态：</span>
+                <span :class="tunnelStatus.state === 'ready' ? 'text-green-600' : tunnelStatus.state === 'failed' ? 'text-red-600' : 'text-medical-500'">{{ tunnelStateLabel }}</span>
+              </div>
+              <div v-if="publicUrl" class="space-y-2">
+                <input :value="publicUrl" readonly aria-label="公网隧道地址" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none" />
+                <div class="flex gap-4">
+                  <button type="button" @click="copyPublicUrl" class="text-[10px] font-bold text-medical-900 hover:underline">复制地址</button>
+                  <button type="button" @click="openPublicUrl" class="text-[10px] font-bold text-medical-900 hover:underline">打开公网网页</button>
+                </div>
+              </div>
+              <p v-if="tunnelStatus.error" role="alert" class="text-[10px] text-red-600 break-words">{{ tunnelStatus.error }}</p>
+              <p v-if="tunnelActionMessage" role="status" class="text-[10px] text-medical-500 break-words">{{ tunnelActionMessage }}</p>
             </div>
             <div class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="space-y-1">
                 <label class="text-[10px] font-bold text-medical-500 uppercase">作者名称</label>
-                <input v-model="config.authorName" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900" />
+                <input :disabled="configLocked" v-model="config.authorName" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900" />
               </div>
               <div class="space-y-1">
                 <label class="text-[10px] font-bold text-medical-500 uppercase">装饰文字</label>
-                <input v-model="config.backWords" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900" />
+                <input :disabled="configLocked" v-model="config.backWords" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900" />
               </div>
             </div>
           </div>
@@ -233,22 +330,22 @@ const openWeb = () => {
             <div v-for="source in sourceRows" :key="source.id" class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="flex items-center justify-between border-b border-medical-100 pb-2 mb-2">
                 <h3 class="text-[10px] font-black uppercase">{{ source.label }}</h3>
-                <input type="checkbox" v-model="config.sources[source.id].enabled" :aria-label="`启用 ${source.label}`" class="w-4 h-4 accent-medical-900" />
+                <input :disabled="configLocked" type="checkbox" v-model="config.sources[source.id].enabled" :aria-label="`启用 ${source.label}`" class="w-4 h-4 accent-medical-900" />
               </div>
               <p v-if="source.description" class="text-[10px] text-medical-500">{{ source.description }}</p>
               <fieldset :disabled="!config.sources[source.id].enabled" class="space-y-4 disabled:opacity-40">
                 <div class="space-y-1">
                   <label :for="`delivery-${source.id}`" class="text-[10px] font-bold text-medical-500 uppercase">音频交付方式</label>
-                  <select :id="`delivery-${source.id}`" v-model="config.sources[source.id].deliveryMode" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
+                  <select :disabled="configLocked" :id="`delivery-${source.id}`" v-model="config.sources[source.id].deliveryMode" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
                     <option v-for="mode in source.supportedModes" :key="mode" :value="mode">{{ deliveryModeLabel(mode) }}</option>
                   </select>
                 </div>
                 <div v-for="field in connectionFieldsFor(source, config)" :key="field.key" class="space-y-1">
                   <label :for="`connection-${field.key}`" class="text-[10px] font-bold text-medical-500 uppercase">{{ field.label }}</label>
-                  <select v-if="field.kind === 'select'" :id="`connection-${field.key}`" v-model="config[field.key]" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
+                  <select :disabled="configLocked" v-if="field.kind === 'select'" :id="`connection-${field.key}`" v-model="config[field.key]" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
                     <option v-for="option in field.options" :key="option.value" :value="option.value">{{ option.label }}</option>
                   </select>
-                  <input v-else :id="`connection-${field.key}`" v-model="config[field.key]" :type="field.kind" :placeholder="field.placeholder" autocomplete="off" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
+                  <input :disabled="configLocked" v-else :id="`connection-${field.key}`" v-model="config[field.key]" :type="field.kind" :placeholder="field.placeholder" autocomplete="off" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
                   <p v-if="field.placeholder" class="text-[9px] text-medical-400">{{ field.placeholder }}</p>
                 </div>
               </fieldset>
@@ -262,19 +359,19 @@ const openWeb = () => {
               <div class="grid grid-cols-2 gap-3">
                 <div class="space-y-1">
                   <label class="text-[9px] font-bold text-medical-400 uppercase">队列最大歌曲上限</label>
-                  <input v-model.number="config.queueMaxSize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
+                  <input :disabled="configLocked" v-model.number="config.queueMaxSize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
                 <div class="space-y-1">
                   <label class="text-[9px] font-bold text-medical-400 uppercase">历史记录歌曲上限</label>
-                  <input v-model.number="config.queueHistorySize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
+                  <input :disabled="configLocked" v-model.number="config.queueHistorySize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
                 <div class="space-y-1">
                   <label class="text-[9px] font-bold text-medical-400 uppercase">单人歌曲上限</label>
-                  <input v-model.number="config.queueMaxUserSongs" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
+                  <input :disabled="configLocked" v-model.number="config.queueMaxUserSongs" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
                 <div class="space-y-1">
                   <label class="text-[9px] font-bold text-medical-400 uppercase">歌单导入上限</label>
-                  <input v-model.number="config.maxPlaylistImportSize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
+                  <input :disabled="configLocked" v-model.number="config.maxPlaylistImportSize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
               </div>
             </div>
@@ -284,15 +381,15 @@ const openWeb = () => {
               <div class="grid grid-cols-2 gap-3">
                 <div class="space-y-1">
                   <label class="text-[9px] font-bold text-medical-400 uppercase">消息历史条数</label>
-                  <input v-model.number="config.chatMaxHistorySize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
+                  <input :disabled="configLocked" v-model.number="config.chatMaxHistorySize" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
                 <div class="space-y-1">
                   <label class="text-[9px] font-bold text-medical-400 uppercase">发言间隔(毫秒)</label>
-                  <input v-model.number="config.chatMinIntervalMs" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
+                  <input :disabled="configLocked" v-model.number="config.chatMinIntervalMs" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
                 <div class="space-y-1">
                   <label class="text-[9px] font-bold text-medical-400 uppercase">消息最大长度</label>
-                  <input v-model.number="config.chatMaxMessageLength" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
+                  <input :disabled="configLocked" v-model.number="config.chatMaxMessageLength" type="number" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
                 </div>
               </div>
             </div>
@@ -301,10 +398,10 @@ const openWeb = () => {
               <h3 class="text-[10px] font-black border-b border-medical-100 pb-1 mb-2">存储与安全</h3>
               <div class="space-y-1">
                 <label class="text-[9px] font-bold text-medical-400 uppercase">音乐缓存上限</label>
-                <input v-model="config.cacheMaxSize" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
+                <input :disabled="configLocked" v-model="config.cacheMaxSize" class="w-full bg-medical-50 border border-medical-200 px-2 py-1 text-xs outline-none" />
               </div>
               <div class="flex items-center gap-2 pt-2">
-                <input type="checkbox" v-model="config.authRateLimitEnabled" id="rateLimit" class="w-4 h-4 accent-medical-900" />
+                <input :disabled="configLocked" type="checkbox" v-model="config.authRateLimitEnabled" id="rateLimit" class="w-4 h-4 accent-medical-900" />
                 <label for="rateLimit" class="text-[10px] font-bold text-medical-600">启用进入尝试频率限制</label>
               </div>
             </div>

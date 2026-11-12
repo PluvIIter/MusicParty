@@ -91,6 +91,16 @@ func (a *App) GetServiceStatuses() map[string]bool {
 	return controller.Statuses()
 }
 
+func (a *App) GetTunnelStatus() launch.TunnelStatus {
+	a.mu.Lock()
+	controller := a.controller
+	a.mu.Unlock()
+	if controller == nil {
+		return launch.TunnelStatus{State: "off"}
+	}
+	return controller.GetTunnelStatus()
+}
+
 func (a *App) OpenBrowser(url string) {
 	var command *exec.Cmd
 	switch runtime.GOOS {

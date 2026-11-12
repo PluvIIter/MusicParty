@@ -126,6 +126,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Package and verify cloudflared without opening a tunnel
+        shell: pwsh
+        run: |
+          ./scripts/package-cloudflared.ps1 -OutputDir launcher/bin
+          python scripts/test-cloudflared.py --output-dir launcher/bin
+          if ($LASTEXITCODE -ne 0) { throw 'Cloudflared bundle verification failed' }
       - name: Compile Windows launcher with embedded gateway assets
         shell: pwsh
         run: |

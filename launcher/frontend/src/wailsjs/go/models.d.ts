@@ -8,6 +8,7 @@ export namespace config {
     serverIp: string;
     serverPort: string;
     baseUrl: string;
+    cloudflareTunnelEnabled: boolean;
     adminPassword: string;
     authorName: string;
     backWords: string;
