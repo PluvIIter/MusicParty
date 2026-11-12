@@ -1,7 +1,8 @@
 <!-- src/components/layout/MainLayout.vue -->
 <script setup>
 import { ref, onMounted } from 'vue';
-import { Search, Users, ListMusic, X, Minimize2, Maximize2, Volume2, Activity } from 'lucide-vue-next';
+import { Search, Users, ListMusic, X, Minimize2, Maximize2, Volume2, Activity, CircleHelp } from 'lucide-vue-next';
+import { TUTORIAL_UI } from '../../constants/tutorial';
 import ThemePicker from '../ThemePicker.vue';
 import UserList from '../UserList.vue';
 import QueueList from '../QueueList.vue';
@@ -10,7 +11,7 @@ import { useUserStore } from '../../stores/user';
 import { useUiStore } from '../../stores/ui';
 import { usePlayerStore } from '../../stores/player';
 
-const emit = defineEmits(['search']);
+const emit = defineEmits(['search', 'help']);
 const userStore = useUserStore();
 const uiStore = useUiStore();
 const playerStore = usePlayerStore();
@@ -42,15 +43,15 @@ const handleSearchClick = () => {
         <!-- 1. 顶部栏 Header -->
         <header
             v-if="!uiStore.isLiteMode"
-            class="h-14 bg-surface-raised border-b border-line flex justify-between items-center px-4 md:px-6 flex-shrink-0 relative z-50"
+            class="h-14 bg-surface-raised border-b border-line flex justify-between items-center px-2 sm:px-4 md:px-6 gap-2 flex-shrink-0 relative z-50"
         >
             <div class="flex items-center gap-2 flex-shrink-0">
-                <div class="w-2.5 h-2.5 md:w-3 md:h-3 bg-accent flex-shrink-0"></div>
+                <div class="hidden sm:block w-2.5 h-2.5 md:w-3 md:h-3 bg-accent flex-shrink-0"></div>
                 <div class="flex items-baseline gap-1">
                     <a
                         href="https://github.com/PluvIIter/MusicParty"
                         target="_blank"
-                        class="font-black text-base md:text-xl tracking-tighter text-ink whitespace-nowrap hover:text-accent transition-colors"
+                        class="font-black text-sm sm:text-base md:text-xl tracking-tighter text-ink whitespace-nowrap hover:text-accent transition-colors"
                         >MUSIC PARTY</a
                     >
                     <span
@@ -60,7 +61,7 @@ const handleSearchClick = () => {
                 </div>
             </div>
 
-            <div class="flex items-center gap-2 md:gap-4">
+            <div class="flex shrink-0 items-center gap-1 sm:gap-2 md:gap-4">
                 <!-- 移动端：显示人数按钮 -->
                 <button
                     id="tutorial-rename-mobile"
@@ -76,6 +77,15 @@ const handleSearchClick = () => {
                     <Users class="w-5 h-5 relative z-10" />
                 </button>
 
+                <button
+                    type="button"
+                    :aria-label="TUTORIAL_UI.helpButton"
+                    :title="TUTORIAL_UI.helpButton"
+                    class="flex items-center justify-center w-9 h-9 border border-line bg-surface text-ink-muted hover:text-accent rounded-sm"
+                    @click="emit('help')"
+                >
+                    <CircleHelp class="w-4 h-4" aria-hidden="true" />
+                </button>
                 <ThemePicker />
 
                 <!-- 精简模式按钮 -->
@@ -157,6 +167,13 @@ const handleSearchClick = () => {
             v-else
             class="flex-1 flex flex-col items-center justify-center bg-surface relative overflow-hidden p-4 md:p-6"
         >
+            <button
+                type="button"
+                class="absolute top-3 right-3 z-20 flex items-center justify-center gap-2 border border-line bg-surface-raised px-3 py-2 text-xs text-ink-muted hover:text-accent"
+                @click="emit('help')"
+            >
+                <CircleHelp class="w-4 h-4" aria-hidden="true" />{{ TUTORIAL_UI.helpButton }}
+            </button>
             <!-- 背景装饰 -->
             <div class="absolute inset-0 z-0 pointer-events-none opacity-40">
                 <div
