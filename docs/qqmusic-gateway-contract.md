@@ -1,0 +1,24 @@
+# QQ Music private gateway contract
+
+Internal protocol version 1; POST `/v1/{operation}` JSON `{params:{...},credential?:{...}}`, response `{data:...}` or non-2xx `{error:{code,message}}`. Public operations must reject nonempty credential; no default account/pool. Media/FM require an explicitly supplied single Credential snapshot. Authentication: `Authorization: Bearer <gateway-token>` configured by QQMUSIC_GATEWAY_TOKEN in both processes; never put credentials in URL/log. GET /health returns protocol version only, no secrets. bind Docker internal network or loopback; no public upstream API proxy.
+
+All DTOs below use strings for identifiers, milliseconds for duration, source/platform qqmusic. Only track id=songmid (not numeric songid or media_mid). Return data directly under data; bounded inputs/limits/body/timeouts, ordinary non-DRM formats only. An unsupported upstream operation fails explicitly, never invent private data/success.
+
+Operations and normalized data:
+- search `{query}` -> `[Track]`; anonymous song search.
+- track `{id}` -> Track; anonymous detail.
+- lyrics `{id}` -> string LRC (no lyrics legitimately returns empty string).
+- users `{query}` -> `[{id,name,avatarUrl,platform:"qqmusic"}]`; id is stable opaque versioned reference containing verified uin/euin (not nickname). Reject insufficient IDs; never guess QQ number. public created playlists needs numeric uin; fav lists needs euin. Versioned reference `q1.<base64url compact JSON {uin?:string,euin?:string}>`; both independently validated, length <=512, no credentials. User input reference decoded and validated server-side. Public metadata endpoints use Client() without credential and explicit empty Credential override where upstream prefers executor credentials.
+- collections `{userId,category,offset,limit}` -> `{items:[Container],nextOffset:int|null,total:int|null}`. category `playlists` = created public playlists. Only this parity category for now, no config account favorites. If get_created_songlist returns whole list, bounded fetch then local slice; do not claim complete if truncated. User opaque id must contain usable uin, absent -> explicit unavailable.
+- container `{type:"playlist",id}` -> Container. id global disstid/pid, never dirid. anonymous.
+- tracks `{type:"playlist",id,offset,limit}` -> `{items:[Track],nextOffset,total}`. page offset advances on raw upstream slice even filtered invalid entries; rely hasmore/total not filtered count; no overshooting/no progress.
+- album `{id}` -> `{id,name,coverUrl,trackCount, songs:[Track]}`. id album MID; whole album bounded, paginate upstream fully within budget or fail. No partial success.
+- track-album `{id}` -> same Album, track's owning album derived server side.
+- media `{id,quality,consumer}` with credential optional for legitimate anonymous songs -> `{id,representationKey,url,mimeType,extension,expiresAt,browserSafe,headers:{},timelineKey}`. Consumer BROWSER/SERVER; qualities `MP3_128`, `MP3_320`, `FLAC`, fallback operation media-fallback always MP3_128 and genuine distinct representation requirement enforced Java. No encrypted file types/ekey, no trial (reject if unable to establish full length; use upstream file info/trial indicators), no user-supplied media_mid/URL. expiresAt ISO8601 UTC using upstream expiration with safety margin. Actual format must match ordinary request and file result; validate item result==0/nonempty purl. Need media_mid correctly from track.file.media_mid; track metadata lookup stays anonymous. media gets raw detail to find file info; route sanitized downstream.
+- fm `{}` with explicit valid credential -> `[Track]`; genuine recommend.get_guess_recommend (music.radioProxy.MbTrackRadioSvr get_radio_track, id99), never a random playlist/daily chart. Only FM supported; no actual native DJ API in pinned upstream, report DJ unavailable.
+
+Track = `{id,name,artists:[string],duration:ms,platform:"qqmusic",coverUrl,externalUrl}`.
+Container = `{id,name,coverImgUrl,trackCount,platform:"qqmusic"}`.
+Java maps to existing Music/Playlist/AlbumInfo and SourcePage, rejects wrong source/id, invalid duration and credentials in public routes. Existing /api/v2, user target identity, membership/limits/epoch, media authorization/session and timeline enforcement remain unchanged. Public gateway responses never reuse authenticated data; gateway no shared account state, no refresh behind Java revision.
+
+This contract is owned by Lead. Python implementation scope `sidecars/qqmusic/**`; Java adapter scope new `QqMusic*` files and tests; launcher scope launcher/** only; admin/config integration Lead. Pinned dependency c046788dd1f11daacc74da487cbbf1bcd8ac6f33 (GPL-3.0-or-later; keep upstream notices/source obligations in Docker/docs, do not copy upstream into project). No production account/network tests without authorized credentials; deterministic tests must be explicit fixtures, not claims of live success.

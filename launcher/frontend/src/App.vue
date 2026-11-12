@@ -14,6 +14,10 @@ const config = reactive({
   neteaseCookie: '',
   neteaseQuality: 'exhigh',
   biliCookie: '',
+  qqmusicBaseUrl: 'http://localhost:8000',
+  qqmusicGatewayToken: '',
+  qqmusicCookie: '',
+  qqmusicQuality: 'MP3_128',
   sources: {},
   queueMaxSize: 1000,
   queueHistorySize: 50,
@@ -205,12 +209,13 @@ const openWeb = () => {
 
           <!-- 接口设置 -->
           <div v-if="activeTab === 'api'" class="space-y-4">
-            <p class="text-[10px] text-medical-500">Cookie 仅用于受限音频解析；公开用户资料和个人收藏使用网页中绑定的公开用户 ID。</p>
+            <p class="text-[10px] text-medical-500">服务凭据仅用于音频解析和音源支持的原生私人 FM；公开用户资料和个人收藏使用网页中绑定的公开用户 ID。</p>
             <div v-for="source in sourceRows" :key="source.id" class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="flex items-center justify-between border-b border-medical-100 pb-2 mb-2">
                 <h3 class="text-[10px] font-black uppercase">{{ source.label }}</h3>
                 <input type="checkbox" v-model="config.sources[source.id].enabled" :aria-label="`启用 ${source.label}`" class="w-4 h-4 accent-medical-900" />
               </div>
+              <p v-if="source.description" class="text-[10px] text-medical-500">{{ source.description }}</p>
               <fieldset :disabled="!config.sources[source.id].enabled" class="space-y-4 disabled:opacity-40">
                 <div class="space-y-1">
                   <label :for="`delivery-${source.id}`" class="text-[10px] font-bold text-medical-500 uppercase">音频交付方式</label>

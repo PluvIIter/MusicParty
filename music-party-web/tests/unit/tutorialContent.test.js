@@ -24,6 +24,12 @@ describe('user tutorial content and exact text export', () => {
         }
         for (const topic of TUTORIAL_TOPICS) expect(topic.cards.length).toBeGreaterThan(0);
     });
+    it('explains QQ public collections, administrator credentials and FM-only recommendations', () => {
+        expect(tutorialText()).toContain('网易云和 QQ 音乐主要是公开歌单');
+        expect(tutorialText()).toContain('QQ 音乐当前只提供 FM，不提供 DJ');
+        expect(tutorialText()).toContain('QQ 音乐登录凭据由管理员');
+        expect(tutorialText()).toContain('不回显原值');
+    });
     it('exports every visible and assistive string including mobile variants', () => {
         const text = tutorialText();
         for (const value of paragraphs()) {

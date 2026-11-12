@@ -50,7 +50,8 @@ public class SourceRegistry {
     public boolean isEnabled(String id) {
         if (!adapters.containsKey(id)) return false;
         AppProperties.SourceConfig configured = properties.getSources().get(id);
-        return configured == null || !Boolean.FALSE.equals(configured.getEnabled());
+        return configured == null || configured.getEnabled() == null
+                ? !adapters.get(id).defaultDisabled() : configured.getEnabled();
     }
 
     public SourceDescriptor descriptor(String id) {

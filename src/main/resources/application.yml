@@ -23,6 +23,14 @@ app:
       bilibili:
         enabled: ${BILIBILI_ENABLED:true}
         delivery-mode: ${BILIBILI_DELIVERY_MODE:SERVER_DOWNLOAD}
+      qqmusic:
+        enabled: ${QQMUSIC_ENABLED:false}
+        delivery-mode: ${QQMUSIC_DELIVERY_MODE:SERVER_DOWNLOAD}
+    qqmusic:
+      base-url: ${QQMUSIC_API_URL:http://localhost:8000}
+      gateway-token: ${QQMUSIC_GATEWAY_TOKEN:}
+      cookie: ${QQMUSIC_COOKIE:}
+      quality: ${QQMUSIC_QUALITY:MP3_128}
     netease:
       # The base URL of your deployed NeteaseCloudMusicApi instance
       base-url: ${NETEASE_API_URL:http://netease-api:3000}

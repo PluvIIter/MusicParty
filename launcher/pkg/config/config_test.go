@@ -13,7 +13,7 @@ func TestDecodeCanonicalSourceMapWithoutImplicitDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]SourceConfig{"test-source": {false, ServerDownload}}
+	want := map[string]SourceConfig{"test-source": {false, ServerDownload}, "qqmusic": {false, ServerDownload}}
 	if !reflect.DeepEqual(cfg.Sources, want) {
 		t.Fatalf("sources = %#v, want %#v", cfg.Sources, want)
 	}
@@ -84,6 +84,8 @@ func TestJavaArgsUseGenericSourceProperties(t *testing.T) {
 		"--app.music-api.sources.bilibili.delivery-mode=DIRECT_URL",
 		"--app.music-api.sources.netease.enabled=false",
 		"--app.music-api.sources.netease.delivery-mode=SERVER_DOWNLOAD",
+		"--app.music-api.sources.qqmusic.enabled=false",
+		"--app.music-api.sources.qqmusic.delivery-mode=SERVER_DOWNLOAD",
 		"--app.music-api.sources.test-source.enabled=true",
 		"--app.music-api.sources.test-source.delivery-mode=SERVER_DOWNLOAD",
 	}

@@ -67,7 +67,12 @@ async function fixture(
         else if (path === '/api/v2/sources')
             body = {
                 schemaVersion: 2,
-                sources: [descriptor('future-source', true), descriptor('other-source'), descriptor('disabled-source')],
+                sources: [
+                    descriptor('future-source', true),
+                    descriptor('other-source'),
+                    descriptor('disabled-source'),
+                    { ...descriptor('qqmusic', true), label: 'QQ音乐' },
+                ],
             };
         else if (path.endsWith('/users/search'))
             body = {
@@ -88,7 +93,16 @@ async function fixture(
                     })
                 );
             body = {
-                items: [track('Search song', path.includes('/other-source/') ? 'other-source' : 'future-source')],
+                items: [
+                    track(
+                        'Search song',
+                        path.includes('/qqmusic/')
+                            ? 'qqmusic'
+                            : path.includes('/other-source/')
+                              ? 'other-source'
+                              : 'future-source'
+                    ),
+                ],
                 nextCursor: null,
             };
         } else if (path.includes('/collections/')) {
@@ -291,6 +305,28 @@ for (const switchToLikes of [false, true])
         await expect(page.getByText('Container song', { exact: true })).toHaveCount(1);
         await expect(page.getByRole('button', { name: '加载更多曲目', exact: true })).toHaveCount(0);
     });
+
+test('QQ source uses generic search user binding and public collections without a UID form', async ({ page }) => {
+    const server = await fixture(page);
+    await page.getByRole('button', { name: 'QQ音乐', exact: true }).click();
+    await page.getByPlaceholder('搜索音乐...').fill('QQ song');
+    await page.getByPlaceholder('搜索音乐...').press('Enter');
+    await expect(page.getByRole('button', { name: '添加单曲：Search song', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '添加单曲：Search song', exact: true }).click();
+    await expect
+        .poll(() => server.sent.some((item) => item.destination === '/app/enqueue' && item.body.platform === 'qqmusic'))
+        .toBe(true);
+    await bindUser(page);
+    await expect(page.getByText('Public mix', { exact: true })).toBeVisible();
+    expect(
+        server.reads.some(
+            (url) =>
+                url.pathname === '/api/v2/sources/qqmusic/collections/public-lists' &&
+                url.searchParams.get('userId') === 'uid-A'
+        )
+    ).toBe(true);
+    await expect(page.getByRole('textbox', { name: '公开用户 ID', exact: true })).toHaveCount(0);
+});
 
 test('unknown source discovers generic collection categories and binds a user from search', async ({ page }) => {
     const server = await fixture(page);

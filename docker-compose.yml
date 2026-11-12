@@ -32,9 +32,15 @@ services:
       # [平台凭证]
       - NETEASE_ENABLED=true         # 是否开启网易云音乐源
       - BILIBILI_ENABLED=true        # 是否开启 Bilibili 源
+      - QQMUSIC_ENABLED=${QQMUSIC_ENABLED:-false}
+      - QQMUSIC_API_URL=${QQMUSIC_API_URL:-http://qqmusic-api:8000}
+      - QQMUSIC_GATEWAY_TOKEN=${QQMUSIC_GATEWAY_TOKEN:-}
+      - QQMUSIC_COOKIE=${QQMUSIC_COOKIE:-}
+      - QQMUSIC_QUALITY=${QQMUSIC_QUALITY:-MP3_128}
+      - QQMUSIC_DELIVERY_MODE=${QQMUSIC_DELIVERY_MODE:-SERVER_DOWNLOAD}
       - NETEASE_DELIVERY_MODE=DIRECT_URL
       - BILIBILI_DELIVERY_MODE=SERVER_DOWNLOAD
-      - PRIVATE_DJ_SOURCE=netease
+      - PRIVATE_DJ_SOURCE=${PRIVATE_DJ_SOURCE:-netease}
       - NETEASE_COOKIE=""            # 网易云 Cookie
       - NETEASE_QUALITY=exhigh       # 网易云音质 (standard, higher, exhigh, lossless, hires)
       - BILIBILI_COOKIE=""           # B站完整Cookie(可选，仅B站源需要)
@@ -64,6 +70,15 @@ services:
       - ./music_party/cached_media:/app/cached_media
       # 挂载数据目录，用于持久化播放列表和历史记录
       - ./music_party/data:/app/data
+
+  qqmusic-api:
+    profiles: [qqmusic]
+    build: ./sidecars/qqmusic
+    restart: unless-stopped
+    environment:
+      - QQMUSIC_GATEWAY_TOKEN=${QQMUSIC_GATEWAY_TOKEN:-}
+    networks:
+      - music-net
 
 networks:
   music-net:

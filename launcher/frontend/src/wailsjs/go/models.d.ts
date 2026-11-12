@@ -15,6 +15,10 @@ export namespace config {
     neteaseCookie: string;
     neteaseQuality: string;
     biliCookie: string;
+    qqmusicBaseUrl: string;
+    qqmusicGatewayToken: string;
+    qqmusicCookie: string;
+    qqmusicQuality: 'MP3_128' | 'MP3_320' | 'FLAC';
     queueMaxSize: number;
     queueHistorySize: number;
     queueMaxUserSongs: number;
@@ -34,6 +38,8 @@ export namespace config {
     id: string;
     label: string;
     defaultMode: string;
+    defaultEnabled: boolean;
+    description?: string;
     supportedModes: string[];
     localService?: string;
     connectionFields: Array<{

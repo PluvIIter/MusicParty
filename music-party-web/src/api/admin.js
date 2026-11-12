@@ -4,6 +4,9 @@ import client from './client';
  * 管理员后台专用接口封装
  */
 export const adminApi = {
+    getSources: (adminPwd, signal) =>
+        client.get('/api/admin/sources', { signal, headers: { 'X-Admin-Password': adminPwd } }),
+
     // 验证密码
     verify: (password) => client.post('/api/admin/verify', { password }),
 
