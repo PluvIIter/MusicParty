@@ -50,26 +50,26 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
         return new SourceDescriptor(SOURCE, "QQ音乐", "music",
                 new SourceCapabilities(true, true, true, true, true, true, !"FLAC".equals(properties.getQqmusic().getQuality()), true),
                 Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
-                List.of(new CollectionCategory("playlists", "公开歌单", "playlist", "CONTAINER")));
+                List.of(new CollectionCategory("playlists", "歌单", "playlist", "CONTAINER")));
     }
 
     @Override public Mono<List<Music>> searchMusic(String keyword) {
-        return Mono.defer(() -> web.publicGet("/search/search_by_type", Map.of("keyword", query(keyword), "search_type", 0, "num", 20, "page", 1))
+        return Mono.defer(() -> web.get("/search/search_by_type", Map.of("keyword", query(keyword), "search_type", 0, "num", 20, "page", 1))
                 .map(data -> tracks(data.path("song"))));
     }
 
-    private Mono<JsonNode> detail(String id) {
-        return web.publicGet("/song/" + mid(id) + "/detail", Map.of()).map(data -> {
+    private Mono<JsonNode> detail(String id, QqMusicCredentialService.Snapshot snapshot) {
+        return web.get("/song/" + mid(id) + "/detail", Map.of(), snapshot).map(data -> {
             JsonNode track = data.path("track");
             if (!id.equals(track.path("mid").asText())) throw invalid();
             return track;
         });
     }
 
-    @Override public Mono<Music> getMusic(String id) { return Mono.defer(() -> detail(id).map(this::track)); }
+    @Override public Mono<Music> getMusic(String id) { return Mono.defer(() -> detail(id, credentials.snapshot()).map(this::track)); }
 
     @Override public Mono<String> getLyric(String id) {
-        return Mono.defer(() -> web.publicGet("/song/" + mid(id) + "/lyric", Map.of()).map(data -> {
+        return Mono.defer(() -> web.get("/song/" + mid(id) + "/lyric", Map.of()).map(data -> {
             JsonNode lyric = data.path("lyric");
             if (!lyric.isTextual() || lyric.textValue().length() > 500_000) throw invalid();
             return lyric.textValue();
@@ -77,7 +77,7 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     }
 
     @Override public Mono<List<UserSearchResult>> searchUsers(String keyword) {
-        return Mono.defer(() -> web.publicGet("/search/search_by_type", Map.of("keyword", query(keyword), "search_type", 8, "num", 20, "page", 1))
+        return Mono.defer(() -> web.get("/search/search_by_type", Map.of("keyword", query(keyword), "search_type", 8, "num", 20, "page", 1))
                 .map(data -> {
                     List<UserSearchResult> result = new ArrayList<>();
                     for (JsonNode user : array(data.path("user"), 100)) {
@@ -101,7 +101,7 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
             if (!"playlists".equals(category)) throw unsupported();
             bounds(offset, limit);
             String uin = userUin(userId);
-            return web.publicGet("/user/" + uin + "/created_songlists", Map.of()).map(data -> {
+            return web.get("/user/" + uin + "/created_songlists", Map.of()).map(data -> {
                 JsonNode raw = array(data.path("playlists"), 10000);
                 if ((data.has("finished") && !data.path("finished").asBoolean())
                         || data.path("total").asLong(raw.size()) > raw.size()) throw new ApiRequestException("COLLECTION_INCOMPLETE");
@@ -109,7 +109,6 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
                 int end = Math.min(raw.size(), offset + limit);
                 for (int index = Math.min(offset, raw.size()); index < end; index++) {
                     JsonNode entry = raw.get(index);
-                    if (entry.path("invalid").asBoolean(false) || entry.path("dir_show").asInt(0) == 2) continue;
                     result.add(playlist(entry));
                 }
                 return new SourcePage<>(result, end < raw.size() ? end : null, (long) raw.size());
@@ -120,7 +119,7 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     @Override public Mono<Playlist> containerDetail(String type, String id) {
         return Mono.defer(() -> {
             if (!"playlist".equals(type)) throw unsupported();
-            return songlist(id, 1).map(data -> {
+            return songlist(id, 1, credentials.snapshot()).map(data -> {
                 Playlist playlist = playlist(data.path("info"));
                 if (!id.equals(playlist.id())) throw invalid();
                 return playlist;
@@ -128,9 +127,9 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
         });
     }
 
-    private Mono<JsonNode> songlist(String id, int page) {
-        return web.publicGet("/songlist/" + numeric(id) + "/detail", Map.of("num", PAGE_SIZE, "page", page)).map(data -> {
-            if (data.path("code").asInt(0) != 0 || data.path("subcode").asInt(0) != 0) throw new ApiRequestException("COLLECTION_NOT_PUBLIC");
+    private Mono<JsonNode> songlist(String id, int page, QqMusicCredentialService.Snapshot snapshot) {
+        return web.get("/songlist/" + numeric(id) + "/detail", Map.of("num", PAGE_SIZE, "page", page), snapshot).map(data -> {
+            if (data.path("code").asInt(0) != 0 || data.path("subcode").asInt(0) != 0) throw invalid();
             return data;
         });
     }
@@ -139,13 +138,13 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
         return Mono.defer(() -> {
             if (!"playlist".equals(type)) throw unsupported();
             bounds(offset, limit);
-            return collectSonglist(id, offset, limit, null, new ArrayList<>(), 0);
+            return collectSonglist(id, offset, limit, null, new ArrayList<>(), 0, credentials.snapshot());
         });
     }
 
-    private Mono<SourcePage<Music>> collectSonglist(String id, int cursor, int remaining, Long expectedTotal, List<Music> output, int requests) {
+    private Mono<SourcePage<Music>> collectSonglist(String id, int cursor, int remaining, Long expectedTotal, List<Music> output, int requests, QqMusicCredentialService.Snapshot snapshot) {
         if (requests > 2) return Mono.error(invalid());
-        return songlist(id, cursor / PAGE_SIZE + 1).flatMap(data -> {
+        return songlist(id, cursor / PAGE_SIZE + 1, snapshot).flatMap(data -> {
             long total = nonnegative(data.path("total"));
             if (expectedTotal != null && expectedTotal != total) throw new ApiRequestException("COLLECTION_CHANGED");
             JsonNode raw = array(data.path("songs"), PAGE_SIZE);
@@ -156,24 +155,28 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
             boolean more = next < total;
             if (more && take == 0) throw new ApiRequestException("PAGINATION_STALLED");
             if (take < remaining && next < total && raw.size() == PAGE_SIZE) {
-                return collectSonglist(id, next, remaining - take, total, output, requests + 1);
+                return collectSonglist(id, next, remaining - take, total, output, requests + 1, snapshot);
             }
             return Mono.just(new SourcePage<>(List.copyOf(output), more ? next : null, total));
         });
     }
 
     @Override public Mono<AlbumInfo> getAlbum(String id) {
-        return Mono.defer(() -> web.publicGet("/album/" + mid(id) + "/detail", Map.of()).flatMap(data -> {
-            JsonNode album = data.path("album");
-            if (!id.equals(album.path("mid").asText())) throw invalid();
-            return albumSongs(id, 1, null, new ArrayList<>()).map(songs -> new AlbumInfo(id,
-                    name(album.path("name").asText()), artists(data.path("singers")), cover(album), songs.size(), songs));
-        })).timeout(Duration.ofSeconds(30));
+        return Mono.defer(() -> album(id, credentials.snapshot())).timeout(Duration.ofSeconds(30));
     }
 
-    private Mono<List<Music>> albumSongs(String id, int page, Long expected, List<Music> output) {
+    private Mono<AlbumInfo> album(String id, QqMusicCredentialService.Snapshot snapshot) {
+        return web.get("/album/" + mid(id) + "/detail", Map.of(), snapshot).flatMap(data -> {
+            JsonNode album = data.path("album");
+            if (!id.equals(album.path("mid").asText())) throw invalid();
+            return albumSongs(id, 1, null, new ArrayList<>(), snapshot).map(songs -> new AlbumInfo(id,
+                    name(album.path("name").asText()), artists(data.path("singers")), cover(album), songs.size(), songs));
+        });
+    }
+
+    private Mono<List<Music>> albumSongs(String id, int page, Long expected, List<Music> output, QqMusicCredentialService.Snapshot snapshot) {
         if (page > 20) return Mono.error(new ApiRequestException("COLLECTION_INCOMPLETE"));
-        return web.publicGet("/album/" + id + "/songs", Map.of("num", PAGE_SIZE, "page", page)).flatMap(data -> {
+        return web.get("/album/" + id + "/songs", Map.of("num", PAGE_SIZE, "page", page), snapshot).flatMap(data -> {
             if (!id.equals(data.path("album_mid").asText())) throw invalid();
             long total = nonnegative(data.path("total_num"));
             if (total > 2000 || (expected != null && expected != total)) throw new ApiRequestException("COLLECTION_INCOMPLETE");
@@ -182,7 +185,7 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
             if (output.size() > total) throw invalid();
             if (output.size() < total) {
                 if (songs.isEmpty()) throw new ApiRequestException("PAGINATION_STALLED");
-                return albumSongs(id, page + 1, total, output);
+                return albumSongs(id, page + 1, total, output, snapshot);
             }
             if (output.isEmpty() || output.stream().map(Music::id).distinct().count() != output.size()) throw invalid();
             return Mono.just(List.copyOf(output));
@@ -190,7 +193,10 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     }
 
     @Override public Mono<AlbumInfo> getAlbumForSong(String id) {
-        return Mono.defer(() -> detail(id).flatMap(song -> getAlbum(mid(song.path("album").path("mid").asText()))));
+        return Mono.defer(() -> {
+            var snapshot = credentials.snapshot();
+            return detail(id, snapshot).flatMap(song -> album(mid(song.path("album").path("mid").asText()), snapshot));
+        });
     }
 
     @Override public Mono<ResolvedMedia> resolveMedia(String id, MediaConsumer consumer) {
@@ -209,7 +215,7 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
             var snapshot = credentials.snapshot();
             snapshot.requireValid();
             if (consumer == null) throw invalid();
-            return detail(id).flatMap(song -> {
+            return detail(id, snapshot).flatMap(song -> {
                 credentials.requireCurrent(snapshot);
                 Music metadata = track(song);
                 JsonNode file = song.path("file");
@@ -220,7 +226,7 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
                 int fileType = quality.equals("FLAC") ? 7 : quality.equals("MP3_320") ? 12 : 13;
                 String extension = quality.equals("FLAC") ? ".flac" : ".mp3";
                 String filename = (quality.equals("FLAC") ? "F000" : quality.equals("MP3_320") ? "M800" : "M500") + mediaMid + extension;
-                return web.privateGet("/song/" + mid(id) + "/url", Map.of("file_type", fileType, "song_type", song.path("type").asInt(1), "media_mid", mediaMid), snapshot, false)
+                return web.get("/song/" + mid(id) + "/url", Map.of("file_type", fileType, "song_type", song.path("type").asInt(1), "media_mid", mediaMid), snapshot)
                         .map(data -> {
                             credentials.requireCurrent(snapshot);
                             JsonNode items = array(data.path("data"), 20);
@@ -250,7 +256,9 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     public Mono<List<Music>> recommendations() {
         return Mono.defer(() -> {
             var snapshot = credentials.snapshot();
-            return web.privateGet("/recommend/get_guess_recommend", Map.of(), snapshot, true).map(data -> {
+            snapshot.requireValid();
+            if (!snapshot.configured()) throw new ApiRequestException("SOURCE_AUTH_REQUIRED: 请配置QQ音乐凭据");
+            return web.get("/recommend/get_guess_recommend", Map.of(), snapshot).map(data -> {
                 credentials.requireCurrent(snapshot);
                 List<Music> songs = tracks(data.path("songs"));
                 if (songs.isEmpty()) throw new ApiRequestException("RECOMMENDATION_UNAVAILABLE");
@@ -297,7 +305,7 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
             if (reference == null || reference.length() > 512 || !reference.startsWith("q1.")) throw invalid();
             JsonNode value = mapper.readTree(Base64.getUrlDecoder().decode(reference.substring(3)));
             return numeric(value.path("uin").asText());
-        } catch (Exception error) { throw new ApiRequestException("USER_ID_UNAVAILABLE: 此用户标识不支持公开歌单读取"); }
+        } catch (Exception error) { throw new ApiRequestException("USER_ID_UNAVAILABLE: 此用户标识不支持歌单读取"); }
     }
 
     private String timeline(String id, String mediaMid, long duration) {

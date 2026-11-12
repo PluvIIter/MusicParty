@@ -41,6 +41,8 @@ public class SourceCredentialRegistry {
         var manager = source == null ? null : managers.get(source);
         if (manager == null) throw new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持凭据管理");
         if (value != null && value.length() > 32768) throw new ApiRequestException("INVALID_CREDENTIAL: 凭据过长");
-        manager.updateCredential(value == null ? "" : value);
+        synchronized (sources) {
+            manager.updateCredential(value == null ? "" : value);
+        }
     }
 }

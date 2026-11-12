@@ -37,7 +37,7 @@ func SourceDescriptors() []SourceDescriptor {
 			ID: "netease", Label: "网易云音乐", DefaultMode: DirectURL, DefaultEnabled: true,
 			SupportedModes: []string{DirectURL, ServerDownload}, LocalService: "NETEASE_API",
 			ConnectionFields: []ConnectionField{
-				{Key: "neteaseCookie", Label: "音频解析 Cookie", Kind: "password", Placeholder: "仅用于受限音频解析，不用于用户资料或个人收藏"},
+				{Key: "neteaseCookie", Label: "网易云账号 Cookie", Kind: "password", Placeholder: "配置后所有网易云数据查询、音频解析和私人推荐均使用该账号；未配置才匿名"},
 				{Key: "neteaseQuality", Label: "解析音质上限", Kind: "select", Options: []ConnectionOption{
 					{Value: "standard", Label: "标准"}, {Value: "higher", Label: "较高"},
 					{Value: "exhigh", Label: "极高"}, {Value: "lossless", Label: "无损"},
@@ -49,13 +49,13 @@ func SourceDescriptors() []SourceDescriptor {
 			ID: "bilibili", Label: "Bilibili", DefaultMode: ServerDownload, DefaultEnabled: true,
 			SupportedModes: []string{DirectURL, ServerDownload},
 			ConnectionFields: []ConnectionField{
-				{Key: "biliCookie", Label: "音频解析 Cookie", Kind: "password", Placeholder: "仅用于受限音频解析（含 SESSDATA），不用于用户收藏身份"},
+				{Key: "biliCookie", Label: "Bilibili 账号 Cookie", Kind: "password", Placeholder: "配置后所有 Bilibili 数据查询和音频解析均使用该账号（含 SESSDATA）；未配置才匿名"},
 			},
 		},
 		{
 			ID: "qqmusic", Label: "QQ 音乐", DefaultMode: ServerDownload, DefaultEnabled: false,
 			SupportedModes: []string{DirectURL, ServerDownload}, LocalService: "QQMUSIC_API",
-			Description: "启用后一键运行随包 1124 QQMusic 原生 Web API，无需安装 Python。外部 API 必须关闭默认账号池、勿公开 Web 服务。凭据仅用于音频和原生私人 FM，不作为公开收藏身份。",
+			Description: "启用后一键运行随包 1124 QQMusic 原生 Web API，无需安装 Python。外部 API 必须关闭默认账号池、勿公开 Web 服务。配置的账号凭据用于所有 QQ 数据查询、音频和私人 FM；未配置才匿名。绑定用户只是查询目标，访问权限由上游按配置账号判断。",
 			ConnectionFields: []ConnectionField{
 				{Key: "qqmusicGatewayMode", Label: "QQ 原生 API 运行方式", Kind: "select", Options: []ConnectionOption{{Value: "bundled", Label: "内置一键启动（推荐）"}, {Value: "external", Label: "外部原生 API"}}},
 				{Key: "qqmusicBaseUrl", Label: "QQ 原生 Web API 地址", Kind: "url", GatewayMode: "external", Placeholder: "http://127.0.0.1:8000；填写 1124 原生 Web API 根地址"},

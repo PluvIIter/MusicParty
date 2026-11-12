@@ -1,6 +1,8 @@
 # QQMusic native Web deployment
 
-This directory deploys the unmodified Web application shipped by [L1124/QQMusicApi](https://github.com/l-1124/QQMusicApi/tree/c046788dd1f11daacc74da487cbbf1bcd8ac6f33/web) at commit `c046788dd1f11daacc74da487cbbf1bcd8ac6f33`. There is no custom operation server or Bearer-token bridge. MusicParty calls the native REST routes and passes request credentials through the upstream Cookie contract.
+This directory deploys the native Web application shipped by [L1124/QQMusicApi](https://github.com/l-1124/QQMusicApi/tree/c046788dd1f11daacc74da487cbbf1bcd8ac6f33/web) at commit `c046788dd1f11daacc74da487cbbf1bcd8ac6f33`, with a small runtime authentication/cache policy in [the startup shim](<run_web.py>). The upstream source files are unchanged, but the runtime policy is deliberately different: every `AuthPolicy.NONE` business route becomes `OPTIONAL` with `cache=None`. Existing optional and strict authenticated routes are unchanged. Native routes, SDK operations, adapters, validation, response serialization and error handling are retained; this is not a rewritten gateway or Bearer-token bridge.
+
+At this revision, upstream `NONE` routes ignore Cookie entirely and may use a public cache whose keys omit credentials. Sending a Java HTTP header alone is therefore insufficient. The shim lets the native Cookie parser and RequestEngine use each request's configured account for search, details, lyrics and other reads, and removes public caching/coalescing on those routes so accounts cannot share a cached result. Without configured credentials, optional reads remain anonymous; strict native routes still require credentials. There is no added local privacy filter: upstream data and permission failures pass through native response/error handling. This does not grant access that upstream denies.
 
 ## Local deployment
 
@@ -18,8 +20,9 @@ export QQMUSIC_CREDENTIAL_ENABLED=false QQMUSIC_LOGGING_LEVEL=WARNING
 export QQMUSIC_CLIENT_DEVICE_PATH="$PWD/device.json"
 export QQMUSIC_CREDENTIAL_STORE_PATH="$PWD/credentials.sqlite3"
 PYTHON="$PWD/.venv/bin/python"
+ENTRY="$PWD/run_web.py"
 cd upstream/source
-"$PYTHON" -I -B web/run.py
+"$PYTHON" -I -B "$ENTRY"
 ```
 
 The small requirements list installs the pinned SDK plus the upstream `web` dependency group: FastAPI, Griffe, pydantic-settings with TOML support, and Uvicorn. Python-dotenv is also pinned. Do not install the upstream Web requirements export: it includes development and documentation dependencies. Credential storage uses Python's standard-library SQLite, not aiosqlite.
@@ -28,7 +31,7 @@ Keep the source export clean: do not copy the upstream account/config examples t
 
 ## Windows bundle
 
-The packaging script retains CPython 3.13.9 with its existing SHA256 pin, installed dependencies and dist-info/license metadata, plus the complete upstream Git archive including Web sources. The manifest declares `entryPoint=upstream/source/web/run.py` and `workingDirectory=upstream/source`. Start the bundled Python with `-I` and that entry point from that working directory. The embedded Python search paths include `../upstream/source` relative to its `python` directory. No Web implementation is copied into a second server.
+The packaging script retains CPython 3.13.9 with its existing SHA256 pin, installed dependencies and dist-info/license metadata, plus the complete upstream Git archive including Web sources. The manifest declares `entryPoint=run_web.py` and `workingDirectory=upstream/source`. Start the bundled Python with `-I -B` and that root-level shim from that working directory. The shim defaults to its sibling `upstream/source`, inserts that absolute source path into `sys.path`, applies the route policy, then executes the original `web/run.py` using `runpy`; Uvicorn still uses the native `web.src.app:create_app` factory. `QQMUSIC_UPSTREAM_SOURCE` can select a clean pinned export for local development/tests; leave it unset in packaged deployment. The embedded Python search paths include `../upstream/source` relative to its `python` directory. No Web implementation is copied into a second server.
 
 Set these native runtime environment variables:
 
@@ -49,7 +52,7 @@ docker build -t musicparty-qqmusic .
 docker run --rm --network musicparty-internal musicparty-qqmusic
 ```
 
-The image runs the same pinned native entry point as UID 10001, listens internally on port 8000, and stores writable state under `/home/qqmusic/data`. Do not publish this unauthenticated service to untrusted networks. Keep the backend and this service on a private network. The native upstream login and other routes remain present; network isolation, rather than a new private gateway, limits access.
+The image runs `python -I -B /opt/qqmusic/run_web.py` with the same native application and runtime policy as UID 10001, listens internally on port 8000, and stores writable state under `/home/qqmusic/data`. Do not publish this unauthenticated service to untrusted networks. Keep the backend and this service on a private network. The native upstream login and other routes remain present; network isolation, rather than a new private gateway, limits access.
 
 ## Readiness and offline tests
 
@@ -62,7 +65,7 @@ At this pinned revision, **there is no `/health` endpoint or uptime/status paylo
 QQMUSIC_UPSTREAM_SOURCE=/absolute/path/to/upstream/source .venv/bin/python -m pytest -q
 ```
 
-The startup test runs the real upstream entry point with an empty PATH, both clean and polluted Python environments, and a Python audit hook that rejects non-loopback socket access. It verifies startup without login and an empty credential database. Windows bundle tests additionally check the embedded runtime, source hashes and dependency/license metadata. Fixture tests use the real native app and RequestEngine with an offline CGI executor result and a transport that rejects network requests; they are not live QQ Music or playback verification.
+The startup test runs the shim and real upstream entry point with an empty PATH, both clean and polluted Python environments, and a Python audit hook that rejects non-loopback socket access. It verifies startup without login and an empty credential database. Windows bundle tests additionally check the embedded runtime, source hashes and dependency/license metadata. Fixture tests use the real native app and RequestEngine with an offline CGI executor result and a transport that rejects network requests; they are not live QQ Music or playback verification.
 
 ## Licensing
 

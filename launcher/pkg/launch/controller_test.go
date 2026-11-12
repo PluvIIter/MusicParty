@@ -34,8 +34,12 @@ func TestLaunchHelper(t *testing.T) {
 		os.Exit(2)
 	}
 	mux := http.NewServeMux()
-	if !strings.Contains(strings.Join(os.Args, " "), "-I -B") {
+	if !strings.Contains(strings.Join(os.Args, " "), "-I -B") || filepath.Base(os.Args[len(os.Args)-1]) != "run_web.py" {
 		os.Exit(8)
+	}
+	cwd, _ := os.Getwd()
+	if filepath.Base(cwd) != "source" {
+		os.Exit(9)
 	}
 	if os.Getenv("QQMUSIC_CREDENTIAL_ENABLED") != "false" || os.Getenv("QQMUSIC_SERVER_WORKERS") != "1" || os.Getenv("QQMUSIC_SERVER_HOST") != "127.0.0.1" || os.Getenv("QQMUSIC_DEFAULT_ACCOUNT") != "" {
 		os.Exit(7)
@@ -80,7 +84,7 @@ func fixtureController(t *testing.T) (*Controller, *config.AppConfig, string) {
 		}
 	}
 	os.WriteFile(filepath.Join(bin, "server.jar"), []byte("fixture"), 0644)
-	for _, name := range []string{"upstream/source/web/run.py", "upstream/source/web/src/app.py"} {
+	for _, name := range []string{"run_web.py", "upstream/source/web/run.py", "upstream/source/web/src/app.py"} {
 		path := filepath.Join(bin, "qqmusic", filepath.FromSlash(name))
 		os.MkdirAll(filepath.Dir(path), 0755)
 		os.WriteFile(path, []byte("fixture"), 0644)

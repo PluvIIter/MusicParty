@@ -31,9 +31,9 @@ class NeteaseRecommendationApiTest {
         List<String> routes = new ArrayList<>();
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             routes.add(request.url().getPath());
-            assertTrue(request.url().getQuery().contains("cookie=MUSIC_U=secret; csrf=abc"));
+            assertEquals("MUSIC_U=secret; csrf=abc", request.headers().getFirst("Cookie"));
             assertTrue(request.url().getQuery().contains("timestamp="));
-            assertNull(request.headers().getFirst("Cookie"));
+            assertFalse(request.url().getQuery().contains("cookie="));
             return Mono.just(response(HttpStatus.OK, "{\"code\":200,\"data\":[]}"));
         }).build();
         var api = new NeteaseMusicApiService(client, properties);
@@ -48,7 +48,7 @@ class NeteaseRecommendationApiTest {
 
     @Test void cookieUpdatesApplyToDeferredRecommendations() {
         WebClient client = WebClient.builder().exchangeFunction(request -> {
-            assertTrue(request.url().getQuery().contains("cookie=MUSIC_U=new"));
+            assertEquals("MUSIC_U=new", request.headers().getFirst("Cookie"));
             return Mono.just(response(HttpStatus.OK, "{\"code\":200,\"data\":[]}"));
         }).build();
         var api = new NeteaseMusicApiService(client, properties("MUSIC_U=old"));
@@ -111,12 +111,12 @@ class NeteaseRecommendationApiTest {
         assertEquals(1, requests.get());
     }
 
-    @Test void publicMetadataAndCollectionsNeverReceiveRecommendationCookie() {
+    @Test void metadataAndCollectionsReceiveConfiguredSourceCookie() {
         List<String> routes = new ArrayList<>();
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             routes.add(request.url().getPath());
             assertFalse(request.url().getQuery().contains("cookie="));
-            assertNull(request.headers().getFirst("Cookie"));
+            assertEquals("MUSIC_U=secret", request.headers().getFirst("Cookie"));
             String body = switch (request.url().getPath()) {
                 case "/user/playlist" -> "{\"code\":200,\"playlist\":[]}";
                 case "/playlist/detail" -> "{\"code\":200,\"playlist\":{\"id\":1}}";

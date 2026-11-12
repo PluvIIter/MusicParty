@@ -24,8 +24,12 @@ describe('user tutorial content and exact text export', () => {
         }
         for (const topic of TUTORIAL_TOPICS) expect(topic.cards.length).toBeGreaterThan(0);
     });
-    it('explains QQ public collections, administrator credentials and FM-only recommendations', () => {
-        expect(tutorialText()).toContain('网易云和 QQ 音乐主要是公开歌单');
+    it('explains configured-account queries, target identity and FM-only recommendations', () => {
+        expect(tutorialText()).toContain('网易云和 QQ 音乐主要是歌单');
+        expect(tutorialText()).toContain('所有音源的数据查询都会携带管理员配置的该源 Cookie，未配置才匿名');
+        expect(tutorialText()).toContain('配置账号 A 查询目标 B');
+        expect(tutorialText()).toContain('绑定 B 不等于登录 B');
+        expect(tutorialText()).not.toContain('只有房间音频解析和私人推荐使用房间凭据');
         expect(tutorialText()).toContain('QQ 音乐当前只提供 FM，不提供 DJ');
         expect(tutorialText()).toContain('QQ 音乐登录凭据由管理员');
         expect(tutorialText()).toContain('不回显原值');

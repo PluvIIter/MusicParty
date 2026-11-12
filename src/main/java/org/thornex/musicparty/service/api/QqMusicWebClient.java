@@ -29,22 +29,14 @@ public class QqMusicWebClient {
         this.credentials = credentials;
     }
 
-    public Mono<JsonNode> publicGet(String path, Map<String, ?> query) {
-        return get(path, query, null);
+    public Mono<JsonNode> get(String path, Map<String, ?> query) {
+        return Mono.defer(() -> get(path, query, credentials.snapshot()));
     }
 
-    public Mono<JsonNode> privateGet(String path, Map<String, ?> query, QqMusicCredentialService.Snapshot snapshot, boolean required) {
+    public Mono<JsonNode> get(String path, Map<String, ?> query, QqMusicCredentialService.Snapshot snapshot) {
         return Mono.defer(() -> {
             credentials.requireCurrent(snapshot);
             snapshot.requireValid();
-            if (required && !snapshot.configured()) return Mono.error(new ApiRequestException("SOURCE_AUTH_REQUIRED: 请配置QQ音乐凭据"));
-            return get(path, query, snapshot);
-        });
-    }
-
-    private Mono<JsonNode> get(String path, Map<String, ?> query, QqMusicCredentialService.Snapshot snapshot) {
-        return Mono.defer(() -> {
-            if (snapshot != null) credentials.requireCurrent(snapshot);
             URI base;
             try {
                 base = URI.create(properties.getQqmusic().getBaseUrl());
@@ -61,12 +53,12 @@ public class QqMusicWebClient {
             return client.get().uri(uri.encode().buildAndExpand(variables).toUri()).headers(headers -> {
                         headers.remove("Cookie");
                         headers.remove("Authorization");
-                        if (snapshot != null && snapshot.configured()) headers.set("Cookie", snapshot.cookieHeader());
+                        if (snapshot.configured()) headers.set("Cookie", snapshot.cookieHeader());
                     })
                     .exchangeToMono(response -> response.bodyToMono(JsonNode.class)
                             .switchIfEmpty(Mono.error(invalid()))
                             .flatMap(root -> {
-                                if (snapshot != null) credentials.requireCurrent(snapshot);
+                                credentials.requireCurrent(snapshot);
                                 if (!response.statusCode().is2xxSuccessful()) {
                                     String code = switch (response.statusCode().value()) {
                                         case 401, 403 -> "SOURCE_AUTH_REQUIRED";

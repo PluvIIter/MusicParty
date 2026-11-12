@@ -154,8 +154,8 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 			}
 			python := filepath.Join(gatewayDir, "python", executable("python"))
 			upstream := filepath.Join(gatewayDir, "upstream", "source")
-			app := filepath.Join(upstream, "web", "run.py")
-			for _, path := range []string{python, app, filepath.Join(upstream, "web", "src", "app.py")} {
+			app := filepath.Join(gatewayDir, "run_web.py")
+			for _, path := range []string{python, app, filepath.Join(upstream, "web", "run.py"), filepath.Join(upstream, "web", "src", "app.py")} {
 				info, statErr := os.Stat(path)
 				if statErr != nil || info.IsDir() {
 					return fmt.Errorf("bundled QQ runtime is incomplete; reinstall the complete launcher package")

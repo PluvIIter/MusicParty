@@ -73,7 +73,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     /** 构建带完整 Cookie（含设备指纹 buvid3/buvid4、bili_ticket）的请求。 */
     private Mono<WebClient.RequestHeadersSpec<?>> buildBilibiliRequest(String uri) {
-        return cookieService.getPublicCookieHeader()
+        return cookieService.getCookieHeader()
                 .map(cookie -> webClient.get()
                         .uri(uri)
                         .header("Cookie", cookie)
@@ -90,13 +90,14 @@ public class BilibiliMusicApiService implements IMusicApiService {
      */
     private Mono<BilibiliApiUtils.BilibiliVideoInfo> getVideoInfo(String bvid) {
         return Mono.defer(() -> {
-            CachedVideoInfo cached = videoInfoCache.get(bvid);
+            String cacheKey = credentialRevision.get() + ":" + bvid;
+            CachedVideoInfo cached = videoInfoCache.get(cacheKey);
             if (cached != null && cached.expiresAt().isAfter(java.time.Instant.now())) return Mono.just(cached.info());
             return cookieService.getCookieHeader()
                     .flatMap(cookie -> BilibiliApiUtils.getVideoInfo(bvid, webClient, baseUrl, cookie))
                     .doOnNext(info -> {
                         if (videoInfoCache.size() > 512) videoInfoCache.clear();
-                        videoInfoCache.put(bvid, new CachedVideoInfo(info, java.time.Instant.now().plusSeconds(60)));
+                        videoInfoCache.put(cacheKey, new CachedVideoInfo(info, java.time.Instant.now().plusSeconds(60)));
                     });
         });
     }
@@ -111,8 +112,8 @@ public class BilibiliMusicApiService implements IMusicApiService {
         params.put("page_size", "20"); // 文档默认 20
 
         // 2. 先取完整 Cookie（buvid3 是搜索接口硬性要求，缺失会 -412），再做 WBI 签名
-        Mono<List<Music>> requestMono = cookieService.getPublicCookieHeader()
-                .flatMap(cookie -> wbiService.signParams(params)
+        Mono<List<Music>> requestMono = cookieService.getCookieHeader()
+                .flatMap(cookie -> wbiService.signParams(params, cookie)
                         .flatMap(signedParams -> {
                             UriComponentsBuilder builder = UriComponentsBuilder
                                     .fromHttpUrl(baseUrl + "/x/web-interface/wbi/search/type");
@@ -219,10 +220,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<Music> getMusic(String bvid) {
-        // 元数据不携带账号凭据，但必须带设备指纹（buvid3/buvid4）：
-        // 境外/机房 IP 匿名请求 /x/web-interface/view 会被 B 站 412 拦截。
-        return cookieService.getPublicCookieHeader()
-                .flatMap(cookie -> BilibiliApiUtils.getVideoDetails(bvid, webClient, baseUrl, cookie))
+        return getVideoInfo(bvid).map(BilibiliApiUtils.BilibiliVideoInfo::music)
                 .map(music -> new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl(), externalUrl(bvid)));
     }
 
@@ -516,8 +514,8 @@ public class BilibiliMusicApiService implements IMusicApiService {
         // params.put("page", "1"); // 默认第1页，可选
 
         // 2. 先取完整 Cookie（buvid3 硬性要求），再做 WBI 签名
-        return cookieService.getPublicCookieHeader()
-                .flatMap(cookie -> wbiService.signParams(params)
+        return cookieService.getCookieHeader()
+                .flatMap(cookie -> wbiService.signParams(params, cookie)
                         .flatMap(signedParams -> {
                             // 3. 构建 URL: /x/web-interface/wbi/search/type
                             UriComponentsBuilder builder = UriComponentsBuilder

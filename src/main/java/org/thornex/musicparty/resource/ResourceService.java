@@ -17,6 +17,8 @@ public class ResourceService {
     private final SourceRegistry registry;
     private final ResourceCursor cursors;
 
+    private record QueryScope(String source, long credentialRevision, long authorizationEpoch) {}
+
     public ResourceService(SourceRegistry registry, ResourceCursor cursors) {
         this.registry = registry;
         this.cursors = cursors;
@@ -26,30 +28,30 @@ public class ResourceService {
         validateQuery(query);
         var adapter = registry.getRequired(source);
         if (!registry.descriptor(source).capabilities().search()) throw unsupported("此音源不支持搜索");
-        return Mono.defer(() -> adapter.searchMusic(query)).timeout(Duration.ofSeconds(12))
-                .map(items -> items.stream().map(this::withExternalUrl).toList());
+        return scoped(queryScope(source), () -> adapter.searchMusic(query).timeout(Duration.ofSeconds(12))
+                .map(items -> items.stream().map(this::withExternalUrl).toList()));
     }
 
     public Mono<List<org.thornex.musicparty.dto.UserSearchResult>> users(String source, String query) {
         validateQuery(query);
         var adapter = registry.getRequired(source);
         if (!registry.descriptor(source).capabilities().userSearch()) throw unsupported("此音源不支持用户搜索");
-        return Mono.defer(() -> adapter.searchUsers(query)).timeout(Duration.ofSeconds(12));
+        return scoped(queryScope(source), () -> adapter.searchUsers(query).timeout(Duration.ofSeconds(12)));
     }
 
     public Mono<String> lyrics(String source, String id) {
         validateId(id);
         var adapter = registry.getRequired(source);
         if (!registry.descriptor(source).capabilities().lyrics()) throw unsupported("此音源不支持歌词");
-        return Mono.defer(() -> adapter.getLyric(id)).timeout(Duration.ofSeconds(12));
+        return scoped(queryScope(source), () -> adapter.getLyric(id).timeout(Duration.ofSeconds(12)));
     }
 
     public Mono<org.thornex.musicparty.dto.AlbumInfo> albumInfo(String source, String id, boolean byTrack) {
         validateId(id);
         var adapter = registry.getRequired(source);
         if (!registry.descriptor(source).capabilities().album()) throw unsupported("此音源不支持专辑");
-        return Mono.defer(() -> byTrack ? adapter.getAlbumForSong(id) : adapter.getAlbum(id))
-                .timeout(Duration.ofSeconds(12));
+        return scoped(queryScope(source), () -> (byTrack ? adapter.getAlbumForSong(id) : adapter.getAlbum(id))
+                .timeout(Duration.ofSeconds(12)));
     }
 
     public List<CollectionCategory> categories(String source) {
@@ -63,19 +65,20 @@ public class ResourceService {
         validateLimit(limit);
         var descriptor = categories(source).stream().filter(item -> item.id().equals(category))
                 .findFirst().orElseThrow(() -> unsupported("收藏类别不存在"));
-        String binding = binding(source, "collections", category, userId, limit);
+        QueryScope scope = queryScope(source);
+        String binding = binding(scope, "collections", category, userId, limit);
         int offset = cursors.read(cursor, binding);
         if ("TRACK".equals(descriptor.entryKind())) {
-            return registry.getRequired(source).publicCollectionTracks(userId, category, offset, limit)
+            return scoped(scope, () -> registry.getRequired(source).publicCollectionTracks(userId, category, offset, limit)
                     .timeout(Duration.ofSeconds(12)).map(page -> new ResourcePage<>(
                             page.items().stream().map(this::withExternalUrl).toList(),
-                            next(page, binding, offset), page.total()));
+                            next(page, binding, offset), page.total())));
         }
-        return registry.getRequired(source).publicCollections(userId, category, offset, limit)
+        return scoped(scope, () -> registry.getRequired(source).publicCollections(userId, category, offset, limit)
                 .timeout(Duration.ofSeconds(12))
                 .map(page -> new ResourcePage<>(page.items().stream()
                         .map(item -> container(item, descriptor.collectionType())).toList(),
-                        next(page, binding, offset), page.total()));
+                        next(page, binding, offset), page.total())));
     }
 
     public Mono<ContainerResource> container(String source, String type, String id) {
@@ -86,8 +89,8 @@ public class ResourceService {
                     "album", album.coverUrl(), album.trackCount()));
         }
         requireContainerType(source, type);
-        return Mono.defer(() -> adapter.containerDetail(type, id)).timeout(Duration.ofSeconds(12))
-                .map(item -> container(item, type));
+        return scoped(queryScope(source), () -> adapter.containerDetail(type, id).timeout(Duration.ofSeconds(12))
+                .map(item -> container(item, type)));
     }
 
     public Mono<ContainerResource> albumForTrack(String source, String id) {
@@ -99,27 +102,30 @@ public class ResourceService {
         validateId(id);
         validateLimit(limit);
         var adapter = registry.getRequired(source);
-        String binding = binding(source, "tracks", type, id, limit);
+        QueryScope scope = queryScope(source);
+        String binding = binding(scope, "tracks", type, id, limit);
         int offset = cursors.read(cursor, binding);
         if ("album".equals(type)) {
             if (!registry.descriptor(source).capabilities().album()) return Mono.error(unsupported("此音源不支持专辑"));
-            return albumInfo(source, id, false).map(album -> {
+            return scoped(scope, () -> albumInfo(source, id, false).map(album -> {
                 int start = Math.min(offset, album.songs().size());
                 int end = Math.min(start + limit, album.songs().size());
                 return new ResourcePage<>(album.songs().subList(start, end).stream().map(this::withExternalUrl).toList(),
                         end < album.songs().size() ? cursors.issue(binding, end) : null, (long) album.songs().size());
-            });
+            }));
         }
         requireContainerType(source, type);
-        return Mono.defer(() -> adapter.containerPage(type, id, offset, limit)).timeout(Duration.ofSeconds(12))
+        return scoped(scope, () -> adapter.containerPage(type, id, offset, limit).timeout(Duration.ofSeconds(12))
                 .map(page -> new ResourcePage<>(page.items().stream().map(this::withExternalUrl).toList(),
-                        next(page, binding, offset), page.total()));
+                        next(page, binding, offset), page.total())));
     }
 
     public Mono<List<Music>> importTracks(String source, String type, String id, int maximum) {
         if (maximum < 1 || maximum > 1000) return Mono.error(new ApiRequestException("INVALID_LIMIT: 无效导入上限"));
-        return Mono.defer(() -> collect(source, type, id, null, maximum, 0, new ArrayList<>()))
-                .timeout(Duration.ofSeconds(30));
+        return Mono.defer(() -> {
+            QueryScope scope = queryScope(source);
+            return scoped(scope, () -> collect(source, type, id, null, maximum, 0, new ArrayList<>()));
+        }).timeout(Duration.ofSeconds(30));
     }
 
     private Mono<List<Music>> collect(String source, String type, String id, String cursor,
@@ -143,8 +149,34 @@ public class ResourceService {
         return cursors.issue(binding, next);
     }
 
-    private String binding(String source, String operation, String context, String target, int limit) {
-        return List.of(source, operation, context, target, Integer.toString(limit),
+    private QueryScope queryScope(String source) {
+        synchronized (registry) {
+            return new QueryScope(source, registry.getRequired(source).credentialRevision(), registry.authorizationEpoch(source));
+        }
+    }
+
+    private void requireCurrent(QueryScope scope) {
+        synchronized (registry) {
+            if (registry.getRequired(scope.source()).credentialRevision() != scope.credentialRevision()
+                    || registry.authorizationEpoch(scope.source()) != scope.authorizationEpoch()) {
+                throw new ApiRequestException("INVALID_CURSOR: 音源凭据或配置已改变，请重新查询");
+            }
+        }
+    }
+
+    private <T> Mono<T> scoped(QueryScope scope, java.util.function.Supplier<Mono<T>> query) {
+        return Mono.defer(() -> {
+            requireCurrent(scope);
+            return query.get().map(result -> {
+                requireCurrent(scope);
+                return result;
+            });
+        });
+    }
+
+    private String binding(QueryScope scope, String operation, String context, String target, int limit) {
+        return List.of(scope.source(), operation, context, target, Integer.toString(limit),
+                Long.toString(scope.credentialRevision()), Long.toString(scope.authorizationEpoch()),
                 registry.catalog().get("catalogRevision").toString()).toString();
     }
 

@@ -35,7 +35,7 @@
     *   **Bilibili**：支持搜索、收藏夹导入。 
         * 注意：b站源由于防盗链问题，方案是先下载本地缓存，然后由服务器将音频提供给用户，可能会占用较多网络带宽，消耗大量流量。
         * 此外，b站源风控现象严重，极不稳定，建议能用网易云就用网易云。
-    *   **QQ音乐**：支持歌曲搜索、歌词、专辑、公开歌单导入与私人 FM，默认关闭。
+    *   **QQ音乐**：支持歌曲搜索、歌词、专辑、歌单导入与私人 FM，默认关闭。
         * QQ源直接对接 [L-1124/QQMusicApi](https://github.com/L-1124/QQMusicApi) 自带的Web API；Windows启动器已内置服务与Python环境，无需另外安装。
         * 会员歌曲仍需要有效账号凭据，不支持DRM加密音频和私人DJ语音。
 *   **一键内网穿透**：Windows启动器内置 Cloudflare Tunnel，打开开关即可生成临时公网地址，方便邀请朋友加入。
@@ -44,8 +44,8 @@
 *   **房间权限**：支持设置房间密码，或管理员指令实时锁定/解锁房间。
 *   **实时互动**：内置聊天室、点赞动效、系统日志广播。
 *   **智能队列**：支持顺序播放、轮询播放、随机播放和单曲循环；轮询防止单人霸榜，个人歌单支持拖动排序。
-*   **用户收藏**：通过搜索并选择用户完成本机绑定，只作为公开收藏查询目标，不是平台登录；不提供直接输入 UID。需要目标用户专属 Cookie 的类别不提供，配置 Cookie 账号收藏专辑不提供。
-*   **私人 FM / DJ**：由部署配置 `PRIVATE_DJ_SOURCE` 指定唯一推荐音源，默认 `netease`，网易云提供 FM/DJ，QQ音乐提供 FM，均使用所选源配置凭据。保留填空、入队和托管；不支持或失效时明确提示，不自动换源。此功能是公开收藏身份规则之外的明确例外。
+*   **用户收藏**：通过搜索并选择用户完成本机绑定，绑定决定查询目标，不是登录该用户；不提供直接输入 UID。查询使用该音源配置的 Cookie，未配置时匿名；能读取的内容由上游账号权限决定，不会把目标替换成配置账号。当前提供歌单/收藏夹类别，收藏专辑暂不提供。
+*   **私人 FM / DJ**：由部署配置 `PRIVATE_DJ_SOURCE` 指定唯一推荐音源，默认 `netease`，网易云提供 FM/DJ，QQ音乐提供 FM，均使用所选源配置凭据。保留填空、入队和托管；不支持或失效时明确提示，不自动换源。推荐目标是配置账号本人，不改变成员已绑定的收藏查询目标。
 *   **动态音源能力**：搜索、专辑和收藏分类由后端音源目录声明；交付可选择直链或服务器下载，不需要在前端添加平台名单。本机 LIKESONG 始终独立保存、展示。
 *   **直播音频流**：可以开启直播音频流，使用一个简单的链接来实时收听，用于类似于vrChat等类似场景。
 
@@ -105,16 +105,16 @@ docker run -d \
 | `NETEASE_API_URL`         | 是  | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。           |
 | `BASE_URL`                | 否  | 服务的域名（带协议）。用户获取直播流链接时，拼接在前面。默认为 `http://localhost:8848`。                    |
 | `BILIBILI_ENABLED`        | 否  | B站源是否开启。                                                                    |
-| `BILIBILI_COOKIE`         | 否  | 仅用于受限音频取流；公开搜索和收藏使用匿名设备信息，不依赖目标用户 Cookie。上游风控仍可能拒绝匿名请求。 |
+| `BILIBILI_COOKIE`         | 否  | 各类上游查询均使用此Cookie；未配置时使用匿名设备信息。是否可访问由上游权限和风控决定。 |
 | `NETEASE_DELIVERY_MODE` | 否 | `DIRECT_URL`（默认）或 `SERVER_DOWNLOAD`。 |
 | `BILIBILI_DELIVERY_MODE` | 否 | `SERVER_DOWNLOAD`（默认）或 `DIRECT_URL`；直链格式及可用性取决于上游。 |
 | `PRIVATE_DJ_SOURCE` | 否 | 私人 FM / DJ 唯一提供源，默认 `netease`；`qqmusic` 提供原生 FM，不提供 DJ 语音，推荐使用所选源配置凭据。 |
 | `QQMUSIC_ENABLED` | 否 | QQ音乐源，默认 `false`。 |
 | `QQMUSIC_API_URL` | 否 | L-1124原生Web API地址；随包服务为本机动态端口，Compose 为 `http://qqmusic-api:8000`，独立上游默认端口为8080。 |
-| `QQMUSIC_COOKIE` | 否 | Web凭据JSON，至少含 `musicid`、`musickey`；可补充上游支持的Cookie字段。仅用于QQ媒体与原生FM，不用于公开收藏。 |
+| `QQMUSIC_COOKIE` | 否 | Web凭据JSON，至少含 `musicid`、`musickey`；可补充上游支持的Cookie字段。用于QQ所有上游查询，未配置时匿名请求。 |
 | `QQMUSIC_QUALITY` | 否 | `MP3_128`（默认）、`MP3_320`、普通 `FLAC`；不支持DRM加密格式，FLAC不显示文件下载按钮。 |
 | `QQMUSIC_DELIVERY_MODE` | 否 | 默认 `SERVER_DOWNLOAD`；可配置 `DIRECT_URL`，真实播放受CDN、浏览器与账号权限限制。 |
-| `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。用于 VIP 音频及明确例外的私人 FM / DJ，不用于个人收藏目标。                                          |
+| `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。用于所有上游查询及音频、FM/DJ，未配置时匿名；不会改变所查询的用户或歌单。                                          |
 | `NETEASE_QUALITY`         | 否  | 网易云音质等级。可选：`standard`, `higher`, `exhigh`, `lossless`, `hires`。默认 `exhigh`。 |
 | `QUEUE_MAX_SIZE`          | 否  | 播放队列最大长度，默认 `1000`。                                                         |
 | `QUEUE_HISTORY_SIZE`      | 否  | 播放历史记录保留数量，默认 `50`。当播放列表里没有音乐时，会从历史记录随机抽选。                                  |
@@ -173,16 +173,16 @@ docker run -d \
 ---
 
 ## 用户歌单
-可以搜索并选择网易云、Bilibili或QQ音乐用户，查看其公开歌单/收藏夹，再按房间限额导入。绑定只是本浏览器的公开查询目标，不是平台登录，不支持直接输入UID；私密内容不会借用配置账号凭据读取，失败也不会回退为配置账号的收藏。
+可以搜索并选择网易云、Bilibili或QQ音乐用户，查看其歌单/收藏夹，再按房间限额导入。绑定决定查询目标，不是登录该用户，不支持直接输入UID；所有查询都使用对应音源配置的Cookie，未配置才匿名。能否访问由上游决定，不额外判断资源是否私密；失败不会回退成配置账号的收藏。
 
 ## QQ音乐源
 
 QQ源默认关闭，直接使用 [L-1124/QQMusicApi 自带的Web服务](https://github.com/L-1124/QQMusicApi/tree/c046788dd1f11daacc74da487cbbf1bcd8ac6f33/web)，不再维护额外的HTTP网关，也不调用第三方公用会员池。
 
-*   支持歌曲搜索、详情、普通LRC歌词、专辑、公开歌单与分页导入。
+*   支持歌曲搜索、详情、普通LRC歌词、专辑、歌单与分页导入。
 *   支持直链和服务器下载两种交付方式，接入现有播放器、缓存和直播音频流。
 *   支持原生私人FM；目前所用上游没有私人DJ语音接口，因此不提供QQ私人DJ。
-*   用户绑定仅用于查询所选用户的公开歌单，不会登录该用户，也不会读取配置账号的私密收藏。
+*   用户绑定决定查询哪位用户；请求使用部署配置的QQ账号凭据，读取权限由上游判断，不额外过滤隐私标记，也不会把目标换成配置账号。
 
 Docker启用步骤（使用本PR构建的主应用镜像，旧发布镜像不包含QQ功能）：
 
@@ -193,7 +193,7 @@ Docker启用步骤（使用本PR构建的主应用镜像，旧发布镜像不包
 
 **Windows启动器**：在音源设置中启用QQ即可，默认使用随包的上游Web服务，无需安装Python或填写服务地址。需要使用独立部署的API时，切换到外部模式并填写根地址；启动器不会关闭外部服务。QQ关闭时不启动API。
 
-**外部API**：部署与本项目匹配的上游版本，关闭默认凭据池且不要配置账号种子；MusicParty会在媒体和FM请求中单独携带配置凭据。上游Web不使用原自写网关的Bearer令牌，请勿把它直接公开到公网。旧的 `loginType`、`encrypt_uin` JSON字段不再使用；可选字段为 `openid`、`refresh_token`、`access_token`、`expired_at`、`unionid`、`str_musicid`、`refresh_key`，按真实Cookie填写。
+**外部API**：部署与本项目匹配的上游版本及随附的 `run_web.py` 启动入口，关闭默认凭据池且不要配置账号种子；MusicParty会在所有查询中携带该源配置凭据。启动入口只把原生匿名业务路由改为可选Cookie认证并关闭其共享响应缓存，保留上游业务接口和权限处理；直接运行未调整的上游入口会忽略部分查询的Cookie。上游Web不使用原自写网关的Bearer令牌，请勿把它直接公开到公网。旧的 `loginType`、`encrypt_uin` JSON字段不再使用；可选字段为 `openid`、`refresh_token`、`access_token`、`expired_at`、`unionid`、`str_musicid`、`refresh_key`，按真实Cookie填写。
 
 独立部署与接口说明见 [QQ API说明](sidecars/qqmusic/README.md)，分发时请保留 [上游许可说明](sidecars/qqmusic/UPSTREAM-NOTICE.md)及随包源码。
 
@@ -241,7 +241,7 @@ QQ音频只支持有权取得的普通MP3/FLAC，不解密DRM；按上游Web正�
 ---
 
 ## 私人电台 / 私人DJ
-在管理员面板的"私人电台"模块开启后，可以接入所选音源的推荐内容。部署配置 `PRIVATE_DJ_SOURCE` 默认使用网易云，也可选择 `qqmusic`；QQ仅提供私人FM，不显示私人DJ按钮。推荐使用该音源配置账号的凭据，与成员绑定的公开歌单无关。
+在管理员面板的"私人电台"模块开启后，可以接入所选音源的推荐内容。部署配置 `PRIVATE_DJ_SOURCE` 默认使用网易云，也可选择 `qqmusic`；QQ仅提供私人FM，不显示私人DJ按钮。推荐使用该音源配置账号的凭据，与成员绑定的歌单无关。
 
 **两种模式**（可随时切换）：
 *   **私人FM**：根据账号的收听习惯持续推荐歌曲。
