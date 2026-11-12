@@ -31,6 +31,7 @@ type AppConfig struct {
 	NeteaseCookie       string                  `json:"neteaseCookie"`
 	NeteaseQuality      string                  `json:"neteaseQuality"`
 	BiliCookie          string                  `json:"biliCookie"`
+	QqmusicGatewayMode  string                  `json:"qqmusicGatewayMode"`
 	QqmusicBaseURL      string                  `json:"qqmusicBaseUrl"`
 	QqmusicGatewayToken string                  `json:"qqmusicGatewayToken"`
 	QqmusicCookie       string                  `json:"qqmusicCookie"`
@@ -55,7 +56,7 @@ func DefaultConfig() *AppConfig {
 	return &AppConfig{
 		ServerIP: "0.0.0.0", ServerPort: "8080", BaseURL: "http://localhost:8080",
 		AuthorName: "ThorNex", BackWords: "THORNEX", NeteaseQuality: "exhigh",
-		QqmusicBaseURL: "http://localhost:8000", QqmusicQuality: "MP3_128",
+		QqmusicGatewayMode: "bundled", QqmusicBaseURL: "http://localhost:8000", QqmusicQuality: "MP3_128",
 		Sources: DefaultSources(), QueueMaxSize: 1000, QueueHistorySize: 50,
 		QueueMaxUserSongs: 100, MaxPlaylistImportSize: 100, ChatMaxHistorySize: 1000,
 		ChatMinIntervalMs: 1000, ChatMaxMessageLength: 200, CacheMaxSize: "1GB",
@@ -73,6 +74,12 @@ func DecodeConfig(data []byte) (*AppConfig, error) {
 	}
 	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("configuration must contain one JSON object")
+	}
+	if cfg.QqmusicGatewayMode == "" {
+		cfg.QqmusicGatewayMode = "bundled"
+		if cfg.QqmusicBaseURL != "http://localhost:8000" && cfg.QqmusicBaseURL != "" || cfg.QqmusicGatewayToken != "" {
+			cfg.QqmusicGatewayMode = "external"
+		}
 	}
 	if cfg.Sources != nil {
 		if _, exists := cfg.Sources["qqmusic"]; !exists {
@@ -100,13 +107,18 @@ func (c *AppConfig) Validate() error {
 			return fmt.Errorf("invalid delivery mode for %s: %q", id, source.DeliveryMode)
 		}
 	}
+	if c.QqmusicGatewayMode != "bundled" && c.QqmusicGatewayMode != "external" {
+		return fmt.Errorf("QQ gateway mode must be bundled or external")
+	}
 	if c.SourceEnabled("qqmusic") {
-		gateway, err := url.Parse(c.QqmusicBaseURL)
-		if err != nil || gateway == nil || (gateway.Scheme != "http" && gateway.Scheme != "https") || gateway.Host == "" || gateway.User != nil || gateway.RawQuery != "" || gateway.Fragment != "" {
-			return fmt.Errorf("QQ API gateway requires an HTTP(S) address without embedded credentials, query or fragment")
-		}
-		if len(c.QqmusicGatewayToken) < 16 || len(c.QqmusicGatewayToken) > 512 || strings.IndexFunc(c.QqmusicGatewayToken, func(r rune) bool { return r < 33 || r > 126 }) >= 0 {
-			return fmt.Errorf("QQ API gateway access token requires 16 to 512 printable ASCII characters without spaces")
+		if c.QqmusicGatewayMode == "external" {
+			gateway, err := url.Parse(c.QqmusicBaseURL)
+			if err != nil || gateway == nil || (gateway.Scheme != "http" && gateway.Scheme != "https") || gateway.Host == "" || gateway.User != nil || gateway.RawQuery != "" || gateway.Fragment != "" {
+				return fmt.Errorf("QQ API gateway requires an HTTP(S) address without embedded credentials, query or fragment")
+			}
+			if len(c.QqmusicGatewayToken) < 16 || len(c.QqmusicGatewayToken) > 512 || strings.IndexFunc(c.QqmusicGatewayToken, func(r rune) bool { return r < 33 || r > 126 }) >= 0 {
+				return fmt.Errorf("QQ API gateway access token requires 16 to 512 printable ASCII characters without spaces")
+			}
 		}
 		if c.QqmusicQuality != "MP3_128" && c.QqmusicQuality != "MP3_320" && c.QqmusicQuality != "FLAC" {
 			return fmt.Errorf("unsupported QQ audio quality")

@@ -72,3 +72,4 @@ build/
 /data/*.legacy-*
 /data/*.unreadable-*
 /data/
+/scripts/__pycache__/

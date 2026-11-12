@@ -12,6 +12,10 @@ export function sourceSettingsRows(descriptors, sources) {
   });
 }
 
+export function connectionFieldsFor(source, config) {
+  return source.connectionFields.filter(field => !field.gatewayMode || field.gatewayMode === config.qqmusicGatewayMode);
+}
+
 export function deliveryModeLabel(mode) {
   return {
     DIRECT_URL: '直连音频地址',

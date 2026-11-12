@@ -1,8 +1,9 @@
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue';
 import { LoadConfig, SaveConfig, StartServices, StopServices, GetServiceStatuses, GetSourceDescriptors, OpenBrowser } from './wailsjs/go/main/App';
+import { createServiceAttempt } from './serviceAttempt';
 import { EventsOn } from './wailsjs/runtime';
-import { sourceSettingsRows, deliveryModeLabel } from './sourceSettings';
+import { sourceSettingsRows, deliveryModeLabel, connectionFieldsFor } from './sourceSettings';
 
 const config = reactive({
   serverIp: '0.0.0.0',
@@ -14,6 +15,7 @@ const config = reactive({
   neteaseCookie: '',
   neteaseQuality: 'exhigh',
   biliCookie: '',
+  qqmusicGatewayMode: 'bundled',
   qqmusicBaseUrl: 'http://localhost:8000',
   qqmusicGatewayToken: '',
   qqmusicCookie: '',
@@ -38,12 +40,16 @@ const sourceRows = computed(() => sourceSettingsRows(descriptors.value, config.s
 const configReady = ref(false);
 const errorMessage = ref('');
 const isRunning = ref(false);
+const isStarting = ref(false);
+const isStopping = ref(false);
+const serviceAttempt = createServiceAttempt();
 const logs = ref([]);
 const logContainer = ref(null);
 const activeTab = ref('basic');
 const serviceStatuses = reactive({
   NETEASE_API: false,
-  JAVA_SERVER: false
+  JAVA_SERVER: false,
+  QQMUSIC_API: false
 });
 
 const isJavaReady = ref(false);
@@ -66,12 +72,11 @@ onMounted(async () => {
   
   // 轮询服务状态
   setInterval(async () => {
-    if (isRunning.value) {
-      const statuses = await GetServiceStatuses();
-      Object.assign(serviceStatuses, { NETEASE_API: false, JAVA_SERVER: false }, statuses);
-    } else {
-      serviceStatuses.NETEASE_API = false;
-      serviceStatuses.JAVA_SERVER = false;
+    const statuses = await GetServiceStatuses();
+    Object.assign(serviceStatuses, { NETEASE_API: false, JAVA_SERVER: false, QQMUSIC_API: false }, statuses);
+    if (isRunning.value && !isStarting.value && !statuses.JAVA_SERVER) {
+      isRunning.value = false;
+      isJavaReady.value = false;
     }
   }, 2000);
 
@@ -103,23 +108,38 @@ const scrollToBottom = () => {
 };
 
 const toggleServices = async () => {
+  if (isStopping.value) return;
   errorMessage.value = '';
+  const attempt = serviceAttempt.begin();
+  const stopping = isRunning.value || isStarting.value;
   try {
-    if (isRunning.value) {
+    if (stopping) {
+      serviceAttempt.cancel();
+      isStopping.value = true;
       await StopServices();
+      isStarting.value = false;
       isRunning.value = false;
       isJavaReady.value = false;
       isApiReady.value = false;
     } else {
+      isStarting.value = true;
       await SaveConfig(JSON.parse(JSON.stringify(config)));
+      if (!serviceAttempt.current(attempt)) return;
       isJavaReady.value = false;
       isApiReady.value = false;
       logs.value = [];
       await StartServices();
+      if (!serviceAttempt.current(attempt)) return;
       isRunning.value = true;
+      isStarting.value = false;
     }
   } catch (error) {
-    errorMessage.value = String(error);
+    if (serviceAttempt.current(attempt) || stopping) {
+      isStarting.value = false;
+      errorMessage.value = String(error);
+    }
+  } finally {
+    if (stopping) isStopping.value = false;
   }
 };
 
@@ -223,7 +243,7 @@ const openWeb = () => {
                     <option v-for="mode in source.supportedModes" :key="mode" :value="mode">{{ deliveryModeLabel(mode) }}</option>
                   </select>
                 </div>
-                <div v-for="field in source.connectionFields" :key="field.key" class="space-y-1">
+                <div v-for="field in connectionFieldsFor(source, config)" :key="field.key" class="space-y-1">
                   <label :for="`connection-${field.key}`" class="text-[10px] font-bold text-medical-500 uppercase">{{ field.label }}</label>
                   <select v-if="field.kind === 'select'" :id="`connection-${field.key}`" v-model="config[field.key]" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
                     <option v-for="option in field.options" :key="option.value" :value="option.value">{{ option.label }}</option>
@@ -294,12 +314,12 @@ const openWeb = () => {
         <p v-if="errorMessage" role="alert" class="text-xs text-red-600">{{ errorMessage }}</p>
         <!-- 操作按钮 -->
         <button
-          :disabled="!configReady"
+          :disabled="!configReady || isStopping"
           @click="toggleServices"
           :class="isRunning ? 'bg-red-600 hover:bg-red-700 shadow-red-100' : 'bg-medical-900 hover:bg-black shadow-medical-200'"
           class="w-full py-4 text-white font-black text-xl transition-all chamfer-br active:scale-95 shadow-lg"
         >
-          {{ isRunning ? '停止运行' : '启动系统' }}
+          {{ isStarting ? '取消启动' : isRunning ? '停止运行' : '启动系统' }}
         </button>
       </div>
 
@@ -343,6 +363,10 @@ const openWeb = () => {
           <span :class="serviceStatuses.NETEASE_API ? 'text-green-600 font-bold' : 'text-medical-300'">
             {{ serviceStatuses.NETEASE_API ? (isApiReady ? '已运行' : '启动中') : '已停止' }}
           </span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-medical-400">QQ 网关:</span>
+          <span :class="serviceStatuses.QQMUSIC_API ? 'text-green-600 font-bold' : 'text-medical-300'">{{ serviceStatuses.QQMUSIC_API ? '已验证就绪' : '未就绪' }}</span>
         </div>
         <div class="flex items-center gap-2">
           <span class="text-medical-400">后端主服务:</span>

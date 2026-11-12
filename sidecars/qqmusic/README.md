@@ -13,6 +13,8 @@ export QQMUSIC_GATEWAY_TOKEN='replace-with-a-random-private-token-at-least-16-ch
 .venv/bin/python app.py
 ```
 
+The Windows one-click launcher bundles this gateway, an embedded CPython runtime, installed dependencies, and upstream source/license notices. Its default bundled mode generates a per-run loopback address and token, waits for authenticated readiness, and owns that child process until stop/exit. Users do not need a system Python installation. External mode keeps the standalone/Docker deployment below available.
+
 Standalone defaults to `127.0.0.1:8000`. `QQMUSIC_BIND`, `QQMUSIC_PORT`, and `QQMUSIC_DEVICE_PATH` override listener/device storage. The device file contains anonymous upstream device state, not an account pool. Its directory must be writable by the gateway user. Never put the account Credential or gateway token in query parameters.
 
 Docker:

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { sourceSettingsRows, deliveryModeLabel } from '../src/sourceSettings.js';
+import { sourceSettingsRows, deliveryModeLabel, connectionFieldsFor } from '../src/sourceSettings.js';
 
 test('settings render arbitrary source descriptors and preserve disabled sources', () => {
   const fields = [{ key: 'adapterCredential', label: 'Media credential', kind: 'password' }];

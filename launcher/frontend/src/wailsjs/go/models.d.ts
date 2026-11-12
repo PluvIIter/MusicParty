@@ -15,6 +15,7 @@ export namespace config {
     neteaseCookie: string;
     neteaseQuality: string;
     biliCookie: string;
+    qqmusicGatewayMode: 'bundled' | 'external';
     qqmusicBaseUrl: string;
     qqmusicGatewayToken: string;
     qqmusicCookie: string;
@@ -47,6 +48,7 @@ export namespace config {
       label: string;
       placeholder: string;
       kind: string;
+      gatewayMode?: 'external' | 'bundled';
       options?: Array<{ value: string; label: string }>;
     }>;
   }

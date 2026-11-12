@@ -93,7 +93,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.24'
           cache: true
           cache-dependency-path: launcher/go.mod
 
@@ -127,6 +127,14 @@ jobs:
         run: |
           npm install
           npx pkg . -t node18-win-x64 -o ../launcher/bin/netease-api.exe
+
+      - name: Setup Python for QQ gateway packaging
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Package embedded QQ Music gateway
+        run: ./scripts/package-qqmusic.ps1 -OutputDir launcher/bin/qqmusic
 
       - name: Prepare Assets
         run: |

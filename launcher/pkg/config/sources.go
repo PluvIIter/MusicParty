@@ -16,6 +16,7 @@ type ConnectionField struct {
 	Placeholder string             `json:"placeholder"`
 	Kind        string             `json:"kind"`
 	Options     []ConnectionOption `json:"options,omitempty"`
+	GatewayMode string             `json:"gatewayMode,omitempty"`
 }
 
 type SourceDescriptor struct {
@@ -53,11 +54,12 @@ func SourceDescriptors() []SourceDescriptor {
 		},
 		{
 			ID: "qqmusic", Label: "QQ 音乐", DefaultMode: ServerDownload, DefaultEnabled: false,
-			SupportedModes: []string{DirectURL, ServerDownload},
-			Description:    "需要单独运行 QQ API 外部网关；启动器不会安装 Python、启动或打包 QQ 网关。凭据仅用于音频解析和原生私人 FM，不作为公开收藏的用户身份。",
+			SupportedModes: []string{DirectURL, ServerDownload}, LocalService: "QQMUSIC_API",
+			Description: "启用后默认一键运行随包 QQ 网关，无需安装 Python 或手填网关令牌；也可选外部网关。凭据仅用于音频和原生私人 FM，不作为公开收藏身份。",
 			ConnectionFields: []ConnectionField{
-				{Key: "qqmusicBaseUrl", Label: "QQ API 外部网关地址", Kind: "url", Placeholder: "http://localhost:8000；填写网关根地址，不含 /v1 路径"},
-				{Key: "qqmusicGatewayToken", Label: "网关访问令牌", Kind: "password", Placeholder: "16–512 位可打印 ASCII，不含空格；须与外部网关 QQMUSIC_GATEWAY_TOKEN 一致"},
+				{Key: "qqmusicGatewayMode", Label: "QQ 网关运行方式", Kind: "select", Options: []ConnectionOption{{Value: "bundled", Label: "内置一键启动（推荐）"}, {Value: "external", Label: "外部网关"}}},
+				{Key: "qqmusicBaseUrl", Label: "QQ API 外部网关地址", Kind: "url", GatewayMode: "external", Placeholder: "http://localhost:8000；填写网关根地址，不含 /v1 路径"},
+				{Key: "qqmusicGatewayToken", Label: "网关访问令牌", Kind: "password", GatewayMode: "external", Placeholder: "16–512 位可打印 ASCII，不含空格；须与外部网关 QQMUSIC_GATEWAY_TOKEN 一致"},
 				{Key: "qqmusicCookie", Label: "QQ Credential JSON", Kind: "password", Placeholder: "填写规范化 Credential JSON 对象，不是浏览器 Cookie 串；留空仅尝试合法匿名音频"},
 				{Key: "qqmusicQuality", Label: "音频音质", Kind: "select", Options: []ConnectionOption{
 					{Value: "MP3_128", Label: "MP3 128 kbps"}, {Value: "MP3_320", Label: "MP3 320 kbps"},
@@ -81,7 +83,7 @@ func (c *AppConfig) LocalServiceEnabled(name string) bool {
 		return false
 	}
 	for _, descriptor := range SourceDescriptors() {
-		if descriptor.LocalService == name && c.SourceEnabled(descriptor.ID) {
+		if descriptor.LocalService == name && c.SourceEnabled(descriptor.ID) && (name != "QQMUSIC_API" || c.QqmusicGatewayMode == "bundled") {
 			return true
 		}
 	}

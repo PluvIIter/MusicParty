@@ -1,5 +1,5 @@
 # Music Party Local Build Script
-# Requirements: Node.js, Java 21, Go, Wails CLI, pkg (npm install -g pkg)
+# Requirements: Node.js, Java 21, Go, Wails CLI, Python 3.13, pkg (npm install -g pkg)
 
 echo "--- 1. Building Frontend ---"
 cd music-party-web
@@ -25,7 +25,11 @@ echo "--- 4. Preparing Launcher Assets ---"
 if (-Not (Test-Path "launcher/bin")) { mkdir launcher/bin }
 cp target/music-party-*.jar launcher/bin/server.jar
 
-echo "--- 5. Building Wails Launcher ---"
+echo "--- 5. Packaging QQ Music Gateway ---"
+& "$PSScriptRoot/scripts/package-qqmusic.ps1" -OutputDir "$PSScriptRoot/launcher/bin/qqmusic"
+if ($LASTEXITCODE -ne 0) { throw "QQ gateway packaging failed" }
+
+echo "--- 6. Building Wails Launcher ---"
 cd launcher
 wails build -platform windows/amd64
 cd ..

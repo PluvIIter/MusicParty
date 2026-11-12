@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestQqmusicDefaultsAreDisabledAndExternal(t *testing.T) {
+func TestQqmusicDefaultsAreDisabledAndBundled(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Sources["qqmusic"] != (SourceConfig{false, ServerDownload}) {
 		t.Fatal("QQ must default to disabled server download")
@@ -19,7 +19,7 @@ func TestQqmusicDefaultsAreDisabledAndExternal(t *testing.T) {
 		if descriptor.ID != "qqmusic" {
 			continue
 		}
-		if descriptor.LocalService != "" || descriptor.DefaultEnabled || !strings.Contains(descriptor.Description, "外部网关") {
+		if descriptor.LocalService != "QQMUSIC_API" || descriptor.DefaultEnabled || !strings.Contains(descriptor.Description, "一键") {
 			t.Fatal("QQ must use an external gateway without an enabled local process")
 		}
 		for _, field := range descriptor.ConnectionFields {
@@ -68,6 +68,7 @@ func TestQqmusicConfigAndArgumentsPreserveExplicitSettings(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Sources["qqmusic"] = SourceConfig{true, DirectURL}
 	cfg.QqmusicBaseURL = "http://gateway.test:8001"
+	cfg.QqmusicGatewayMode = "external"
 	cfg.QqmusicGatewayToken = "private-token=one-two"
 	cfg.QqmusicCookie = `{"musicid":123,"musickey":"private value; 三"}`
 	cfg.QqmusicQuality = "FLAC"
@@ -109,6 +110,7 @@ func TestQqmusicTokenBoundaries(t *testing.T) {
 	for _, token := range []string{strings.Repeat("a", 15), strings.Repeat("a", 513), "valid-length with-space", "valid-length-with-三", "valid-length-with-\n", "valid-length-with-\u007f"} {
 		cfg := DefaultConfig()
 		cfg.Sources["qqmusic"] = SourceConfig{true, ServerDownload}
+		cfg.QqmusicGatewayMode = "external"
 		cfg.QqmusicGatewayToken = token
 		if err := cfg.Validate(); err == nil {
 			t.Fatal("invalid QQ gateway token was accepted")
@@ -117,6 +119,7 @@ func TestQqmusicTokenBoundaries(t *testing.T) {
 	for _, size := range []int{16, 512} {
 		cfg := DefaultConfig()
 		cfg.Sources["qqmusic"] = SourceConfig{true, ServerDownload}
+		cfg.QqmusicGatewayMode = "external"
 		cfg.QqmusicGatewayToken = strings.Repeat("~", size)
 		if err := cfg.Validate(); err != nil {
 			t.Fatal("valid QQ gateway token boundary was rejected")
@@ -165,6 +168,7 @@ func TestEnabledQqmusicValidatesGatewayWithoutLeakingSecrets(t *testing.T) {
 	} {
 		cfg := DefaultConfig()
 		cfg.Sources["qqmusic"] = SourceConfig{true, ServerDownload}
+		cfg.QqmusicGatewayMode = "external"
 		cfg.QqmusicGatewayToken = "private-token-valid-123"
 		update(cfg)
 		_, err := cfg.JavaArgs("server.jar")
@@ -177,6 +181,7 @@ func TestEnabledQqmusicValidatesGatewayWithoutLeakingSecrets(t *testing.T) {
 	}
 	cfg := DefaultConfig()
 	cfg.Sources["qqmusic"] = SourceConfig{true, ServerDownload}
+	cfg.QqmusicGatewayMode = "external"
 	cfg.QqmusicGatewayToken = "private-token-valid-123"
 	if err := cfg.Validate(); err != nil {
 		t.Fatal("valid anonymous audio configuration was rejected")

@@ -137,7 +137,7 @@ docker run -d \
 1.  前往 [GitHub Releases](https://github.com/pluviiter/MusicParty/releases) 下载最新的 `MusicParty.exe`。
 2.  将 `MusicParty.exe` 放置在你喜欢的文件夹中。
 3.  **直接双击运行**：
-    *   启动器会自动释放内置的 JRE 环境、网易云 API 服务以及 Java 核心程序。
+    *   启动器会自动释放内置的 JRE、网易云 API、QQ 音乐网关及其 Python 运行环境，以及 Java 核心程序；按启用的音源启动相应服务。
     *   所有的配置、运行环境、缓存都保存在 EXE 同级目录下。
 4.  在 UI 界面上修改端口、密码、网易云 Cookie 等配置，点击“启动系统”即可。
 5.  系统就绪后，点击界面上的“打开网页”即可。
@@ -175,7 +175,7 @@ Docker启用步骤（使用本PR构建的主应用镜像，旧发布镜像不包
 3. 管理员可在管理界面替换或清空QQ凭据，旧凭据不回显。运行期更新不写入房间存档，重启后仍以部署/启动器配置为准。
 4. 私人FM需同时将部署 `PRIVATE_DJ_SOURCE=qqmusic`，再在管理界面开启FM；收藏绑定不会改变推荐账号。
 
-独立网关与验证边界见 [网关说明](sidecars/qqmusic/README.md) 和 [上游许可说明](sidecars/qqmusic/UPSTREAM-NOTICE.md)。启动器可填写外部网关地址和令牌，但不会自动安装Python或启动QQ网关；需先独立部署网关。没有配置QQ时仍可照常使用原有启动流程。
+独立网关与验证边界见 [网关说明](sidecars/qqmusic/README.md) 和 [上游许可说明](sidecars/qqmusic/UPSTREAM-NOTICE.md)。Windows一键启动器默认使用随包QQ网关和Python运行环境：启用QQ后自动释放、启动并检查网关就绪，停止系统或退出时关闭由启动器创建的网关，不要求用户安装Python。端口和访问令牌由启动器为本次运行生成，不写入用户配置。需要自己部署网关时可切换“外部网关”，填写地址和令牌；启动器不会关闭外部服务。QQ关闭时不启动网关。
 
 QQ音频只支持有权取得的普通MP3/FLAC，拒绝加密格式和不能确认完整性的试听。会员也不保证所有地区/单购歌曲可播。服务器缓存、下载和Radio不自动获得音乐再分发授权；请核对平台规则与版权。公开匿名样本的验证不能替代登录账号、CDN、多端和Radio实测。
 

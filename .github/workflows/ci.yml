@@ -87,9 +87,44 @@ jobs:
         with:
           go-version: '1.24'
           cache: false
-      - run: go test -mod=mod ./pkg/config
+      - run: go test -mod=mod -race ./pkg/config ./pkg/process ./pkg/launch
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/sourceSettings.test.js
+      - run: node --test tests/*.test.js
         working-directory: launcher/frontend
+
+  launcher-qqmusic-bundle:
+    name: launcher-qqmusic-bundle
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Package and smoke-test embedded QQ runtime
+        shell: pwsh
+        run: ./scripts/package-qqmusic.ps1 -OutputDir "${{ runner.temp }}/qqmusic-bundle"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Test Windows launcher service lifecycle
+        working-directory: launcher
+        env:
+          QQMUSIC_TEST_BUNDLE: ${{ runner.temp }}/qqmusic-bundle
+        run: go test -mod=mod ./pkg/config ./pkg/process ./pkg/launch
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compile Windows launcher with embedded gateway assets
+        shell: pwsh
+        run: |
+          npm ci --prefix launcher/frontend
+          npm run build --prefix launcher/frontend
+          New-Item -ItemType Directory -Force launcher/bin | Out-Null
+          Copy-Item -Recurse "${{ runner.temp }}/qqmusic-bundle" launcher/bin/qqmusic
+          Push-Location launcher
+          go build -mod=mod -o "${{ runner.temp }}/MusicParty-compile-check.exe" .
+          if ($LASTEXITCODE -ne 0) { throw 'Windows launcher compilation failed' }
+          Pop-Location
