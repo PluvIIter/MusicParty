@@ -31,16 +31,20 @@ class PlaybackModePersistenceTest {
         return new QueuePersistenceService(queue, chat, properties, mapper, player, mock(AuthController.class), mock(LiveStreamService.class));
     }
 
-    @Test void unversionedAndUnknownSnapshotsAreRejectedWithoutChangingOrOverwritingData() throws Exception {
+    @Test void legacySnapshotsAreImportedThenRewrittenAsCurrentSchema() throws Exception {
         for (String prefix : List.of("", "\"schemaVersion\":0,", "\"schemaVersion\":2,")) {
             var persistence = persistence();
-            String contents = "{" + prefix + "\"queue\":[],\"settings\":{\"player\":{\"playMode\":\"SHUFFLE\"}}}";
-            Files.writeString(temporary.resolve("queue.json"), contents);
+            clearInvocations(player);
+            Path file = temporary.resolve("queue.json");
+            Files.writeString(file, "{" + prefix + "\"queue\":[],\"settings\":{\"player\":{\"playMode\":\"SHUFFLE\"}}}");
             persistence.loadData();
-            verifyNoInteractions(player);
-            assertThrows(IOException.class, persistence::saveNow);
-            assertThrows(IOException.class, () -> persistence.saveQueueSnapshot(List.of()));
-            assertEquals(contents, Files.readString(temporary.resolve("queue.json")));
+            // 旧存档不再被拒绝：导入后立刻按 schemaVersion=1 覆写
+            assertEquals(1, mapper.readTree(file.toFile()).path("schemaVersion").intValue());
+            verify(player).applyPlayerSettings(argThat(settings -> "SHUFFLE".equals(settings.playMode())));
+            try (var files = Files.list(temporary)) {
+                assertTrue(files.anyMatch(p -> p.getFileName().toString().contains(".legacy-") && p.getFileName().toString().endsWith(".bak")),
+                        "旧存档应保留一份 .legacy-*.bak 备份");
+            }
         }
     }
 

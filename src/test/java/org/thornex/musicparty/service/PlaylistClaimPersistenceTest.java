@@ -101,11 +101,21 @@ class PlaylistClaimPersistenceTest {
         assertEquals("previous snapshot", Files.readString(file));
     }
     @Test void oldSnapshotsKeepConfiguredStartupValue() throws Exception {
-        Path file=directory.resolve("old.json");Files.writeString(file,"{\"queue\":[],\"history\":[],\"settings\":{\"systemConfig\":{}}}");
-        var props=new AppProperties();props.getQueue().setPersistenceFile(file.toString());
-        persistence(props,new MusicQueueManager(props),new ObjectMapper()).loadData();assertFalse(props.getQueue().isAllowPlaylistClaim());
-        props.getQueue().setAllowPlaylistClaim(true);persistence(props,new MusicQueueManager(props),new ObjectMapper()).loadData();assertTrue(props.getQueue().isAllowPlaylistClaim());
+        String legacy = "{\"queue\":[],\"history\":[],\"settings\":{\"systemConfig\":{}}}";
+        Path file = directory.resolve("old.json");
+        Files.writeString(file, legacy);
+        var props = new AppProperties();
+        props.getQueue().setPersistenceFile(file.toString());
+        persistence(props, new MusicQueueManager(props), new ObjectMapper()).loadData();
+        assertFalse(props.getQueue().isAllowPlaylistClaim());
+
+        // 迁移会按新格式覆写文件；重新放回同一份旧存档，验证“旧存档不覆盖启动配置”
+        Files.writeString(file, legacy);
+        props.getQueue().setAllowPlaylistClaim(true);
+        persistence(props, new MusicQueueManager(props), new ObjectMapper()).loadData();
+        assertTrue(props.getQueue().isAllowPlaylistClaim());
     }
+
     @Test void failedAtomicWritePreservesPreviousFileAndRemovesTemporary() throws Exception {
         Path file=directory.resolve("queue.json");Files.writeString(file,"previous valid snapshot");
         var props=new AppProperties();props.getQueue().setPersistenceFile(file.toString());

@@ -39,7 +39,6 @@ public class QueuePersistenceService {
     private final MusicPlayerService musicPlayerService;
     private final AuthController authController;
     private final LiveStreamService liveStreamService;
-    private boolean persistenceRejected;
 
     @PostConstruct
     public void init() {
@@ -57,7 +56,6 @@ public class QueuePersistenceService {
     }
 
     public synchronized void saveNow() throws IOException {
-        if (persistenceRejected) throw new IOException("Persistence file was rejected; choose a new persistence-file path");
         File file = getPersistenceFile();
         PersistentData data = new PersistentData();
         data.setSchemaVersion(1);
@@ -83,7 +81,6 @@ public class QueuePersistenceService {
 
     /** Persist a proposed queue before publishing its ownership to runtime state. Failure propagates to the caller. */
     public synchronized void saveQueueSnapshot(List<MusicQueueItem> entries) throws IOException {
-        if (persistenceRejected) throw new IOException("Persistence file was rejected; choose a new persistence-file path");
         Path file = getPersistenceFile().toPath().toAbsolutePath().normalize();
         PersistentData data = new PersistentData();
         data.setSchemaVersion(1);
@@ -120,9 +117,14 @@ public class QueuePersistenceService {
 
         try {
             PersistentData data = objectMapper.readValue(file, new TypeReference<PersistentData>() {});
-            
-            if (!Integer.valueOf(1).equals(data.getSchemaVersion())) {
-                throw new IOException("Unsupported persistence schema; expected schemaVersion=1");
+
+            // 旧版存档（无 schemaVersion 或版本不符）不再拒绝：尽量导入，随后立即按新格式覆写。
+            boolean migrated = !Integer.valueOf(1).equals(data.getSchemaVersion());
+            if (migrated) {
+                Path backup = backupOf(file, "legacy");
+                log.warn("Legacy persistence snapshot (schemaVersion={}) at {}; backup kept at {} then content imported",
+                        data.getSchemaVersion(), file.getAbsolutePath(), backup);
+                data.setSchemaVersion(1);
             }
 
             musicQueueManager.restore(
@@ -138,13 +140,37 @@ public class QueuePersistenceService {
             musicPlayerService.prepareRestoredQueue();
 
             log.info("Restored {} queue items, {} music history items and {} chat messages from {}",
-                data.getQueue() != null ? data.getQueue().size() : 0, 
-                data.getHistory() != null ? data.getHistory().size() : 0, 
+                data.getQueue() != null ? data.getQueue().size() : 0,
+                data.getHistory() != null ? data.getHistory().size() : 0,
                 data.getChatHistory() != null ? data.getChatHistory().size() : 0,
                 file.getAbsolutePath());
+
+            if (migrated) {
+                try {
+                    saveNow();
+                    log.info("Persistence snapshot rewritten as schemaVersion=1 at {}", file.getAbsolutePath());
+                } catch (IOException e) {
+                    log.warn("Failed to rewrite migrated persistence snapshot at {}; it will be rewritten on the next save",
+                            file.getAbsolutePath(), e);
+                }
+            }
         } catch (Exception e) {
-            persistenceRejected = true;
-            log.error("Failed to load persistence data from {}; writes disabled to preserve the original file", file.getAbsolutePath(), e);
+            Path backup = backupOf(file, "unreadable");
+            log.error("Failed to load persistence data from {}; original kept at {}, starting fresh and overwriting on the next save",
+                    file.getAbsolutePath(), backup, e);
+        }
+    }
+
+    /** 尽量保留一份旧文件副本（不阻止后续覆写），便于回滚或排查。 */
+    private Path backupOf(File file, String reason) {
+        try {
+            Path source = file.toPath().toAbsolutePath().normalize();
+            Path backup = source.resolveSibling(source.getFileName() + "." + reason + "-" + System.currentTimeMillis() + ".bak");
+            Files.copy(source, backup, StandardCopyOption.REPLACE_EXISTING);
+            return backup;
+        } catch (IOException e) {
+            log.warn("Failed to back up persistence file {}", file.getAbsolutePath(), e);
+            return file.toPath();
         }
     }
 
