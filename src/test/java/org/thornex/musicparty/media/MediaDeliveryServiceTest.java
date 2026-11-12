@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.enums.CacheStatus;
+import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.service.LocalCacheService;
 import org.thornex.musicparty.service.api.IMusicApiService;
@@ -37,6 +38,8 @@ class MediaDeliveryServiceTest {
         when(registry.descriptor("stub")).thenReturn(new SourceDescriptor("stub", "Stub", "music",
                 new SourceCapabilities(true, false, false, false, false, false, true, true),
                 java.util.Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD), List.of()));
+        when(adapter.resolveFallbackMedia("same/id"))
+                .thenReturn(Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: none")));
         service = new MediaDeliveryService(registry, cache);
     }
 
@@ -250,5 +253,32 @@ class MediaDeliveryServiceTest {
             assertThrows(RuntimeException.class, () -> MediaUrlPolicy.validateUrl(url));
         }
         assertThrows(RuntimeException.class, () -> MediaUrlPolicy.validateHeaders(Map.of("Referer", "safe\r\nCookie: secret")));
+    }
+
+    @Test void downloadFailureRetriesWithDeclaredFallbackRepresentation() {
+        when(registry.deliveryMode("stub")).thenReturn(DeliveryMode.SERVER_DOWNLOAD);
+        var status = new java.util.concurrent.atomic.AtomicReference<CacheStatus>(CacheStatus.FAILED);
+        when(cache.getStatus(anyString())).thenAnswer(call -> status.get());
+        var submits = new java.util.concurrent.atomic.AtomicInteger();
+        doAnswer(call -> {
+            if (submits.incrementAndGet() >= 2) status.set(CacheStatus.COMPLETED);
+            return null;
+        }).when(cache).submitDownload(anyString(), any(), anyMap(), any());
+        when(adapter.resolveFallbackMedia("same/id")).thenReturn(Mono.just(new ResolvedMedia(
+                new ResourceKey("stub", "same/id"), "html5", "https://93.184.216.34/video.mp4", "video/mp4", ".mp4",
+                Instant.now().plusSeconds(100), Map.of(), true, "html5")));
+
+        var playable = service.getPlayableMusic("stub", "same/id").block();
+
+        assertNotNull(playable);
+        assertTrue(playable.url().startsWith("/media/"));
+        verify(adapter).resolveFallbackMedia("same/id");
+        verify(cache, times(2)).submitDownload(anyString(), any(), anyMap(), any());
+        assertEquals(QueueItemStatus.READY, service.status(music));
+
+        // 再次播放：降级解析结果被复用（30s 缓存），不会重复 /view + playurl
+        var replay = service.getPlayableMusic("stub", "same/id").block();
+        assertNotNull(replay);
+        verify(adapter, times(1)).resolveFallbackMedia("same/id");
     }
 }

@@ -13,6 +13,14 @@ public interface IMusicApiService {
     org.thornex.musicparty.source.SourceDescriptor descriptor();
     Mono<Music> getMusic(String musicId);
     Mono<org.thornex.musicparty.media.ResolvedMedia> resolveMedia(String musicId, org.thornex.musicparty.media.MediaConsumer consumer);
+    /**
+     * 下载降级表示：服务端下载失败时，可再尝试的另一种编码（例如 B 站 DASH → html5 MP4）。
+     * 默认不支持；实现方必须返回与主表示不同的 representationKey 与真实 timeline，
+     * 且仍然由服务端下载（不允许返回浏览器直链）。
+     */
+    default Mono<org.thornex.musicparty.media.ResolvedMedia> resolveFallbackMedia(String musicId) {
+        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源没有下载降级表示"));
+    }
     default org.thornex.musicparty.source.DeliveryMode defaultDeliveryMode() {
         return org.thornex.musicparty.source.DeliveryMode.DIRECT_URL;
     }

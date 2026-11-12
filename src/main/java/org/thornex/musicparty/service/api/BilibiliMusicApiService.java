@@ -219,6 +219,19 @@ public class BilibiliMusicApiService implements IMusicApiService {
     }
 
     /**
+     * 下载降级表示：主表示（DASH 或解析兜底的 html5 MP4）下载失败时，改用
+     * {@code platform=html5} 的直连 MP4 再次由服务端下载。该 URL 无 referer 鉴权，
+     * 因此请求头留空；依旧走本地缓存与票据，不向浏览器暴露上游地址。
+     */
+    @Override
+    public Mono<ResolvedMedia> resolveFallbackMedia(String bvid) {
+        return getVideoCidWithCookie(bvid).flatMap(cid -> resolveHtml5Mp4Url(bvid, cid)
+                .map(source -> new ResolvedMedia(new ResourceKey(PLATFORM, bvid),
+                        "html5:" + source.timeline(), source.url(), "video/mp4", ".mp4",
+                        Instant.now().plusSeconds(600), Map.of(), true, source.timeline())));
+    }
+
+    /**
      * 兜底方案：通过旧 playurl 接口获取 html5 直连 MP4 地址。
      *
      * <p>与 DASH 方案的区别：{@code platform=html5} 返回的 MP4 流<b>无 referer 鉴权</b>，
