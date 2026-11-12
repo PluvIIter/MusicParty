@@ -1,4 +1,5 @@
 import argparse
+from contextlib import closing
 import http.client
 import json
 import os
@@ -97,7 +98,7 @@ def smoke(source, python, env, working, label):
                     time.sleep(0.1)
             assert process.poll() is None, "Native Web exited after smoke requests"
             import sqlite3
-            with sqlite3.connect(child_env["QQMUSIC_CREDENTIAL_STORE_PATH"]) as database:
+            with closing(sqlite3.connect(child_env["QQMUSIC_CREDENTIAL_STORE_PATH"])) as database:
                 assert database.execute("SELECT count(*) FROM credentials").fetchone() == (0,)
             log.seek(0)
             assert b"Offline smoke test blocked" not in log.read(), "Startup attempted external network access"

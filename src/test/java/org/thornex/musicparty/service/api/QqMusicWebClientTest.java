@@ -44,7 +44,8 @@ class QqMusicWebClientTest {
             assertEquals("keyword=中文 + test", request.url().getQuery());
             assertTrue(request.url().getRawQuery().contains("%E4%B8%AD"));
             return Mono.just(data(json("{\"song\":[]}")));
-        }).mutate().defaultHeader("Cookie", "musickey=secret").defaultHeader("Authorization", "Bearer secret").build();
+        }).mutate().defaultHeader("Cookie", "musickey=secret").defaultHeader("Authorization", "Bearer secret")
+                .defaultCookie("musicid", "123").defaultCookie("musickey", "cookie-secret").build();
         var web = new QqMusicWebClient(client, properties, credentials);
         assertTrue(web.publicGet("/search/search_by_type", Map.of("keyword", "中文 + test")).block().path("song").isArray());
     }
