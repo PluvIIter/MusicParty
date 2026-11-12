@@ -71,17 +71,27 @@ func (gate *tunnelGate) waitBackend(ctx context.Context, client *http.Client, pa
 			return fmt.Errorf("Java server exited before tunnel application readiness")
 		default:
 		}
-		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, gate.target+"/api/v2/sources", nil)
+		endpoint := "/api/v2/sources"
+		if strings.TrimSpace(password) == "" {
+			endpoint = "/api/auth/status"
+		}
+		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, gate.target+endpoint, nil)
 		request.Header.Set("X-Room-Password", password)
 		response, err := client.Do(request)
 		if err == nil {
 			var body struct {
 				SchemaVersion int               `json:"schemaVersion"`
 				Sources       []json.RawMessage `json:"sources"`
+				IsSetup       *bool             `json:"isSetup"`
+				HasProtection *bool             `json:"hasProtection"`
 			}
 			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 1024*1024)).Decode(&body)
 			response.Body.Close()
-			if response.StatusCode == 200 && decodeErr == nil && body.SchemaVersion == 2 && body.Sources != nil {
+			ready := body.SchemaVersion == 2 && body.Sources != nil
+			if endpoint == "/api/auth/status" {
+				ready = body.IsSetup != nil && body.HasProtection != nil
+			}
+			if response.StatusCode == 200 && decodeErr == nil && ready {
 				select {
 				case <-handle.Done:
 					return fmt.Errorf("Java server exited before tunnel application readiness")

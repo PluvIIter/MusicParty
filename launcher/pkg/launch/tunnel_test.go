@@ -49,6 +49,7 @@ func runTunnelHelper() {
 		}
 		mux := http.NewServeMux()
 		mux.HandleFunc("/api/v2/sources", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"schemaVersion":2,"sources":[]}`) })
+		mux.HandleFunc("/api/auth/status", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"isSetup":false,"hasProtection":false}`) })
 		http.ListenAndServe("127.0.0.1:"+port, mux)
 		os.Exit(0)
 	}
@@ -166,6 +167,21 @@ func TestTunnelControllerSuccessRuntimeURLAndStop(t *testing.T) {
 	controller.Stop()
 	if status := controller.GetTunnelStatus(); status.URL != "" || status.State != "stopped" {
 		t.Fatal("stop retained public URL")
+	}
+}
+
+func TestTunnelStartsWithBlankOrDefaultAdministratorPassword(t *testing.T) {
+	for _, password := range []string{"", "admin123", "   "} {
+		t.Run(password, func(t *testing.T) {
+			controller, cfg, _, _ := tunnelFixture(t)
+			cfg.AdminPassword = password
+			if err := controller.Start(context.Background(), cfg); err != nil {
+				t.Fatal(err)
+			}
+			if controller.GetTunnelStatus().State != "ready" {
+				t.Fatal("password warning blocked tunnel startup")
+			}
+		})
 	}
 }
 

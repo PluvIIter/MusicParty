@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validTunnelUrl, emptyTunnelStatus, normalizeTunnelStatus, tunnelUrl, copyTunnelUrl, createStatusPoll } from '../src/tunnelStatus.js';
+import { validTunnelUrl, emptyTunnelStatus, normalizeTunnelStatus, tunnelUrl, copyTunnelUrl, createStatusPoll, tunnelPasswordWarning } from '../src/tunnelStatus.js';
 
 const url = 'https://quiet-blue-fish.trycloudflare.com';
 const ready = { enabled: true, state: 'ready', url, error: '' };
+
+test('default or blank administrator passwords show advice without blocking', () => {
+  for (const password of ['', '   ', 'admin123']) {
+    assert.match(tunnelPasswordWarning(true, password), /此提示不影响启动/);
+    assert.equal(tunnelPasswordWarning(false, password), '');
+  }
+  assert.equal(tunnelPasswordWarning(true, 'a-stronger-password'), '');
+});
 
 test('accepts only HTTPS Quick Tunnel root URLs', () => {
   for (const value of [url, `${url}/`, 'https://a.trycloudflare.com']) {

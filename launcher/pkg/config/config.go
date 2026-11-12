@@ -96,9 +96,6 @@ func DecodeConfig(data []byte) (*AppConfig, error) {
 var sourceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 func (c *AppConfig) Validate() error {
-	if c.CloudflareTunnelEnabled && (strings.TrimSpace(c.AdminPassword) == "" || c.AdminPassword == "admin123") {
-		return fmt.Errorf("Cloudflare Tunnel requires a non-default administrator password")
-	}
 	if c.Sources == nil {
 		return fmt.Errorf("sources configuration is required")
 	}

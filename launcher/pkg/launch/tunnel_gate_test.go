@@ -222,7 +222,7 @@ func TestGateAndReadinessNeverUseInheritedHTTPProxy(t *testing.T) {
 	}
 }
 
-func TestTunnelRejectsDefaultAdminOnlyWhenEnabled(t *testing.T) {
+func TestTunnelAllowsDefaultAdminWithoutBlockingStartup(t *testing.T) {
 	for _, password := range []string{"", "admin123", "   "} {
 		cfg := config.DefaultConfig()
 		cfg.AdminPassword = password
@@ -230,8 +230,8 @@ func TestTunnelRejectsDefaultAdminOnlyWhenEnabled(t *testing.T) {
 			t.Fatal("local configuration rejected")
 		}
 		cfg.CloudflareTunnelEnabled = true
-		if cfg.Validate() == nil {
-			t.Fatal("tunnel accepted default admin password")
+		if err := cfg.Validate(); err != nil {
+			t.Fatal("tunnel configuration blocked instead of warning")
 		}
 	}
 	cfg := config.DefaultConfig()

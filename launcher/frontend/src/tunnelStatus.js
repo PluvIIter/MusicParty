@@ -1,6 +1,12 @@
 const tunnelStates = new Set(['off', 'starting', 'ready', 'failed', 'stopped']);
 const quickTunnelUrl = /^https:\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.trycloudflare\.com\/?$/;
 
+export function tunnelPasswordWarning(enabled, password) {
+  return enabled && (typeof password !== 'string' || !password.trim() || password === 'admin123')
+    ? '当前管理员密码为空或使用默认值，公网访问存在风险，建议设置强密码；此提示不影响启动。'
+    : '';
+}
+
 export function validTunnelUrl(value) {
   return typeof value === 'string' && value.match(quickTunnelUrl)?.[0] === value ? value : '';
 }
