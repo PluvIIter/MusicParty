@@ -25,7 +25,10 @@ async function bindUser(page, name = 'User A') {
     await page.getByText(name, { exact: true }).click();
 }
 
-async function fixture(page, { emptyFirst = false, deferCollections = false, deferTracks = false } = {}) {
+async function fixture(
+    page,
+    { emptyFirst = false, deferCollections = false, deferTracks = false, pagedCollections = false } = {}
+) {
     const reads = [],
         sent = [],
         pending = [];
@@ -87,18 +90,42 @@ async function fixture(page, { emptyFirst = false, deferCollections = false, def
                 return route.fulfill({ status: 400, json: { message: 'Explicit user required' } });
             body = path.endsWith('/public-tracks')
                 ? { items: [track('Public track')], nextCursor: null }
-                : {
-                      items: [
-                          {
-                              id: 'mix/1',
-                              name: 'Public mix',
-                              platform: 'future-source',
-                              collectionType: 'mix',
-                              trackCount: 2,
-                          },
-                      ],
-                      nextCursor: null,
-                  };
+                : pagedCollections
+                  ? url.searchParams.get('cursor')
+                      ? {
+                            items: [
+                                {
+                                    id: 'mix/more',
+                                    name: 'More mix',
+                                    platform: 'future-source',
+                                    collectionType: 'mix',
+                                    trackCount: 1,
+                                },
+                            ],
+                            nextCursor: null,
+                        }
+                      : {
+                            items: Array.from({ length: 30 }, (_, index) => ({
+                                id: `mix/${index}`,
+                                name: `Public mix ${index}`,
+                                platform: 'future-source',
+                                collectionType: 'mix',
+                                trackCount: 2,
+                            })),
+                            nextCursor: 'more',
+                        }
+                  : {
+                        items: [
+                            {
+                                id: 'mix/1',
+                                name: 'Public mix',
+                                platform: 'future-source',
+                                collectionType: 'mix',
+                                trackCount: 2,
+                            },
+                        ],
+                        nextCursor: null,
+                    };
         } else if (path.includes('/containers/') && path.endsWith('/tracks'))
             body =
                 emptyFirst && !url.searchParams.get('cursor')
@@ -282,4 +309,23 @@ test('disabled source LIKESONG metadata remains visible and local storage unchan
     expect(await page.evaluate(() => localStorage.getItem('mp_liked_songs'))).toBe(saved);
     expect(server.sent.some((item) => item.destination === '/app/enqueue')).toBe(false);
     expect(server.reads.some((url) => url.pathname.endsWith('/external-url'))).toBe(false);
+});
+
+test('loading more collections keeps the sidebar scroll position', async ({ page }) => {
+    await fixture(page, { pagedCollections: true });
+    await bindUser(page);
+    await expect(page.getByText(/^Public mix \d+$/)).toHaveCount(30);
+    const scroller = page.locator('div.overscroll-contain').first();
+    const before = await scroller.evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+        return el.scrollTop;
+    });
+    expect(before).toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: '更多收藏' }).click();
+    await expect(page.getByText('More mix', { exact: true })).toBeVisible();
+
+    const after = await scroller.evaluate((el) => el.scrollTop);
+    expect(after).toBeGreaterThan(0);
+    expect(after).toBeGreaterThanOrEqual(before - 4);
 });

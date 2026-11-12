@@ -267,7 +267,10 @@
                                 </button>
                             </div>
 
-                            <div v-if="isPlaylistsLoading" class="flex justify-center py-8">
+                            <div
+                                v-if="isPlaylistsLoading && !playlists.length"
+                                class="flex justify-center py-8"
+                            >
                                 <Loader2 class="w-6 h-6 animate-spin text-accent" />
                             </div>
 
@@ -292,9 +295,10 @@
                                 v-if="collectionCursor"
                                 @click="fetchPlaylists(true)"
                                 :disabled="isPlaylistsLoading"
-                                class="p-2 text-accent text-xs"
+                                class="flex items-center gap-2 p-2 text-accent text-xs disabled:opacity-60"
                             >
-                                更多收藏
+                                <Loader2 v-if="isPlaylistsLoading" class="w-3 h-3 animate-spin" />
+                                {{ isPlaylistsLoading ? '加载中…' : '更多收藏' }}
                             </button>
                         </template>
                     </div>
