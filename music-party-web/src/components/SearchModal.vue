@@ -153,70 +153,92 @@
                     "
                 >
                     <div
-                        class="p-2 md:p-3 bg-surface-sunken text-xs font-bold text-ink-muted flex justify-between items-center font-sans"
+                        class="p-2 md:p-3 bg-surface-sunken flex justify-between items-center gap-2 font-sans"
                     >
-                        <span>公开用户收藏</span>
+                        <div ref="categoryMenuRoot" class="relative min-w-0" @keydown.escape="categoryMenuOpen = false">
+                            <button
+                                type="button"
+                                :disabled="!canSwitchCategory"
+                                aria-haspopup="menu"
+                                :aria-expanded="categoryMenuOpen"
+                                aria-label="收藏分类"
+                                class="flex items-center gap-1 min-w-0 max-w-full text-xs font-bold text-ink-muted hover:text-accent disabled:hover:text-ink-muted disabled:cursor-default transition-colors"
+                                @click="toggleCategoryMenu"
+                            >
+                                <span class="truncate">{{ activeCategoryLabel }}</span>
+                                <ChevronDown
+                                    v-if="canSwitchCategory"
+                                    class="w-3.5 h-3.5 shrink-0 transition-transform"
+                                    :class="{ 'rotate-180': categoryMenuOpen }"
+                                />
+                            </button>
+                            <Transition
+                                enter-active-class="transition duration-150 ease-out"
+                                enter-from-class="opacity-0 translate-y-1"
+                                enter-to-class="opacity-100 translate-y-0"
+                                leave-active-class="transition duration-100 ease-in"
+                                leave-from-class="opacity-100 translate-y-0"
+                                leave-to-class="opacity-0 translate-y-1"
+                            >
+                                <div
+                                    v-if="categoryMenuOpen"
+                                    role="menu"
+                                    aria-label="收藏分类"
+                                    class="absolute left-0 top-full mt-1 w-40 max-w-[calc(100vw-2rem)] p-1 bg-surface-raised border border-line shadow-xl z-50"
+                                >
+                                    <button
+                                        v-for="item in categories"
+                                        :key="item.id"
+                                        type="button"
+                                        role="menuitemradio"
+                                        :aria-checked="item.id === categoryId"
+                                        class="w-full flex items-center gap-2 p-2 text-xs text-left hover:bg-surface-sunken focus:bg-surface-sunken focus:outline-accent transition-colors"
+                                        :class="item.id === categoryId ? 'text-accent' : 'text-ink'"
+                                        @click="selectCategory(item.id)"
+                                    >
+                                        <ListMusic class="w-4 h-4 shrink-0" aria-hidden="true" />
+                                        <span class="truncate">{{ item.label }}</span>
+                                    </button>
+                                </div>
+                            </Transition>
+                        </div>
                         <button
                             type="button"
                             @click="refreshSidebar"
                             :disabled="isPlaylistsLoading"
-                            class="text-[10px] font-bold px-2 py-0.5 border border-line hover:text-accent hover:border-accent disabled:opacity-40 transition-colors"
+                            class="text-[10px] font-bold px-2 py-0.5 border border-line hover:text-accent hover:border-accent disabled:opacity-40 transition-colors shrink-0"
                         >
                             {{ isPlaylistsLoading ? '刷新中' : '刷新' }}
                         </button>
                     </div>
 
                     <div class="flex-1 overflow-y-auto overscroll-contain p-2 space-y-2">
-                        <select
-                            v-if="categories.length"
-                            v-model="categoryId"
-                            aria-label="收藏分类"
-                            class="w-full bg-surface border border-line p-2 text-sm"
-                        >
-                            <option v-for="item in categories" :key="item.id" :value="item.id">{{ item.label }}</option>
-                        </select>
-                        <p v-else class="text-xs p-3 text-ink-subtle">此音乐源没有公开用户收藏</p>
-                        <!-- 未绑定 -->
-                        <div
-                            v-if="categories.length && !bindings[platform]"
-                            class="p-4 border border-dashed border-line-strong bg-surface"
-                        >
-                            <div class="text-xs text-ink-muted mb-2 text-center font-sans">
-                                保存公开用户 ID（仅在此浏览器）
-                            </div>
-                            <div class="flex gap-1 mb-2">
-                                <input
-                                    v-model="targetUserId"
-                                    aria-label="公开用户 ID"
-                                    placeholder="公开用户 ID"
-                                    class="min-w-0 flex-1 bg-surface-raised border border-line p-1 text-sm"
-                                />
-                                <button
-                                    @click="bindUser({ id: targetUserId })"
-                                    :disabled="!targetUserId.trim()"
-                                    class="p-1 text-accent text-xs"
-                                >
-                                    保存
-                                </button>
-                            </div>
+                        <p v-if="!categories.length" class="text-xs p-3 text-ink-subtle">此音乐源没有用户收藏</p>
+
+                        <!-- 未绑定：只保留用户搜索，选中即绑定 -->
+                        <div v-else-if="!bindings[platform]" class="p-3 border border-dashed border-line-strong bg-surface space-y-2">
                             <div v-if="sources.supports(platform, 'userSearch')" class="flex gap-1">
                                 <input
                                     v-model="searchUserKeyword"
                                     @keyup.enter="searchUser"
-                                    placeholder="搜索用户名"
+                                    aria-label="搜索用户"
+                                    placeholder="搜索用户"
                                     class="flex-1 min-w-0 bg-surface-raised border border-line p-1 text-sm outline-none focus:border-accent font-sans"
                                 />
                                 <button
                                     @click="searchUser"
+                                    aria-label="搜索用户"
                                     class="bg-accent hover:bg-accent-hover p-1 transition-colors"
                                 >
                                     <Search class="w-4 h-4 text-accent-contrast" />
                                 </button>
                             </div>
-                            <!-- 搜索结果列表 -->
+                            <p v-else class="text-xs text-ink-subtle text-center py-2">此音乐源不支持用户搜索</p>
+
+                            <!-- 搜索结果：点击即绑定 -->
                             <div
                                 v-if="userSearchResults.length > 0"
-                                class="mt-2 max-h-40 overflow-y-auto space-y-1 border-t border-line pt-2"
+                                class="max-h-40 overflow-y-auto space-y-1 border-t border-line pt-2"
                             >
                                 <div
                                     v-for="user in userSearchResults"
@@ -233,8 +255,8 @@
                             </div>
                         </div>
 
-                        <!-- 已绑定：歌单列表 -->
-                        <template v-else-if="categories.length">
+                        <!-- 已绑定：分类 + 收藏列表 -->
+                        <template v-else>
                             <div class="flex justify-between items-center px-2 py-1 bg-surface border-b border-line">
                                 <span class="text-[10px] font-mono text-ink-subtle">ID: {{ bindings[platform] }}</span>
                                 <button
@@ -265,16 +287,16 @@
                                 </div>
                                 <ChevronRight class="w-4 h-4 text-ink-subtle md:hidden ml-auto" />
                             </div>
-                        </template>
 
-                        <button
-                            v-if="collectionCursor"
-                            @click="fetchPlaylists(true)"
-                            :disabled="isPlaylistsLoading"
-                            class="p-2 text-accent text-xs"
-                        >
-                            更多收藏
-                        </button>
+                            <button
+                                v-if="collectionCursor"
+                                @click="fetchPlaylists(true)"
+                                :disabled="isPlaylistsLoading"
+                                class="p-2 text-accent text-xs"
+                            >
+                                更多收藏
+                            </button>
+                        </template>
                     </div>
                 </div>
 
@@ -441,6 +463,8 @@ import {
     ChevronRight,
     Check,
     ExternalLink,
+    ChevronDown,
+    ListMusic,
 } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import AlbumModal from './AlbumModal.vue';
@@ -450,7 +474,6 @@ const playerStore = usePlayerStore();
 const userStore = useUserStore();
 const sources = useSourcesStore();
 const selectedAlbumSong = ref(null);
-const targetUserId = ref('');
 const { platform, keyword, songs, loading, listMode, doSearch, cancelSearch } = useSearchLogic();
 const mode = ref('search');
 const mobileView = ref('playlists');
@@ -492,6 +515,32 @@ const {
     computed(() => props.isOpen && mode.value === 'search')
 );
 watch(() => [bindings.value[platform.value], categoryId.value], cancelSearch, { flush: 'sync' });
+
+const categoryMenuOpen = ref(false);
+const categoryMenuRoot = ref(null);
+const canSwitchCategory = computed(() => Boolean(bindings.value[platform.value]) && categories.value.length > 0);
+const activeCategoryLabel = computed(() => {
+    if (!bindings.value[platform.value]) return '用户收藏';
+    return categories.value.find((item) => item.id === categoryId.value)?.label || '用户收藏';
+});
+const toggleCategoryMenu = () => {
+    if (canSwitchCategory.value) categoryMenuOpen.value = !categoryMenuOpen.value;
+};
+const selectCategory = (id) => {
+    categoryId.value = id;
+    categoryMenuOpen.value = false;
+};
+const closeCategoryMenuOnOutside = (event) => {
+    if (!categoryMenuRoot.value?.contains(event.target)) categoryMenuOpen.value = false;
+};
+onMounted(() => document.addEventListener('pointerdown', closeCategoryMenuOnOutside));
+onUnmounted(() => document.removeEventListener('pointerdown', closeCategoryMenuOnOutside));
+watch(
+    () => [bindings.value[platform.value], categories.value.length],
+    () => {
+        categoryMenuOpen.value = false;
+    }
+);
 const handleSearchAction = async () => {
     if (mode.value === 'likesong' || !sources.supports(platform.value, 'search')) return;
     await doSearch();

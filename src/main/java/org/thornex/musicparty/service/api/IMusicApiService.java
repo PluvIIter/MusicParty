@@ -31,11 +31,11 @@ public interface IMusicApiService {
     Mono<String> getLyric(String musicId);
     default Mono<org.thornex.musicparty.source.SourcePage<Playlist>> publicCollections(
             String userId, String category, int offset, int limit) {
-        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持公开收藏分页"));
+        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持收藏分页"));
     }
     default Mono<org.thornex.musicparty.source.SourcePage<Music>> publicCollectionTracks(
             String userId, String category, int offset, int limit) {
-        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持公开歌曲收藏"));
+        return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持歌曲收藏"));
     }
     default Mono<Playlist> containerDetail(String type, String id) {
         return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持此容器类型"));

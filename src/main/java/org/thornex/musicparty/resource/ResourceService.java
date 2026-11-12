@@ -165,7 +165,7 @@ public class ResourceService {
 
     public static void validateId(String id) {
         if (id == null || id.isBlank() || id.length() > 512 || id.chars().anyMatch(Character::isISOControl)) {
-            throw new ApiRequestException("INVALID_RESOURCE: 无效资源或公开用户标识");
+            throw new ApiRequestException("INVALID_RESOURCE: 无效资源或用户标识");
         }
     }
 

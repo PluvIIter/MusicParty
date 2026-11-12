@@ -69,3 +69,4 @@ build/
 /data/*.bak
 /data/*.legacy-*
 /data/*.unreadable-*
+/data/

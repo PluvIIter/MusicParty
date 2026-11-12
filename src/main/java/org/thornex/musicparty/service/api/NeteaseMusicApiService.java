@@ -184,7 +184,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
         return new SourceDescriptor(PLATFORM, "网易云音乐", "music",
                 new SourceCapabilities(true, true, true, true, true, true, true, true),
                 Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
-                List.of(new CollectionCategory("playlists", "公开歌单", "playlist", "CONTAINER")));
+                List.of(new CollectionCategory("playlists", "歌单", "playlist", "CONTAINER")));
     }
 
     @Override
@@ -274,7 +274,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
                     if (json.path("code").asInt(200) != 200 || !json.path("playlist").isArray()) {
-                        throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 该用户的公开歌单不可读取");
+                        throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 该用户的歌单不可读取");
                     }
                     List<Playlist> items = new ArrayList<>();
                     json.path("playlist").forEach(pl -> items.add(mapPlaylist(pl)));
@@ -296,7 +296,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .retrieve().bodyToMono(JsonNode.class).map(json -> {
                     JsonNode playlist = json.path("playlist");
                     if (json.path("code").asInt(200) != 200 || playlist.path("id").asText("").isBlank()) {
-                        throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 公开歌单不可读取");
+                        throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 歌单不可读取");
                     }
                     return mapPlaylist(playlist);
                 });
@@ -313,7 +313,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .bodyToMono(JsonNode.class)
                 .map(jsonNode -> {
                     if (jsonNode.path("code").asInt(200) != 200 || !jsonNode.path("songs").isArray()) {
-                        throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 公开歌单内容不可读取");
+                        throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 歌单内容不可读取");
                     }
                     List<Music> musicList = new ArrayList<>();
                     jsonNode.path("songs").forEach(song -> {

@@ -19,6 +19,12 @@ const track = (name, platform = 'future-source') => ({
     duration: 1000,
     externalUrl: 'javascript:alert(1)',
 });
+async function bindUser(page, name = 'User A') {
+    await page.getByRole('textbox', { name: '搜索用户', exact: true }).fill('user');
+    await page.getByRole('button', { name: '搜索用户', exact: true }).click();
+    await page.getByText(name, { exact: true }).click();
+}
+
 async function fixture(page, { emptyFirst = false, deferCollections = false, deferTracks = false } = {}) {
     const reads = [],
         sent = [],
@@ -55,7 +61,13 @@ async function fixture(page, { emptyFirst = false, deferCollections = false, def
                 sources: [descriptor('future-source', true), descriptor('other-source'), descriptor('disabled-source')],
             };
         else if (path.endsWith('/users/search'))
-            body = { items: [{ id: 'public-user', name: 'Public user' }], nextCursor: null };
+            body = {
+                items: [
+                    { id: 'uid-A', name: 'User A' },
+                    { id: 'uid-B', name: 'User B' },
+                ],
+                nextCursor: null,
+            };
         else if (path.endsWith('/tracks/search')) {
             if (url.searchParams.get('q') === 'deferred')
                 return new Promise((resolve) =>
@@ -181,8 +193,7 @@ async function fixture(page, { emptyFirst = false, deferCollections = false, def
 
 test('empty first container page has an explicit reachable next-page action', async ({ page }) => {
     const server = await fixture(page, { emptyFirst: true });
-    await page.getByRole('textbox', { name: '公开用户 ID', exact: true }).fill('uid');
-    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await bindUser(page, 'User A');
     await page.getByText('Public mix', { exact: true }).click();
     const more = page.getByRole('button', { name: '加载更多曲目', exact: true });
     await expect(more).toBeVisible();
@@ -196,8 +207,7 @@ for (const switchToLikes of [false, true])
         page,
     }) => {
         const server = await fixture(page, { deferCollections: true });
-        await page.getByRole('textbox', { name: '公开用户 ID', exact: true }).fill('uid');
-        await page.getByRole('button', { name: '保存', exact: true }).click();
+        await bindUser(page, 'User A');
         await expect.poll(() => server.reads.filter((url) => url.pathname.includes('/collections/')).length).toBe(1);
         if (switchToLikes) await page.getByRole('button', { name: '点赞的音乐', exact: true }).click();
         else await page.getByRole('button', { name: '关闭搜索', exact: true }).click();
@@ -211,8 +221,7 @@ for (const switchToLikes of [false, true])
 
 test('canceled container tracks resume on reopen without a new source selection', async ({ page }) => {
     const server = await fixture(page, { deferTracks: true });
-    await page.getByRole('textbox', { name: '公开用户 ID', exact: true }).fill('uid');
-    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await bindUser(page, 'User A');
     await page.getByText('Public mix', { exact: true }).click();
     await expect.poll(() => server.reads.filter((url) => url.pathname.includes('/containers/')).length).toBe(1);
     await page.getByRole('button', { name: '关闭搜索', exact: true }).click();
@@ -223,10 +232,9 @@ test('canceled container tracks resume on reopen without a new source selection'
     await expect(page.getByText('Container song', { exact: true })).toBeVisible();
 });
 
-test('unknown source discovers generic public categories with explicit browser-only targets', async ({ page }) => {
+test('unknown source discovers generic collection categories and binds a user from search', async ({ page }) => {
     const server = await fixture(page);
-    await page.getByRole('textbox', { name: '公开用户 ID', exact: true }).fill('uid-A');
-    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await bindUser(page, 'User A');
     await expect(page.getByText('Public mix', { exact: true })).toBeVisible();
     expect(
         server.reads
@@ -242,7 +250,8 @@ test('unknown source discovers generic public categories with explicit browser-o
             server.sent.some((item) => item.destination === '/app/enqueue' && item.body.platform === 'future-source')
         )
         .toBe(true);
-    await page.getByRole('combobox', { name: '收藏分类' }).selectOption('public-tracks');
+    await page.getByRole('button', { name: '收藏分类' }).click();
+    await page.getByRole('menuitemradio', { name: 'Public tracks' }).click();
     await expect(page.getByText('Public track', { exact: true })).toBeVisible();
     expect(server.sent.some((item) => item.destination === '/app/user/bind')).toBe(false);
     expect(server.reads.some((url) => url.pathname === '/api/user/albums/netease')).toBe(false);
@@ -254,8 +263,7 @@ test('deferred source response cannot overwrite current container results', asyn
     await page.getByPlaceholder('搜索音乐...').fill('deferred');
     await page.getByPlaceholder('搜索音乐...').press('Enter');
     await expect.poll(() => server.reads.some((url) => url.searchParams.get('q') === 'deferred')).toBe(true);
-    await page.getByRole('textbox', { name: '公开用户 ID', exact: true }).fill('uid-B');
-    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await bindUser(page, 'User B');
     await page.getByText('Public mix', { exact: true }).click();
     await expect(page.getByText('Container song', { exact: true })).toBeVisible();
     await server.release();

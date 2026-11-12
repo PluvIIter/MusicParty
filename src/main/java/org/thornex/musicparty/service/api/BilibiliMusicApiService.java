@@ -183,7 +183,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
         return new SourceDescriptor(PLATFORM, "哔哩哔哩", "video",
                 new SourceCapabilities(true, false, false, true, true, false, true, true),
                 Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
-                List.of(new CollectionCategory("favorites", "公开收藏夹", "favorites", "CONTAINER")));
+                List.of(new CollectionCategory("favorites", "收藏夹", "favorites", "CONTAINER")));
     }
 
     @Override
@@ -368,7 +368,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                 .map(jsonNode -> {
                     if (jsonNode.path("code").asInt() != 0) {
                         log.warn("Failed to get Bilibili favorites for user {}: {}", userId, jsonNode.path("message").asText());
-                        throw new ApiRequestException("公开收藏夹不可读取");
+                        throw new ApiRequestException("收藏夹不可读取");
                     }
 
                     List<Playlist> playlists = new ArrayList<>();
@@ -403,7 +403,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                 .queryParam("media_id", id).queryParam("ps", 1).queryParam("pn", 1).toUriString();
         return buildBilibiliRequest(uri).flatMap(spec -> spec.retrieve().bodyToMono(JsonNode.class)).map(json -> {
             if (json.path("code").asInt() != 0 || !json.path("data").path("info").isObject()) {
-                throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 公开收藏夹不可读取");
+                throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 收藏夹不可读取");
             }
             JsonNode info = json.path("data").path("info");
             return new Playlist(info.path("id").asText(id), info.path("title").asText(),
@@ -438,9 +438,9 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
                     int code = jsonNode.path("code").asInt();
                     if (code != 0) {
-                        if (code == -404) throw new ApiRequestException("公开收藏夹不可读取");
+                        if (code == -404) throw new ApiRequestException("收藏夹不可读取");
                         log.error("Failed to get Bilibili favorite details: {}", jsonNode.path("message").asText());
-                        throw new ApiRequestException("公开收藏夹不可读取");
+                        throw new ApiRequestException("收藏夹不可读取");
                     }
 
                     JsonNode medias = jsonNode.path("data").path("medias");
