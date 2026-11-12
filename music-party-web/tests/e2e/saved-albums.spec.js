@@ -209,7 +209,7 @@ for (const switchToLikes of [false, true])
         const server = await fixture(page, { deferCollections: true });
         await bindUser(page, 'User A');
         await expect.poll(() => server.reads.filter((url) => url.pathname.includes('/collections/')).length).toBe(1);
-        if (switchToLikes) await page.getByRole('button', { name: '点赞的音乐', exact: true }).click();
+        if (switchToLikes) await page.getByRole('button', { name: 'LIKESONG', exact: true }).click();
         else await page.getByRole('button', { name: '关闭搜索', exact: true }).click();
         await server.release();
         if (switchToLikes) await page.getByRole('button', { name: 'future-source', exact: true }).click();
@@ -273,7 +273,7 @@ test('deferred source response cannot overwrite current container results', asyn
 
 test('disabled source LIKESONG metadata remains visible and local storage unchanged', async ({ page }) => {
     const server = await fixture(page);
-    await page.getByRole('button', { name: '点赞的音乐', exact: true }).click();
+    await page.getByRole('button', { name: 'LIKESONG', exact: true }).click();
     await expect(page.getByText('Disabled snapshot', { exact: true })).toBeVisible();
     await expect(page.getByText('Saved artist', { exact: true })).toBeVisible();
     const saved = await page.evaluate(() => localStorage.getItem('mp_liked_songs'));

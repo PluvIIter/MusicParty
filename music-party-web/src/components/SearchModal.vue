@@ -37,7 +37,7 @@
                             !sources.isEnabled(source.id) ? 'opacity-30 cursor-not-allowed grayscale' : '',
                         ]"
                     >
-                        {{ source.label }}
+                        {{ source.tabLabel || source.label }}
                     </button>
                     <!-- 本地点赞列表标签（仅本地缓存，不上报服务器） -->
                     <button
@@ -49,7 +49,7 @@
                                 : 'bg-line text-ink-muted hover:bg-line-strong'
                         "
                     >
-                        点赞的音乐
+                        LIKESONG
                     </button>
                 </div>
 

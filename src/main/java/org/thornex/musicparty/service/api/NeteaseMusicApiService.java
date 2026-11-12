@@ -181,7 +181,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public SourceDescriptor descriptor() {
-        return new SourceDescriptor(PLATFORM, "网易云音乐", "music",
+        return new SourceDescriptor(PLATFORM, "网易云音乐", "NETEASE", "music",
                 new SourceCapabilities(true, true, true, true, true, true, true, true),
                 Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
                 List.of(new CollectionCategory("playlists", "歌单", "playlist", "CONTAINER")));

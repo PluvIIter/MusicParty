@@ -104,6 +104,7 @@ public class SourceRegistry {
             var item = new LinkedHashMap<String, Object>();
             item.put("id", descriptor.id());
             item.put("label", descriptor.label());
+            item.put("tabLabel", descriptor.tabLabel());
             item.put("iconKey", descriptor.iconKey());
             item.put("capabilities", descriptor.capabilities());
             item.put("collectionCategories", descriptor.collectionCategories());

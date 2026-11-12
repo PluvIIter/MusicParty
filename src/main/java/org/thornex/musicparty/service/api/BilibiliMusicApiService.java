@@ -180,7 +180,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public SourceDescriptor descriptor() {
-        return new SourceDescriptor(PLATFORM, "哔哩哔哩", "video",
+        return new SourceDescriptor(PLATFORM, "哔哩哔哩", "BILIBILI", "video",
                 new SourceCapabilities(true, false, false, true, true, false, true, true),
                 Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
                 List.of(new CollectionCategory("favorites", "收藏夹", "favorites", "CONTAINER")));
