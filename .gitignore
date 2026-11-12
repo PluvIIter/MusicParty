@@ -38,7 +38,8 @@ build/
 /scripts/publish-image.ps1
 /data/queue-data.json
 
-/docs/
+/docs/*
+!/docs/source-architecture.md
 /secrets/
 /.frontend-audit/
 /.superpowers/
@@ -65,3 +66,7 @@ build/
 /.snow/
 # git worktree 工作区
 /.worktrees/
+/data/*.bak
+/data/*.legacy-*
+/data/*.unreadable-*
+/data/

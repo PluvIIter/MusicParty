@@ -334,12 +334,16 @@ export function useAudio(audioRef, playerStore) {
         const controller = refreshAbort;
         const timeout = setTimeout(() => controller.abort(), 14000);
         try {
-            if (music.platform === 'netease') {
-                const response = await fetch(`/api/music/refresh/netease/${encodeURIComponent(music.id)}`, {
-                    headers: { 'X-Room-Password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '' },
-                    cache: 'no-store',
-                    signal: controller.signal,
-                });
+            if (music.kind === 'SONG' && playerStore.playbackId) {
+                const response = await fetch(
+                    `/api/v2/playbacks/${encodeURIComponent(playerStore.playbackId)}/media/refresh`,
+                    {
+                        method: 'POST',
+                        headers: { 'X-Room-Password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '' },
+                        cache: 'no-store',
+                        signal: controller.signal,
+                    }
+                );
                 if (!response.ok) throw new Error('播放地址刷新失败');
                 const fresh = await response.json();
                 if (version !== generation) return;
@@ -409,7 +413,7 @@ export function useAudio(audioRef, playerStore) {
             if (currentId === endedTrackId) {
                 console.warn('[Ended] No next track pushed, forcing resync...');
                 playerStore.tryReconnect();
-                socketService.send(WS_DEST.RESYNC);
+                socketService.send(WS_DEST.COMPACT_RESYNC);
             }
         }, ENDED_RESYNC_DELAY);
     };
@@ -446,7 +450,7 @@ export function useAudio(audioRef, playerStore) {
         if (document.visibilityState === 'visible') {
             playerStore.tryReconnect();
             // Ask for fresh state; foregrounding must not force a media seek.
-            socketService.send(WS_DEST.RESYNC);
+            socketService.send(WS_DEST.COMPACT_RESYNC);
             resumeLocalPlayback();
             if (!playerStore.isPaused) requestWakeLock();
         }
@@ -458,7 +462,7 @@ export function useAudio(audioRef, playerStore) {
         if (navigator.onLine) {
             console.log('[Network] Back online, checking socket...');
             playerStore.tryReconnect();
-            socketService.send(WS_DEST.RESYNC);
+            socketService.send(WS_DEST.COMPACT_RESYNC);
             resumeLocalPlayback();
         }
     };

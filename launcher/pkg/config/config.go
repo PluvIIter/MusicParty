@@ -1,55 +1,107 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 )
 
-type AppConfig struct {
-	// Server Settings
-	ServerIP   string `json:"serverIp"`
-	ServerPort string `json:"serverPort"`
-	BaseURL    string `json:"baseUrl"`
+type SourceConfig struct {
+	Enabled      bool   `json:"enabled"`
+	DeliveryMode string `json:"deliveryMode"`
+}
 
-	// App General
+type AppConfig struct {
+	ServerIP      string `json:"serverIp"`
+	ServerPort    string `json:"serverPort"`
+	BaseURL       string `json:"baseUrl"`
 	AdminPassword string `json:"adminPassword"`
 	AuthorName    string `json:"authorName"`
 	BackWords     string `json:"backWords"`
 
-	// Netease
-	NeteaseCookie string `json:"neteaseCookie"`
-	NeteaseQuality string `json:"neteaseQuality"`
-	NeteaseEnabled bool `json:"neteaseEnabled"`
+	Sources        map[string]SourceConfig `json:"sources"`
+	NeteaseCookie  string                  `json:"neteaseCookie"`
+	NeteaseQuality string                  `json:"neteaseQuality"`
+	BiliCookie     string                  `json:"biliCookie"`
 
-	// Bilibili
-	BiliCookie string `json:"biliCookie"`
-	BilibiliEnabled bool `json:"bilibiliEnabled"`
+	QueueMaxSize          int    `json:"queueMaxSize"`
+	QueueHistorySize      int    `json:"queueHistorySize"`
+	QueueMaxUserSongs     int    `json:"queueMaxUserSongs"`
+	MaxPlaylistImportSize int    `json:"maxPlaylistImportSize"`
+	ChatMaxHistorySize    int    `json:"chatMaxHistorySize"`
+	ChatMinIntervalMs     int    `json:"chatMinIntervalMs"`
+	ChatMaxMessageLength  int    `json:"chatMaxMessageLength"`
+	CacheMaxSize          string `json:"cacheMaxSize"`
+	AuthRateLimitEnabled  bool   `json:"authRateLimitEnabled"`
+	AuthMaxAttempts       int    `json:"authMaxAttempts"`
+	AuthWindowSeconds     int    `json:"authWindowSeconds"`
+	AuthBlockDuration     int    `json:"authBlockDuration"`
+	AutoStart             bool   `json:"autoStart"`
+}
 
-	// Queue Settings
-	QueueMaxSize      int `json:"queueMaxSize"`
-	QueueHistorySize  int `json:"queueHistorySize"`
-	QueueMaxUserSongs int `json:"queueMaxUserSongs"`
+func DefaultConfig() *AppConfig {
+	return &AppConfig{
+		ServerIP: "0.0.0.0", ServerPort: "8080", BaseURL: "http://localhost:8080",
+		AuthorName: "ThorNex", BackWords: "THORNEX", NeteaseQuality: "exhigh",
+		Sources: DefaultSources(), QueueMaxSize: 1000, QueueHistorySize: 50,
+		QueueMaxUserSongs: 100, MaxPlaylistImportSize: 100, ChatMaxHistorySize: 1000,
+		ChatMinIntervalMs: 1000, ChatMaxMessageLength: 200, CacheMaxSize: "1GB",
+		AuthRateLimitEnabled: true, AuthMaxAttempts: 5, AuthWindowSeconds: 60,
+		AuthBlockDuration: 300,
+	}
+}
 
-	// Player Settings
-	MaxPlaylistImportSize int `json:"maxPlaylistImportSize"`
+func DecodeConfig(data []byte) (*AppConfig, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var cfg AppConfig
+	if err := decoder.Decode(&cfg); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("configuration must contain one JSON object")
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
 
-	// Chat Settings
-	ChatMaxHistorySize int `json:"chatMaxHistorySize"`
-	ChatMinIntervalMs  int `json:"chatMinIntervalMs"`
-	ChatMaxMessageLength int `json:"chatMaxMessageLength"`
+var sourceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
-	// Cache Settings
-	CacheMaxSize string `json:"cacheMaxSize"`
+func (c *AppConfig) Validate() error {
+	if c.Sources == nil {
+		return fmt.Errorf("sources configuration is required")
+	}
+	for _, id := range c.SourceIDs() {
+		source := c.Sources[id]
+		if !sourceIDPattern.MatchString(id) {
+			return fmt.Errorf("invalid source id: %q", id)
+		}
+		if source.DeliveryMode != DirectURL && source.DeliveryMode != ServerDownload {
+			return fmt.Errorf("invalid delivery mode for %s: %q", id, source.DeliveryMode)
+		}
+	}
+	return nil
+}
 
-	// Auth Settings
-	AuthRateLimitEnabled bool `json:"authRateLimitEnabled"`
-	AuthMaxAttempts      int  `json:"authMaxAttempts"`
-	AuthWindowSeconds    int  `json:"authWindowSeconds"`
-	AuthBlockDuration    int  `json:"authBlockDuration"`
+func (c *AppConfig) SourceIDs() []string {
+	ids := make([]string, 0, len(c.Sources))
+	for id := range c.Sources {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
 
-	// Launcher Settings
-	AutoStart  bool   `json:"autoStart"`
+func (c *AppConfig) SourceEnabled(id string) bool {
+	return c.Sources[id].Enabled
 }
 
 func GetBaseDir() string {
@@ -65,43 +117,31 @@ func GetConfigPath() string {
 	return filepath.Join(GetBaseDir(), "launcher_config.json")
 }
 
-func LoadConfig() *AppConfig {
-	path := GetConfigPath()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return &AppConfig{
-			ServerIP:      "0.0.0.0",
-			ServerPort:    "8080",
-			BaseURL:       "http://localhost:8080",
-			AdminPassword: "",
-			AuthorName:    "ThorNex",
-			BackWords:     "THORNEX",
-			NeteaseQuality: "exhigh",
-			NeteaseEnabled: true,
-			BilibiliEnabled: true,
-			QueueMaxSize:      1000,
-			QueueHistorySize:  50,
-			QueueMaxUserSongs: 100,
-			MaxPlaylistImportSize: 100,
-			ChatMaxHistorySize: 1000,
-			ChatMinIntervalMs:  1000,
-			ChatMaxMessageLength: 200,
-			CacheMaxSize: "1GB",
-			AuthRateLimitEnabled: true,
-			AuthMaxAttempts:      5,
-			AuthWindowSeconds:    60,
-			AuthBlockDuration:    300,
-			AutoStart:     false,
-		}
+func LoadConfig() (*AppConfig, error) {
+	data, err := os.ReadFile(GetConfigPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return DefaultConfig(), nil
 	}
-	var cfg AppConfig
-	json.Unmarshal(data, &cfg)
-	return &cfg
+	if err != nil {
+		return nil, err
+	}
+	return DecodeConfig(data)
 }
 
 func (c *AppConfig) Save() error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
 	path := GetConfigPath()
-	os.MkdirAll(filepath.Dir(path), 0755)
-	data, _ := json.MarshalIndent(c, "", "  ")
-	return os.WriteFile(path, data, 0644)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
 }

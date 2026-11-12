@@ -7,8 +7,12 @@ const { pathToFileURL } = require('node:url');
         pathToFileURL(path.join(__dirname, '../src/services/playbackSync.js'))
     );
     let now = 0;
-    const state = (position, { paused = false, id = '1', url = 'audio.wav', duration = 180000 } = {}) => ({
+    const state = (
+        position,
+        { paused = false, id = '1', url = 'audio.wav', duration = 180000, playbackId = 'first' } = {}
+    ) => ({
         isPaused: paused,
+        playbackId,
         nowPlaying: { music: { id, platform: 'netease', url, duration }, currentPosition: position },
     });
     const clock = createRoomClock(() => now);
@@ -48,7 +52,7 @@ const { pathToFileURL } = require('node:url');
     assert.equal(clock.position(), 43000);
     clock.sample(state(55000, { duration: 60000 }));
     now = 98000;
-    clock.sample(state(1000, { duration: 60000 }));
+    clock.sample(state(1000, { duration: 60000, playbackId: 'repeat' }));
     assert.equal(clock.position(), 1000);
     assert.equal(clock.status().reason, 'repeat');
     clock.sample(state(5000, { id: '2' }));

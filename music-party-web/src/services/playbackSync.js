@@ -42,36 +42,15 @@ export function createRoomClock(now = () => performance.now()) {
         const nonce = Number(state.seekNonce);
         const seeked = Number.isFinite(nonce) && lastSeekNonce !== null && nonce !== lastSeekNonce;
         if (Number.isFinite(nonce)) lastSeekNonce = nonce;
-        // Same URL/id can start another pass (repeat-one or a one-track retained playlist).
-        const repeat =
-            !nextPlaybackId &&
-            !changedTrack &&
-            !transport &&
-            !seeked &&
-            !nextPaused &&
-            duration > 0 &&
-            position(at) >= duration - 1000 &&
-            lastRaw >= duration - 10000 &&
-            raw < Math.min(10000, duration * 0.2) &&
-            raw + 1000 < lastRaw;
-
-        if (changedTrack || changedPlayback || transport || seeked || repeat || reconnect) {
+        if (changedTrack || changedPlayback || transport || seeked || reconnect) {
             anchor = raw;
             anchorAt = at;
             lastRaw = raw;
             sampleAt = at;
             sampleId++;
-            if (changedTrack || changedPlayback || transport || seeked || repeat) {
+            if (changedTrack || changedPlayback || transport || seeked) {
                 revision++;
-                reason = changedTrack
-                    ? 'track'
-                    : changedPlayback
-                      ? 'repeat'
-                      : seeked
-                        ? 'seek'
-                        : repeat
-                          ? 'repeat'
-                          : 'transport';
+                reason = changedTrack ? 'track' : changedPlayback ? 'repeat' : seeked ? 'seek' : 'transport';
             }
             key = nextKey;
             playbackId = nextPlaybackId;

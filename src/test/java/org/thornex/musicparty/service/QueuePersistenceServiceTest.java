@@ -19,7 +19,7 @@ import static org.mockito.Mockito.*;
 class QueuePersistenceServiceTest {
 
     @Test
-    void retentionRoundTripsAndMissingLegacyFieldKeepsConfiguredValue() throws Exception {
+    void retentionRoundTripsAndPartialCurrentSettingsKeepConfiguredValue() throws Exception {
         File tmp = File.createTempFile("retention", ".json");
         tmp.deleteOnExit();
         AppProperties props = new AppProperties();
@@ -34,7 +34,7 @@ class QueuePersistenceServiceTest {
             assertEquals(enabled, props.getQueue().isRetainPlaylist());
         }
         props.getQueue().setRetainPlaylist(true);
-        Files.writeString(tmp.toPath(), "{\"queue\":[],\"settings\":{\"systemConfig\":{\"maxQueueSize\":77}}}");
+        Files.writeString(tmp.toPath(), "{\"schemaVersion\":1,\"queue\":[],\"settings\":{\"systemConfig\":{\"maxQueueSize\":77}}}");
         persistence.loadData();
         assertTrue(props.getQueue().isRetainPlaylist());
         assertEquals(77, props.getQueue().getMaxSize());
@@ -57,8 +57,8 @@ class QueuePersistenceServiceTest {
         props.getQueue().setPersistenceFile(tmp.getAbsolutePath());
         props.getPrivateDj().setMode("DJ");
         props.getPrivateDj().setFillBlankEnabled(true);
-        props.getNetease().setEnabled(true);
-        props.getBilibili().setEnabled(false);
+        props.getSources().computeIfAbsent("netease", ignored -> new AppProperties.SourceConfig()).setEnabled(true);
+        props.getSources().computeIfAbsent("bilibili", ignored -> new AppProperties.SourceConfig()).setEnabled(false);
         props.getQueue().setMaxSize(500);
         props.getChat().setMaxMessageLength(512);
 
@@ -69,7 +69,7 @@ class QueuePersistenceServiceTest {
         when(chat.getHistoryFull()).thenReturn(List.of());
         MusicPlayerService player = mock(MusicPlayerService.class);
         when(player.getPlayerSettings()).thenReturn(new SettingsSnapshot.PlayerSettings(
-                "SHUFFLE", true, true, true, 0.75, 20, true, true, true));
+                "SHUFFLE", true, true, 0.75, 20, true, true, true));
         AuthController auth = mock(AuthController.class);
         when(auth.getRawPassword()).thenReturn("room123");
         LiveStreamService stream = mock(LiveStreamService.class);
@@ -90,8 +90,8 @@ class QueuePersistenceServiceTest {
         assertTrue(snap.privateDj().fillBlankEnabled());
         assertEquals(500, snap.systemConfig().maxQueueSize());
         assertEquals(512, snap.systemConfig().maxChatMessageLength());
-        assertTrue(snap.systemConfig().neteaseEnabled());
-        assertFalse(snap.systemConfig().bilibiliEnabled());
+        assertTrue(snap.sourceEnabled().get("netease"));
+        assertFalse(snap.sourceEnabled().get("bilibili"));
     }
 
     @Test
@@ -108,7 +108,7 @@ class QueuePersistenceServiceTest {
         when(chat.getHistoryFull()).thenReturn(List.of());
         MusicPlayerService player = mock(MusicPlayerService.class);
         when(player.getPlayerSettings()).thenReturn(new SettingsSnapshot.PlayerSettings(
-                "SEQUENTIAL", null, null, null, null, null, null, null, null));
+                "SEQUENTIAL", null, null, null, null, null, null, null));
         AuthController auth = mock(AuthController.class);
         when(auth.getRawPassword()).thenReturn(null);
         LiveStreamService stream = mock(LiveStreamService.class);
@@ -129,16 +129,16 @@ class QueuePersistenceServiceTest {
         props.getQueue().setPersistenceFile(tmp.getAbsolutePath());
 
         String settings = "{"
-                + "\"player\":{\"playMode\":\"SHUFFLE\",\"fairShuffle\":true,\"allowOfflineShuffle\":true,"
+                + "\"player\":{\"playMode\":\"SHUFFLE\",\"allowOfflineShuffle\":true,"
                 + "\"voteSkipEnabled\":true,\"voteSkipThreshold\":0.75,\"voteSkipWaitTime\":20,"
                 + "\"pauseLocked\":true,\"skipLocked\":true,\"playModeLocked\":true},"
                 + "\"roomPassword\":\"room123\",\"streamEnabled\":true,"
                 + "\"privateDj\":{\"mode\":\"DJ\",\"fillBlankEnabled\":true,\"joinQueueEnabled\":true,\"custodyEnabled\":true},"
                 + "\"systemConfig\":{\"maxQueueSize\":500,\"maxHistorySize\":100,\"maxUserSongs\":50,"
                 + "\"maxPlaylistImportSize\":200,\"maxChatHistorySize\":5000,\"minChatIntervalMs\":500,"
-                + "\"neteaseEnabled\":true,\"bilibiliEnabled\":false,\"bilibiliMaxDurationMinutes\":15}"
-                + "}";
-        Files.writeString(tmp.toPath(), "{\"queue\":[],\"history\":[],\"chatHistory\":[],\"settings\":" + settings + "}");
+                + "\"bilibiliMaxDurationMinutes\":15}"
+                + ",\"sourceEnabled\":{\"netease\":true,\"bilibili\":false}}";
+        Files.writeString(tmp.toPath(), "{\"schemaVersion\":1,\"queue\":[],\"history\":[],\"chatHistory\":[],\"settings\":" + settings + "}");
 
         MusicQueueManager qm = mock(MusicQueueManager.class);
         ChatService chat = mock(ChatService.class);
@@ -154,7 +154,7 @@ class QueuePersistenceServiceTest {
 
         // 播放设置回填
         verify(player).applyPlayerSettings(argThat(p ->
-                "ROUND_ROBIN".equals(p.playMode()) && p.fairShuffle() && p.voteSkipEnabled()
+                "SHUFFLE".equals(p.playMode()) && p.voteSkipEnabled()
                         && p.pauseLocked() && p.playModeLocked()));
 
         // 房间密码 / 直播开关
@@ -168,20 +168,20 @@ class QueuePersistenceServiceTest {
         assertEquals(200, props.getPlayer().getMaxPlaylistImportSize());
         assertEquals(5000, props.getChat().getMaxHistorySize());
         assertEquals(500L, props.getChat().getMinIntervalMs());
-        assertTrue(props.getNetease().isEnabled());
-        assertFalse(props.getBilibili().isEnabled());
+        verify(player).restoreSourceEnabled("netease", true);
+        verify(player).restoreSourceEnabled("bilibili", false);
         assertEquals(15, props.getBilibili().getMaxDurationMinutes());
         assertEquals("DJ", props.getPrivateDj().getMode());
         assertTrue(props.getPrivateDj().isFillBlankEnabled());
     }
 
     @Test
-    void loadDataOldFileSkipsSettingsRestore() throws Exception {
+    void loadDataMissingSettingsDoesNotApplyPlayerSettings() throws Exception {
         File tmp = File.createTempFile("queue", ".json");
         tmp.deleteOnExit();
         AppProperties props = new AppProperties();
         props.getQueue().setPersistenceFile(tmp.getAbsolutePath());
-        Files.writeString(tmp.toPath(), "{\"queue\":[],\"history\":[],\"chatHistory\":[]}");
+        Files.writeString(tmp.toPath(), "{\"schemaVersion\":1,\"queue\":[],\"history\":[],\"chatHistory\":[]}");
 
         MusicPlayerService player = mock(MusicPlayerService.class);
         AuthController auth = mock(AuthController.class);
@@ -201,7 +201,7 @@ class QueuePersistenceServiceTest {
         AppProperties props = new AppProperties();
         props.getQueue().setPersistenceFile(tmp.getAbsolutePath());
         Files.writeString(tmp.toPath(),
-                "{\"queue\":[],\"history\":[],\"chatHistory\":[],"
+                "{\"schemaVersion\":1,\"queue\":[],\"history\":[],\"chatHistory\":[],"
                 + "\"settings\":{\"player\":{\"playMode\":\"REPEAT_ONE\"},\"streamEnabled\":true}}");
 
         MusicPlayerService player = mock(MusicPlayerService.class);
@@ -211,7 +211,7 @@ class QueuePersistenceServiceTest {
         build(mock(MusicQueueManager.class), mock(ChatService.class), props, player, auth, stream).loadData();
 
         verify(player).applyPlayerSettings(argThat(p ->
-                "REPEAT_ONE".equals(p.playMode()) && p.fairShuffle() == null));
+                "REPEAT_ONE".equals(p.playMode()) && p.voteSkipEnabled() == null));
         verify(stream).setEnabled(true);
         verify(auth, never()).forceSetPassword(anyString());
         // 缺省 systemConfig → AppProperties 保持默认
@@ -242,11 +242,11 @@ class QueuePersistenceServiceTest {
     }
 
     @Test
-    void oldSystemConfigKeepsConfiguredChatMessageLength() throws Exception {
+    void partialSystemConfigKeepsConfiguredChatMessageLength() throws Exception {
         File tmp = File.createTempFile("queue-old-chat-length", ".json");
         tmp.deleteOnExit();
         Files.writeString(tmp.toPath(),
-                "{\"queue\":[],\"history\":[],\"chatHistory\":[],"
+                "{\"schemaVersion\":1,\"queue\":[],\"history\":[],\"chatHistory\":[],"
                 + "\"settings\":{\"systemConfig\":{\"maxQueueSize\":500}}}");
         AppProperties props = new AppProperties();
         props.getQueue().setPersistenceFile(tmp.getAbsolutePath());

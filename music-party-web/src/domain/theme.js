@@ -3,8 +3,6 @@ import { STORAGE_KEYS } from '../constants/storage';
 
 export function resolveThemeId(stored, prefersDark = false) {
     if (THEMES.some((theme) => theme.id === stored)) return stored;
-    if (stored === 'light') return 'light-original';
-    if (stored === 'dark') return 'dark-platinum';
     return prefersDark ? 'dark-platinum' : 'light-original';
 }
 

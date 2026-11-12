@@ -52,17 +52,17 @@ class AdminControllerPrivateDjTest {
     }
 
     @Test
-    void enableRejectedWithoutCookie() {
+    void enableRejectedWithoutPublicRecommendationProvider() {
         when(api.isCookieConfigured()).thenReturn(false);
         ResponseEntity<?> resp = controller.updatePrivateDj("pw",
                 new AdminPrivateDjUpdateRequest("FM", null, null, null));
         assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
-        assertEquals("OFF", props.getPrivateDj().getMode()); // 未配置 Cookie 时开启被拒，保持关闭
+        assertEquals("OFF", props.getPrivateDj().getMode()); // 无公开推荐提供器时保持关闭
     }
 
     @Test
-    void enableAcceptedWithCookie() {
-        when(api.isCookieConfigured()).thenReturn(true);
+    void enableAcceptedWithPublicProviderWithoutCookie() {
+        when(djService.supportsMode("DJ")).thenReturn(true);
         ResponseEntity<?> resp = controller.updatePrivateDj("pw",
                 new AdminPrivateDjUpdateRequest("DJ", true, false, false));
         assertEquals(HttpStatus.OK, resp.getStatusCode());
@@ -70,6 +70,20 @@ class AdminControllerPrivateDjTest {
         assertTrue(props.getPrivateDj().isFillBlankEnabled());
         verify(djService).invalidate();
         verify(player).broadcastFullPlayerState();
+    }
+
+    @Test
+    void fmOnlyProviderRejectsDjBeforeMutatingConfig() {
+        when(djService.supportsMode("FM")).thenReturn(true);
+        when(djService.supportsMode("DJ")).thenReturn(false);
+        assertEquals(HttpStatus.OK, controller.updatePrivateDj("pw",
+                new AdminPrivateDjUpdateRequest("FM", null, null, null)).getStatusCode());
+        var rejected = controller.updatePrivateDj("pw",
+                new AdminPrivateDjUpdateRequest("DJ", true, true, true));
+        assertEquals(HttpStatus.BAD_REQUEST, rejected.getStatusCode());
+        assertEquals("FM", props.getPrivateDj().getMode());
+        assertFalse(props.getPrivateDj().isFillBlankEnabled());
+        assertFalse(props.getPrivateDj().isCustodyEnabled());
     }
 
     @Test

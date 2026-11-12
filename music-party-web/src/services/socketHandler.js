@@ -16,7 +16,6 @@ function handleGameEvent(event) {
     const chatStore = useChatStore();
     const adminStore = useAdminStore();
     const { show, error } = useToast(); // This now uses the Pinia store wrapper
-    const userName = event.userId === 'SYSTEM' ? '系统' : userStore.resolveName(event.userId);
 
     // 1. 处理特殊业务逻辑 (非 UI 展示)
     if (event.action === 'LIKE') {
@@ -55,10 +54,7 @@ function handleGameEvent(event) {
         return;
     }
 
-    if (
-        event.action === 'RENAME_FAILED' ||
-        (event.type === 'ERROR' && event.message && (event.message.includes('taken') || event.message.includes('占用')))
-    ) {
+    if (event.action === 'RENAME_FAILED') {
         // 在改名弹窗内展示失败原因（弹窗背板会模糊背景 toast，故不走 toast）
         userStore.renameError = event.message || '该名称已被占用，请更换。';
         userStore.showNameModal = true;
@@ -72,7 +68,7 @@ function handleGameEvent(event) {
     }
 
     // 2. 使用后端传来的格式化消息
-    let msgText = event.message || event.payload || `${userName} ${event.action}`;
+    const msgText = event.message;
 
     // 将后端 Level 枚举映射为 toast 类型
     const typeMap = { error: 'error', warn: 'warning', success: 'success' };
@@ -99,23 +95,9 @@ function handleGameEvent(event) {
  * @returns {Object} 订阅路径 -> 回调函数 的映射
  */
 export const createSocketSubscriptions = () => {
-    const playerStore = usePlayerStore();
-    const userStore = useUserStore();
     const chatStore = useChatStore();
 
     return {
-        // 1. 状态同步
-        [WS_DEST.TOPIC_STATE]: (state) => playerStore.syncState(state),
-        [WS_DEST.USER_STATE]: (state) => playerStore.syncState(state),
-
-        // 2. 用户列表
-        [WS_DEST.TOPIC_USERS]: (users) => userStore.setOnlineUsers(users),
-
-        // 3. 队列更新
-        [WS_DEST.TOPIC_QUEUE]: (data) => {
-            playerStore.queue = data;
-        },
-
         // 4. 事件通知 (Toast)
         [WS_DEST.TOPIC_EVENTS]: handleGameEvent,
         [WS_DEST.USER_EVENTS]: handleGameEvent,
@@ -141,17 +123,14 @@ export const createSocketCallbacks = () => {
     const userStore = useUserStore();
 
     return {
+        onState: (state) => playerStore.syncState(state),
         // 连接成功
         onConnect: () => {
             playerStore.connected = true;
             // 发起同步
             setTimeout(() => {
-                if (!socketService.hasCompactSync()) socketService.send(WS_DEST.RESYNC);
+                socketService.send(WS_DEST.COMPACT_RESYNC);
             }, 300);
-            // 恢复绑定
-            Object.entries(userStore.bindings).forEach(([platform, id]) => {
-                if (id) playerStore.bindAccount(platform, id);
-            });
         },
 
         // 连接断开 (含异常断开)
@@ -175,6 +154,3 @@ export const createSocketCallbacks = () => {
         },
     };
 };
-
-// 为了兼容旧代码命名，导出这个别名
-const handleEventMessage = handleGameEvent;

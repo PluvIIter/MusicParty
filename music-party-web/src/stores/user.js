@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import { STORAGE_KEYS } from '../constants/storage';
 
 const generateToken = () => {
@@ -16,12 +16,6 @@ if (!storedToken) {
     localStorage.setItem(STORAGE_KEYS.TOKEN, storedToken);
 }
 const userToken = ref(storedToken);
-
-const storageName = localStorage.getItem(STORAGE_KEYS.USERNAME);
-const currentUser = ref({
-    name: storageName || '游客',
-    sessionId: '',
-});
 
 export const useUserStore = defineStore('user', () => {
     const onlineUsers = ref([]);
@@ -113,11 +107,6 @@ export const useUserStore = defineStore('user', () => {
         localStorage.setItem(STORAGE_KEYS.BINDINGS, JSON.stringify(bindings.value));
     };
 
-    // 废弃: 不再直接修改本地状态，改为等待 initUser 的后端回调
-    const saveName = (newName) => {
-        // Logic moved to initUser response handling
-    };
-
     const setPostNameAction = (fn) => {
         onNameSetCallback.value = fn;
     };
@@ -134,7 +123,6 @@ export const useUserStore = defineStore('user', () => {
         initUser,
         setOnlineUsers,
         updateBinding,
-        saveName,
         isGuest,
         showNameModal,
         renameError,

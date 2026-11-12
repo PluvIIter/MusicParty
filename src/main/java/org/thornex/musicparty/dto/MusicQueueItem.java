@@ -11,22 +11,7 @@ public record MusicQueueItem(
         Priority priority
 ) {
     public MusicQueueItem {
-        if (priority == null) {
-            // Determine priority from queueId for backward compatibility
-            if (queueId != null && queueId.startsWith("TOP-")) {
-                priority = Priority.GLOBAL_TOP;
-                queueId = queueId.substring(4);
-            } else if (queueId != null && queueId.startsWith("USERTOP-")) {
-                priority = Priority.USER_TOP;
-                queueId = queueId.substring(8);
-            } else {
-                priority = Priority.REGULAR;
-            }
-        }
-    }
-
-    public MusicQueueItem(String queueId, Music music, UserSummary enqueuedBy, QueueItemStatus status) {
-        this(queueId, music, enqueuedBy, status, Priority.REGULAR);
+        java.util.Objects.requireNonNull(priority);
     }
 
     public MusicQueueItem withStatus(QueueItemStatus newStatus) {

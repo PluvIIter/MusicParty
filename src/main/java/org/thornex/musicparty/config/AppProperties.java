@@ -4,11 +4,18 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@ConfigurationProperties(prefix = "app.music-api")
+@ConfigurationProperties(prefix = "app.music-api", ignoreUnknownFields = false)
 @Data
 public class AppProperties {
     private NeteaseApiConfig  netease  = new NeteaseApiConfig();
     private BilibiliApiConfig bilibili = new BilibiliApiConfig();
+    private java.util.Map<String, SourceConfig> sources = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Data
+    public static class SourceConfig {
+        private Boolean enabled;
+        private org.thornex.musicparty.source.DeliveryMode deliveryMode;
+    }
     private String adminPassword;
     private String baseUrl;
     private String authorName = "ThorNex";
@@ -27,6 +34,7 @@ public class AppProperties {
     /** 私人电台/私人DJ 模块配置（仅运行时生效） */
     @Data
     public static class PrivateDjConfig {
+        private String source = "netease";
         private String mode = "OFF";              // 三态开关：OFF=关闭 / FM=私人FM / DJ=私人DJ（选模式即开关，无需总开关）
         private boolean fillBlankEnabled = false; // 填充空白
         private boolean joinQueueEnabled = false; // 加入队列
@@ -109,7 +117,6 @@ public class AppProperties {
          * 才能解析高音质 DASH 音频并降低风控概率。
          */
         private String cookie;
-        private boolean enabled = true;
         /** B站视频时长上限（分钟），超过则前端标记为不可播放 */
         private int maxDurationMinutes = 10;
     }
@@ -119,6 +126,5 @@ public class AppProperties {
     public static class NeteaseApiConfig extends ApiConfig {
         private String cookie;
         private String quality = "exhigh"; // 默认音质：极高 (exhigh)
-        private boolean enabled = true;
     }
 }

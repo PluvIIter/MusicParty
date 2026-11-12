@@ -1,5 +1,7 @@
 package org.thornex.musicparty.service;
 
+import org.thornex.musicparty.source.ResourceKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,7 +32,7 @@ class MusicQueueManagerReorderTest {
     }
 
     private MusicQueueItem add(String id, String owner) {
-        return queue.add(new Music(id, id, List.of("Artist"), 1000, "netease", null),
+        return queue.add(new Music(id, id, List.of("Artist"), 1000, "netease", null, null),
                 new UserSummary(owner, owner, owner, false), QueueItemStatus.READY);
     }
 
@@ -40,7 +42,7 @@ class MusicQueueManagerReorderTest {
 
     private Map<String, QueueItemStatus> ready() {
         Map<String, QueueItemStatus> statuses = new HashMap<>();
-        queue.getQueueSnapshot().forEach(item -> statuses.put(item.music().id(), QueueItemStatus.READY));
+        queue.getQueueSnapshot().forEach(item -> statuses.put(ResourceKey.encode(item.music().platform(), item.music().id()), QueueItemStatus.READY));
         return statuses;
     }
 
@@ -51,15 +53,15 @@ class MusicQueueManagerReorderTest {
         MusicQueueItem a2 = add("a2", "A");
         MusicQueueItem c = add("c", "C");
         MusicQueueItem a3 = add("a3", "A");
-        assertFalse(queue.reorder(a3.queueId(), b.queueId(), "A"));
-        assertTrue(queue.reorder(a3.queueId(), a2.queueId(), "A"));
+        assertFalse(queue.reorder(a3.queueId(), b.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertTrue(queue.reorder(a3.queueId(), a2.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(List.of(a1.queueId(), b.queueId(), a3.queueId(), c.queueId(), a2.queueId()), ids());
-        assertTrue(queue.reorder(a1.queueId(), null, "A"));
+        assertTrue(queue.reorder(a1.queueId(), null, "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(List.of(a3.queueId(), b.queueId(), a2.queueId(), c.queueId(), a1.queueId()), ids());
         assertEquals(List.of(b, c), queue.getQueueSnapshot().stream()
                 .filter(item -> !item.enqueuedBy().token().equals("A")).toList());
         assertEquals(a3, queue.getItem(a3.queueId()).orElseThrow());
-        assertTrue(queue.reorder(a3.queueId(), a3.queueId(), "A"));
+        assertTrue(queue.reorder(a3.queueId(), a3.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(List.of(a3.queueId(), b.queueId(), a2.queueId(), c.queueId(), a1.queueId()), ids());
     }
 
@@ -68,18 +70,18 @@ class MusicQueueManagerReorderTest {
         MusicQueueItem a = add("a", "A");
         MusicQueueItem b = add("b", "B");
         List<MusicQueueItem> before = queue.getQueueSnapshot();
-        assertFalse(queue.reorder(b.queueId(), a.queueId(), "A"));
-        assertFalse(queue.reorder(a.queueId(), null, "B"));
-        assertFalse(queue.reorder("missing", b.queueId(), "A"));
-        assertFalse(queue.reorder(a.queueId(), "missing", "A"));
-        assertFalse(queue.reorder(null, b.queueId(), "A"));
+        assertFalse(queue.reorder(b.queueId(), a.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertFalse(queue.reorder(a.queueId(), null, "B", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertFalse(queue.reorder("missing", b.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertFalse(queue.reorder(a.queueId(), "missing", "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertFalse(queue.reorder(null, b.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         for (String actor : List.of("", " ", "SYSTEM", "ADMIN", "__FM__")) {
-            assertFalse(queue.reorder(a.queueId(), b.queueId(), actor));
+            assertFalse(queue.reorder(a.queueId(), b.queueId(), actor, org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         }
-        assertFalse(queue.reorder(a.queueId(), null, null));
+        assertFalse(queue.reorder(a.queueId(), null, null, org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(before, queue.getQueueSnapshot());
         queue.remove(b.queueId());
-        assertFalse(queue.reorder(a.queueId(), b.queueId(), "A"));
+        assertFalse(queue.reorder(a.queueId(), b.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(List.of(a), queue.getQueueSnapshot());
     }
 
@@ -89,9 +91,9 @@ class MusicQueueManagerReorderTest {
         MusicQueueItem a = add("a", "A");
         MusicQueueItem pin = add("pinned", "A").withPriority(priority);
         queue.restore(List.of(a, pin), List.of());
-        assertFalse(queue.reorder(pin.queueId(), a.queueId(), "A"));
-        assertFalse(queue.reorder(pin.queueId(), null, "A"));
-        assertFalse(queue.reorder(pin.queueId(), pin.queueId(), "A"));
+        assertFalse(queue.reorder(pin.queueId(), a.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertFalse(queue.reorder(pin.queueId(), null, "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertFalse(queue.reorder(pin.queueId(), pin.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(List.of(a, pin), queue.getQueueSnapshot());
     }
 
@@ -103,14 +105,14 @@ class MusicQueueManagerReorderTest {
         queue.ensureFmMarker();
         MusicQueueItem fm = queue.getQueueSnapshot().getLast();
         List<MusicQueueItem> before = queue.getQueueSnapshot();
-        assertFalse(queue.reorder(fm.queueId(), a.queueId(), MusicQueueManager.FM_MARKER_USER_TOKEN));
-        assertFalse(queue.reorder(system.queueId(), a.queueId(), "SYSTEM"));
-        assertFalse(queue.reorder(admin.queueId(), a.queueId(), "ADMIN"));
+        assertFalse(queue.reorder(fm.queueId(), a.queueId(), MusicQueueManager.FM_MARKER_USER_TOKEN, org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertFalse(queue.reorder(system.queueId(), a.queueId(), "SYSTEM", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertFalse(queue.reorder(admin.queueId(), a.queueId(), "ADMIN", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(before, queue.getQueueSnapshot());
         MusicQueueItem ownedFm = new MusicQueueItem("owned-fm", fm.music(), a.enqueuedBy(),
                 QueueItemStatus.READY, Priority.REGULAR);
         queue.restore(List.of(a, ownedFm), List.of());
-        assertFalse(queue.reorder(ownedFm.queueId(), a.queueId(), "A"));
+        assertFalse(queue.reorder(ownedFm.queueId(), a.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(List.of(a, ownedFm), queue.getQueueSnapshot());
     }
 
@@ -120,11 +122,11 @@ class MusicQueueManagerReorderTest {
         MusicQueueItem pin = add("pin", "B");
         MusicQueueItem a2 = add("a2", "A");
         queue.top(pin.queueId(), PlayMode.SHUFFLE);
-        assertFalse(queue.reorder(a2.queueId(), pin.queueId(), "A"));
-        assertTrue(queue.reorder(a2.queueId(), a1.queueId(), "A"));
+        assertFalse(queue.reorder(a2.queueId(), pin.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertTrue(queue.reorder(a2.queueId(), a1.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(List.of(pin.queueId(), a2.queueId(), a1.queueId()), ids());
         assertEquals(Priority.GLOBAL_TOP, queue.getItem(pin.queueId()).orElseThrow().priority());
-        assertEquals(pin.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, false, true, ready(), Set.of()).queueId());
+        assertEquals(pin.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()).queueId());
     }
 
     @Test
@@ -134,18 +136,18 @@ class MusicQueueManagerReorderTest {
         MusicQueueItem a1 = add("a1", "A");
         MusicQueueItem a2 = add("a2", "A");
         MusicQueueItem b = add("b", "B");
-        MusicQueueItem first = queue.pollNext(PlayMode.ROUND_ROBIN, true, true, ready(), Set.of());
+        MusicQueueItem first = queue.pollNext(PlayMode.ROUND_ROBIN, true, ready(), Set.of());
         assertEquals(a1, first);
         queue.clearPlaybackFailure(first);
         queue.markPlaybackFailed(a2);
         Set<String> heard = queue.getPlayedQueueIds();
-        assertTrue(queue.reorder(a1.queueId(), a2.queueId(), "A"));
+        assertTrue(queue.reorder(a1.queueId(), a2.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(heard, queue.getPlayedQueueIds());
         assertEquals(Map.of("A", false), queue.getMemberShufflePreferences());
-        MusicQueueItem next = queue.pollNext(PlayMode.ROUND_ROBIN, false, true, ready(), Set.of());
+        MusicQueueItem next = queue.pollNext(PlayMode.ROUND_ROBIN, true, ready(), Set.of());
         assertEquals(b.queueId(), next.queueId());
         queue.clearPlaybackFailure(next);
-        assertEquals(a1.queueId(), queue.pollNext(PlayMode.ROUND_ROBIN, true, true, ready(), Set.of()).queueId());
+        assertEquals(a1.queueId(), queue.pollNext(PlayMode.ROUND_ROBIN, true, ready(), Set.of()).queueId());
         assertFalse(queue.getPlayedQueueIds().contains(a2.queueId()));
     }
 
@@ -154,7 +156,7 @@ class MusicQueueManagerReorderTest {
         var a1 = add("a1", "A"); var b = add("b", "B"); var a2 = add("a2", "A"); var c = add("c", "C");
         assertTrue(queue.reorder(c.queueId(), a1.queueId(), "A", PlayMode.SEQUENTIAL));
         assertEquals(List.of(c.queueId(), a1.queueId(), b.queueId(), a2.queueId()), ids());
-        assertEquals(c.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, false, true, ready(), Set.of()).queueId());
+        assertEquals(c.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()).queueId());
         assertTrue(queue.reorder(a1.queueId(), null, "C", PlayMode.SEQUENTIAL));
         assertEquals(List.of(b.queueId(), a2.queueId(), a1.queueId()), ids());
     }
@@ -194,8 +196,8 @@ class MusicQueueManagerReorderTest {
         queue.clearPlaybackFailure(heard);
         queue.top(pinned.queueId(), PlayMode.ROUND_ROBIN);
         List<MusicQueueItem> before = queue.getQueueSnapshot();
-        assertFalse(queue.reorder(heard.queueId(), "stale-id", "A"));
-        assertFalse(queue.reorder(pinned.queueId(), heard.queueId(), "B"));
+        assertFalse(queue.reorder(heard.queueId(), "stale-id", "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
+        assertFalse(queue.reorder(pinned.queueId(), heard.queueId(), "B", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(before, queue.getQueueSnapshot());
         assertEquals(Set.of(heard.queueId()), queue.getPlayedQueueIds());
         assertEquals(Priority.USER_TOP, queue.getItem(pinned.queueId()).orElseThrow().priority());

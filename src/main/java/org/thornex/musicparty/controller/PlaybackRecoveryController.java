@@ -1,71 +1,93 @@
 package org.thornex.musicparty.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.PlayableMusic;
+import org.thornex.musicparty.dto.PlayerState;
 import org.thornex.musicparty.exception.ApiRequestException;
+import org.thornex.musicparty.media.MediaDeliveryService;
 import org.thornex.musicparty.service.MusicPlayerService;
+import org.thornex.musicparty.source.SourceRegistry;
 import reactor.core.publisher.Mono;
-import java.time.Duration;
 
-/** Refresh an expired link for the current track without seeking or changing the shared player. */
+import java.time.Duration;
+import java.util.Objects;
+
 @RestController
 public class PlaybackRecoveryController {
     private final MusicPlayerService player;
     private final AuthController auth;
     private final AppProperties properties;
-    private final NeteaseMusicApiService musicApi;
-    private String cachedCookie;
-    private PlayableMusic cachedTrack;
+    private final MediaDeliveryService delivery;
+    private final SourceRegistry registry;
+    private String cachedPlayback;
+    private String cachedSource;
+    private String cachedAuthorizationScope;
     private long cachedAt;
     private Mono<PlayableMusic> inFlight;
 
-    public PlaybackRecoveryController(MusicPlayerService player, AuthController auth, AppProperties properties, NeteaseMusicApiService musicApi) {
+    public PlaybackRecoveryController(MusicPlayerService player, AuthController auth, AppProperties properties,
+                                      MediaDeliveryService delivery, SourceRegistry registry) {
         this.player = player;
         this.auth = auth;
         this.properties = properties;
-        this.musicApi = musicApi;
+        this.delivery = delivery;
+        this.registry = registry;
     }
 
-    @GetMapping("/api/music/refresh/netease/{musicId}")
-    public synchronized Mono<ResponseEntity<PlayableMusic>> refresh(@PathVariable("musicId") String musicId,
+    @PostMapping("/api/v2/playbacks/{playbackId}/media/refresh")
+    public Mono<ResponseEntity<PlayableMusic>> refreshCurrent(@PathVariable String playbackId,
             @RequestHeader(value = "X-Room-Password", required = false) String password) {
+        return refreshPlayback(playbackId, password);
+    }
+
+    @GetMapping("/api/v2/playbacks/{playbackId}/media")
+    public Mono<ResponseEntity<PlayableMusic>> currentMedia(@PathVariable String playbackId,
+            @RequestHeader(value = "X-Room-Password", required = false) String password) {
+        return refreshPlayback(playbackId, password);
+    }
+
+    private Mono<ResponseEntity<PlayableMusic>> refreshPlayback(String playbackId, String password) {
+        return Mono.defer(() -> {
+            if (!authorized(password)) return Mono.just(ResponseEntity.status(403).cacheControl(CacheControl.noStore()).build());
+            PlayerState state = player.getCurrentPlayerState();
+            PlayableMusic track = state.nowPlaying() == null ? null : state.nowPlaying().music();
+            if (track == null || !Objects.equals(playbackId, state.playbackId()) || playbackId == null
+                    || !registry.isEnabled(track.platform()) || !"SONG".equals(track.kind())) {
+                return Mono.just(ResponseEntity.status(409).cacheControl(CacheControl.noStore()).build());
+            }
+            return sharedRefresh(playbackId, track).flatMap(updated -> {
+                var current = player.getCurrentPlayerState();
+                if (!Objects.equals(playbackId, current.playbackId()) || current.nowPlaying() == null
+                        || !track.id().equals(current.nowPlaying().music().id())
+                        || !track.platform().equals(current.nowPlaying().music().platform()) || !registry.isEnabled(track.platform())) {
+                    return Mono.just(ResponseEntity.status(409).cacheControl(CacheControl.noStore()).<PlayableMusic>build());
+                }
+                return Mono.just(ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(updated));
+            });
+        });
+    }
+
+    private synchronized Mono<PlayableMusic> sharedRefresh(String playbackId, PlayableMusic track) {
+        String authorizationScope = delivery.authorizationScope(track.platform());
+        if (inFlight != null && Objects.equals(cachedPlayback, playbackId) && Objects.equals(cachedSource, track.platform())
+                && Objects.equals(cachedAuthorizationScope, authorizationScope) && System.currentTimeMillis() - cachedAt < 5000) return inFlight;
+        cachedPlayback = playbackId; cachedSource = track.platform(); cachedAuthorizationScope = authorizationScope; cachedAt = System.currentTimeMillis();
+        inFlight = delivery.refreshSongUrl(track).timeout(Duration.ofSeconds(20))
+                .map(url -> {
+                    if (!Objects.equals(delivery.authorizationScope(track.platform()), authorizationScope)) throw new ApiRequestException("媒体凭据已更新，请重试");
+                    return new PlayableMusic(track.id(), track.name(), track.artists(), track.duration(), track.platform(), url, track.coverUrl(), track.kind(), track.externalUrl());
+                }).onErrorMap(error -> new ApiRequestException("MEDIA_CONTENT_CHANGED".equals(error.getMessage())
+                        ? "MEDIA_CONTENT_CHANGED" : "播放地址刷新失败，请稍后重试")).cache(Duration.ofSeconds(5));
+        return inFlight;
+    }
+
+    private boolean authorized(String password) {
         String room = auth.getRawPassword();
         String admin = properties.getAdminPassword();
-        boolean adminAccess = admin != null && !admin.isBlank() && admin.equals(password);
-        if (!adminAccess && (room == null || (!room.isEmpty() && !room.equals(password)))) {
-            return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore()).build());
-        }
-        var state = player.getCurrentPlayerState();
-        PlayableMusic track = state.nowPlaying() == null ? null : state.nowPlaying().music();
-        if (!properties.getNetease().isEnabled() || track == null || !"netease".equals(track.platform()) || !track.id().equals(musicId)) {
-            return Mono.just(ResponseEntity.status(HttpStatus.CONFLICT).build());
-        }
-        if (java.util.Objects.equals(cachedCookie, properties.getNetease().getCookie()) && track == cachedTrack && inFlight != null && System.currentTimeMillis() - cachedAt < 5000) return inFlight.map(this::response);
-        cachedTrack = track;
-        cachedCookie = properties.getNetease().getCookie();
-        cachedAt = System.currentTimeMillis();
-        inFlight = musicApi.refreshSongUrl(musicId)
-                .timeout(Duration.ofSeconds(12))
-                .map(url -> {
-                    var current = player.getCurrentPlayerState();
-                    if (current.nowPlaying() == null || current.nowPlaying().music() != track) {
-                        throw new ApiRequestException("曲目已切换，请等待同步");
-                    }
-                    return new PlayableMusic(track.id(), track.name(), track.artists(), track.duration(), track.platform(), url, track.coverUrl(), track.needsProxy());
-                })
-                .onErrorMap(error -> new ApiRequestException("播放地址刷新失败，请稍后重试"))
-                .cache(Duration.ofSeconds(5));
-        return inFlight.map(this::response);
+        return (admin != null && !admin.isBlank() && admin.equals(password))
+                || (room != null && (room.isEmpty() || room.equals(password)));
     }
-
-    private ResponseEntity<PlayableMusic> response(PlayableMusic music) {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(music);
-    }
-
 }

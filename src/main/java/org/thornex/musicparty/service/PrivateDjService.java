@@ -1,143 +1,189 @@
 package org.thornex.musicparty.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.PrivateDjSegment;
-import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import org.thornex.musicparty.exception.ApiRequestException;
+import org.thornex.musicparty.source.SourceRegistry;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 私人FM/私人DJ 内容提供器：批次拉取、缓存、顺序编排。 */
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class PrivateDjService {
+    private final Map<String, RecommendationProvider> providers;
+    private final SourceRegistry sources;
+    private final AppProperties properties;
+    private final Deque<PrivateDjSegment> batch = new ArrayDeque<>();
+    private final Map<PrivateDjSegment, Origin> origins = new java.util.IdentityHashMap<>();
+    private String activeScope;
+    private String activeMode;
+    private long generation;
+    private long selectionGeneration;
+    private Mono<List<PrivateDjSegment>> pending;
 
-    private final NeteaseMusicApiService neteaseMusicApiService;
-    private final AppProperties appProperties;
+    private record Origin(RecommendationProvider provider, String scope, long generation, String configuredMode) {}
+    private record Request(String mode, String configuredMode, long generation) {}
 
-    private final Deque<PrivateDjSegment> fmBatch = new ArrayDeque<>();
-    private final Deque<PrivateDjSegment> djBatch = new ArrayDeque<>();
-
-    /** 按当前配置模式取下一段（FM 或 DJ） */
-    public Mono<PrivateDjSegment> nextSegment() {
-        return "DJ".equals(appProperties.getPrivateDj().getMode()) ? nextDjSegment() : nextFmSegment();
-    }
-
-    /** 强制取私人FM 段（加入队列功能固定用 FM） */
-    public Mono<PrivateDjSegment> nextFmSegment() {
-        return nextSegmentFrom(fmBatch, true);
-    }
-
-    /** 强制取私人DJ 段 */
-    public Mono<PrivateDjSegment> nextDjSegment() {
-        return nextSegmentFrom(djBatch, false);
-    }
-
-    /** 清空批次缓存（模式切换 / 总开关关闭时调用） */
-    public void invalidate() {
-        synchronized (this) {
-            fmBatch.clear();
-            djBatch.clear();
-        }
-    }
-
-    private Mono<PrivateDjSegment> nextSegmentFrom(Deque<PrivateDjSegment> batch, boolean fm) {
-        synchronized (this) {
-            if (!batch.isEmpty()) {
-                return Mono.just(batch.poll());
+    public PrivateDjService(List<RecommendationProvider> providers, SourceRegistry sources, AppProperties properties) {
+        var registered = new HashMap<String, RecommendationProvider>();
+        for (var provider : providers) {
+            var modes = provider.supportedModes();
+            if (modes == null || !modes.contains("FM") || !java.util.Set.of("FM", "DJ").containsAll(modes)) {
+                throw new IllegalArgumentException("Recommendation provider must support FM; DJ is an optional extension");
+            }
+            if (registered.putIfAbsent(provider.sourceId(), provider) != null) {
+                throw new IllegalArgumentException("Duplicate recommendation provider: " + provider.sourceId());
             }
         }
-        Mono<JsonNode> fetch = fm
-                ? neteaseMusicApiService.fetchPersonalFm()
-                : neteaseMusicApiService.fetchAidjRcmd(null, null);
-        return fetch
-                .map(root -> fm ? parseFmBatch(root) : parseDjBatch(root))
-                .map(segments -> {
-                    synchronized (this) {
+        this.providers = Map.copyOf(registered);
+        this.sources = sources;
+        this.properties = properties;
+    }
+
+    public boolean isAvailable() { return supportsMode("FM"); }
+
+    public boolean supportsMode(String mode) {
+        try { return selected().supportedModes().contains(mode); }
+        catch (ApiRequestException error) { return false; }
+    }
+
+    public String sourceId() {
+        return properties.getPrivateDj().getSource();
+    }
+
+    public synchronized String authorizationScope() {
+        return scope(selected()) + ":" + properties.getPrivateDj().getMode() + ":" + generation;
+    }
+
+    public Mono<PrivateDjSegment> nextSegment() { return next(request(null)); }
+    public Mono<PrivateDjSegment> nextFmSegment() { return next(request("FM")); }
+    public Mono<PrivateDjSegment> nextDjSegment() { return next(request("DJ")); }
+
+    private synchronized Request request(String forcedMode) {
+        String configured = properties.getPrivateDj().getMode();
+        return new Request(forcedMode == null ? configured : forcedMode, configured, selectionGeneration);
+    }
+
+    private boolean current(Request request) {
+        return selectionGeneration == request.generation()
+                && request.configuredMode().equals(properties.getPrivateDj().getMode())
+                && !"OFF".equals(request.configuredMode());
+    }
+
+    public synchronized void invalidate() {
+        selectionGeneration++;
+        resetBatch();
+    }
+
+    private void resetBatch() {
+        batch.clear();
+        origins.clear();
+        activeScope = null;
+        activeMode = null;
+        pending = null;
+        generation++;
+    }
+
+    private RecommendationProvider selected() {
+        String source = sourceId();
+        var provider = providers.get(source);
+        if (source == null || source.isBlank() || provider == null) {
+            throw new ApiRequestException("CAPABILITY_UNAVAILABLE: 配置的私人FM/DJ音源没有推荐实现");
+        }
+        if (!sources.isEnabled(source)) throw new ApiRequestException("SOURCE_DISABLED: 私人FM/DJ音源已禁用");
+        if (!sources.descriptor(source).capabilities().recommendations()) {
+            throw new ApiRequestException("CAPABILITY_UNAVAILABLE: 配置的音源不支持私人FM/DJ");
+        }
+        sources.getRequired(source);
+        return provider;
+    }
+
+    private String scope(RecommendationProvider provider) {
+        return provider.sourceId() + ":" + provider.credentialRevision() + ":" + sources.authorizationEpoch(provider.sourceId());
+    }
+
+    private Mono<PrivateDjSegment> next(Request request) {
+        return Mono.defer(() -> {
+            String mode = request.mode();
+            synchronized (this) {
+                if (!current(request)) return Mono.error(new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐模式已变化"));
+            }
+            if (!"FM".equals(mode) && !"DJ".equals(mode)) {
+                return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 私人FM/DJ已关闭"));
+            }
+            var provider = selected();
+            if (!provider.supportedModes().contains(mode)) {
+                return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 配置的私人FM音源不支持私人DJ"));
+            }
+            String expected = scope(provider);
+            long version;
+            Mono<List<PrivateDjSegment>> fetch;
+            synchronized (this) {
+                if (!current(request)) return Mono.error(new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐模式已变化"));
+                if (!expected.equals(activeScope) || !mode.equals(activeMode)) {
+                    resetBatch();
+                    activeScope = expected;
+                    activeMode = mode;
+                }
+                if (!batch.isEmpty()) return Mono.just(remember(batch.removeFirst(), provider, expected, request.configuredMode()));
+                version = generation;
+                if (pending == null) {
+                    pending = Mono.defer(() -> provider.nextSegments(mode)).timeout(Duration.ofSeconds(15)).cache();
+                }
+                fetch = pending;
+            }
+            return fetch.flatMap(segments -> {
+                synchronized (this) {
+                    if (!current(request) || generation != version || selected() != provider || !expected.equals(scope(provider))) {
+                        return Mono.error(new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐音源或凭据已变化"));
+                    }
+                    if (pending == fetch) {
+                        pending = null;
                         batch.addAll(segments);
-                        return batch.poll();
                     }
-                });
-    }
-
-    // ---- JSON 解析（结构见 私人电台与私人DJ_API使用文档.md §3）----
-
-    static List<PrivateDjSegment> parseFmBatch(JsonNode root) {
-        List<PrivateDjSegment> out = new ArrayList<>();
-        JsonNode data = root.path("data");
-        if (!data.isArray()) return out;
-        for (JsonNode s : data) {
-            if (s.has("id")) out.add(segmentFromSong(s));
-        }
-        return out;
-    }
-
-    static List<PrivateDjSegment> parseDjBatch(JsonNode root) {
-        JsonNode res = root.path("data").path("aiDjResources");
-        // 第一遍：收集本批次内歌曲 id → 封面，供语音段取"被点评歌曲"的封面
-        Map<String, String> songCovers = new HashMap<>();
-        for (JsonNode r : res) {
-            if ("song".equals(r.path("type").asText())) {
-                JsonNode sd = r.path("value").path("songData");
-                if (!sd.isMissingNode() && sd.has("id")) {
-                    String cover = sd.path("album").path("picUrl").asText("");
-                    songCovers.put(String.valueOf(sd.path("id").asLong()), cover.isEmpty() ? null : toHttps(cover));
+                    if (batch.isEmpty()) return Mono.error(new ApiRequestException("RECOMMENDATIONS_EMPTY: 推荐没有返回可播放内容"));
+                    return Mono.just(remember(batch.removeFirst(), provider, expected, request.configuredMode()));
                 }
+            }).doOnError(error -> {
+                synchronized (this) { if (pending == fetch) pending = null; }
+            });
+        });
+    }
+
+    private PrivateDjSegment remember(PrivateDjSegment segment, RecommendationProvider provider, String expected, String configuredMode) {
+        if (origins.size() >= 256) origins.clear();
+        origins.put(segment, new Origin(provider, expected, generation, configuredMode));
+        return segment;
+    }
+
+    public Mono<PlayableMusic> getPlayable(PrivateDjSegment segment) {
+        return Mono.defer(() -> {
+            Origin origin;
+            synchronized (this) { origin = origins.get(segment); }
+            if (origin == null || !origin.configuredMode().equals(properties.getPrivateDj().getMode())
+                    || selected() != origin.provider() || !origin.scope().equals(scope(origin.provider()))) {
+                throw new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐内容已失效，请重新获取");
             }
-        }
-        List<PrivateDjSegment> out = new ArrayList<>();
-        for (JsonNode r : res) {
-            String type = r.path("type").asText();
-            if ("audio".equals(type)) {
-                JsonNode a = r.path("value").path("audioList").path(0);
-                String url = toHttps(a.path("audioUrl").asText());
-                if (!url.isEmpty()) {
-                    long durMs = Math.round(a.path("duration").asDouble() * 1000);
-                    String related = null;
-                    JsonNode rel = a.path("introductionRelatedSongIds");
-                    if (rel.isArray() && rel.size() > 0) {
-                        related = String.valueOf(rel.get(0).asLong());
+            return origin.provider().getPlayable(segment).map(playable -> {
+                synchronized (this) {
+                    if (origin.generation() != generation || !origin.configuredMode().equals(properties.getPrivateDj().getMode())
+                            || selected() != origin.provider()
+                            || !origin.scope().equals(scope(origin.provider()))) {
+                        throw new ApiRequestException("RECOMMENDATIONS_CHANGED: 推荐音源或凭据已变化");
                     }
-                    out.add(new PrivateDjSegment.Voice(url, a.path("audioId").asText(), durMs, related,
-                            related == null ? null : songCovers.get(related)));
                 }
-            } else if ("song".equals(type)) {
-                JsonNode sd = r.path("value").path("songData");
-                if (!sd.isMissingNode() && sd.has("id")) out.add(segmentFromSong(sd));
-            }
-        }
-        return out;
-    }
-
-    private static PrivateDjSegment.Song segmentFromSong(JsonNode s) {
-        List<String> artists = new ArrayList<>();
-        for (JsonNode a : s.path("artists")) {
-            artists.add(a.path("name").asText());
-        }
-        return new PrivateDjSegment.Song(
-                String.valueOf(s.path("id").asLong()),
-                s.path("name").asText(),
-                artists,
-                s.path("duration").asLong(),
-                toHttps(s.path("album").path("picUrl").asText())
-        );
-    }
-
-    /** 网易云 CDN 资源统一升级为 HTTPS，避免 HTTPS 站点上的混合内容被拦截（音乐直链与封面同理） */
-    private static String toHttps(String url) {
-        if (url != null && url.startsWith("http://")) {
-            return url.replace("http://", "https://");
-        }
-        return url;
+                if (!origin.provider().sourceId().equals(playable.platform())) {
+                    throw new ApiRequestException("MEDIA_CONTENT_CHANGED: 推荐内容音源不匹配");
+                }
+                return playable;
+            });
+        });
     }
 }

@@ -32,6 +32,9 @@ services:
       # [平台凭证]
       - NETEASE_ENABLED=true         # 是否开启网易云音乐源
       - BILIBILI_ENABLED=true        # 是否开启 Bilibili 源
+      - NETEASE_DELIVERY_MODE=DIRECT_URL
+      - BILIBILI_DELIVERY_MODE=SERVER_DOWNLOAD
+      - PRIVATE_DJ_SOURCE=netease
       - NETEASE_COOKIE=""            # 网易云 Cookie
       - NETEASE_QUALITY=exhigh       # 网易云音质 (standard, higher, exhigh, lossless, hires)
       - BILIBILI_COOKIE=""           # B站完整Cookie(可选，仅B站源需要)

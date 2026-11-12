@@ -1,5 +1,7 @@
 package org.thornex.musicparty.service;
 
+import org.thornex.musicparty.source.ResourceKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
@@ -20,18 +22,18 @@ class RetainedPlaylistTest {
     }
 
     private MusicQueueItem add(String id, String owner) {
-        return queue.add(new Music(id, id, List.of("Test"), 1000, "netease", ""),
+        return queue.add(new Music(id, id, List.of("Test"), 1000, "netease", "", null),
                 new UserSummary(owner, owner, owner, false), QueueItemStatus.READY);
     }
 
     private Map<String, QueueItemStatus> ready() {
         Map<String, QueueItemStatus> result = new HashMap<>();
-        queue.getQueueSnapshot().forEach(item -> result.put(item.music().id(), QueueItemStatus.READY));
+        queue.getQueueSnapshot().forEach(item -> result.put(ResourceKey.encode(item.music().platform(), item.music().id()), QueueItemStatus.READY));
         return result;
     }
 
     private MusicQueueItem pick(boolean fair, Set<String> online) {
-        MusicQueueItem item = queue.pollNext(fair ? PlayMode.ROUND_ROBIN : PlayMode.SHUFFLE, fair, false, ready(), online);
+        MusicQueueItem item = queue.pollNext(fair ? PlayMode.ROUND_ROBIN : PlayMode.SHUFFLE, false, ready(), online);
         if (item != null) queue.clearPlaybackFailure(item);
         return item;
     }
@@ -40,7 +42,7 @@ class RetainedPlaylistTest {
         assertFalse(props.getQueue().isRetainPlaylist());
         MusicQueueItem a = add("a", "A");
         MusicQueueItem b = add("b", "A");
-        assertEquals(a, queue.pollNext(PlayMode.SEQUENTIAL, true, true, ready(), Set.of()));
+        assertEquals(a, queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()));
         assertEquals(List.of(b), queue.getQueueSnapshot());
         props.getQueue().setRetainPlaylist(true);
         assertEquals(b, pick(true, Set.of("A")));
@@ -55,9 +57,9 @@ class RetainedPlaylistTest {
         MusicQueueItem a = add("a", "A");
         MusicQueueItem b = add("b", "B");
         queue.top(b.queueId(), PlayMode.SEQUENTIAL);
-        assertEquals(b.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, true, true, ready(), Set.of()).queueId());
+        assertEquals(b.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()).queueId());
         assertEquals(List.of(a, b), queue.getQueueSnapshot());
-        assertEquals(a.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, true, true, ready(), Set.of()).queueId());
+        assertEquals(a.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()).queueId());
     }
 
     @Test void unequalMemberPlaylistsHaveIndependentRoundsAndStrictTurns() {
@@ -168,7 +170,7 @@ class RetainedPlaylistTest {
         props.getQueue().setRetainPlaylist(true);
         MusicQueueItem old = add("old", "A"); pick(true, Set.of("A"));
         MusicQueueItem fresh = add("new", "A");
-        MusicQueueItem attempted = queue.pollNext(PlayMode.ROUND_ROBIN, true, false, ready(), Set.of("A"));
+        MusicQueueItem attempted = queue.pollNext(PlayMode.ROUND_ROBIN, false, ready(), Set.of("A"));
         assertEquals(fresh.queueId(), attempted.queueId());
         queue.markPlaybackFailed(attempted);
         assertFalse(queue.getPlayedQueueIds().contains(fresh.queueId()));
@@ -190,6 +192,6 @@ class RetainedPlaylistTest {
         assertEquals(fresh.queueId(), pick(true, Set.of("A")).queueId());
         queue.restore(queue.getQueueSnapshot(), List.of(old.music()));
         queue.restorePlayedQueueIds(null);
-        assertEquals(Set.of(old.queueId()), queue.getPlayedQueueIds());
+        assertTrue(queue.getPlayedQueueIds().isEmpty());
     }
 }

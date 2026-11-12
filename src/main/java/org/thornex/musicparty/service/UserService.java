@@ -192,13 +192,6 @@ public class UserService {
         return usersByToken.values().stream().anyMatch(u -> u.getName().equalsIgnoreCase(name));
     }
 
-    public boolean bindAccount(String sessionId, String platform, String accountId) {
-        return getUserBySession(sessionId).map(user -> {
-            user.getBindings().put(platform, accountId);
-            return true;
-        }).orElse(false);
-    }
-
     public List<UserSummary> getOnlineUserSummaries() {
         return usersByToken.values().stream()
                 // 只返回在线用户 (sessionId != null)

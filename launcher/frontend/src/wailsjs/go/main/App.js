@@ -17,3 +17,15 @@ export function StartServices() {
 export function StopServices() {
   return window['go']['main']['App']['StopServices']();
 }
+
+export function GetServiceStatuses() {
+  return window['go']['main']['App']['GetServiceStatuses']();
+}
+
+export function GetSourceDescriptors() {
+  return window['go']['main']['App']['GetSourceDescriptors']();
+}
+
+export function OpenBrowser(arg1) {
+  return window['go']['main']['App']['OpenBrowser'](arg1);
+}

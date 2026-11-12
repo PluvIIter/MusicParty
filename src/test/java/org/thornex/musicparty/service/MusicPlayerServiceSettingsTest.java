@@ -29,15 +29,13 @@ class MusicPlayerServiceSettingsTest {
     }
 
     private MusicPlayerService build() {
-        return new MusicPlayerService(
+        return PlayerTestFactory.create(
                 List.of(),
                 mock(org.thornex.musicparty.service.UserService.class),
-                mock(org.thornex.musicparty.service.LocalCacheService.class),
                 mock(org.thornex.musicparty.service.stream.LiveStreamService.class),
                 mock(MusicQueueManager.class),
                 mock(ApplicationEventPublisher.class),
                 new AppProperties(),
-                mock(NeteaseMusicApiService.class),
                 mock(PrivateDjService.class)
         );
     }
@@ -47,12 +45,10 @@ class MusicPlayerServiceSettingsTest {
         MusicPlayerService service = build();
 
         service.applyPlayerSettings(new SettingsSnapshot.PlayerSettings(
-                "SHUFFLE", true, true, true, 0.75, 20, true, true, true));
+                "SHUFFLE", true, true, 0.75, 20, true, true, true));
 
         PlayerState state = service.getCurrentPlayerState();
         assertEquals("SHUFFLE", state.playMode());
-        assertTrue(state.isShuffle());              // isShuffle 派生同步
-        assertFalse(state.isFairShuffle(), "Explicit SHUFFLE mode overrides the legacy fairShuffle flag");
         assertTrue(state.allowOfflineShuffle());
         assertTrue(state.isVoteSkipEnabled());
         assertEquals(0.75, state.voteSkipThreshold());
@@ -66,11 +62,10 @@ class MusicPlayerServiceSettingsTest {
     void applyPlayerSettingsSyncsIsShuffleForNonShuffleModes() {
         MusicPlayerService service = build();
         service.applyPlayerSettings(new SettingsSnapshot.PlayerSettings(
-                "REPEAT_ONE", null, null, null, null, null, null, null, null));
+                "REPEAT_ONE", null, null, null, null, null, null, null));
 
         PlayerState state = service.getCurrentPlayerState();
         assertEquals("REPEAT_ONE", state.playMode());
-        assertFalse(state.isShuffle());
     }
 
     @Test
@@ -78,25 +73,23 @@ class MusicPlayerServiceSettingsTest {
         MusicPlayerService service = build();
         // 先切到非默认模式，再喂非法值 —— 钉住"失败时保留当前模式、不回退默认"
         service.applyPlayerSettings(new SettingsSnapshot.PlayerSettings(
-                "SHUFFLE", null, null, null, null, null, null, null, null));
+                "SHUFFLE", null, null, null, null, null, null, null));
         service.applyPlayerSettings(new SettingsSnapshot.PlayerSettings(
-                "BOGUS", null, null, null, null, null, null, null, null));
+                "BOGUS", null, null, null, null, null, null, null));
 
         PlayerState state = service.getCurrentPlayerState();
         assertEquals("SHUFFLE", state.playMode()); // 非法值被忽略，保留 SHUFFLE
-        assertTrue(state.isShuffle());
     }
 
     @Test
     void getPlayerSettingsCapturesCurrentState() {
         MusicPlayerService service = build();
         service.applyPlayerSettings(new SettingsSnapshot.PlayerSettings(
-                "SHUFFLE", false, true, true, 0.6, 10, true, false, true));
+                "SHUFFLE", true, true, 0.6, 10, true, false, true));
 
         SettingsSnapshot.PlayerSettings captured = service.getPlayerSettings();
 
         assertEquals("SHUFFLE", captured.playMode());
-        assertFalse(captured.fairShuffle());
         assertTrue(captured.allowOfflineShuffle());
         assertTrue(captured.voteSkipEnabled());
         assertEquals(0.6, captured.voteSkipThreshold());
@@ -113,7 +106,6 @@ class MusicPlayerServiceSettingsTest {
         SettingsSnapshot.PlayerSettings captured = service.getPlayerSettings();
 
         assertEquals("SEQUENTIAL", captured.playMode());
-        assertTrue(captured.fairShuffle());         // 构造默认 true
         assertFalse(captured.allowOfflineShuffle());
         assertFalse(captured.voteSkipEnabled());
         assertEquals(0.5, captured.voteSkipThreshold());
@@ -143,7 +135,7 @@ class MusicPlayerServiceSettingsTest {
     @Test
     void seekWithoutTrackIsNoOp() {
         MusicPlayerService service = build();
-        assertDoesNotThrow(() -> service.seekTo("session", 5000));
+        assertDoesNotThrow(() -> service.seekTo("session", 5000, "no-track"));
         assertEquals(0L, service.getCurrentPlayerState().seekNonce());
     }
 

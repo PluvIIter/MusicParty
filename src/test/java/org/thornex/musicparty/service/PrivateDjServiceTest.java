@@ -1,117 +1,197 @@
 package org.thornex.musicparty.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.PrivateDjSegment;
-import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import org.thornex.musicparty.exception.ApiRequestException;
+import org.thornex.musicparty.source.*;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
+
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.*;
 
 class PrivateDjServiceTest {
-
-    private final ObjectMapper om = new ObjectMapper();
-    private AppProperties props;
-    private NeteaseMusicApiService api;
+    private AppProperties properties;
+    private SourceRegistry sources;
+    private RecommendationProvider provider;
     private PrivateDjService service;
+    private final PrivateDjSegment.Song first = new PrivateDjSegment.Song("1", "First", List.of(), 1000, null);
+    private final PrivateDjSegment.Song second = new PrivateDjSegment.Song("2", "Second", List.of(), 1000, null);
 
     @BeforeEach
     void setUp() {
-        props = new AppProperties();
-        api = mock(NeteaseMusicApiService.class);
-        service = new PrivateDjService(api, props);
-    }
-
-    private static final String FM_JSON = """
-        {"data":[
-          {"id":1981999919,"name":"相爱就是说了100次对不起","duration":264727,
-           "artists":[{"name":"Crispy脆乐团"}],
-           "album":{"name":"爱是我们必经的辛苦","picUrl":"http://x/pic.jpg"}},
-          {"id":22425068,"name":"Nervous Breakdown","duration":180000,
-           "artists":[{"name":"Aa"}],"album":{}}
-        ]}""";
-
-    private static final String DJ_JSON = """
-        {"data":{"tagName":"","aiDjResources":[
-          {"type":"audio","value":{"audioList":[{"audioId":"prompt_song_x","audioUrl":"http://aidj/x.mp3","duration":15.1,"introductionRelatedSongIds":[3597639]}]}},
-          {"type":"song","value":{"songId":3597639,"songData":{"id":3597639,"name":"Run, Run, Run","duration":240000,"artists":[{"name":"The Real Group"}],"album":{"name":"FILOU","picUrl":"http://cover/run.jpg"}}}},
-          {"type":"song","value":{"songId":3389900618,"songData":{"id":3389900618,"name":"你又躲","duration":200000,"artists":[{"name":"S1ent"}]}}},
-          {"type":"audio","value":{"audioList":[{"audioId":"prompt_song_y","audioUrl":"http://aidj/y.mp3","duration":15.5,"introductionRelatedSongIds":[438204707]}]}},
-          {"type":"song","value":{"songId":438204707,"songData":{"id":438204707,"name":"天若有情","duration":250000,"artists":[{"name":"黄丽玲"}]}}}
-        ]}}""";
-
-    private JsonNode parse(String json) throws Exception { return om.readTree(json); }
-
-    @Test
-    void fmBatchYieldsSongsInOrderThenRefills() throws Exception {
-        props.getPrivateDj().setMode("FM");
-        when(api.fetchPersonalFm()).thenReturn(Mono.just(parse(FM_JSON)));
-        PrivateDjSegment s1 = service.nextSegment().block();
-        assertInstanceOf(PrivateDjSegment.Song.class, s1);
-        assertEquals("1981999919", ((PrivateDjSegment.Song) s1).songId());
-        assertEquals("相爱就是说了100次对不起", ((PrivateDjSegment.Song) s1).name());
-        assertEquals(264727L, ((PrivateDjSegment.Song) s1).durationMs());
-        // 解析时统一升级为 HTTPS（防止 HTTPS 站点混合内容拦截封面）
-        assertEquals("https://x/pic.jpg", ((PrivateDjSegment.Song) s1).coverUrl());
-
-        PrivateDjSegment s2 = service.nextSegment().block();
-        assertEquals("22425068", ((PrivateDjSegment.Song) s2).songId());
-
-        // 批次耗尽后自动再拉
-        when(api.fetchPersonalFm()).thenReturn(Mono.just(parse(FM_JSON)));
-        PrivateDjSegment s3 = service.nextSegment().block();
-        assertEquals("1981999919", ((PrivateDjSegment.Song) s3).songId());
-        verify(api, times(2)).fetchPersonalFm();
+        properties = new AppProperties();
+        properties.getPrivateDj().setMode("FM");
+        properties.getPrivateDj().setSource("public-feed");
+        sources = mock(SourceRegistry.class);
+        provider = mock(RecommendationProvider.class);
+        when(provider.sourceId()).thenReturn("public-feed");
+        when(provider.supportedModes()).thenReturn(Set.of("FM", "DJ"));
+        when(sources.isEnabled("public-feed")).thenReturn(true);
+        when(sources.descriptor("public-feed")).thenReturn(new SourceDescriptor("public-feed", "Feed", "music",
+                new SourceCapabilities(false, false, false, false, false, true, false, false),
+                Set.of(DeliveryMode.DIRECT_URL), List.of()));
+        when(provider.nextSegments(anyString())).thenReturn(Mono.just(List.of(first, second)));
+        service = new PrivateDjService(List.of(provider), sources, properties);
     }
 
     @Test
-    void djBatchYieldsVoiceThenSongsInArrayOrder() throws Exception {
-        props.getPrivateDj().setMode("DJ");
-        when(api.fetchAidjRcmd(nullable(Double.class), nullable(Double.class))).thenReturn(Mono.just(parse(DJ_JSON)));
-        PrivateDjSegment v1 = service.nextDjSegment().block();
-        assertInstanceOf(PrivateDjSegment.Voice.class, v1);
-        assertEquals("https://aidj/x.mp3", ((PrivateDjSegment.Voice) v1).voiceUrl());
-        assertEquals(15100L, ((PrivateDjSegment.Voice) v1).durationMs());
-        assertEquals("3597639", ((PrivateDjSegment.Voice) v1).relatedSongId());
-        assertEquals("https://cover/run.jpg", ((PrivateDjSegment.Voice) v1).relatedCoverUrl());
-
-        PrivateDjSegment s1 = service.nextDjSegment().block();
-        assertInstanceOf(PrivateDjSegment.Song.class, s1);
-        assertEquals("3597639", ((PrivateDjSegment.Song) s1).songId());
-
-        PrivateDjSegment s2 = service.nextDjSegment().block();
-        assertEquals("3389900618", ((PrivateDjSegment.Song) s2).songId());
-
-        PrivateDjSegment v2 = service.nextDjSegment().block();
-        assertInstanceOf(PrivateDjSegment.Voice.class, v2);
-        assertEquals("https://aidj/y.mp3", ((PrivateDjSegment.Voice) v2).voiceUrl());
+    void publicProviderYieldsBatchInOrderAndRefills() {
+        assertTrue(service.isAvailable());
+        assertEquals(first, service.nextSegment().block());
+        assertEquals(second, service.nextSegment().block());
+        assertEquals(first, service.nextSegment().block());
+        verify(provider, times(2)).nextSegments("FM");
     }
 
     @Test
-    void nextFmSegmentForcesFmRegardlessOfMode() throws Exception {
-        props.getPrivateDj().setMode("DJ"); // 模式是 DJ，但强制取 FM
-        when(api.fetchPersonalFm()).thenReturn(Mono.just(parse(FM_JSON)));
-        when(api.fetchAidjRcmd(any(), any())).thenReturn(Mono.just(parse(DJ_JSON)));
-        PrivateDjSegment seg = service.nextFmSegment().block();
-        assertInstanceOf(PrivateDjSegment.Song.class, seg);
-        assertEquals("1981999919", ((PrivateDjSegment.Song) seg).songId());
-        verify(api, never()).fetchAidjRcmd(any(), any());
-    }
-
-    @Test
-    void invalidateClearsBatches() throws Exception {
-        props.getPrivateDj().setMode("FM");
-        when(api.fetchPersonalFm()).thenReturn(Mono.just(parse(FM_JSON)));
+    void modeChangeAndInvalidationDiscardCachedBatch() {
         service.nextSegment().block();
+        properties.getPrivateDj().setMode("DJ");
+        assertEquals(first, service.nextSegment().block());
+        verify(provider).nextSegments("DJ");
         service.invalidate();
-        when(api.fetchPersonalFm()).thenReturn(Mono.just(parse(FM_JSON)));
+        assertEquals(first, service.nextFmSegment().block());
+        verify(provider, times(2)).nextSegments("FM");
+    }
+
+    @Test
+    void noPublicProviderIsExplicitlyUnavailableWithoutAccountFallback() {
+        service = new PrivateDjService(List.of(), sources, properties);
+        assertFalse(service.isAvailable());
+        ApiRequestException error = assertThrows(ApiRequestException.class, () -> service.nextSegment().block());
+        assertTrue(error.getMessage().contains("CAPABILITY_UNAVAILABLE"));
+        verify(provider, never()).nextSegments(anyString());
+        verify(provider, never()).getPlayable(any());
+    }
+
+    @Test
+    void disabledProviderCannotServeEvenCachedContent() {
         service.nextSegment().block();
-        verify(api, times(2)).fetchPersonalFm();
+        when(sources.isEnabled("public-feed")).thenReturn(false);
+        assertFalse(service.isAvailable());
+        assertThrows(ApiRequestException.class, () -> service.nextSegment().block());
+        verify(provider).nextSegments("FM");
+    }
+
+    @Test
+    void invalidationRejectsStaleBatchAndDoesNotLeakIt() {
+        Sinks.One<List<PrivateDjSegment>> response = Sinks.one();
+        when(provider.nextSegments("FM")).thenReturn(response.asMono());
+        var result = service.nextSegment().toFuture();
+        service.invalidate();
+        response.tryEmitValue(List.of(second));
+        assertTrue(result.isCompletedExceptionally());
+        when(provider.nextSegments("FM")).thenReturn(Mono.just(List.of(first)));
+        assertEquals(first, service.nextSegment().block());
+    }
+
+    @Test
+    void djIsOptionalExtensionOfConfiguredFmProvider() {
+        when(provider.supportedModes()).thenReturn(Set.of("FM"));
+        assertTrue(service.supportsMode("FM"));
+        assertFalse(service.supportsMode("DJ"));
+        assertThrows(ApiRequestException.class, () -> service.nextDjSegment().block());
+        verify(provider, never()).nextSegments("DJ");
+        assertEquals(first, service.nextFmSegment().block());
+    }
+
+    @Test
+    void djOnlyProviderCannotRegisterWithoutBaseFmCapability() {
+        when(provider.supportedModes()).thenReturn(Set.of("DJ"));
+        assertThrows(IllegalArgumentException.class, () -> new PrivateDjService(List.of(provider), sources, properties));
+    }
+
+    @Test
+    void configuredSourceNeverFallsBackToAnotherAvailableProvider() {
+        properties.getPrivateDj().setSource("missing");
+        assertFalse(service.isAvailable());
+        assertThrows(ApiRequestException.class, () -> service.nextSegment().block());
+        verify(provider, never()).nextSegments(anyString());
+    }
+
+    @Test
+    void credentialChangeDiscardsBatchAndRejectsHandedOutSegment() {
+        var old = service.nextSegment().block();
+        when(provider.credentialRevision()).thenReturn(1L);
+        assertThrows(ApiRequestException.class, () -> service.getPlayable(old).block());
+        assertEquals(first, service.nextSegment().block());
+        verify(provider, times(2)).nextSegments("FM");
+    }
+
+    @Test
+    void selectionChangesWhileFetchingCannotCommitOldBatch() {
+        Sinks.One<List<PrivateDjSegment>> response = Sinks.one();
+        when(provider.nextSegments("FM")).thenReturn(response.asMono());
+        var future = service.nextSegment().toFuture();
+        properties.getPrivateDj().setSource("missing");
+        response.tryEmitValue(List.of(first));
+        assertTrue(future.isCompletedExceptionally());
+    }
+
+    @Test
+    void requestCreatedBeforeDisableCannotBecomeNewGenerationOnSubscribe() {
+        var request = service.nextSegment();
+        properties.getPrivateDj().setMode("OFF");
+        service.invalidate();
+        assertThrows(ApiRequestException.class, request::block);
+        verify(provider, never()).nextSegments(anyString());
+    }
+
+    @Test
+    void disableDuringAuthorizationSnapshotRejectsOldRequestBeforeBatchCreation() throws Exception {
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(provider.credentialRevision()).thenAnswer(invocation -> {
+            entered.countDown();
+            assertTrue(release.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            return 0L;
+        });
+        var future = java.util.concurrent.CompletableFuture.supplyAsync(() -> service.nextSegment().block());
+        try {
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            properties.getPrivateDj().setMode("OFF");
+            service.invalidate();
+        } finally {
+            release.countDown();
+        }
+        assertThrows(java.util.concurrent.ExecutionException.class,
+                () -> future.get(5, java.util.concurrent.TimeUnit.SECONDS));
+        verify(provider, never()).nextSegments(anyString());
+    }
+
+    @Test
+    void forcedFmMarkerStillRejectsRequestAfterConfiguredModeChanges() {
+        properties.getPrivateDj().setMode("DJ");
+        var request = service.nextFmSegment();
+        properties.getPrivateDj().setMode("FM");
+        service.invalidate();
+        assertThrows(ApiRequestException.class, request::block);
+    }
+
+    @Test
+    void concurrentRequestsShareOneFetchButReceiveDifferentSegments() {
+        Sinks.One<List<PrivateDjSegment>> response = Sinks.one();
+        when(provider.nextSegments("FM")).thenReturn(response.asMono());
+        var one = service.nextSegment().toFuture();
+        var two = service.nextSegment().toFuture();
+        response.tryEmitValue(List.of(first, second));
+        assertNotEquals(one.join(), two.join());
+        verify(provider).nextSegments("FM");
+    }
+
+    @Test
+    void playableResolutionUsesProviderRatherThanInventingTrackSource() {
+        service.nextSegment().block();
+        var playable = new PlayableMusic("1", "First", List.of(), 1000, "public-feed", "https://audio.invalid", null, "SONG", null);
+        when(provider.getPlayable(first)).thenReturn(Mono.just(playable));
+        assertSame(playable, service.getPlayable(first).block());
+        verify(sources, atLeastOnce()).getRequired("public-feed");
     }
 }

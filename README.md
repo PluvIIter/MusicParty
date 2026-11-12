@@ -17,6 +17,10 @@
 
 <img width="1778" height="1080" alt="image" src="https://github.com/user-attachments/assets/64d7f5d1-9837-43ab-8c1b-dad78361b348" />
 
+## 版本与数据
+
+本分支只支持当前网络协议和配置格式，不保留旧版接口或配置别名。请同时更新服务端、Web 客户端和启动器。房间旧存档会尝试备份后导入并改写为当前格式，读取失败时尝试备份并允许后续覆盖；内置备份失败不阻止继续写入，升级前请务必自行备份。音源启停只配置 `sources.<sourceId>.enabled`，不再读取适配器连接配置中的启用字段。
+
 ## 核心特性
 
 *   **多平台支持**：
@@ -30,7 +34,9 @@
 *   **房间权限**：支持设置房间密码，或管理员指令实时锁定/解锁房间。
 *   **实时互动**：内置聊天室、点赞动效、系统日志广播。
 *   **智能队列**：支持顺序播放、轮询播放、随机播放和单曲循环；轮询防止单人霸榜，个人歌单支持拖动排序。
-*   **私人电台 / 私人DJ**：接入网易云推荐，支持私人FM 持续推歌与私人DJ（AI 语音点评+歌曲）两种模式。
+*   **用户收藏**：通过搜索并选择用户完成本机绑定，只作为公开收藏查询目标，不是平台登录；不提供直接输入 UID。需要目标用户专属 Cookie 的类别不提供，配置 Cookie 账号收藏专辑不提供。
+*   **私人 FM / DJ**：由部署配置 `PRIVATE_DJ_SOURCE` 指定唯一推荐音源，默认 `netease`，目前由网易云实现并使用配置的 Cookie。保留填空、入队和托管；不支持或失效时明确提示，不自动换源。此功能是公开收藏身份规则之外的明确例外。
+*   **动态音源能力**：搜索、专辑和收藏分类由后端音源目录声明；交付可选择直链或服务器下载，不需要在前端添加平台名单。本机 LIKESONG 始终独立保存、展示。
 *   **直播音频流**：可以开启直播音频流，使用一个简单的链接来实时收听，用于类似于vrChat等类似场景。
 
 ## Docker 部署（推荐）
@@ -89,8 +95,11 @@ docker run -d \
 | `NETEASE_API_URL`         | 是  | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。           |
 | `BASE_URL`                | 否  | 服务的域名（带协议）。用户获取直播流链接时，拼接在前面。默认为 `http://localhost:8848`。                    |
 | `BILIBILI_ENABLED`        | 否  | B站源是否开启。                                                                    |
-| `BILIBILI_COOKIE`         | 否  | B站账号的**完整 Cookie**（浏览器登录后复制的完整 Cookie 串，含 buvid3/SESSDATA/bili_jct 等）。不填仅 B站源不可用，不影响其他音乐源；填入后可用 B站源并解析高音质 DASH 音频。 |
-| `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。配置后可播放 VIP 歌曲及获取更高音质。                                          |
+| `BILIBILI_COOKIE`         | 否  | 仅用于受限音频取流；公开搜索和收藏使用匿名设备信息，不依赖目标用户 Cookie。上游风控仍可能拒绝匿名请求。 |
+| `NETEASE_DELIVERY_MODE` | 否 | `DIRECT_URL`（默认）或 `SERVER_DOWNLOAD`。 |
+| `BILIBILI_DELIVERY_MODE` | 否 | `SERVER_DOWNLOAD`（默认）或 `DIRECT_URL`；直链格式及可用性取决于上游。 |
+| `PRIVATE_DJ_SOURCE` | 否 | 私人 FM / DJ 唯一提供源，默认 `netease`；当前仅网易云实现，使用该源配置 Cookie。 |
+| `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。用于 VIP 音频及明确例外的私人 FM / DJ，不用于个人收藏目标。                                          |
 | `NETEASE_QUALITY`         | 否  | 网易云音质等级。可选：`standard`, `higher`, `exhigh`, `lossless`, `hires`。默认 `exhigh`。 |
 | `QUEUE_MAX_SIZE`          | 否  | 播放队列最大长度，默认 `1000`。                                                         |
 | `QUEUE_HISTORY_SIZE`      | 否  | 播放历史记录保留数量，默认 `50`。当播放列表里没有音乐时，会从历史记录随机抽选。                                  |

@@ -76,6 +76,7 @@
                                         </button>
                                         <button
                                             @click="modeDialogOpen = true"
+                                            aria-label="选择播放模式"
                                             :disabled="!playerStore.connected || playerStore.isPlayModeLocked"
                                             :title="`${currentMode.label}：${currentMode.description}`"
                                             class="flex flex-col items-center justify-center p-4 bg-surface border border-line hover:border-accent hover:text-accent transition-all group disabled:opacity-40 disabled:cursor-not-allowed"
@@ -316,6 +317,7 @@
                                         >
                                         <div class="grid grid-cols-2 gap-1 p-1 bg-surface border border-line">
                                             <button
+                                                v-if="privateDj.fmSupported === true"
                                                 @click="setPrivateDjMode(privateDj.mode === 'FM' ? 'OFF' : 'FM')"
                                                 class="py-1.5 text-[10px] font-bold transition-colors"
                                                 :class="
@@ -327,6 +329,7 @@
                                                 私人FM
                                             </button>
                                             <button
+                                                v-if="privateDj.djSupported === true"
                                                 @click="setPrivateDjMode(privateDj.mode === 'DJ' ? 'OFF' : 'DJ')"
                                                 class="py-1.5 text-[10px] font-bold transition-colors"
                                                 :class="
@@ -338,9 +341,27 @@
                                                 私人DJ
                                             </button>
                                         </div>
-                                        <p class="text-[8px] text-ink-subtle">
-                                            点选即开启，再点已选中的模式即关闭；私人DJ模式=先播语音再播歌；加入队列功能固定为私人FM
+                                        <p
+                                            v-if="privateDj.fmSupported === true || privateDj.djSupported === true"
+                                            class="text-[8px] text-ink-subtle"
+                                        >
+                                            点选即开启，再点已选中的模式即关闭<span
+                                                v-if="privateDj.djSupported === true"
+                                                >；私人DJ模式=先播语音再播歌</span
+                                            ><span v-if="privateDj.fmSupported === true"
+                                                >；加入队列功能固定为私人FM</span
+                                            >
                                         </p>
+                                        <p v-else class="text-[8px] text-ink-subtle">
+                                            部署指定的推荐音源未启用或不支持私人电台
+                                        </p>
+                                        <button
+                                            v-if="privateDj.mode !== 'OFF' && !privateDjModeSupported"
+                                            @click="setPrivateDjMode('OFF')"
+                                            class="text-xs text-danger"
+                                        >
+                                            关闭私人电台
+                                        </button>
                                     </div>
 
                                     <!-- 三个功能开关 -->
@@ -360,7 +381,7 @@
                                                 @click="togglePrivateDjSwitch(sw.field)"
                                                 class="w-8 h-4 rounded-full relative transition-colors disabled:opacity-40"
                                                 :class="privateDj[sw.field] ? 'bg-accent' : 'bg-line-strong'"
-                                                :disabled="privateDj.mode === 'OFF'"
+                                                :disabled="!privateDjModeSupported"
                                             >
                                                 <div
                                                     class="absolute top-0.5 left-0.5 w-3 h-3 bg-surface-raised rounded-full transition-transform duration-300"
@@ -491,7 +512,9 @@
                             <div class="bg-surface-raised border border-line shadow-sm overflow-hidden chamfer-br">
                                 <div class="p-3 bg-brand text-ink-inverse flex items-center gap-2">
                                     <Database class="w-4 h-4" />
-                                    <span class="text-xs font-bold uppercase tracking-widest font-mono">平台凭据</span>
+                                    <span class="text-xs font-bold uppercase tracking-widest font-mono"
+                                        >音乐源配置</span
+                                    >
                                 </div>
                                 <div class="p-4 space-y-4">
                                     <div
@@ -500,38 +523,37 @@
                                         class="space-y-2 border-b border-line pb-3 last:border-0 last:pb-0"
                                     >
                                         <div class="flex justify-between items-center">
-                                            <span class="text-[10px] font-bold text-ink-muted font-mono"
-                                                >{{ plat.name }}{{ plat.tokenName }}</span
-                                            >
+                                            <span class="text-[10px] font-bold text-ink-muted font-mono">{{
+                                                plat.label
+                                            }}</span>
                                             <button
                                                 @click="togglePlatform(plat.id)"
+                                                role="switch"
+                                                :aria-label="'启用音乐源：' + plat.label"
+                                                :aria-checked="plat.enabled"
                                                 class="w-8 h-4 rounded-full relative transition-colors"
-                                                :class="
-                                                    playerStore.config[`${plat.id}Enabled`]
-                                                        ? 'bg-accent'
-                                                        : 'bg-line-strong'
-                                                "
+                                                :class="plat.enabled ? 'bg-accent' : 'bg-line-strong'"
                                             >
                                                 <div
                                                     class="absolute top-0.5 left-0.5 w-3 h-3 bg-surface-raised rounded-full transition-transform duration-300"
                                                     :style="{
-                                                        transform: playerStore.config[`${plat.id}Enabled`]
-                                                            ? 'translateX(16px)'
-                                                            : 'translateX(0)',
+                                                        transform: plat.enabled ? 'translateX(16px)' : 'translateX(0)',
                                                     }"
                                                 ></div>
                                             </button>
                                         </div>
-                                        <div class="flex gap-2">
+                                        <div v-if="plat.supportsCookie" class="flex gap-2">
                                             <input
                                                 type="password"
-                                                v-model="plat.value"
-                                                :placeholder="'输入新 ' + plat.tokenName + '...'"
-                                                class="flex-1 bg-surface border border-line px-3 py-2 text-[10px] outline-none focus:border-accent font-mono"
+                                                v-model="cookieInputs[plat.id]"
+                                                :aria-label="plat.label + ' COOKIE'"
+                                                :placeholder="'输入新 ' + plat.label + ' COOKIE...'"
+                                                class="flex-1 min-w-0 bg-surface border border-line px-2 py-1 text-[10px] outline-none focus:border-accent font-mono"
                                             />
                                             <button
-                                                @click="updateCookie(plat.id, plat.value)"
-                                                class="bg-brand text-ink-inverse px-3 font-bold text-[10px] hover:bg-accent hover:text-accent-contrast transition-colors"
+                                                @click="updateCookie(plat.id, cookieInputs[plat.id])"
+                                                :disabled="!(cookieInputs[plat.id] || '').trim()"
+                                                class="bg-brand text-ink-inverse px-2 text-[10px] font-bold hover:bg-accent hover:text-accent-contrast disabled:opacity-40 disabled:hover:bg-brand disabled:hover:text-ink-inverse transition-colors"
                                             >
                                                 更新
                                             </button>
@@ -544,63 +566,62 @@
                 </div>
             </div>
         </div>
-
-
     </Transition>
 
-        <!-- 播放模式选择 -->
-        <Teleport to="body">
+    <!-- 播放模式选择 -->
+    <Teleport to="body">
+        <div
+            v-if="modeDialogOpen"
+            class="fixed inset-0 z-[130] bg-brand/50 backdrop-blur-sm flex items-center justify-center p-4"
+            @click.self="modeDialogOpen = false"
+        >
             <div
-                v-if="modeDialogOpen"
-                class="fixed inset-0 z-[130] bg-brand/50 backdrop-blur-sm flex items-center justify-center p-4"
-                @click.self="modeDialogOpen = false"
+                role="dialog"
+                aria-modal="true"
+                aria-label="选择播放模式"
+                class="w-full max-w-sm bg-surface-raised border border-line shadow-xl p-4 space-y-3"
             >
-                <div
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="选择播放模式"
-                    class="w-full max-w-sm bg-surface-raised border border-line shadow-xl p-4 space-y-3"
-                >
-                    <div class="flex items-center justify-between">
-                        <h3 class="font-bold text-ink">播放模式</h3>
-                        <button type="button" @click="modeDialogOpen = false" aria-label="关闭播放模式选择">
-                            <X class="w-4 h-4 text-ink-muted" />
-                        </button>
-                    </div>
-                    <div class="space-y-1">
-                        <button
-                            v-for="mode in modes"
-                            :key="mode.value"
-                            type="button"
-                            @click="selectPlayMode(mode.value)"
-                            class="w-full flex items-center gap-3 p-2 text-left border transition-colors"
-                            :class="
-                                playerStore.playMode === mode.value
-                                    ? 'border-accent text-accent bg-accent/10'
-                                    : 'border-line text-ink hover:bg-surface-sunken'
-                            "
-                        >
-                            <component :is="mode.icon" class="w-4 h-4 shrink-0" />
-                            <span class="flex-1 min-w-0">
-                                <span class="block text-xs font-bold">{{ mode.label }}</span>
-                                <span class="block text-[10px] text-ink-muted">{{ mode.description }}</span>
-                            </span>
-                            <Check v-if="playerStore.playMode === mode.value" class="w-4 h-4 shrink-0" />
-                        </button>
-                    </div>
+                <div class="flex items-center justify-between">
+                    <h3 class="font-bold text-ink">播放模式</h3>
+                    <button type="button" @click="modeDialogOpen = false" aria-label="关闭播放模式选择">
+                        <X class="w-4 h-4 text-ink-muted" />
+                    </button>
+                </div>
+                <div class="space-y-1">
+                    <button
+                        v-for="mode in modes"
+                        :key="mode.value"
+                        type="button"
+                        @click="selectPlayMode(mode.value)"
+                        class="w-full flex items-center gap-3 p-2 text-left border transition-colors"
+                        :class="
+                            playerStore.playMode === mode.value
+                                ? 'border-accent text-accent bg-accent/10'
+                                : 'border-line text-ink hover:bg-surface-sunken'
+                        "
+                    >
+                        <component :is="mode.icon" class="w-4 h-4 shrink-0" />
+                        <span class="flex-1 min-w-0">
+                            <span class="block text-xs font-bold">{{ mode.label }}</span>
+                            <span class="block text-[10px] text-ink-muted">{{ mode.description }}</span>
+                        </span>
+                        <Check v-if="playerStore.playMode === mode.value" class="w-4 h-4 shrink-0" />
+                    </button>
                 </div>
             </div>
-        </Teleport>
+        </div>
+    </Teleport>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useAdminStore } from '../stores/admin';
 import { usePlayerStore } from '../stores/player';
 import { adminApi } from '../api/admin';
 import { useToast } from '../composables/useToast';
 import { toAdminConfigPayload } from '../domain/adminConfig';
 import { PLAY_MODES } from '../domain/playModes';
+import { useSourcesStore } from '../stores/sources';
 import {
     Settings,
     X,
@@ -626,6 +647,8 @@ import {
 
 const adminStore = useAdminStore();
 const playerStore = usePlayerStore();
+const sources = useSourcesStore();
+onMounted(() => sources.load());
 const { success, error, warning } = useToast();
 
 // 播放模式：方块按钮 + 弹窗选择（与暂停/切歌按钮同款）
@@ -637,7 +660,6 @@ const selectPlayMode = (mode) => {
     modeDialogOpen.value = false;
     if (mode !== playerStore.playMode) execPlayerAction('SET_PLAY_MODE', mode);
 };
-
 
 const claimSettingsBusy = ref(false);
 const togglePlaylistClaim = async () => {
@@ -671,7 +693,6 @@ const systemFields = {
     导入单次上限: { field: 'maxPlaylistImportSize' },
     聊天记录容量: { field: 'maxChatHistorySize' },
     '发言频率限制(ms)': { field: 'minChatIntervalMs' },
-    'B站时长上限(分钟)': { field: 'bilibiliMaxDurationMinutes' },
 };
 
 watch(
@@ -706,10 +727,30 @@ const locks = computed(() => [
     { key: 'SHUFFLE', cnLabel: '锁定模式', value: playerStore.isPlayModeLocked },
 ]);
 
-const platforms = ref([
-    { id: 'netease', name: '网易云音乐', tokenName: 'COOKIE', value: '' },
-    { id: 'bilibili', name: '哔哩哔哩', tokenName: 'COOKIE', value: '' },
-]);
+const COOKIE_SOURCES = new Set(['netease', 'bilibili']);
+const cookieInputs = ref({});
+const platforms = computed(() =>
+    [...new Set([...sources.sources.map((source) => source.id), ...Object.keys(playerStore.config.sources || {})])].map(
+        (id) => ({
+            id,
+            label: sources.descriptor(id)?.label || id,
+            enabled: playerStore.config.sources?.[id]?.enabled ?? sources.isEnabled(id),
+            supportsCookie: COOKIE_SOURCES.has(id),
+        })
+    )
+);
+
+const updateCookie = async (platform, value) => {
+    const cookie = (value || '').trim();
+    if (!cookie) return;
+    try {
+        const data = await adminApi.setCookie(adminStore.adminPassword, platform, cookie);
+        success(data.message);
+        cookieInputs.value[platform] = '';
+    } catch {
+        error('凭据更新失败');
+    }
+};
 
 // 私人电台/私人DJ 状态（来自 config.privateDj，服务端广播；mode 即开关：OFF=关闭/FM=私人FM/DJ=私人DJ）
 const privateDj = computed(
@@ -722,23 +763,30 @@ const privateDj = computed(
         }
 );
 
-const privateDjSwitches = [
-    { field: 'fillBlankEnabled', label: '填充空白', hint: '队列无有效歌曲时播FM/DJ' },
-    { field: 'joinQueueEnabled', label: '加入队列', hint: '随机/轮询模式生效·固定私人FM' },
-    { field: 'custodyEnabled', label: '播放托管', hint: '无视队列·仅播FM/DJ' },
-];
+const supportsPrivateDjMode = (mode) =>
+    (mode === 'FM' && privateDj.value.fmSupported === true) || (mode === 'DJ' && privateDj.value.djSupported === true);
+const privateDjModeSupported = computed(() => supportsPrivateDjMode(privateDj.value.mode));
+const privateDjSwitches = computed(() => {
+    const modes = privateDj.value.djSupported === true ? 'FM/DJ' : 'FM';
+    return [
+        { field: 'fillBlankEnabled', label: '填充空白', hint: `队列无有效歌曲时播${modes}` },
+        ...(privateDj.value.fmSupported === true
+            ? [{ field: 'joinQueueEnabled', label: '加入队列', hint: '随机/轮询模式生效·固定私人FM' }]
+            : []),
+        { field: 'custodyEnabled', label: '播放托管', hint: `无视队列·仅播${modes}` },
+    ];
+});
 
 const setPrivateDjMode = async (mode) => {
-    // 切到 FM/DJ 视为开启，需已配置网易云 Cookie（后端同样校验，这里先给友好提示）
-    if (mode !== 'OFF' && !playerStore.config.neteaseCookieConfigured) {
-        error('需先配置网易云 Cookie');
+    if (mode !== 'OFF' && !supportsPrivateDjMode(mode)) {
+        error('部署指定的推荐音源未启用或不支持此模式');
         return;
     }
     try {
         const data = await adminApi.updatePrivateDj(adminStore.adminPassword, { mode });
         success(data.message);
     } catch (e) {
-        error('模式切换失败');
+        error(e.response?.data?.message || '模式切换失败');
     }
 };
 
@@ -805,19 +853,14 @@ const clearData = async (target) => {
     }
 };
 
-const updateCookie = async (platform, value) => {
-    if (!value) return;
-    try {
-        const data = await adminApi.setCookie(adminStore.adminPassword, platform, value);
-        success(data.message);
-    } catch (e) {
-        error('凭据更新失败');
-    }
-};
-
 const togglePlatform = async (platformId) => {
-    const current = playerStore.config[`${platformId}Enabled`];
-    const update = { [`${platformId}Enabled`]: !current };
+    const update = {
+        sources: {
+            [platformId]: {
+                enabled: !(playerStore.config.sources?.[platformId]?.enabled ?? sources.isEnabled(platformId)),
+            },
+        },
+    };
     try {
         const data = await adminApi.updateConfig(adminStore.adminPassword, toAdminConfigPayload(update));
         success(data.message);

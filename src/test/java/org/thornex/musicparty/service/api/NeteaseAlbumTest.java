@@ -39,7 +39,7 @@ class NeteaseAlbumTest {
         List<String> paths = new ArrayList<>();
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             paths.add(request.url().getPath());
-            assertTrue(request.url().getQuery().contains("cookie=fixture-cookie"));
+            assertFalse(request.url().getQuery().contains("cookie="));
             return Mono.just(json(request.url().getPath().equals("/song/detail")
                     ? "{\"songs\":[{\"al\":{\"id\":900}}]}" : ALBUM));
         }).build();
@@ -80,7 +80,11 @@ class NeteaseAlbumTest {
         AppProperties properties = properties();
         assertThrows(ApiRequestException.class, () -> new NeteaseMusicApiService(client, properties).getAlbum("invalid").block());
         properties.getNetease().setCookie("");
-        assertThrows(ApiRequestException.class, () -> new NeteaseMusicApiService(client, properties).getAlbum("900").block());
+        WebClient publicClient = WebClient.builder().exchangeFunction(request -> {
+            assertFalse(request.url().getQuery().contains("cookie="));
+            return Mono.just(json(ALBUM));
+        }).build();
+        assertEquals("900", new NeteaseMusicApiService(publicClient, properties).getAlbum("900").block().id());
     }
 
     @Test

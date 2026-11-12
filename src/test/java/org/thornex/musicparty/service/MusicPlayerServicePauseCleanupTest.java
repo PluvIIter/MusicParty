@@ -32,7 +32,7 @@ class MusicPlayerServicePauseCleanupTest {
     private static final long SAVED_POSITION = 42_000L;
     private static final PlayableMusic TRACK = new PlayableMusic(
             "song-1", "Paused song", List.of("Artist"), 180_000L, "netease",
-            "https://example.invalid/song.mp3", null, false);
+            "https://example.invalid/song.mp3", null, "SONG", null);
     private static final UserSummary MEMBER = new UserSummary("token-1", "session-1", "Listener", false);
 
     private UserService users;
@@ -52,12 +52,12 @@ class MusicPlayerServicePauseCleanupTest {
         events = mock(ApplicationEventPublisher.class);
         api = mock(NeteaseMusicApiService.class);
         when(api.getPlatformName()).thenReturn("netease");
-        player = new MusicPlayerService(List.of(api), users, mock(LocalCacheService.class), streams,
-                queue, events, new AppProperties(), api, mock(PrivateDjService.class));
+        player = PlayerTestFactory.create(List.of(api), users, streams,
+                queue, events, new AppProperties(), mock(PrivateDjService.class));
 
         queuedSongs = List.of(new MusicQueueItem("queue-1",
-                new Music("song-2", "Queued song", List.of("Artist"), 180_000L, "netease", null),
-                MEMBER, QueueItemStatus.READY));
+                new Music("song-2", "Queued song", List.of("Artist"), 180_000L, "netease", null, null),
+                MEMBER, QueueItemStatus.READY, org.thornex.musicparty.enums.Priority.REGULAR));
         when(queue.getQueueSnapshot()).thenReturn(queuedSongs);
         when(users.getOnlineUserSummaries()).thenReturn(List.of());
         when(users.getRecentlyActiveUserTokens()).thenReturn(Set.of());
@@ -80,9 +80,8 @@ class MusicPlayerServicePauseCleanupTest {
         assertRetainedPause();
         assertEquals(queuedSongs, player.getCurrentPlayerState().queue());
         verifyNoInteractions(events);
-        verify(api, never()).getPlayableMusic(anyString());
-        verify(api, never()).getFmDjSongUrl(anyString());
-        verify(queue, never()).pollNext(any(), anyBoolean(), anyBoolean(), anyMap(), anySet());
+        verify(PlayerTestFactory.media(player), never()).getPlayableMusic(anyString(), anyString());
+        verify(queue, never()).pollNext(any(), anyBoolean(), anyMap(), anySet());
     }
 
     @Test
@@ -126,9 +125,8 @@ class MusicPlayerServicePauseCleanupTest {
             player.playerLoop();
         }
         verifyNoMoreInteractions(events);
-        verify(api, never()).getPlayableMusic(anyString());
-        verify(api, never()).getFmDjSongUrl(anyString());
-        verify(queue, never()).pollNext(any(), anyBoolean(), anyBoolean(), anyMap(), anySet());
+        verify(PlayerTestFactory.media(player), never()).getPlayableMusic(anyString(), anyString());
+        verify(queue, never()).pollNext(any(), anyBoolean(), anyMap(), anySet());
     }
 
     @Test
@@ -145,9 +143,8 @@ class MusicPlayerServicePauseCleanupTest {
         assertNull(player.getCurrentPlayerState().nowPlaying());
         assertEquals(queuedSongs, player.getCurrentPlayerState().queue());
         verifyNoInteractions(events);
-        verify(api, never()).getPlayableMusic(anyString());
-        verify(api, never()).getFmDjSongUrl(anyString());
-        verify(queue, never()).pollNext(any(), anyBoolean(), anyBoolean(), anyMap(), anySet());
+        verify(PlayerTestFactory.media(player), never()).getPlayableMusic(anyString(), anyString());
+        verify(queue, never()).pollNext(any(), anyBoolean(), anyMap(), anySet());
     }
 
     @Test
@@ -163,7 +160,7 @@ class MusicPlayerServicePauseCleanupTest {
         assertSame(TRACK, player.getCurrentPlayerState().nowPlaying().music());
         assertEquals(SAVED_POSITION, anchor("positionAnchor").get());
         assertTrue(anchor("timestampAnchor").get() > pausedAt);
-        verify(queue, never()).pollNext(any(), anyBoolean(), anyBoolean(), anyMap(), anySet());
+        verify(queue, never()).pollNext(any(), anyBoolean(), anyMap(), anySet());
     }
 
     @Test
