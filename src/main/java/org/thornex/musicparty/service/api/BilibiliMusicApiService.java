@@ -478,9 +478,8 @@ public class BilibiliMusicApiService implements IMusicApiService {
                     int received = medias.isArray() ? medias.size() : 0;
                     boolean hasMore = jsonNode.path("data").has("has_more")
                             ? jsonNode.path("data").path("has_more").asBoolean() : received == pageSize;
-                    // 上游按「页」分页（pn/ps），游标必须按页前进；不能用过滤后的条目数，
-                    // 否则遇到失效视频（本页少一条）会让 offset 不是 ps 的倍数，下一页直接报 INVALID_CURSOR。
-                    int nextOffset = hasMore && received > 0 ? offset + pageSize : null;
+                    // pn/ps 要求游标按整页前进，不能由返回或过滤后的条目数推导。
+                    Integer nextOffset = hasMore && received > 0 ? offset + pageSize : null;
                     return new SourcePage<>(musicList, nextOffset, null);
                 });
     }

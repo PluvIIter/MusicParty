@@ -67,6 +67,69 @@ class TypedContainerApiTest {
     }
 
     @Test
+    void bilibiliFinalPagesKeepItemsAndReturnNullCursor() {
+        for (String media : List.of("{\"bvid\":\"BV-last\",\"title\":\"Last\",\"duration\":1}",
+                "{\"title\":\"已失效视频\"}")) {
+            var cookie = mock(BilibiliCookieService.class);
+            when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
+            WebClient client = WebClient.builder().exchangeFunction(request -> Mono.just(json(
+                    "{\"code\":0,\"data\":{\"has_more\":false,\"medias\":[" + media + "]}}"))).build();
+            var adapter = new BilibiliMusicApiService(client, properties(), mock(BilibiliWbiService.class), cookie);
+            for (int offset : List.of(0, 20)) {
+                var page = adapter.containerPage("favorites", "42", offset, 20).block();
+                assertNull(page.nextOffset());
+                if (media.contains("BV-last")) assertEquals("BV-last", page.items().getFirst().id());
+                else assertTrue(page.items().isEmpty());
+            }
+            verify(cookie, never()).getCookieHeader();
+        }
+    }
+
+    @Test
+    void bilibiliEmptyPagesReturnNullCursorWithoutUnboxing() {
+        for (String data : List.of("{\"has_more\":false,\"medias\":null}",
+                "{\"has_more\":false,\"medias\":[]}", "{}")) {
+            var cookie = mock(BilibiliCookieService.class);
+            when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
+            WebClient client = WebClient.builder().exchangeFunction(request -> Mono.just(json(
+                    "{\"code\":0,\"data\":" + data + "}"))).build();
+            var adapter = new BilibiliMusicApiService(client, properties(), mock(BilibiliWbiService.class), cookie);
+            var page = adapter.containerPage("favorites", "42", 0, 20).block();
+            assertTrue(page.items().isEmpty());
+            assertNull(page.nextOffset());
+        }
+    }
+
+    @Test
+    void bilibiliShortPagesAdvanceByPageSizeEvenWhenAllItemsAreFiltered() {
+        List<URI> requests = new ArrayList<>();
+        var cookie = mock(BilibiliCookieService.class);
+        when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            requests.add(request.url());
+            return Mono.just(json(requests.size() == 1
+                    ? "{\"code\":0,\"data\":{\"has_more\":true,\"medias\":[{\"title\":\"已失效视频\"}]}}"
+                    : "{\"code\":0,\"data\":{\"has_more\":false,\"medias\":[{\"bvid\":\"BV-last\",\"title\":\"Last\"}]}}"));
+        }).build();
+        var adapter = new BilibiliMusicApiService(client, properties(), mock(BilibiliWbiService.class), cookie);
+        var first = adapter.containerPage("favorites", "42", 0, 20).block();
+        assertTrue(first.items().isEmpty());
+        assertEquals(20, first.nextOffset());
+        var last = adapter.containerPage("favorites", "42", first.nextOffset(), 20).block();
+        assertEquals("BV-last", last.items().getFirst().id());
+        assertNull(last.nextOffset());
+        assertTrue(requests.getFirst().getQuery().contains("pn=1"));
+        assertTrue(requests.getLast().getQuery().contains("pn=2"));
+        requests.clear();
+        var resources = new org.thornex.musicparty.resource.ResourceService(
+                new org.thornex.musicparty.source.SourceRegistry(List.of(adapter), properties()),
+                new org.thornex.musicparty.resource.ResourceCursor());
+        var imported = resources.importTracks("bilibili", "favorites", "42", 100).block();
+        assertEquals(List.of("BV-last"), imported.stream().map(org.thornex.musicparty.dto.Music::id).toList());
+        assertEquals(2, requests.size());
+    }
+
+    @Test
     void bilibiliPublicCollectionPagingAndTypedDetailNeverUseMediaCredentials() {
         var cookie = mock(BilibiliCookieService.class);
         when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
