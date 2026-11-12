@@ -160,7 +160,11 @@ public class LocalCacheService {
             entry.setStatus(CacheStatus.DOWNLOADING); publish(task.key());
             return task.source().switchIfEmpty(Mono.error(new IOException("No media source")))
                     .flatMap(source -> download(task, entry, source)).timeout(Duration.ofMinutes(5))
-                    .doOnError(error -> { entry.setStatus(CacheStatus.FAILED); publish(task.key()); })
+                    .doOnError(error -> {
+                        entry.setStatus(CacheStatus.FAILED);
+                        publish(task.key());
+                        log.warn("Media download failed for {}: {}", task.key(), error.toString());
+                    })
                     .then();
         });
     }

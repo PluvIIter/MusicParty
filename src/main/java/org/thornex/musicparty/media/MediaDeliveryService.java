@@ -1,5 +1,6 @@
 package org.thornex.musicparty.media;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.PlayableMusic;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 @Service
 public class MediaDeliveryService {
     private final String authorizationSession = UUID.randomUUID().toString();
@@ -206,7 +208,10 @@ public class MediaDeliveryService {
         if (registry.deliveryMode(music.platform()) != DeliveryMode.SERVER_DOWNLOAD) return;
         String logical = assetKey(music.platform(), music.id());
         prepareDownload(music).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-                .subscribe(key -> failedDownloads.remove(logical), error -> failedDownloads.add(logical));
+                .subscribe(key -> failedDownloads.remove(logical), error -> {
+            failedDownloads.add(logical);
+            log.warn("Media preparation failed for {}:{}: {}", music.platform(), music.id(), error.toString());
+        });
     }
 
     private Mono<String> prepareDownload(Music music) {
