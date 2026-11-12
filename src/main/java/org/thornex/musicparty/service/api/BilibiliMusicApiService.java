@@ -34,8 +34,13 @@ public class BilibiliMusicApiService implements IMusicApiService {
     private final String baseUrl;
     private static final String PLATFORM = "bilibili";
     private final AtomicLong credentialRevision = new AtomicLong();
-    private final java.util.Map<String, CachedVideoInfo> videoInfoCache = new java.util.concurrent.ConcurrentHashMap<>();
-    private record CachedVideoInfo(BilibiliApiUtils.BilibiliVideoInfo info, java.time.Instant expiresAt) {}
+    private final Object videoInfoLock = new Object();
+    private final Map<VideoInfoKey, CachedVideoInfo> videoInfoCache = new HashMap<>();
+    private record VideoInfoKey(String bvid, boolean account, long revision) {}
+    private static final class CachedVideoInfo {
+        private Instant expiresAt = Instant.MAX;
+        private Mono<BilibiliApiUtils.BilibiliVideoInfo> result;
+    }
 
     private final BilibiliWbiService wbiService;
     private final BilibiliCookieService cookieService;
@@ -59,10 +64,12 @@ public class BilibiliMusicApiService implements IMusicApiService {
     }
 
     public void updateCookie(String newCookie) {
-        videoInfoCache.clear();
-        cookieService.updateCookie(newCookie);
-        credentialRevision.incrementAndGet();
-        this.wbiService.invalidateCache(); // Cookie 变化后 WBI key 可能也需要刷新
+        synchronized (videoInfoLock) {
+            cookieService.updateCookie(newCookie);
+            credentialRevision.incrementAndGet();
+            videoInfoCache.clear();
+            this.wbiService.invalidateCache();
+        }
         log.info("Bilibili API Service cookie updated.");
     }
 
@@ -81,23 +88,49 @@ public class BilibiliMusicApiService implements IMusicApiService {
     }
 
     private Mono<String> getVideoCidWithCookie(String bvid) {
-        return getVideoInfo(bvid).map(BilibiliApiUtils.BilibiliVideoInfo::cid);
+        return Mono.defer(() -> {
+            synchronized (videoInfoLock) {
+                long revision = credentialRevision.get();
+                CachedVideoInfo publicInfo = videoInfoCache.get(new VideoInfoKey(bvid, false, revision));
+                // Only public metadata may cross into media resolution, never the reverse.
+                if (publicInfo != null && publicInfo.expiresAt.isAfter(Instant.now())) {
+                    return publicInfo.result
+                            .onErrorResume(error -> getVideoInfo(bvid, true))
+                            .switchIfEmpty(Mono.defer(() -> getVideoInfo(bvid, true)))
+                            .map(BilibiliApiUtils.BilibiliVideoInfo::cid);
+                }
+                return getVideoInfo(bvid, true).map(BilibiliApiUtils.BilibiliVideoInfo::cid);
+            }
+        });
     }
 
-    /**
-     * /x/web-interface/view 结果短缓存：入队（getMusic）与预取（resolveMedia）会各请求一次，
-     * 缓存 60 秒可把同一首的 view 请求从 2 次降到 1 次，降低风控概率。
-     */
-    private Mono<BilibiliApiUtils.BilibiliVideoInfo> getVideoInfo(String bvid) {
+    private Mono<BilibiliApiUtils.BilibiliVideoInfo> getVideoInfo(String bvid, boolean account) {
         return Mono.defer(() -> {
-            CachedVideoInfo cached = videoInfoCache.get(bvid);
-            if (cached != null && cached.expiresAt().isAfter(java.time.Instant.now())) return Mono.just(cached.info());
-            return cookieService.getCookieHeader()
-                    .flatMap(cookie -> BilibiliApiUtils.getVideoInfo(bvid, webClient, baseUrl, cookie))
-                    .doOnNext(info -> {
-                        if (videoInfoCache.size() > 512) videoInfoCache.clear();
-                        videoInfoCache.put(bvid, new CachedVideoInfo(info, java.time.Instant.now().plusSeconds(60)));
-                    });
+            synchronized (videoInfoLock) {
+                VideoInfoKey key = new VideoInfoKey(bvid, account, credentialRevision.get());
+                CachedVideoInfo cached = videoInfoCache.get(key);
+                if (cached != null && cached.expiresAt.isAfter(Instant.now())) return cached.result;
+                if (videoInfoCache.size() >= 512) videoInfoCache.clear();
+                CachedVideoInfo entry = new CachedVideoInfo();
+                entry.result = Mono.defer(() -> account ? cookieService.getCookieHeader() : cookieService.getPublicCookieHeader())
+                        .flatMap(cookie -> BilibiliApiUtils.getVideoInfo(bvid, webClient, baseUrl, cookie))
+                        .timeout(java.time.Duration.ofSeconds(15))
+                        .doOnNext(info -> {
+                            synchronized (videoInfoLock) {
+                                if (key.revision() != credentialRevision.get()) videoInfoCache.remove(key, entry);
+                                else entry.expiresAt = Instant.now().plusSeconds(60);
+                            }
+                        })
+                        .doOnError(error -> {
+                            synchronized (videoInfoLock) { videoInfoCache.remove(key, entry); }
+                        })
+                        .doOnSuccess(info -> {
+                            if (info == null) synchronized (videoInfoLock) { videoInfoCache.remove(key, entry); }
+                        })
+                        .cache();
+                videoInfoCache.put(key, entry);
+                return entry.result;
+            }
         });
     }
 
@@ -219,10 +252,8 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<Music> getMusic(String bvid) {
-        // 元数据不携带账号凭据，但必须带设备指纹（buvid3/buvid4）：
-        // 境外/机房 IP 匿名请求 /x/web-interface/view 会被 B 站 412 拦截。
-        return cookieService.getPublicCookieHeader()
-                .flatMap(cookie -> BilibiliApiUtils.getVideoDetails(bvid, webClient, baseUrl, cookie))
+        return getVideoInfo(bvid, false)
+                .map(BilibiliApiUtils.BilibiliVideoInfo::music)
                 .map(music -> new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl(), externalUrl(bvid)));
     }
 

@@ -1,6 +1,7 @@
 package org.thornex.musicparty.util;
 
 import org.springframework.core.codec.DecodingException;
+import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.thornex.musicparty.dto.Music;
@@ -107,7 +108,11 @@ public class BilibiliApiUtils {
     static boolean isRiskControl(Throwable error) {
         if (error instanceof WebClientResponseException response) {
             int status = response.getStatusCode().value();
-            return status == 412 || status == 403;
+            if (status == 412 || status == 403) return true;
+            // WebClient wraps unsupported HTML decoding in a response exception even for HTTP 200.
+            return response.getStatusCode().is2xxSuccessful()
+                    && response.getHeaders().getContentType() != null
+                    && MediaType.TEXT_HTML.isCompatibleWith(response.getHeaders().getContentType());
         }
         return error instanceof DecodingException;
     }
