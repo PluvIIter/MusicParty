@@ -70,6 +70,7 @@ public class ContainerImportService {
                         });
                         List<Music> imported = new ArrayList<>();
                         int duplicates = 0;
+                        List<Music> retry = new ArrayList<>();
                         int limited = Math.max(0, response.getT1().trackCount() - response.getT2().size());
                         Map<String, org.thornex.musicparty.enums.QueueItemStatus> statuses = new HashMap<>();
                         response.getT2().forEach(track -> statuses.put(ResourceKey.of(track).encoded(), media.status(track)));
@@ -90,7 +91,17 @@ public class ContainerImportService {
                                     queue.getQueueSnapshot().forEach(item -> existing.add(ResourceKey.of(item.music()).encoded()));
                                     for (Music track : response.getT2()) {
                                         String identity = ResourceKey.of(track).encoded();
-                                        if (existing.contains(identity)) { duplicates++; continue; }
+                                        if (existing.contains(identity)) {
+                                            duplicates++;
+                                            // 重新导入同一容器时，顺带重试之前下载失败的曲目（限量，避免再次打满上游）
+                                            if (retry.size() < 5 && statuses.get(identity)
+                                                    == org.thornex.musicparty.enums.QueueItemStatus.FAILED) {
+                                                queue.getQueueSnapshot().stream()
+                                                        .filter(item -> ResourceKey.of(item.music()).encoded().equals(identity))
+                                                        .findFirst().ifPresent(item -> retry.add(item.music()));
+                                            }
+                                            continue;
+                                        }
                                         if (queue.add(track, owner, statuses.get(identity)) == null) { limited++; continue; }
                                         imported.add(track);
                                         existing.add(identity);
@@ -98,6 +109,7 @@ public class ContainerImportService {
                                 }
                             }
                         }
+                        retry.forEach(media::retry);
                         imported.forEach(track -> {
                             try { media.prefetch(track); }
                             catch (RuntimeException error) { log.debug("Post-import prefetch deferred for {}", ResourceKey.of(track)); }

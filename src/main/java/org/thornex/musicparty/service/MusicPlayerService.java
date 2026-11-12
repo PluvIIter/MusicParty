@@ -738,6 +738,12 @@ public class MusicPlayerService {
                                 log.info("{} enqueued: {}", enqueuer.getName(), music.name());
                                 broadcastQueueUpdate();
                                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getToken(), music.name()));
+                            } else if (mediaDeliveryService.status(music) == QueueItemStatus.FAILED) {
+                                // 用户重新点同一首失败曲目：清掉失败标记并重新下载，而不是静默忽略
+                                mediaDeliveryService.retry(music);
+                                log.info("{} re-enqueued failed track, retrying: {}", enqueuer.getName(), music.name());
+                                broadcastQueueUpdate();
+                                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getToken(), "重新尝试下载：" + music.name()));
                             }
                         },
                         error -> {

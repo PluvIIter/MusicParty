@@ -267,6 +267,16 @@ public class LocalCacheService {
         return entry.getStatus();
     }
 
+    /**
+     * 清除失败标记，允许同一 key 重新提交下载（用户重新点同一首失败曲目时使用）。
+     */
+    public void clearFailure(String key) {
+        CacheEntry entry = cacheIndex.get(key);
+        if (entry == null || entry.getStatus() != CacheStatus.FAILED) return;
+        entry.setStatus(CacheStatus.PENDING);
+        publish(key);
+    }
+
     public CacheEntry getCacheEntry(String key) {
         CacheEntry entry = cacheIndex.get(key);
         if (entry != null) entry.setLastAccessTime(System.currentTimeMillis());

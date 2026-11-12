@@ -214,6 +214,19 @@ public class MediaDeliveryService {
         });
     }
 
+    /**
+     * 用户重新点同一首失败曲目时重试：清掉失败标记与缓存失败状态，重新解析并下载。
+     */
+    public void retry(Music music) {
+        if (!registry.isEnabled(music.platform())) return;
+        if (registry.deliveryMode(music.platform()) != DeliveryMode.SERVER_DOWNLOAD) return;
+        String logical = assetKey(music.platform(), music.id());
+        failedDownloads.remove(logical);
+        String alias = downloadAliases.get(logical);
+        if (alias != null) cache.clearFailure(alias);
+        prefetch(music);
+    }
+
     private Mono<String> prepareDownload(Music music) {
         return Mono.defer(() -> {
             String scope = authorizationScope(music.platform());

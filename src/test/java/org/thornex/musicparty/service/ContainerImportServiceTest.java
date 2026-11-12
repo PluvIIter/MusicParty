@@ -65,6 +65,17 @@ class ContainerImportServiceTest {
     }
 
     @Test
+    void reimportRetriesFailedDuplicateInsteadOfDroppingIt() {
+        queue.add(track, new UserSummary("member", "session", "Listener", false), QueueItemStatus.FAILED);
+        when(media.status(track)).thenReturn(QueueItemStatus.FAILED);
+        var second = new ContainerImportService.Request("third", "favorites", "opaque:id", "r2");
+        var result = imports.enqueue(second, "session").block();
+        assertNotNull(result);
+        assertEquals(1, result.duplicates());
+        verify(media).retry(track);
+    }
+
+    @Test
     void requestIdCannotBeReusedForDifferentResource() {
         imports.enqueue(request, "session").block();
         var other = new ContainerImportService.Request("third", "favorites", "different", "r1");
