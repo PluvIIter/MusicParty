@@ -129,10 +129,12 @@ jobs:
       - name: Compile Windows launcher with embedded gateway assets
         shell: pwsh
         run: |
-          npm install --prefix launcher/frontend
+          Push-Location launcher/frontend
+          npm install
           if ($LASTEXITCODE -ne 0) { throw 'Launcher dependency installation failed' }
-          npm run build --prefix launcher/frontend
+          npm run build
           if ($LASTEXITCODE -ne 0) { throw 'Launcher frontend build failed' }
+          Pop-Location
           New-Item -ItemType Directory -Force launcher/bin | Out-Null
           Copy-Item -Recurse "${{ runner.temp }}/qqmusic-bundle" launcher/bin/qqmusic
           Push-Location launcher
