@@ -70,8 +70,12 @@ class VoiceMediaDeliveryTest {
         assertTrue(prepared.url().startsWith("/media/")); assertNotEquals(voice.voiceUrl(), prepared.url());
         var ticket = delivery.ticket(prepared.url().substring("/media/".length()));
         assertEquals(key.get(), ticket.assetKey());
-        when(cache.localPath(key.get())).thenReturn(Path.of("/controlled/voice.mp3"));
-        assertEquals("/controlled/voice.mp3", delivery.serverInput(prepared).block().location());
+        // 用 Path 自身的字符串做断言，避免 Windows 下反斜杠与 POSIX 斜杠不一致
+
+        Path controlledLocal = Path.of("/controlled/voice.mp3");
+        when(cache.localPath(key.get())).thenReturn(controlledLocal);
+        assertEquals(controlledLocal.toString(), delivery.serverInput(prepared).block().location());
+        
         verify(adapter, never()).resolveMedia(anyString(), any());
     }
 
