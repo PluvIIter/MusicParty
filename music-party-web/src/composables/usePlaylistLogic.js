@@ -24,6 +24,7 @@ export function usePlaylistLogic(platform, songs, listMode, loading, active = re
     const nextCursor = ref(null);
     const collectionCursor = ref(null);
     const hasMore = computed(() => nextCursor.value != null);
+    const loadMoreFailed = ref(false);
     const collectionRequests = createRequestScope();
     const trackRequests = createRequestScope();
     const userRequests = createRequestScope();
@@ -102,6 +103,7 @@ export function usePlaylistLogic(platform, songs, listMode, loading, active = re
     };
     const fetchTracks = async (append = false) => {
         if (!currentContainer.value) return;
+        if (append && loadMoreFailed.value) return;
         pendingTracks = { append };
         if (!active.value) return;
         const request = trackRequests.start();
@@ -119,7 +121,9 @@ export function usePlaylistLogic(platform, songs, listMode, loading, active = re
             if (!request.current()) return;
             songs.value = append ? [...songs.value, ...page.items] : page.items;
             nextCursor.value = page.nextCursor;
+            loadMoreFailed.value = false;
         } catch (e) {
+            if (append) loadMoreFailed.value = true;
             report(e, request);
         } finally {
             if (request.current()) {
@@ -130,6 +134,7 @@ export function usePlaylistLogic(platform, songs, listMode, loading, active = re
         }
     };
     const loadPlaylist = async (container) => {
+        loadMoreFailed.value = false;
         listMode.value = 'playlist';
         currentContainer.value = container;
         songs.value = [];
@@ -137,7 +142,9 @@ export function usePlaylistLogic(platform, songs, listMode, loading, active = re
         await fetchTracks();
     };
     const loadMoreTracks = () => {
-        if (active.value && hasMore.value && !loading.value && !isLoadingMore.value) return fetchTracks(true);
+        if (!active.value || !hasMore.value || loading.value || isLoadingMore.value) return;
+        loadMoreFailed.value = false;
+        return fetchTracks(true);
     };
     watch(
         active,
@@ -160,9 +167,10 @@ export function usePlaylistLogic(platform, songs, listMode, loading, active = re
             el.scrollHeight - el.scrollTop - el.clientHeight < 100 &&
             hasMore.value &&
             !loading.value &&
-            !isLoadingMore.value
+            !isLoadingMore.value &&
+            !loadMoreFailed.value
         )
-            fetchTracks(true);
+            loadMoreTracks();
     };
     watch(
         listMode,
@@ -196,6 +204,7 @@ export function usePlaylistLogic(platform, songs, listMode, loading, active = re
             pendingCollections = null;
             pendingTracks = null;
             currentContainer.value = null;
+            loadMoreFailed.value = false;
             songs.value = [];
             playlists.value = [];
             userSearchResults.value = [];
