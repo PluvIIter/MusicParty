@@ -1,291 +1,479 @@
 <template>
-    <div v-if="isActive" class="fixed inset-0 z-[9999] pointer-events-auto">
-        <!-- 背景遮罩 (半透明黑) -->
-        <div class="absolute inset-0 bg-black/50 transition-opacity duration-500"></div>
-
-        <!-- 聚光灯效果 (可选，或者直接显示高亮框) -->
-        <!-- 我们使用一个绝对定位的高亮框来框住目标元素 -->
+    <div
+        v-if="isActive"
+        class="tutorial-layer fixed inset-0 z-[9999] bg-brand/70 backdrop-blur-sm"
+        @pointerdown.self.prevent
+    >
         <div
-            v-if="targetRect"
-            class="absolute border-2 border-accent shadow-[0_0_20px_rgba(var(--color-accent),0.5)] transition-all duration-300 ease-out pointer-events-none"
-            :style="{
-                top: targetRect.top - 4 + 'px',
-                left: targetRect.left - 4 + 'px',
-                width: targetRect.width + 8 + 'px',
-                height: targetRect.height + 8 + 'px',
-                borderRadius: '4px',
-            }"
+            v-if="view === 'tour' && targetRect"
+            class="fixed pointer-events-none border-2 border-accent rounded-sm shadow-[0_0_20px_rgb(var(--mp-accent)/0.35)]"
+            :style="highlightStyle"
+            aria-hidden="true"
+        ></div>
+        <section
+            ref="dialogRef"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tutorial-title"
+            aria-describedby="tutorial-subtitle"
+            tabindex="-1"
+            class="tutorial-dialog fixed flex min-h-0 flex-col bg-surface-raised border border-line shadow-2xl text-ink outline-none"
+            :class="view === 'guide' ? 'tutorial-guide' : 'tutorial-tour'"
+            :style="view === 'tour' ? tourStyle : undefined"
         >
-            <!-- 装饰角标 -->
-            <div class="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-accent bg-transparent"></div>
-            <div class="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-accent bg-transparent"></div>
-            <div class="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-accent bg-transparent"></div>
-            <div class="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-accent bg-transparent"></div>
-        </div>
-
-        <!-- 提示框 -->
-        <div
-            v-if="currentStep"
-            ref="tooltipRef"
-            class="absolute bg-surface-raised border border-line p-4 shadow-xl transition-all duration-300 chamfer-br flex flex-col gap-3"
-            :style="tooltipStyle"
-        >
-            <div class="flex items-center justify-between border-b border-line pb-2">
-                <span class="text-xs font-mono font-bold text-accent"
-                    >TUTORIAL_SYSTEM // {{ currentStepIndex + 1 }}/{{ steps.length }}</span
-                >
-                <button @click="skipTutorial" class="text-xs text-ink-subtle hover:text-ink font-mono">[SKIP]</button>
-            </div>
-
-            <div class="text-sm font-bold text-ink leading-relaxed">
-                {{ currentDisplayContent }}
-            </div>
-
-            <div class="flex justify-end pt-2">
+            <header class="flex shrink-0 items-start justify-between gap-3 border-b border-line p-3 sm:p-5">
+                <div class="min-w-0">
+                    <p class="text-[10px] font-mono font-bold text-accent">
+                        {{ view === 'tour' ? TUTORIAL_UI.tourLabel : TUTORIAL_UI.guideLabel }}
+                    </p>
+                    <h2 id="tutorial-title" class="text-lg sm:text-xl font-bold break-words">
+                        {{ TUTORIAL_UI.title }}
+                    </h2>
+                    <p id="tutorial-subtitle" class="text-xs text-ink-muted mt-1">{{ TUTORIAL_UI.subtitle }}</p>
+                </div>
                 <button
-                    @click="nextStep"
-                    class="px-4 py-1.5 bg-brand text-ink-inverse text-xs font-bold hover:bg-accent hover:text-accent-contrast transition-colors chamfer-br"
+                    type="button"
+                    :aria-label="TUTORIAL_UI.closeHelp"
+                    class="shrink-0 p-2 border border-line text-ink-muted hover:text-accent focus-visible:ring-2 focus-visible:ring-accent"
+                    @click="closeHelp"
                 >
-                    {{ currentStepIndex === steps.length - 1 ? 'FINISH' : 'NEXT >' }}
+                    <X class="w-4 h-4" aria-hidden="true" />
                 </button>
-            </div>
+            </header>
 
-            <!-- 连接线 (简单的视觉装饰) -->
-            <div
-                class="absolute w-4 h-4 bg-surface-raised border-l border-b border-line transform rotate-45"
-                :class="arrowClass"
-                :style="{ left: 'var(--arrow-left)' }"
-            ></div>
-        </div>
+            <template v-if="view === 'tour' && currentStep">
+                <div
+                    ref="tourBodyRef"
+                    class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-3"
+                    aria-live="polite"
+                    aria-atomic="true"
+                >
+                    <p class="text-xs font-mono text-accent">
+                        {{ TUTORIAL_UI.stepLabel }} {{ currentStepIndex + 1 }} / {{ TUTORIAL_STEPS.length }}
+                    </p>
+                    <h3 class="font-bold text-base">{{ currentStep.title }}</h3>
+                    <p
+                        v-for="(paragraph, index) in currentBody"
+                        :key="index"
+                        class="text-sm leading-relaxed text-ink-muted break-words"
+                    >
+                        {{ paragraph }}
+                    </p>
+                </div>
+                <footer class="shrink-0 border-t border-line p-3 sm:p-4 space-y-3">
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            class="tutorial-button text-ink-muted border-line"
+                            @click="finishTutorial"
+                        >
+                            {{ TUTORIAL_UI.skip }}
+                        </button>
+                        <button type="button" class="tutorial-button text-accent border-line" @click="showGuide">
+                            {{ TUTORIAL_UI.openGuide }}
+                        </button>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                        <button
+                            type="button"
+                            :disabled="currentStepIndex === 0"
+                            class="tutorial-button border-line disabled:opacity-40"
+                            @click="previousStep"
+                        >
+                            {{ TUTORIAL_UI.previous }}
+                        </button>
+                        <button
+                            type="button"
+                            class="tutorial-button border-accent bg-accent text-accent-contrast hover:bg-accent-hover"
+                            @click="nextStep"
+                        >
+                            {{ currentStepIndex === TUTORIAL_STEPS.length - 1 ? TUTORIAL_UI.finish : TUTORIAL_UI.next }}
+                        </button>
+                    </div>
+                </footer>
+            </template>
+
+            <template v-else-if="view === 'guide'">
+                <div class="shrink-0 p-3 sm:px-5 border-b border-line">
+                    <label for="tutorial-guide-search" class="block text-xs font-bold text-ink-muted mb-1">{{
+                        TUTORIAL_UI.searchLabel
+                    }}</label>
+                    <input
+                        id="tutorial-guide-search"
+                        v-model="query"
+                        type="search"
+                        :placeholder="TUTORIAL_UI.searchPlaceholder"
+                        class="w-full min-w-0 p-2 text-sm bg-surface border border-line outline-none focus:border-accent"
+                    />
+                </div>
+                <div class="tutorial-compact-topics shrink-0 px-3 pb-2 border-b border-line">
+                    <select
+                        :value="selectedTopic"
+                        :aria-label="TUTORIAL_UI.topicNavigation"
+                        class="w-full p-2 text-sm bg-surface border border-line"
+                        @change="selectTopic($event.target.value)"
+                    >
+                        <option value="">{{ TUTORIAL_UI.allTopics }}</option>
+                        <option v-for="topic in TUTORIAL_TOPICS" :key="topic.id" :value="topic.id">
+                            {{ topic.title }}
+                        </option>
+                    </select>
+                </div>
+                <nav
+                    :aria-label="TUTORIAL_UI.topicNavigation"
+                    class="tutorial-wide-topics shrink-0 flex flex-wrap gap-1 p-3 sm:px-5 border-b border-line max-h-[24dvh] overflow-y-auto overscroll-contain"
+                >
+                    <button
+                        type="button"
+                        :aria-pressed="selectedTopic === ''"
+                        class="tutorial-topic"
+                        :class="selectedTopic === '' ? 'bg-accent text-accent-contrast' : 'bg-surface text-ink-muted'"
+                        @click="selectTopic('')"
+                    >
+                        {{ TUTORIAL_UI.allTopics }}
+                    </button>
+                    <button
+                        v-for="topic in TUTORIAL_TOPICS"
+                        :key="topic.id"
+                        type="button"
+                        :aria-pressed="selectedTopic === topic.id"
+                        class="tutorial-topic"
+                        :class="
+                            selectedTopic === topic.id ? 'bg-accent text-accent-contrast' : 'bg-surface text-ink-muted'
+                        "
+                        @click="selectTopic(topic.id)"
+                    >
+                        {{ topic.title }}
+                    </button>
+                </nav>
+                <div
+                    ref="guideBodyRef"
+                    class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 space-y-6"
+                    aria-live="polite"
+                >
+                    <p v-if="!filteredTopics.length" role="status" class="text-sm text-ink-subtle py-4">
+                        {{ TUTORIAL_UI.noResults }}
+                    </p>
+                    <section
+                        v-for="topic in filteredTopics"
+                        :key="topic.id"
+                        class="space-y-3"
+                        :aria-labelledby="'tutorial-topic-' + topic.id"
+                    >
+                        <div>
+                            <h3 :id="'tutorial-topic-' + topic.id" class="font-bold text-base">{{ topic.title }}</h3>
+                            <p class="text-sm text-ink-muted mt-1 leading-relaxed">{{ topic.summary }}</p>
+                        </div>
+                        <article
+                            v-for="(card, index) in topic.cards"
+                            :key="index"
+                            class="p-3 bg-surface border border-line space-y-2"
+                        >
+                            <h4 class="text-sm font-bold">{{ card.title }}</h4>
+                            <p
+                                v-for="(paragraph, paragraphIndex) in card.body"
+                                :key="paragraphIndex"
+                                class="text-sm text-ink-muted leading-relaxed break-words"
+                            >
+                                {{ paragraph }}
+                            </p>
+                        </article>
+                    </section>
+                </div>
+                <footer class="shrink-0 flex flex-wrap justify-between gap-2 border-t border-line p-3 sm:p-4">
+                    <button type="button" class="tutorial-button border-line" @click="closeHelp">
+                        {{ TUTORIAL_UI.close }}
+                    </button>
+                    <button
+                        type="button"
+                        class="tutorial-button border-accent bg-accent text-accent-contrast hover:bg-accent-hover"
+                        @click="restart"
+                    >
+                        {{ TUTORIAL_UI.startTour }}
+                    </button>
+                </footer>
+            </template>
+        </section>
     </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue';
-import { useWindowSize } from '@vueuse/core';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { X } from 'lucide-vue-next';
 import { STORAGE_KEYS } from '../constants/storage';
+import { TUTORIAL_UI, TUTORIAL_STEPS, TUTORIAL_TOPICS } from '../constants/tutorial';
 
 const isActive = ref(false);
+const view = ref('tour');
 const currentStepIndex = ref(0);
+const query = ref('');
+const selectedTopic = ref('');
+const dialogRef = ref(null);
+const guideBodyRef = ref(null);
+const tourBodyRef = ref(null);
 const targetRect = ref(null);
-// 标记当前是否在使用移动端目标
-const isUsingMobileTarget = ref(false);
+const mobile = ref(false);
+const tourStyle = ref({});
+let returnFocus = null;
+let startupTimer;
+let positionFrame;
+let disposed = false;
+let openingVersion = 0;
 
-const { width, height } = useWindowSize();
-
-const STORAGE_KEY = STORAGE_KEYS.TUTORIAL_DONE;
-
-const steps = [
-    {
-        targetId: 'tutorial-rename',
-        mobileTargetId: 'tutorial-rename-mobile',
-        content: '点击这里可以修改你的昵称，输入后按回车确认。',
-        mobileContent: '点击这里打开用户列表，可以修改你的昵称。',
-    },
-    {
-        targetId: 'tutorial-search',
-        content: '点击搜索按钮寻找歌曲。在此处也可以通过搜索用户名来查看平台账号歌单。',
-    },
-    {
-        targetId: 'tutorial-like',
-        content: '点击中间的封面可以为当前歌曲点赞。',
-    },
-    {
-        targetId: 'tutorial-queue',
-        mobileTargetId: 'tutorial-queue-mobile',
-        content: '这里是播放队列。悬停在歌曲上可以进行置顶或删除操作。',
-        mobileContent: '点击这里查看播放队列。',
-    },
-    {
-        targetId: 'tutorial-pause',
-        mobileTargetId: 'tutorial-pause-mobile',
-        content: '注意：暂停/播放是全局生效的，会影响所有在线听众，请谨慎操作。',
-    },
-    {
-        targetId: 'tutorial-download',
-        mobileTargetId: 'tutorial-download-mobile',
-        content: '听到喜欢的歌？点击这里可以直接下载当前播放的音频文件。',
-    },
-    {
-        targetId: 'tutorial-random',
-        mobileTargetId: 'tutorial-random-mobile',
-        content:
-            '点击向上展开播放模式。随机播放从歌曲池选曲；轮询播放按成员轮流，并可单独设置自己的歌曲按顺序或随机播放。',
-    },
-    {
-        targetId: 'tutorial-chat',
-        content: '点击浮动按钮打开聊天窗口，可以和其他人聊天或查看记录。按钮可以拖动。',
-    },
-    {
-        targetId: 'tutorial-source',
-        content: '点击底部的小封面，可以跳转到歌曲的源网页。',
-    },
-];
-
-const currentStep = computed(() => steps[currentStepIndex.value]);
-
-const currentDisplayContent = computed(() => {
-    if (isUsingMobileTarget.value && currentStep.value.mobileContent) {
-        return currentStep.value.mobileContent;
-    }
-    return currentStep.value.content;
+const currentStep = computed(() => TUTORIAL_STEPS[currentStepIndex.value]);
+const currentBody = computed(() =>
+    mobile.value && currentStep.value?.mobileBody ? currentStep.value.mobileBody : currentStep.value?.body || []
+);
+const highlightStyle = computed(() => ({
+    top: `${targetRect.value.top}px`,
+    left: `${targetRect.value.left}px`,
+    width: `${targetRect.value.width}px`,
+    height: `${targetRect.value.height}px`,
+}));
+const filteredTopics = computed(() => {
+    const keyword = query.value.trim().toLocaleLowerCase();
+    return TUTORIAL_TOPICS.filter((topic) => !selectedTopic.value || topic.id === selectedTopic.value).flatMap(
+        (topic) => {
+            if (!keyword) return [topic];
+            const matches = (text) => text.toLocaleLowerCase().includes(keyword);
+            if (matches(topic.title) || matches(topic.summary)) return [topic];
+            const cards = topic.cards.filter((card) => matches(card.title) || card.body.some(matches));
+            return cards.length ? [{ ...topic, cards }] : [];
+        }
+    );
 });
 
-const tooltipRef = ref(null);
-const tooltipStyle = ref({});
-const arrowClass = ref('');
-
-// 检查元素是否可见（且有大小）
-const isElementVisible = (el) => {
-    if (!el) return false;
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
+const markDone = () => {
+    try {
+        localStorage.setItem(STORAGE_KEYS.TUTORIAL_DONE, 'true');
+    } catch {
+        /* Private browsing may reject preference writes. */
+    }
 };
-
-const updatePosition = async () => {
-    if (!isActive.value) return;
-    await nextTick();
-
+const visibleRect = (element) => {
+    if (!element || !element.getClientRects().length) return null;
+    const rect = element.getBoundingClientRect();
+    if (!rect.width || !rect.height || getComputedStyle(element).visibility === 'hidden') return null;
+    const top = Math.max(0, rect.top),
+        left = Math.max(0, rect.left);
+    const right = Math.min(window.innerWidth, rect.right),
+        bottom = Math.min(window.innerHeight, rect.bottom);
+    return right > left && bottom > top
+        ? { top, left, right, bottom, width: right - left, height: bottom - top }
+        : null;
+};
+const updatePosition = () => {
+    if (!isActive.value || view.value !== 'tour' || !currentStep.value) return;
+    const width = window.innerWidth,
+        height = window.innerHeight;
+    mobile.value = width < 768;
     const step = currentStep.value;
-    let el = document.getElementById(step.targetId);
-    isUsingMobileTarget.value = false;
-
-    // 如果主目标不可见，尝试移动端目标
-    if (!isElementVisible(el)) {
-        if (step.mobileTargetId) {
-            const mobileEl = document.getElementById(step.mobileTargetId);
-            if (isElementVisible(mobileEl)) {
-                el = mobileEl;
-                isUsingMobileTarget.value = true;
-            }
-        }
-    }
-
-    if (!isElementVisible(el)) {
-        // 如果都找不到，自动跳过
-        console.warn(`Tutorial target ${step.targetId} (or mobile) not found, skipping.`);
-        if (currentStepIndex.value < steps.length - 1) {
-            currentStepIndex.value++;
-            return;
-        } else {
-            finishTutorial();
-            return;
-        }
-    }
-
-    const rect = el.getBoundingClientRect();
+    let rect = visibleRect(step.targetId && document.getElementById(step.targetId));
+    if (mobile.value && step.mobileTargetId) rect = visibleRect(document.getElementById(step.mobileTargetId)) || rect;
     targetRect.value = rect;
-
-    // 计算 Tooltip 位置
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-    const maxWidth = Math.min(300, screenWidth - 32);
-
-    // 渲染后再获取实际高度以进行精准定位
-    await nextTick();
-    const actualHeight = tooltipRef.value ? tooltipRef.value.offsetHeight : 150;
-    const margin = 12;
-
-    let top, left;
-    let arrowPos = '';
-
-    const spaceBelow = screenHeight - rect.bottom;
-    const spaceAbove = rect.top;
-
-    // 决定放在上面还是下面
-    if (spaceBelow > actualHeight + margin + 20) {
-        top = rect.bottom + margin;
-        arrowPos = 'top';
-    } else if (spaceAbove > actualHeight + margin + 20) {
-        top = rect.top - actualHeight - margin;
-        arrowPos = 'bottom';
-    } else {
-        // 空间都不足，尝试强行放置并修正 Y 轴边界
-        if (spaceBelow > spaceAbove) {
-            top = rect.bottom + margin;
-            arrowPos = 'top';
-        } else {
-            top = rect.top - actualHeight - margin;
-            arrowPos = 'bottom';
-        }
+    const panelWidth = Math.min(420, width - 24);
+    const panelHeight = Math.min(dialogRef.value?.offsetHeight || 380, height - 24);
+    let top = (height - panelHeight) / 2;
+    let left = (width - panelWidth) / 2;
+    if (rect) {
+        left = Math.max(12, Math.min(width - panelWidth - 12, rect.left + rect.width / 2 - panelWidth / 2));
+        if (height - rect.bottom >= panelHeight + 24) top = rect.bottom + 12;
+        else if (rect.top >= panelHeight + 24) top = rect.top - panelHeight - 12;
     }
-
-    // 边界修正 (Y轴) - 核心修复点：确保不超出屏幕底部
-    if (top + actualHeight > screenHeight - 16) {
-        top = screenHeight - actualHeight - 16;
-    }
-    if (top < 16) top = 16;
-
-    // 水平居中对齐目标
-    left = rect.left + rect.width / 2 - maxWidth / 2;
-
-    // 边界修正 (X轴)
-    if (left < 16) left = 16;
-    if (left + maxWidth > screenWidth - 16) left = screenWidth - maxWidth - 16;
-
-    tooltipStyle.value = {
-        top: `${top}px`,
+    tourStyle.value = {
+        width: `${panelWidth}px`,
         left: `${left}px`,
-        width: `${maxWidth}px`,
+        top: `${Math.max(12, Math.min(height - panelHeight - 12, top))}px`,
     };
-
-    // 箭头样式
-    if (arrowPos === 'top') {
-        arrowClass.value = `-top-2 bg-surface-raised border-t border-l border-line rotate-45`;
-    } else {
-        arrowClass.value = `-bottom-2 bg-surface-raised border-b border-r border-line rotate-45`;
-    }
-
-    // 计算箭头相对于 tooltip 的水平位置
-    const targetCenter = rect.left + rect.width / 2;
-    const arrowLeft = targetCenter - left;
-    const clampedArrowLeft = Math.max(12, Math.min(maxWidth - 12, arrowLeft));
-
-    // 将箭头位置注入 style
-    tooltipStyle.value['--arrow-left'] = `${clampedArrowLeft}px`;
 };
-
-const nextStep = () => {
-    if (currentStepIndex.value < steps.length - 1) {
-        currentStepIndex.value++;
-    } else {
-        finishTutorial();
-    }
+const schedulePosition = () => {
+    cancelAnimationFrame(positionFrame);
+    positionFrame = requestAnimationFrame(updatePosition);
 };
-
-const skipTutorial = () => {
-    finishTutorial();
+const focusDialog = async () => {
+    const version = ++openingVersion;
+    await nextTick();
+    if (disposed || !isActive.value || version !== openingVersion) return;
+    dialogRef.value?.focus({ preventScroll: true });
+    schedulePosition();
 };
-
-const finishTutorial = () => {
-    isActive.value = false;
-    localStorage.setItem(STORAGE_KEY, 'true');
+const open = (nextView) => {
+    clearTimeout(startupTimer);
+    if (!isActive.value) returnFocus = document.activeElement;
+    view.value = nextView;
+    targetRect.value = null;
+    isActive.value = true;
+    focusDialog();
 };
-
-const startTutorial = () => {
-    // 检查是否已完成
-    if (localStorage.getItem(STORAGE_KEY)) return;
-
-    // 延迟一点启动，等待 UI 渲染完成
-    setTimeout(() => {
-        isActive.value = true;
-        updatePosition();
-    }, 1000);
+const showGuide = () => {
+    if (view.value === 'tour') markDone();
+    open('guide');
 };
-
-// 监听窗口大小变化重新定位
-watch([width, height, currentStepIndex], updatePosition);
-
-// 暴露给外部调用（例如手动重新开始教程）
+const openGuide = () => {
+    query.value = '';
+    selectedTopic.value = '';
+    showGuide();
+};
 const restart = () => {
     currentStepIndex.value = 0;
-    isActive.value = true;
-    updatePosition();
+    open('tour');
 };
-
+const closeHelp = () => {
+    if (!isActive.value) return;
+    if (view.value === 'tour') markDone();
+    isActive.value = false;
+    targetRect.value = null;
+    openingVersion++;
+    cancelAnimationFrame(positionFrame);
+    if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+    returnFocus = null;
+};
+const finishTutorial = () => {
+    markDone();
+    closeHelp();
+};
+const nextStep = () => {
+    if (currentStepIndex.value < TUTORIAL_STEPS.length - 1) currentStepIndex.value++;
+    else finishTutorial();
+};
+const previousStep = () => {
+    if (currentStepIndex.value > 0) currentStepIndex.value--;
+};
+const selectTopic = (id) => {
+    selectedTopic.value = id;
+    guideBodyRef.value?.scrollTo({ top: 0 });
+};
+const onKeydown = (event) => {
+    if (!isActive.value) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeHelp();
+    } else if (event.key === 'Tab') {
+        const nodes = [
+            ...dialogRef.value.querySelectorAll(
+                'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'
+            ),
+        ].filter((node) => node.getClientRects().length);
+        const first = nodes[0],
+            last = nodes[nodes.length - 1];
+        if (!first) {
+            event.preventDefault();
+            dialogRef.value.focus();
+        } else if (event.shiftKey && (document.activeElement === first || !nodes.includes(document.activeElement))) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !nodes.includes(document.activeElement))) {
+            event.preventDefault();
+            first.focus();
+        }
+        event.stopImmediatePropagation();
+    }
+};
+const onFocusin = (event) => {
+    if (isActive.value && dialogRef.value && !dialogRef.value.contains(event.target))
+        dialogRef.value.focus({ preventScroll: true });
+};
+watch(currentStepIndex, async () => {
+    await nextTick();
+    if (disposed) return;
+    tourBodyRef.value?.scrollTo({ top: 0 });
+    schedulePosition();
+});
+watch(query, () => {
+    selectedTopic.value = '';
+    guideBodyRef.value?.scrollTo({ top: 0 });
+});
+watch(selectedTopic, () => guideBodyRef.value?.scrollTo({ top: 0 }));
 onMounted(() => {
-    startTutorial();
+    window.addEventListener('keydown', onKeydown, true);
+    window.addEventListener('focusin', onFocusin, true);
+    window.addEventListener('resize', schedulePosition);
+    window.addEventListener('scroll', schedulePosition, true);
+    let done = false;
+    try {
+        done = !!localStorage.getItem(STORAGE_KEYS.TUTORIAL_DONE);
+    } catch {
+        /* The tour still works without persistent preferences. */
+    }
+    if (!done) startupTimer = setTimeout(restart, 1000);
+});
+onUnmounted(() => {
+    disposed = true;
+    clearTimeout(startupTimer);
+    cancelAnimationFrame(positionFrame);
+    window.removeEventListener('keydown', onKeydown, true);
+    window.removeEventListener('focusin', onFocusin, true);
+    window.removeEventListener('resize', schedulePosition);
+    window.removeEventListener('scroll', schedulePosition, true);
 });
 
-defineExpose({ restart });
+defineExpose({ openGuide, restart });
 </script>
+
+<style scoped>
+.tutorial-dialog {
+    max-height: calc(100dvh - 24px);
+}
+.tutorial-compact-topics {
+    display: none;
+}
+@media (max-width: 639px), (max-height: 420px) {
+    .tutorial-compact-topics {
+        display: block;
+    }
+    .tutorial-wide-topics {
+        display: none;
+    }
+}
+.tutorial-guide {
+    inset: 12px;
+    width: min(960px, calc(100% - 24px));
+    margin-inline: auto;
+}
+.tutorial-button {
+    min-height: 40px;
+    padding: 0.5rem 0.8rem;
+    border-width: 1px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+.tutorial-topic {
+    min-height: 36px;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid rgb(var(--mp-line));
+    font-size: 0.75rem;
+    text-align: left;
+}
+@media (max-height: 420px) {
+    #tutorial-subtitle {
+        display: none;
+    }
+    .tutorial-guide label[for='tutorial-guide-search'] {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+    .tutorial-guide input {
+        padding: 0.35rem 0.5rem;
+    }
+    .tutorial-guide > div.shrink-0 {
+        padding: 0.5rem 0.75rem;
+    }
+    .tutorial-dialog .tutorial-button {
+        min-height: 32px;
+        padding: 0.35rem 0.6rem;
+    }
+    .tutorial-dialog header {
+        padding: 0.5rem 0.75rem;
+    }
+    .tutorial-dialog footer {
+        padding: 0.5rem 0.75rem;
+    }
+    .tutorial-dialog nav {
+        max-height: 20dvh;
+    }
+}
+</style>

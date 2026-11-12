@@ -25,7 +25,7 @@
         </div>
 
         <!-- 3. 主界面 (当 hasStarted 为 true 时显示) -->
-        <MainLayout v-if="hasStarted" @search="handleSearchClick">
+        <MainLayout v-if="hasStarted" @search="handleSearchClick" @help="tutorialRef?.openGuide()">
             <!-- 中间插槽: 视觉控制台 -->
             <CenterConsole />
 
@@ -43,7 +43,7 @@
         <SearchModal :isOpen="showSearch" @close="showSearch = false" />
         <NamePromptModal />
         <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode" />
-        <TutorialOverlay v-if="hasStarted && !uiStore.isLiteMode" />
+        <TutorialOverlay v-if="hasStarted" ref="tutorialRef" />
         <AdminAuthModal />
         <AdminDashboard />
     </div>
@@ -79,6 +79,7 @@ const uiStore = useUiStore();
 const adminStore = useAdminStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
+const tutorialRef = ref(null);
 const { info } = useToast();
 
 const startGame = () => {
