@@ -53,7 +53,7 @@ func fixtureController(t *testing.T) (*Controller, *config.AppConfig, string) {
 		t.Skip("POSIX executable fixture; native Windows bundle covered separately")
 	}
 	bin := t.TempDir()
-	helper := "#!/bin/sh\nexec \"" + os.Args[0] + "\" -test.run=^TestLaunchHelper$\n"
+	helper := "#!/bin/sh\nexec \"" + os.Args[0] + "\" -test.run=^TestLaunchHelper$ -- \"$@\"\n"
 	for _, relative := range []string{"qqmusic/python/python", "jre/bin/java"} {
 		path := filepath.Join(bin, relative)
 		os.MkdirAll(filepath.Dir(path), 0755)

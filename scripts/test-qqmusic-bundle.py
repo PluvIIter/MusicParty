@@ -151,7 +151,7 @@ def smoke(bundle, python, env, working, label):
     child_env = env | {"QQMUSIC_GATEWAY_TOKEN": token, "QQMUSIC_BIND": "127.0.0.1",
                        "QQMUSIC_PORT": str(port), "QQMUSIC_DEVICE_PATH": str(working / f"device-{label}.json")}
     with tempfile.TemporaryFile(mode="w+b") as log:
-        process = subprocess.Popen([str(python), "-c", BOOTSTRAP, str(bundle / "app.py")], cwd=working,
+        process = subprocess.Popen([str(python), "-I", "-c", BOOTSTRAP, str(bundle / "app.py")], cwd=working,
                                    env=child_env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + 45
@@ -207,7 +207,7 @@ def main():
         polluted_env = base_env | {"PYTHONHOME": str(poison), "PYTHONPATH": str(poison),
                                    "PYTHONUSERBASE": str(poison), "PYTHONSTARTUP": str(poison / "app.py")}
         for label, env in [("clean", base_env), ("polluted-python-environment", polluted_env)]:
-            probe = subprocess.run([str(python), "-c", PROBE, str(bundle)], cwd=poison, env=env,
+            probe = subprocess.run([str(python), "-I", "-c", PROBE, str(bundle)], cwd=poison, env=env,
                                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=45)
             require(probe.returncode == 0, f"Bundled import/isolation check failed ({label}):\n{probe.stdout}\n{probe.stderr}")
             print(f"Bundled import/isolation check passed ({label}): {probe.stdout.strip()}")
