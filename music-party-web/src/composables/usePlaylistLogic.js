@@ -123,7 +123,7 @@ export function usePlaylistLogic(platform, songs, listMode, loading, active = re
             nextCursor.value = page.nextCursor;
             loadMoreFailed.value = false;
         } catch (e) {
-            if (append) loadMoreFailed.value = true;
+            if (append && request.current() && !isCanceled(e)) loadMoreFailed.value = true;
             report(e, request);
         } finally {
             if (request.current()) {

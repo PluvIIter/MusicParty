@@ -27,7 +27,13 @@ async function bindUser(page, name = 'User A') {
 
 async function fixture(
     page,
-    { emptyFirst = false, deferCollections = false, deferTracks = false, pagedCollections = false } = {}
+    {
+        emptyFirst = false,
+        deferCollections = false,
+        deferTracks = false,
+        deferAppendTracks = false,
+        pagedCollections = false,
+    } = {}
 ) {
     const reads = [],
         sent = [],
@@ -128,7 +134,7 @@ async function fixture(
                     };
         } else if (path.includes('/containers/') && path.endsWith('/tracks'))
             body =
-                emptyFirst && !url.searchParams.get('cursor')
+                (emptyFirst || deferAppendTracks) && !url.searchParams.get('cursor')
                     ? { items: [], nextCursor: 'second-page' }
                     : { items: [track('Container song')], nextCursor: null };
         else if (path.endsWith('/album'))
@@ -141,7 +147,11 @@ async function fixture(
             };
         if (
             (deferCollections && path.includes('/collections/')) ||
-            (deferTracks && path.includes('/containers/') && path.endsWith('/tracks'))
+            (deferTracks && path.includes('/containers/') && path.endsWith('/tracks')) ||
+            (deferAppendTracks &&
+                path.includes('/containers/') &&
+                path.endsWith('/tracks') &&
+                url.searchParams.has('cursor'))
         ) {
             return new Promise((resolve) =>
                 pending.push(async () => {
@@ -258,6 +268,29 @@ test('canceled container tracks resume on reopen without a new source selection'
     await server.release();
     await expect(page.getByText('Container song', { exact: true })).toBeVisible();
 });
+
+for (const switchToLikes of [false, true])
+    test(`canceled next track page resumes after ${switchToLikes ? 'LIKESONG' : 'close'} without a manual retry`, async ({
+        page,
+    }) => {
+        const server = await fixture(page, { deferAppendTracks: true });
+        const trackReads = () => server.reads.filter((url) => url.pathname.includes('/containers/'));
+        await bindUser(page);
+        await page.getByText('Public mix', { exact: true }).click();
+        await page.getByRole('button', { name: '加载更多曲目', exact: true }).click();
+        await expect.poll(() => trackReads().length).toBe(2);
+        expect(trackReads()[1].searchParams.get('cursor')).toBe('second-page');
+        if (switchToLikes) await page.getByRole('button', { name: 'LIKESONG', exact: true }).click();
+        else await page.getByRole('button', { name: '关闭搜索', exact: true }).click();
+        await server.release();
+        if (switchToLikes) await page.getByRole('button', { name: 'future-source', exact: true }).click();
+        else await page.locator('#tutorial-search').click();
+        await expect.poll(() => trackReads().length).toBe(3);
+        expect(trackReads()[2].searchParams.get('cursor')).toBe('second-page');
+        await server.release();
+        await expect(page.getByText('Container song', { exact: true })).toHaveCount(1);
+        await expect(page.getByRole('button', { name: '加载更多曲目', exact: true })).toHaveCount(0);
+    });
 
 test('unknown source discovers generic collection categories and binds a user from search', async ({ page }) => {
     const server = await fixture(page);

@@ -154,7 +154,7 @@ test('admin can discover and enable a disabled unknown source without credential
     await control.click();
     await expect(control).toHaveAttribute('aria-checked', 'true');
     expect(fixture.updates).toEqual([{ sources: { 'disabled-source': { enabled: true } } }]);
-    await expect(page.getByText(/交付模式：SERVER_DOWNLOAD/)).toBeVisible();
+    await expect(page.getByText(/交付模式：/)).toHaveCount(0);
     await expect(page.getByPlaceholder(/输入新 COOKIE/)).toHaveCount(0);
 });
 
