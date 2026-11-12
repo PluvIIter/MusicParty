@@ -28,8 +28,8 @@ class QqMusicMediaDeliveryTest {
             var credentials = new QqMusicCredentialService(properties, MAPPER);
             var mediaMid = new AtomicReference<>("originalMID");
             var api = api(properties, client((request, body) -> Mono.just(data(
-                    request.url().getPath().equals("/v1/track") ? json(TRACK)
-                            : media(body.path("params").path("quality").asText(), mediaMid.get())))), credentials);
+                    request.url().getPath().endsWith("/detail") ? json("{\"track\":" + TRACK.replace("mediaMID", mediaMid.get()) + "}")
+                            : media("MP3_128", mediaMid.get())))), credentials);
             var registry = new SourceRegistry(List.of(api), properties);
             var cache = mock(LocalCacheService.class);
             when(cache.getStatus(anyString())).thenReturn(CacheStatus.COMPLETED);

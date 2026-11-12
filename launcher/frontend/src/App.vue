@@ -18,8 +18,7 @@ const config = reactive({
   neteaseQuality: 'exhigh',
   biliCookie: '',
   qqmusicGatewayMode: 'bundled',
-  qqmusicBaseUrl: 'http://localhost:8000',
-  qqmusicGatewayToken: '',
+  qqmusicBaseUrl: 'http://127.0.0.1:8000',
   qqmusicCookie: '',
   qqmusicQuality: 'MP3_128',
   sources: {},
@@ -479,7 +478,7 @@ const openPublicUrl = async () => {
           </span>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-medical-400">QQ 网关:</span>
+          <span class="text-medical-400">QQ 原生 API:</span>
           <span :class="serviceStatuses.QQMUSIC_API ? 'text-green-600 font-bold' : 'text-medical-300'">{{ serviceStatuses.QQMUSIC_API ? '已验证就绪' : '未就绪' }}</span>
         </div>
         <div class="flex items-center gap-2">

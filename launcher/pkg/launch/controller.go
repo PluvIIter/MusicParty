@@ -2,8 +2,6 @@ package launch
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -155,8 +153,9 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 				gatewayDir = filepath.Join(c.BinDir, "qqmusic")
 			}
 			python := filepath.Join(gatewayDir, "python", executable("python"))
-			app := filepath.Join(gatewayDir, "app.py")
-			for _, path := range []string{python, app, filepath.Join(gatewayDir, "gateway.py")} {
+			upstream := filepath.Join(gatewayDir, "upstream", "source")
+			app := filepath.Join(upstream, "web", "run.py")
+			for _, path := range []string{python, app, filepath.Join(upstream, "web", "src", "app.py")} {
 				info, statErr := os.Stat(path)
 				if statErr != nil || info.IsDir() {
 					return fmt.Errorf("bundled QQ runtime is incomplete; reinstall the complete launcher package")
@@ -168,24 +167,21 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 			}
 			port := listener.Addr().(*net.TCPAddr).Port
 			listener.Close()
-			secret := make([]byte, 32)
-			if _, randomErr := rand.Read(secret); randomErr != nil {
-				return fmt.Errorf("cannot generate QQ gateway access token")
-			}
-			active.QqmusicBaseURL, active.QqmusicGatewayToken = "http://127.0.0.1:"+strconv.Itoa(port), hex.EncodeToString(secret)
+			active.QqmusicBaseURL = "http://127.0.0.1:" + strconv.Itoa(port)
 			if mkdirErr := os.MkdirAll(c.DeviceDir, 0700); mkdirErr != nil {
 				return fmt.Errorf("cannot prepare QQ device directory")
 			}
-			gateway, err = manager.Start(process.Spec{Name: "QQMUSIC_API", Command: python, Args: []string{"-I", app}, Dir: gatewayDir, Quiet: true,
-				Env: map[string]string{"QQMUSIC_BIND": "127.0.0.1", "QQMUSIC_PORT": strconv.Itoa(port), "QQMUSIC_GATEWAY_TOKEN": active.QqmusicGatewayToken,
-					"QQMUSIC_DEVICE_PATH": filepath.Join(c.DeviceDir, "qqmusic-device.json"), "PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "", "PYTHONHOME": ""}})
+			gateway, err = manager.Start(process.Spec{Name: "QQMUSIC_API", Command: python, Args: []string{"-I", "-B", app}, Dir: upstream, Quiet: true, UnsetEnv: inheritedQqVariables(os.Environ()),
+				Env: map[string]string{"QQMUSIC_SERVER_HOST": "127.0.0.1", "QQMUSIC_SERVER_PORT": strconv.Itoa(port), "QQMUSIC_SERVER_WORKERS": "1", "QQMUSIC_CREDENTIAL_ENABLED": "false",
+					"QQMUSIC_CREDENTIAL_STORE_PATH": filepath.Join(c.DeviceDir, "qqmusic-credentials.sqlite3"), "QQMUSIC_CLIENT_DEVICE_PATH": filepath.Join(c.DeviceDir, "qqmusic-device.json"), "QQMUSIC_LOGGING_LEVEL": "WARNING",
+					"PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "", "PYTHONHOME": ""}})
 			if err != nil {
 				return err
 			}
 			handles = append(handles, gateway)
 		}
 		readyCtx, readyCancel := context.WithTimeout(ctx, c.ReadyTimeout)
-		err = waitGateway(readyCtx, c.Client, active.QqmusicBaseURL, active.QqmusicGatewayToken, gateway)
+		err = waitGateway(readyCtx, c.Client, active.QqmusicBaseURL, gateway)
 		readyCancel()
 		if err != nil {
 			return err
@@ -236,7 +232,7 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 	if _, statErr := os.Stat(java); statErr != nil {
 		java = "java"
 	}
-	secrets := []string{active.QqmusicGatewayToken, active.QqmusicCookie, active.NeteaseCookie, active.BiliCookie, active.AdminPassword}
+	secrets := []string{active.QqmusicCookie, active.NeteaseCookie, active.BiliCookie, active.AdminPassword}
 	javaHandle, err := manager.Start(process.Spec{Name: "JAVA_SERVER", Command: java, Args: args,
 		Env: map[string]string{"PATH": c.BinDir + string(os.PathListSeparator) + os.Getenv("PATH")}, Secrets: secrets})
 	if err != nil {

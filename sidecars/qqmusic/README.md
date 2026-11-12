@@ -1,59 +1,69 @@
-# QQ Music private gateway
+# QQMusic native Web deployment
 
-Protocol 1 is an internal adapter service, not a public QQ Music API proxy. It uses `qqmusic-api-python` at commit `c046788dd1f11daacc74da487cbbf1bcd8ac6f33`. Java remains responsible for room authorization, source epochs, delivery mode, download security, and playback timeline enforcement.
+This directory deploys the unmodified Web application shipped by [L1124/QQMusicApi](https://github.com/l-1124/QQMusicApi/tree/c046788dd1f11daacc74da487cbbf1bcd8ac6f33/web) at commit `c046788dd1f11daacc74da487cbbf1bcd8ac6f33`. There is no custom operation server or Bearer-token bridge. MusicParty calls the native REST routes and passes request credentials through the upstream Cookie contract.
 
-## Run
+## Local deployment
 
-Use Python 3.13 and a fresh virtual environment:
+Use Python 3.13, install [the runtime requirements](<requirements.txt>), and export the complete pinned upstream tree into a new directory:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-export QQMUSIC_GATEWAY_TOKEN='replace-with-a-random-private-token-at-least-16-characters'
-.venv/bin/python app.py
+.venv/bin/python -m pip install -r requirements.txt
+git init upstream-checkout
+git -C upstream-checkout fetch --depth=1 https://github.com/l-1124/QQMusicApi.git c046788dd1f11daacc74da487cbbf1bcd8ac6f33
+mkdir -p upstream/source
+git -C upstream-checkout archive FETCH_HEAD | tar -x -C upstream/source
+export QQMUSIC_SERVER_HOST=127.0.0.1 QQMUSIC_SERVER_PORT=8000 QQMUSIC_SERVER_WORKERS=1
+export QQMUSIC_CREDENTIAL_ENABLED=false QQMUSIC_LOGGING_LEVEL=WARNING
+export QQMUSIC_CLIENT_DEVICE_PATH="$PWD/device.json"
+export QQMUSIC_CREDENTIAL_STORE_PATH="$PWD/credentials.sqlite3"
+PYTHON="$PWD/.venv/bin/python"
+cd upstream/source
+"$PYTHON" -I -B web/run.py
 ```
 
-The Windows one-click launcher bundles this gateway, an embedded CPython runtime, installed dependencies, and upstream source/license notices. Its default bundled mode generates a per-run loopback address and token, waits for authenticated readiness, and owns that child process until stop/exit. Users do not need a system Python installation. External mode keeps the standalone/Docker deployment below available.
+The small requirements list installs the pinned SDK plus the upstream `web` dependency group: FastAPI, Griffe, pydantic-settings with TOML support, and Uvicorn. Python-dotenv is also pinned. Do not install the upstream Web requirements export: it includes development and documentation dependencies. Credential storage uses Python's standard-library SQLite, not aiosqlite.
 
-Standalone defaults to `127.0.0.1:8000`. `QQMUSIC_BIND`, `QQMUSIC_PORT`, and `QQMUSIC_DEVICE_PATH` override listener/device storage. The device file contains anonymous upstream device state, not an account pool. Its directory must be writable by the gateway user. Never put the account Credential or gateway token in query parameters.
+Keep the source export clean: do not copy the upstream account/config examples to active configuration, and do not add `.env`. This deployment creates no account or login. The pinned application still initializes an empty SQLite credential store and invokes its startup pool health check even when `QQMUSIC_CREDENTIAL_ENABLED=false`; absent `web/accounts.toml`, there are no accounts to validate or refresh. Environment settings alone are not a substitute for keeping account seeds absent. Device and SQLite paths must be writable and outside the immutable source export.
 
-Docker:
+## Windows bundle
+
+The packaging script retains CPython 3.13.9 with its existing SHA256 pin, installed dependencies and dist-info/license metadata, plus the complete upstream Git archive including Web sources. The manifest declares `entryPoint=upstream/source/web/run.py` and `workingDirectory=upstream/source`. Start the bundled Python with `-I` and that entry point from that working directory. The embedded Python search paths include `../upstream/source` relative to its `python` directory. No Web implementation is copied into a second server.
+
+Set these native runtime environment variables:
+
+| Variable | Bundled value / purpose |
+| --- | --- |
+| `QQMUSIC_SERVER_HOST` | `127.0.0.1` |
+| `QQMUSIC_SERVER_PORT` | Launcher-selected free port |
+| `QQMUSIC_SERVER_WORKERS` | `1` |
+| `QQMUSIC_CLIENT_DEVICE_PATH` | Writable device-state path |
+| `QQMUSIC_CREDENTIAL_STORE_PATH` | Writable SQLite-state path |
+| `QQMUSIC_CREDENTIAL_ENABLED` | `false` |
+| `QQMUSIC_LOGGING_LEVEL` | `WARNING` |
+
+## Docker
 
 ```sh
 docker build -t musicparty-qqmusic .
-docker run --rm --network musicparty-internal \
-  -e QQMUSIC_GATEWAY_TOKEN="$QQMUSIC_GATEWAY_TOKEN" musicparty-qqmusic
+docker run --rm --network musicparty-internal musicparty-qqmusic
 ```
 
-The image listens on port 8000, runs as UID 10001, and has a health check. Do not publish its port to untrusted networks. The root compose integration should connect backend and gateway on a private Docker network; the `QQMUSIC_GATEWAY_TOKEN` values must match. `GET /health` returns only `{"protocolVersion":1}` and is intentionally unauthenticated.
+The image runs the same pinned native entry point as UID 10001, listens internally on port 8000, and stores writable state under `/home/qqmusic/data`. Do not publish this unauthenticated service to untrusted networks. Keep the backend and this service on a private network. The native upstream login and other routes remain present; network isolation, rather than a new private gateway, limits access.
 
-## Requests
+## Readiness and offline tests
 
-`POST /v1/{operation}` requires `Authorization: Bearer <token>` and JSON `{"params":{...}}`. Only `media`, `media-fallback`, and `fm` may receive a top-level `credential`. That snapshot accepts exactly `musicid`, `musickey`, optional `loginType` (0/1/2), and optional `encrypt_uin`. `musicid` must be a positive decimal string/integer; it is normalized before constructing upstream Credential. Unknown fields, login endpoints, refresh tokens, arbitrary endpoint/URL parameters, and public operations carrying a nonempty credential are rejected.
+At this pinned revision, **there is no `/health` endpoint or uptime/status payload**. `GET /` returns `{"code":0,"msg":"ok","time":"..."}`. `GET /openapi.json` exposes the native `QQMusic API` schema; `/docs`, `/swagger`, and `/redoc` expose upstream documentation pages. Docker and launcher readiness must use the actual native root response, not the removed protocol-1 response. `/health` and `/v1/search` return native 404 responses.
 
-Public search, metadata, lyrics, user search, created playlists, playlist pages, and albums always use the separate anonymous client with an explicit empty Credential on the request. Account-aware operations create a separate short-lived client and close it after that request. There is no saved account, credential pool, login, automatic token refresh, or fallback to another account.
-
-Supported operations follow the repository gateway contract: `search`, `track`, `lyrics`, `users`, `collections`, `container`, `tracks`, `album`, `track-album`, `media`, `media-fallback`, and `fm`. `fm` calls the upstream native `recommend.get_guess_recommend` operation (`music.radioProxy.MbTrackRadioSvr.get_radio_track`, radio 99). DJ is unsupported and fails explicitly. FM requires a supplied Credential; metadata and collections never use it.
-
-User references are `q1.<base64url compact JSON>` containing independently verified `uin` and/or `euin`. Search uses actual `uin` and `encrypt_uin` response fields, never nickname/docid inference. Created playlists require a reference containing numeric `uin`; euin-only targets fail clearly. Containers use global `tid`/`id`, not per-user `dirId`. A private playlist (`dirinfo.dir_show == 2`) returns `COLLECTION_NOT_PUBLIC` even when upstream returns outer code zero.
-
-Created playlists are sliced only after upstream reports a complete bounded list. Listed entries with `invalid` set or `dirShow == 2` are not exposed. The list mapper accepts only integer `dirShow` values 0 and 1; absent, unknown, boolean, and string markers are filtered out conservatively. Those allowed list markers do not guarantee detail accessibility. Before returning a candidate, the gateway anonymously reads its playlist detail, verifies the global playlist ID, and returns the detail metadata. A confirmed detail privacy flag skips that entry; all other upstream/detail failures fail the request instead of becoming empty success. Detail verification runs with at most four requests in flight within the existing operation timeout. Pagination offsets and totals remain based on the raw list, so a page may contain no visible entries and still have a next offset. Playlist cursors advance by raw upstream entries, including unavailable tracks filtered out of output. Empty pages with continuation fail instead of looping. Albums fetch every page within a 2,000-track budget; no partial album success is returned.
-
-Media supports only ordinary `MP3_128`, `MP3_320`, and `FLAC`. It obtains `file.media_mid` from anonymous detail, uses the corresponding ordinary filename prefix, and requires successful per-file authorization, exact song/filename/path identity, nonempty relative purl, no encrypted key, positive full-file size, and known expiration greater than the safety margin. Preview/unknown/encrypted results fail closed. Declared size no larger than the preview file is rejected. It does not request encrypted formats, decrypt media, or evade an upstream entitlement decision. The fallback operation explicitly requests MP3_128; Java decides whether it is genuinely distinct from the initial representation. The response exposes `mediaMid` from that anonymous metadata lookup. Timeline identity is lowercase SHA-256 of UTF-8 `songmid:mediaMid:durationMs:full`; it excludes encoding/quality but changes when the underlying file identity changes even if track ID and duration stay the same. Representation identity remains `QUALITY:mediaMid:fullFileSizeBytes`. Signed media URLs remain ephemeral and are never logged by this service.
-
-Limits: 16 KiB request body, 200-character search query, 100 entries/page, offset at most 100,000, eight concurrent gateway operations, 20-second operation timeout (including waiting for a concurrency slot), 5-second body-read timeout, and 2 MiB normalized response. Both the gateway's timeout and the pinned upstream `TimeoutNetworkError` return HTTP 504 with `UPSTREAM_TIMEOUT`. Errors contain stable codes only, not upstream exception bodies, account credentials, or signed URLs. Access logging is disabled.
-
-## Tests and actual verification
+[The smoke test](<smoke.py>) checks root readiness, OpenAPI title and routes, and the absence of old private endpoints. Run an existing service check with `python smoke.py`; use the full isolated startup check with:
 
 ```sh
-.venv/bin/pip install -r requirements-test.txt
-.venv/bin/python -m pytest -q
+.venv/bin/python smoke.py --source /absolute/path/to/upstream/source
+QQMUSIC_UPSTREAM_SOURCE=/absolute/path/to/upstream/source .venv/bin/python -m pytest -q
 ```
 
-The test suite is deterministic gateway/mapper **fixture testing**, not proof that an account or a live playback works. It covers anonymous isolation, request-scoped credentials, raw pagination, complete album reads, native-FM method selection, ordinary-format authorization checks, input rejection, bearer/body boundaries, and sanitized failures.
-
-A small anonymous check on 2026-11-12 used the pinned upstream client, without any account or downloaded audio. Song/user search and song detail succeeded; user results supplied both numeric uin and euin (including `*`). Created-playlist response for one public target returned a complete 23-entry list. Its first listed favorites playlist was actually private; the detail response was code zero with empty tracks and a privacy flag, which the gateway now rejects. Anonymous album raw responses confirmed `basicInfo.albumMid`/`albumName` and a 12-track song page; those observed field shapes are covered by fixtures. Anonymous authorization for a paid track was rejected. No authorized FM, VIP media, browser audio, Docker build, or end-to-end Java/FFmpeg playback has been live-verified here.
+The startup test runs the real upstream entry point with an empty PATH, both clean and polluted Python environments, and a Python audit hook that rejects non-loopback socket access. It verifies startup without login and an empty credential database. Windows bundle tests additionally check the embedded runtime, source hashes and dependency/license metadata. Fixture tests use the real native app and RequestEngine with an offline CGI executor result and a transport that rejects network requests; they are not live QQ Music or playback verification.
 
 ## Licensing
 
-See `UPSTREAM-NOTICE.md`. The Docker image retains the complete pinned upstream source and its LICENSE under `/usr/share/licenses/qqmusic-api-python/`. Image distributors must satisfy the upstream GPL source and notice obligations; retaining a repository URL alone is not a substitute for providing corresponding source when required.
+See [the upstream notice](<UPSTREAM-NOTICE.md>). Docker retains the complete unmodified upstream source, license and commit under `/opt/qqmusic/upstream/`; Windows retains them under the bundle's `upstream/` directory. Retain those sources, original notices and installed dependency metadata when redistributing. A repository URL alone does not replace corresponding-source obligations.

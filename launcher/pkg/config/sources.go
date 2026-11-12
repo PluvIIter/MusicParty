@@ -55,12 +55,11 @@ func SourceDescriptors() []SourceDescriptor {
 		{
 			ID: "qqmusic", Label: "QQ 音乐", DefaultMode: ServerDownload, DefaultEnabled: false,
 			SupportedModes: []string{DirectURL, ServerDownload}, LocalService: "QQMUSIC_API",
-			Description: "启用后默认一键运行随包 QQ 网关，无需安装 Python 或手填网关令牌；也可选外部网关。凭据仅用于音频和原生私人 FM，不作为公开收藏身份。",
+			Description: "启用后一键运行随包 1124 QQMusic 原生 Web API，无需安装 Python。外部 API 必须关闭默认账号池、勿公开 Web 服务。凭据仅用于音频和原生私人 FM，不作为公开收藏身份。",
 			ConnectionFields: []ConnectionField{
-				{Key: "qqmusicGatewayMode", Label: "QQ 网关运行方式", Kind: "select", Options: []ConnectionOption{{Value: "bundled", Label: "内置一键启动（推荐）"}, {Value: "external", Label: "外部网关"}}},
-				{Key: "qqmusicBaseUrl", Label: "QQ API 外部网关地址", Kind: "url", GatewayMode: "external", Placeholder: "http://localhost:8000；填写网关根地址，不含 /v1 路径"},
-				{Key: "qqmusicGatewayToken", Label: "网关访问令牌", Kind: "password", GatewayMode: "external", Placeholder: "16–512 位可打印 ASCII，不含空格；须与外部网关 QQMUSIC_GATEWAY_TOKEN 一致"},
-				{Key: "qqmusicCookie", Label: "QQ Credential JSON", Kind: "password", Placeholder: "填写规范化 Credential JSON 对象，不是浏览器 Cookie 串；留空仅尝试合法匿名音频"},
+				{Key: "qqmusicGatewayMode", Label: "QQ 原生 API 运行方式", Kind: "select", Options: []ConnectionOption{{Value: "bundled", Label: "内置一键启动（推荐）"}, {Value: "external", Label: "外部原生 API"}}},
+				{Key: "qqmusicBaseUrl", Label: "QQ 原生 Web API 地址", Kind: "url", GatewayMode: "external", Placeholder: "http://127.0.0.1:8000；填写 1124 原生 Web API 根地址"},
+				{Key: "qqmusicCookie", Label: "QQ 原生 Cookie JSON", Kind: "password", Placeholder: "必需 musicid、musickey；可选 str_musicid、openid、refresh_token、access_token、expired_at、unionid、refresh_key；留空匿名"},
 				{Key: "qqmusicQuality", Label: "音频音质", Kind: "select", Options: []ConnectionOption{
 					{Value: "MP3_128", Label: "MP3 128 kbps"}, {Value: "MP3_320", Label: "MP3 320 kbps"},
 					{Value: "FLAC", Label: "FLAC 无损"},

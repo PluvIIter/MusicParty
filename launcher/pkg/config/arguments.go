@@ -19,7 +19,6 @@ func (c *AppConfig) JavaArgs(jarPath string) ([]string, error) {
 		fmt.Sprintf("--app.music-api.netease.quality=%s", c.NeteaseQuality),
 		fmt.Sprintf("--app.music-api.bilibili.cookie=%s", c.BiliCookie),
 		fmt.Sprintf("--app.music-api.qqmusic.base-url=%s", c.QqmusicBaseURL),
-		fmt.Sprintf("--app.music-api.qqmusic.gateway-token=%s", c.QqmusicGatewayToken),
 		fmt.Sprintf("--app.music-api.qqmusic.cookie=%s", c.QqmusicCookie),
 		fmt.Sprintf("--app.music-api.qqmusic.quality=%s", c.QqmusicQuality),
 		fmt.Sprintf("--app.music-api.queue.max-size=%d", c.QueueMaxSize),

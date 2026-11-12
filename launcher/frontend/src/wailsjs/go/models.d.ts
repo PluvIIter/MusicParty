@@ -18,7 +18,6 @@ export namespace config {
     biliCookie: string;
     qqmusicGatewayMode: 'bundled' | 'external';
     qqmusicBaseUrl: string;
-    qqmusicGatewayToken: string;
     qqmusicCookie: string;
     qqmusicQuality: 'MP3_128' | 'MP3_320' | 'FLAC';
     queueMaxSize: number;

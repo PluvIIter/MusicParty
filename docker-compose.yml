@@ -34,7 +34,6 @@ services:
       - BILIBILI_ENABLED=true        # 是否开启 Bilibili 源
       - QQMUSIC_ENABLED=${QQMUSIC_ENABLED:-false}
       - QQMUSIC_API_URL=${QQMUSIC_API_URL:-http://qqmusic-api:8000}
-      - QQMUSIC_GATEWAY_TOKEN=${QQMUSIC_GATEWAY_TOKEN:-}
       - QQMUSIC_COOKIE=${QQMUSIC_COOKIE:-}
       - QQMUSIC_QUALITY=${QQMUSIC_QUALITY:-MP3_128}
       - QQMUSIC_DELIVERY_MODE=${QQMUSIC_DELIVERY_MODE:-SERVER_DOWNLOAD}
@@ -76,7 +75,10 @@ services:
     build: ./sidecars/qqmusic
     restart: unless-stopped
     environment:
-      - QQMUSIC_GATEWAY_TOKEN=${QQMUSIC_GATEWAY_TOKEN:-}
+      - QQMUSIC_SERVER_HOST=0.0.0.0
+      - QQMUSIC_SERVER_PORT=8000
+      - QQMUSIC_SERVER_WORKERS=1
+      - QQMUSIC_CREDENTIAL_ENABLED=false
     networks:
       - music-net
 

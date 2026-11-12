@@ -1,3 +1,6 @@
 qqmusic-api-python @ git+https://github.com/l-1124/QQMusicApi.git@c046788dd1f11daacc74da487cbbf1bcd8ac6f33
 fastapi==0.162.5
 uvicorn==0.54.0
+griffe==2.3.0
+pydantic-settings[toml]==2.15.0
+python-dotenv==1.2.4

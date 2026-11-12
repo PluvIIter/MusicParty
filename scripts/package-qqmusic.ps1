@@ -86,7 +86,7 @@ try {
         throw 'CPython runtime license is missing.'
     }
     $null = New-Item -ItemType Directory -Path $sitePackages -Force
-    [IO.File]::WriteAllText((Join-Path $pythonDir 'python313._pth'), "python313.zip`n.`nLib/site-packages`n..`nimport site`n", [Text.Encoding]::ASCII)
+    [IO.File]::WriteAllText((Join-Path $pythonDir 'python313._pth'), "python313.zip`n.`nLib/site-packages`n..`n../upstream/source`nimport site`n", [Text.Encoding]::ASCII)
 
     Invoke-Git -GitArgs @('init', $checkout)
     Invoke-Git -GitArgs @('-C', $checkout, 'fetch', '--depth=1', $upstreamUrl, $upstreamCommit)
@@ -102,9 +102,14 @@ try {
     $sourceZip = Join-Path $buildDir 'upstream-source.zip'
     Invoke-Git -GitArgs @('-C', $checkout, 'archive', '--format=zip', "--output=$sourceZip", $upstreamCommit)
     Expand-Archive -LiteralPath $sourceZip -DestinationPath $sourceDir
-    foreach ($required in @('LICENSE', 'pyproject.toml', 'qqmusic_api/__init__.py')) {
+    foreach ($required in @('LICENSE', 'pyproject.toml', 'qqmusic_api/__init__.py', 'web/run.py', 'web/src/app.py', 'web/accounts.example.toml', 'web/config.example.toml')) {
         if (-not (Test-Path -LiteralPath (Join-Path $sourceDir $required) -PathType Leaf)) {
             throw "Upstream corresponding source is missing $required"
+        }
+    }
+    foreach ($name in @('.env', 'web/accounts.toml', 'web/config.toml')) {
+        if (Test-Path -LiteralPath (Join-Path $sourceDir $name)) {
+            throw "Upstream export contains active runtime configuration: $name"
         }
     }
     $sourceInventory = @'
@@ -129,7 +134,7 @@ Path(output).write_text(json.dumps({"commit": commit, "files": files}, indent=2)
 
     & $hostExecutable -I -m pip --isolated install --disable-pip-version-check --no-warn-script-location --no-compile --only-binary=:all: --target $sitePackages --report (Join-Path $upstreamDir 'pip-install-report.json') -r $requirements
     if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned sidecar requirements and Windows wheels.' }
-    foreach ($name in @('app.py', 'gateway.py', 'requirements.txt', 'UPSTREAM-NOTICE.md')) {
+    foreach ($name in @('requirements.txt', 'UPSTREAM-NOTICE.md')) {
         Copy-Item -LiteralPath (Join-Path $sidecar $name) -Destination (Join-Path $bundle $name)
     }
     $manifest = [ordered]@{
@@ -139,13 +144,15 @@ Path(output).write_text(json.dumps({"commit": commit, "files": files}, indent=2)
         pythonHashSource = $pythonHashSource
         upstreamUrl = $upstreamUrl
         upstreamCommit = $upstreamCommit
+        entryPoint = 'upstream/source/web/run.py'
+        workingDirectory = 'upstream/source'
         requirementsSha256 = (Get-FileHash -LiteralPath $requirements -Algorithm SHA256).Hash.ToLowerInvariant()
     }
     $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $bundle 'bundle-manifest.json') -Encoding utf8NoBOM
 
     & $hostExecutable -I (Join-Path $PSScriptRoot 'test-qqmusic-bundle.py') --bundle $bundle
     if ($LASTEXITCODE -ne 0) { throw 'Bundled Python offline smoke test failed.' }
-    Write-Host "QQMusic gateway bundle is ready: $bundle"
+    Write-Host "QQMusic native Web bundle is ready: $bundle"
 } finally {
     # Only remove our newly created staging tree, never a caller-selected output directory.
     $expectedBuildDir = [IO.Path]::GetFullPath((Join-Path $bundle '.build'))

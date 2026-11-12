@@ -20,10 +20,10 @@ class QqMusicRecommendationProviderTest {
         var properties = properties();
         var credentials = new QqMusicCredentialService(properties, MAPPER);
         var api = api(properties, client((request, body) -> {
-            assertEquals("/v1/fm", request.url().getPath());
-            assertEquals("123", body.path("credential").path("musicid").textValue());
-            assertTrue(body.path("params").isEmpty());
-            return Mono.just(data(json("[" + TRACK + "]")));
+            assertEquals("/recommend/get_guess_recommend", request.url().getPath());
+            assertTrue(request.headers().getFirst("Cookie").contains("musicid=\"123\""));
+            assertNull(request.url().getQuery());
+            return Mono.just(data(json("{\"songs\":[" + TRACK + "]}")));
         }), credentials);
         var delivery = mock(MediaDeliveryService.class);
         var provider = new QqMusicRecommendationProvider(api, delivery);
@@ -61,8 +61,8 @@ class QqMusicRecommendationProviderTest {
         var credentials = new QqMusicCredentialService(properties, MAPPER);
         credentials.updateCookie("{\"musicid\":123,\"musickey\":\"secret\"}");
         var api = api(properties, client((request, body) -> {
-            assertEquals("/v1/fm", request.url().getPath());
-            return Mono.just(data(json("[]")));
+            assertEquals("/recommend/get_guess_recommend", request.url().getPath());
+            return Mono.just(data(json("{\"songs\":[]}")));
         }), credentials);
         var provider = new QqMusicRecommendationProvider(api, mock(MediaDeliveryService.class));
         assertTrue(assertThrows(ApiRequestException.class, () -> provider.nextSegments("FM").block())

@@ -28,7 +28,6 @@ app:
         delivery-mode: ${QQMUSIC_DELIVERY_MODE:SERVER_DOWNLOAD}
     qqmusic:
       base-url: ${QQMUSIC_API_URL:http://localhost:8000}
-      gateway-token: ${QQMUSIC_GATEWAY_TOKEN:}
       cookie: ${QQMUSIC_COOKIE:}
       quality: ${QQMUSIC_QUALITY:MP3_128}
     netease:

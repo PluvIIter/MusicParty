@@ -22,7 +22,7 @@ func TestLaunchHelper(t *testing.T) {
 	if os.Getenv("QQ_LAUNCH_HELPER") != "1" {
 		return
 	}
-	if os.Getenv("QQMUSIC_PORT") == "" {
+	if os.Getenv("QQMUSIC_SERVER_PORT") == "" {
 		if capture := os.Getenv("QQ_CAPTURE"); capture != "" {
 			data, _ := json.Marshal(os.Args)
 			os.WriteFile(capture, data, 0600)
@@ -34,17 +34,35 @@ func TestLaunchHelper(t *testing.T) {
 		os.Exit(2)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, `{"protocolVersion":1}`) })
-	mux.HandleFunc("/v1/launcher-identity-probe", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+os.Getenv("QQMUSIC_GATEWAY_TOKEN") {
-			w.WriteHeader(401)
-			return
-		}
-		w.WriteHeader(404)
-		io.WriteString(w, `{"error":{"code":"CAPABILITY_UNAVAILABLE"}}`)
-	})
-	http.ListenAndServe("127.0.0.1:"+os.Getenv("QQMUSIC_PORT"), mux)
+	if !strings.Contains(strings.Join(os.Args, " "), "-I -B") {
+		os.Exit(8)
+	}
+	if os.Getenv("QQMUSIC_CREDENTIAL_ENABLED") != "false" || os.Getenv("QQMUSIC_SERVER_WORKERS") != "1" || os.Getenv("QQMUSIC_SERVER_HOST") != "127.0.0.1" || os.Getenv("QQMUSIC_DEFAULT_ACCOUNT") != "" {
+		os.Exit(7)
+	}
+	mux.HandleFunc("/", nativeQqTestHandler)
+	http.ListenAndServe("127.0.0.1:"+os.Getenv("QQMUSIC_SERVER_PORT"), mux)
 	os.Exit(0)
+}
+
+func nativeQqTestHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
+		w.WriteHeader(403)
+		return
+	}
+	if r.URL.Path == "/" {
+		io.WriteString(w, `{"code":0,"msg":"ok","time":"fixture"}`)
+		return
+	}
+	if r.URL.Path == "/openapi.json" {
+		paths := make(map[string]any)
+		for _, path := range qqWebPaths {
+			paths[path] = map[string]any{}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"info": map[string]string{"title": "QQMusic API"}, "paths": paths})
+		return
+	}
+	w.WriteHeader(404)
 }
 
 func fixtureController(t *testing.T) (*Controller, *config.AppConfig, string) {
@@ -62,9 +80,12 @@ func fixtureController(t *testing.T) (*Controller, *config.AppConfig, string) {
 		}
 	}
 	os.WriteFile(filepath.Join(bin, "server.jar"), []byte("fixture"), 0644)
-	for _, name := range []string{"app.py", "gateway.py"} {
-		os.WriteFile(filepath.Join(bin, "qqmusic", name), []byte("fixture"), 0644)
+	for _, name := range []string{"upstream/source/web/run.py", "upstream/source/web/src/app.py"} {
+		path := filepath.Join(bin, "qqmusic", filepath.FromSlash(name))
+		os.MkdirAll(filepath.Dir(path), 0755)
+		os.WriteFile(path, []byte("fixture"), 0644)
 	}
+	t.Setenv("QQMUSIC_DEFAULT_ACCOUNT", "must-not-inherit")
 	t.Setenv("QQ_LAUNCH_HELPER", "1")
 	capture := filepath.Join(t.TempDir(), "java.json")
 	t.Setenv("QQ_CAPTURE", capture)
@@ -76,7 +97,7 @@ func fixtureController(t *testing.T) (*Controller, *config.AppConfig, string) {
 	return controller, cfg, capture
 }
 
-func TestBundledRuntimeUsesEphemeralSecretsWithoutChangingStoredConfig(t *testing.T) {
+func TestBundledNativeRuntimeUsesEphemeralPortWithoutChangingStoredConfig(t *testing.T) {
 	controller, cfg, capture := fixtureController(t)
 	cfg.Sources["qqmusic"] = config.SourceConfig{Enabled: true, DeliveryMode: config.ServerDownload}
 	before, _ := json.Marshal(cfg)
@@ -95,11 +116,11 @@ func TestBundledRuntimeUsesEphemeralSecretsWithoutChangingStoredConfig(t *testin
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !strings.Contains(string(data), "--app.music-api.qqmusic.base-url=http://127.0.0.1:") || strings.Contains(string(data), "--app.music-api.qqmusic.gateway-token=\"") {
+	if !strings.Contains(string(data), "--app.music-api.qqmusic.base-url=http://127.0.0.1:") {
 		t.Fatal("Java did not receive runtime gateway connection")
 	}
 	after, _ := json.Marshal(cfg)
-	if string(before) != string(after) || cfg.QqmusicGatewayToken != "" {
+	if string(before) != string(after) {
 		t.Fatal("runtime secrets changed persistent configuration")
 	}
 	controller.Stop()
@@ -117,28 +138,16 @@ func TestDisabledAndExternalGatewayDoNotStartLocalQqProcess(t *testing.T) {
 		t.Fatal("disabled QQ started")
 	}
 	controller.Stop()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
-			io.WriteString(w, `{"protocolVersion":1}`)
-			return
-		}
-		if r.Header.Get("Authorization") != "Bearer external-token-valid" {
-			w.WriteHeader(401)
-			return
-		}
-		w.WriteHeader(404)
-		io.WriteString(w, `{"error":{"code":"CAPABILITY_UNAVAILABLE"}}`)
-	}))
+	server := httptest.NewServer(http.HandlerFunc(nativeQqTestHandler))
 	defer server.Close()
 	cfg.Sources["qqmusic"] = config.SourceConfig{Enabled: true, DeliveryMode: config.ServerDownload}
 	cfg.QqmusicGatewayMode = "external"
 	cfg.QqmusicBaseURL = server.URL
-	cfg.QqmusicGatewayToken = "external-token-valid"
 	if err := controller.Start(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
 	controller.Stop()
-	response, err := http.Get(server.URL + "/health")
+	response, err := http.Get(server.URL + "/")
 	if err != nil {
 		t.Fatal("external gateway was stopped")
 	}
@@ -149,11 +158,11 @@ func TestReadinessRejectsProtocolAuthAndExitedProcess(t *testing.T) {
 	for _, mode := range []string{"protocol", "auth"} {
 		t.Run(mode, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/health" {
+				if r.URL.Path == "/" {
 					if mode == "protocol" {
-						io.WriteString(w, `{"protocolVersion":2}`)
+						io.WriteString(w, `{"code":1,"msg":"error"}`)
 					} else {
-						io.WriteString(w, `{"protocolVersion":1}`)
+						io.WriteString(w, `{"code":0,"msg":"ok"}`)
 					}
 					return
 				}
@@ -162,7 +171,7 @@ func TestReadinessRejectsProtocolAuthAndExitedProcess(t *testing.T) {
 			defer server.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 			defer cancel()
-			if waitGateway(ctx, &http.Client{Timeout: time.Second}, server.URL, "test-token-valid", nil) == nil {
+			if waitGateway(ctx, &http.Client{Timeout: time.Second}, server.URL, nil) == nil {
 				t.Fatal("invalid gateway accepted")
 			}
 		})
@@ -189,7 +198,6 @@ func TestStopCancelsPendingReadinessAndMissingRuntimeFails(t *testing.T) {
 	defer server.Close()
 	cfg.QqmusicGatewayMode = "external"
 	cfg.QqmusicBaseURL = server.URL
-	cfg.QqmusicGatewayToken = "external-token-valid"
 	controller.ReadyTimeout = time.Minute
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -241,20 +249,20 @@ func TestQqAssetsReplaceWholeOwnedTreeWithoutTouchingDeviceData(t *testing.T) {
 		}
 	}
 	assets := fstest.MapFS{
-		"bin/qqmusic/app.py":                                     &fstest.MapFile{Data: []byte("new")},
-		"bin/qqmusic/gateway.py":                                 &fstest.MapFile{Data: []byte("gateway")},
-		"bin/qqmusic/python/python313._pth":                      &fstest.MapFile{Data: []byte("..\nLib/site-packages\n")},
+		"bin/qqmusic/upstream/source/web/run.py":                 &fstest.MapFile{Data: []byte("new")},
+		"bin/qqmusic/upstream/source/web/src/app.py":             &fstest.MapFile{Data: []byte("native")},
+		"bin/qqmusic/python/python313._pth":                      &fstest.MapFile{Data: []byte("../upstream/source\nLib/site-packages\n")},
 		"bin/qqmusic/python/Lib/site-packages/current_module.py": &fstest.MapFile{Data: []byte("current")},
 	}
 	if err := ExtractAssets(assets, dir); err != nil {
 		t.Fatal(err)
 	}
-	for _, relative := range []string{"bin/qqmusic/python/Lib/site-packages/removed_module.py", "bin/qqmusic/python/Lib/site-packages/obsolete.pth"} {
+	for _, relative := range []string{"bin/qqmusic/app.py", "bin/qqmusic/python/Lib/site-packages/removed_module.py", "bin/qqmusic/python/Lib/site-packages/obsolete.pth"} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(relative))); !os.IsNotExist(err) {
 			t.Fatalf("obsolete runtime asset retained: %s", relative)
 		}
 	}
-	for relative, want := range map[string]string{"bin/qqmusic/app.py": "new", "bin/qqmusic/python/Lib/site-packages/current_module.py": "current", "data/qqmusic-device.json": "keep-device-state"} {
+	for relative, want := range map[string]string{"bin/qqmusic/upstream/source/web/run.py": "new", "bin/qqmusic/python/Lib/site-packages/current_module.py": "current", "data/qqmusic-device.json": "keep-device-state"} {
 		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(relative)))
 		if err != nil || string(data) != want {
 			t.Fatalf("unexpected asset or device data: %s", relative)
@@ -284,7 +292,7 @@ func TestWindowsPackagedGatewayReadiness(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Sources["netease"] = config.SourceConfig{Enabled: false, DeliveryMode: config.DirectURL}
 	cfg.Sources["qqmusic"] = config.SourceConfig{Enabled: true, DeliveryMode: config.ServerDownload}
-	// Backend preflight runs only after the real embedded gateway completes authenticated readiness.
+	// Missing Java assets must not hide failure to start the real native Web API.
 	err := controller.Start(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "server.jar is missing") {
 		t.Fatalf("native gateway failed before Java: %v", err)

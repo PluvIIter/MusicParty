@@ -6,14 +6,16 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 func validateQqCredential(value string) error {
 	if strings.TrimSpace(value) == "" {
 		return nil
 	}
-	invalid := fmt.Errorf("QQ Credential must use normalized musicid, musickey, loginType and encrypt_uin fields")
+	invalid := fmt.Errorf("QQ Credential must use the native Web API cookie fields")
+	if len(value) > 32768 {
+		return invalid
+	}
 	decoder := json.NewDecoder(strings.NewReader(value))
 	opening, err := decoder.Token()
 	if err != nil || opening != json.Delim('{') {
@@ -46,7 +48,7 @@ func validateQqCredential(value string) error {
 	}
 	for key := range credential {
 		switch key {
-		case "musicid", "musickey", "loginType", "encrypt_uin":
+		case "musicid", "musickey", "str_musicid", "openid", "refresh_token", "access_token", "expired_at", "unionid", "refresh_key":
 		default:
 			return invalid
 		}
@@ -66,12 +68,22 @@ func validateQqCredential(value string) error {
 	if !qqCredentialText(credential["musickey"], 4096) {
 		return invalid
 	}
-	if raw, exists := credential["encrypt_uin"]; exists && !qqCredentialText(raw, 256) {
-		return invalid
+	for _, key := range []string{"str_musicid", "openid", "refresh_token", "access_token", "unionid", "refresh_key"} {
+		if raw, exists := credential[key]; exists {
+			var text string
+			if json.Unmarshal(raw, &text) != nil || string(raw) == "null" || len(text) > 4096 || strings.IndexFunc(text, func(r rune) bool { return r < 32 || r > 126 }) >= 0 {
+				return invalid
+			}
+		}
 	}
-	if raw, exists := credential["loginType"]; exists {
-		var login int
-		if string(raw) == "null" || json.Unmarshal(raw, &login) != nil || login < 0 || login > 2 {
+	if raw, exists := credential["expired_at"]; exists {
+		expires := string(raw)
+		if strings.HasPrefix(expires, `"`) {
+			if json.Unmarshal(raw, &expires) != nil {
+				return invalid
+			}
+		}
+		if len(expires) == 0 || len(expires) > 18 || strings.IndexFunc(expires, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
 			return invalid
 		}
 	}
@@ -80,5 +92,5 @@ func validateQqCredential(value string) error {
 
 func qqCredentialText(raw json.RawMessage, maximum int) bool {
 	var value string
-	return json.Unmarshal(raw, &value) == nil && strings.TrimSpace(value) != "" && utf8.RuneCountInString(value) <= maximum && strings.IndexFunc(value, func(r rune) bool { return r < 32 }) < 0
+	return json.Unmarshal(raw, &value) == nil && strings.TrimSpace(value) != "" && len(value) <= maximum && strings.IndexFunc(value, func(r rune) bool { return r < 32 || r > 126 }) < 0
 }

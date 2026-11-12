@@ -36,7 +36,7 @@
         * 注意：b站源由于防盗链问题，方案是先下载本地缓存，然后由服务器将音频提供给用户，可能会占用较多网络带宽，消耗大量流量。
         * 此外，b站源风控现象严重，极不稳定，建议能用网易云就用网易云。
     *   **QQ音乐**：支持歌曲搜索、歌词、专辑、公开歌单导入与私人 FM，默认关闭。
-        * QQ源依赖随项目提供的私有网关；Windows启动器已内置网关与Python环境，无需另外安装。
+        * QQ源直接对接 [L-1124/QQMusicApi](https://github.com/L-1124/QQMusicApi) 自带的Web API；Windows启动器已内置服务与Python环境，无需另外安装。
         * 会员歌曲仍需要有效账号凭据，不支持DRM加密音频和私人DJ语音。
 *   **一键内网穿透**：Windows启动器内置 Cloudflare Tunnel，打开开关即可生成临时公网地址，方便邀请朋友加入。
 *   **精准同步**：基于 WebSocket (STOMP) 的状态分发，结合前端追帧，实现播放状态、进度、歌单、歌词的实时同步。
@@ -110,9 +110,8 @@ docker run -d \
 | `BILIBILI_DELIVERY_MODE` | 否 | `SERVER_DOWNLOAD`（默认）或 `DIRECT_URL`；直链格式及可用性取决于上游。 |
 | `PRIVATE_DJ_SOURCE` | 否 | 私人 FM / DJ 唯一提供源，默认 `netease`；`qqmusic` 提供原生 FM，不提供 DJ 语音，推荐使用所选源配置凭据。 |
 | `QQMUSIC_ENABLED` | 否 | QQ音乐源，默认 `false`。 |
-| `QQMUSIC_API_URL` | 否 | 私有QQ网关地址；独立运行默认 `http://localhost:8000`，Compose 为 `http://qqmusic-api:8000`。 |
-| `QQMUSIC_GATEWAY_TOKEN` | 启用QQ时必填 | Java与网关一致的16–512位可见ASCII令牌，不含空格，勿公开或写入仓库。 |
-| `QQMUSIC_COOKIE` | 否 | 规范化Credential JSON，非浏览器Cookie原文；仅用于QQ媒体与原生FM，不用于公开收藏。 |
+| `QQMUSIC_API_URL` | 否 | L-1124原生Web API地址；随包服务为本机动态端口，Compose 为 `http://qqmusic-api:8000`，独立上游默认端口为8080。 |
+| `QQMUSIC_COOKIE` | 否 | Web凭据JSON，至少含 `musicid`、`musickey`；可补充上游支持的Cookie字段。仅用于QQ媒体与原生FM，不用于公开收藏。 |
 | `QQMUSIC_QUALITY` | 否 | `MP3_128`（默认）、`MP3_320`、普通 `FLAC`；不支持DRM加密格式，FLAC不显示文件下载按钮。 |
 | `QQMUSIC_DELIVERY_MODE` | 否 | 默认 `SERVER_DOWNLOAD`；可配置 `DIRECT_URL`，真实播放受CDN、浏览器与账号权限限制。 |
 | `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。用于 VIP 音频及明确例外的私人 FM / DJ，不用于个人收藏目标。                                          |
@@ -141,7 +140,7 @@ docker run -d \
 1.  前往 [GitHub Releases](https://github.com/pluviiter/MusicParty/releases) 下载最新的 `MusicParty.exe`。
 2.  将 `MusicParty.exe` 放置在你喜欢的文件夹中。
 3.  **直接双击运行**：
-    *   启动器会自动释放内置的 JRE、网易云 API、QQ 音乐网关及其 Python 运行环境、Cloudflare Tunnel，以及 Java 核心程序；按配置启动相应服务。
+    *   启动器会自动释放内置的 JRE、网易云 API、QQMusicApi Web 服务及其 Python 运行环境、Cloudflare Tunnel，以及 Java 核心程序；按配置启动相应服务。
     *   所有的配置、运行环境、缓存都保存在 EXE 同级目录下。
 4.  在 UI 界面上修改端口、密码、网易云 Cookie 等配置，点击“启动系统”即可。
 5.  系统就绪后，点击界面上的“打开网页”即可。
@@ -178,7 +177,7 @@ docker run -d \
 
 ## QQ音乐源
 
-QQ源默认关闭，使用项目提供的私有网关，不调用第三方公用会员池。
+QQ源默认关闭，直接使用 [L-1124/QQMusicApi 自带的Web服务](https://github.com/L-1124/QQMusicApi/tree/c046788dd1f11daacc74da487cbbf1bcd8ac6f33/web)，不再维护额外的HTTP网关，也不调用第三方公用会员池。
 
 *   支持歌曲搜索、详情、普通LRC歌词、专辑、公开歌单与分页导入。
 *   支持直链和服务器下载两种交付方式，接入现有播放器、缓存和直播音频流。
@@ -187,16 +186,18 @@ QQ源默认关闭，使用项目提供的私有网关，不调用第三方公用
 
 Docker启用步骤（使用本PR构建的主应用镜像，旧发布镜像不包含QQ功能）：
 
-1. 在本地 `.env` 设置 `QQMUSIC_ENABLED=true` 和随机的 `QQMUSIC_GATEWAY_TOKEN`（至少16位），不要提交该文件。需要账号权限时设置单个 `QQMUSIC_COOKIE`，格式示例：`{"musicid":"123456789","musickey":"Q_H_L_..."}`。QQ与微信字段必须来自合法账号，不能用目标用户ID代替登录凭据。
-2. 执行 `docker compose --profile qqmusic up -d --build`。QQ网关只加入内部网络，不映射主机端口；令牌必须与Java配置一致。QQ不可用不影响其他源。
+1. 在本地 `.env` 设置 `QQMUSIC_ENABLED=true`。需要账号权限时设置单个 `QQMUSIC_COOKIE`，格式示例：`{"musicid":"123456789","musickey":"Q_H_L_..."}`，不要提交该文件。凭据必须来自合法账号，不能用目标用户ID代替。
+2. 执行 `docker compose --profile qqmusic up -d --build`。QQ Web API只加入内部网络，不映射主机端口；默认凭据池关闭，不配置共享账号。QQ不可用不影响其他源。
 3. 管理员可在管理界面替换或清空QQ凭据，旧凭据不回显。运行期更新不写入房间存档，重启后仍以部署/启动器配置为准。
 4. 私人FM需同时将部署 `PRIVATE_DJ_SOURCE=qqmusic`，再在管理界面开启FM；收藏绑定不会改变推荐账号。
 
-**Windows启动器**：在音源设置中启用QQ即可，默认使用随包网关，无需安装Python、填写网关地址或令牌。需要使用自建网关时，切换为“外部网关”并填写地址和令牌；启动器不会关闭外部服务。QQ关闭时不启动网关。
+**Windows启动器**：在音源设置中启用QQ即可，默认使用随包的上游Web服务，无需安装Python或填写服务地址。需要使用独立部署的API时，切换到外部模式并填写根地址；启动器不会关闭外部服务。QQ关闭时不启动API。
 
-独立部署与接口说明见 [网关说明](sidecars/qqmusic/README.md)，分发时请保留 [上游许可说明](sidecars/qqmusic/UPSTREAM-NOTICE.md)及随包源码。
+**外部API**：部署与本项目匹配的上游版本，关闭默认凭据池且不要配置账号种子；MusicParty会在媒体和FM请求中单独携带配置凭据。上游Web不使用原自写网关的Bearer令牌，请勿把它直接公开到公网。旧的 `loginType`、`encrypt_uin` JSON字段不再使用；可选字段为 `openid`、`refresh_token`、`access_token`、`expired_at`、`unionid`、`str_musicid`、`refresh_key`，按真实Cookie填写。
 
-QQ音频只支持有权取得的普通MP3/FLAC，拒绝加密格式和不能确认完整性的试听。会员也不保证所有地区/单购歌曲可播。服务器缓存、下载和Radio不自动获得音乐再分发授权；请核对平台规则与版权。公开匿名样本的验证不能替代登录账号、CDN、多端和Radio实测。
+独立部署与接口说明见 [QQ API说明](sidecars/qqmusic/README.md)，分发时请保留 [上游许可说明](sidecars/qqmusic/UPSTREAM-NOTICE.md)及随包源码。
+
+QQ音频只支持有权取得的普通MP3/FLAC，不解密DRM；按上游Web正常响应处理，不再因模型缺少原始试听或可见性标记而一律拒绝。会员也不保证所有地区/单购歌曲可播。服务器缓存、下载和Radio不自动获得音乐再分发授权；请核对平台规则与版权。公开匿名样本的验证不能替代登录账号、CDN、多端和Radio实测。
 
 ---
 

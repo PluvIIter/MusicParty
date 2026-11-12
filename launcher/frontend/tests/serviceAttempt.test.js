@@ -20,8 +20,8 @@ test('cancel during save invalidates old start and completion', async () => {
   assert.equal(attempts.current(second), true);
 });
 
-test('bundled mode hides external connection secrets but keeps credential', () => {
-  const source = { connectionFields: [{ key: 'mode' }, { key: 'url', gatewayMode: 'external' }, { key: 'token', gatewayMode: 'external' }, { key: 'credential' }] };
+test('bundled mode hides external API address but keeps credential', () => {
+  const source = { connectionFields: [{ key: 'mode' }, { key: 'url', gatewayMode: 'external' }, { key: 'credential' }] };
   assert.deepEqual(connectionFieldsFor(source, { qqmusicGatewayMode: 'bundled' }).map(field => field.key), ['mode', 'credential']);
-  assert.equal(connectionFieldsFor(source, { qqmusicGatewayMode: 'external' }).length, 4);
+  assert.equal(connectionFieldsFor(source, { qqmusicGatewayMode: 'external' }).length, 3);
 });

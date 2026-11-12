@@ -65,12 +65,21 @@ jobs:
         with:
           python-version: '3.13'
       - run: python -m pip install -r requirements-test.txt
-      - run: python -m pytest -q
-      - name: Build private gateway image
-        run: docker build -t musicparty-qqmusic:test .
-      - name: Check private gateway health and authentication
+      - name: Export pinned upstream Web sources
         run: |
-          docker run -d --name qqmusic-gateway-test -e QQMUSIC_GATEWAY_TOKEN=ci-private-gateway-token-123 musicparty-qqmusic:test
+          git init "$RUNNER_TEMP/qqmusic-checkout"
+          git -C "$RUNNER_TEMP/qqmusic-checkout" fetch --depth=1 https://github.com/L-1124/QQMusicApi.git c046788dd1f11daacc74da487cbbf1bcd8ac6f33
+          mkdir "$RUNNER_TEMP/qqmusic-source"
+          git -C "$RUNNER_TEMP/qqmusic-checkout" archive FETCH_HEAD | tar -x -C "$RUNNER_TEMP/qqmusic-source"
+          echo "QQMUSIC_UPSTREAM_SOURCE=$RUNNER_TEMP/qqmusic-source" >> "$GITHUB_ENV"
+      - run: python -m pytest -q
+      - name: Start upstream Web offline in isolated Python environments
+        run: python smoke.py --source "$QQMUSIC_UPSTREAM_SOURCE"
+      - name: Build upstream QQMusicApi Web image
+        run: docker build -t musicparty-qqmusic:test .
+      - name: Check upstream Web readiness and OpenAPI
+        run: |
+          docker run -d --name qqmusic-gateway-test musicparty-qqmusic:test
           trap 'docker rm -f qqmusic-gateway-test' EXIT
           docker cp smoke.py qqmusic-gateway-test:/tmp/smoke.py
           docker exec qqmusic-gateway-test python /tmp/smoke.py

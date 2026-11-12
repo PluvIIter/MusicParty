@@ -19,12 +19,11 @@ test('settings render arbitrary source descriptors and preserve disabled sources
   assert.equal(sources['new-source'].enabled, false);
 });
 
-test('QQ gateway description and masked connection fields survive generic rendering', () => {
+test('native QQ Web API description and masked cookie survive generic rendering', () => {
   const source = { enabled: false, deliveryMode: 'SERVER_DOWNLOAD' };
-  const description = 'QQ API 外部网关，不会安装 Python';
+  const description = '1124 原生 QQMusic Web API，一键运行';
   const connectionFields = [
     { key: 'qqmusicBaseUrl', kind: 'url' },
-    { key: 'qqmusicGatewayToken', kind: 'password' },
     { key: 'qqmusicCookie', kind: 'password' },
   ];
   const [row] = sourceSettingsRows([{
@@ -33,7 +32,6 @@ test('QQ gateway description and masked connection fields survive generic render
   }], { qqmusic: source });
   assert.equal(row.description, description);
   assert.equal(row.connectionFields[1].kind, 'password');
-  assert.equal(row.connectionFields[2].kind, 'password');
   assert.equal(source.enabled, false);
 });
 
