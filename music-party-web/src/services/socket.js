@@ -136,6 +136,11 @@ class SocketService {
     /**
      * 断开连接
      */
+    clearPending() {
+        this.subscriptionHandles.clear();
+        this.compact?.reset();
+    }
+
     disconnect() {
         this.clearPending();
         if (this.client) {

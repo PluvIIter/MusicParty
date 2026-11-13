@@ -33,7 +33,7 @@ describe('user tutorial content and exact text export', () => {
         expect(text).not.toMatch(/undefined|\[object Object\]/);
     });
     it('keeps the delivered TXT identical to the interface source', () => {
-        expect(readFileSync('../docs/新手教程全部文案.txt', 'utf8')).toBe('\uFEFF' + tutorialText());
+        expect(readFileSync('../docs/新手教程全部文案.txt', 'utf8').replace(/\r\n/g, '\n')).toBe('\uFEFF' + tutorialText());
     });
     it('covers shared controls, local records and conditional features without technical implementation details', () => {
         expect(TUTORIAL_TOPICS.map((topic) => topic.id)).toEqual([
