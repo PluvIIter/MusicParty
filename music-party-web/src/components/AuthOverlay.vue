@@ -84,6 +84,13 @@ const setupType = ref('initial'); // 'initial' | 'password'
 const inputPassword = ref('');
 const errorMsg = ref('');
 const loading = ref(false);
+const onAuthExpired = () => {
+  passed.value = false;
+  errorMsg.value = '房间凭证已失效，请重新验证';
+  usePlayerStore().endSession();
+};
+window.addEventListener('room-auth-expired', onAuthExpired);
+onBeforeUnmount(() => window.removeEventListener('room-auth-expired', onAuthExpired));
 
 const checkStatus = async () => {
     loading.value = true;

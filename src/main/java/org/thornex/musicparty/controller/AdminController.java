@@ -2,6 +2,7 @@ package org.thornex.musicparty.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.AdminPrivateDjUpdateRequest;
@@ -10,6 +11,7 @@ import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.QueuePersistenceService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.PrivateDjService;
+import org.thornex.musicparty.service.SecretStoreService;
 import org.thornex.musicparty.service.api.BilibiliMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
@@ -32,6 +34,8 @@ public class AdminController {
     private final LiveStreamService liveStreamService;
     private final PrivateDjService privateDjService;
     private final QueuePersistenceService persistence;
+    @Autowired(required = false)
+    private SecretStoreService secretStoreService;
 
     public AdminController(MusicPlayerService musicPlayerService, ChatService chatService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService, LiveStreamService liveStreamService, PrivateDjService privateDjService, QueuePersistenceService persistence) {
         this.musicPlayerService = musicPlayerService;
@@ -47,7 +51,8 @@ public class AdminController {
     }
 
     private boolean isValid(String password) {
-        return adminPassword != null && adminPassword.equals(password);
+        String configured = secretStoreService == null ? adminPassword : secretStoreService.getAdminPassword();
+        return configured != null && configured.equals(password);
     }
 
     @PostMapping("/verify")

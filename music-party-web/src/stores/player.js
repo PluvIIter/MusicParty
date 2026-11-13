@@ -105,6 +105,11 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     // === 3. Actions ===
+    const syncQueue = (items) => {
+        queue.value = (items || []).map(item => ({...item, enqueuedBy: {
+            ...item.enqueuedBy, token: publicUserId(item.enqueuedBy)
+        }}));
+    };
 
     const syncState = (state) => {
         roomClock.sample(state);
@@ -144,7 +149,12 @@ export const usePlayerStore = defineStore('player', () => {
         }
     };
 
-    const connect = () => {
+    const connect = async () => {
+        try {
+            const metadata = await client.get('/api/config');
+            capabilities.value = metadata.capabilities || [];
+            socketService.setCapabilities(capabilities.value);
+        } catch { socketService.setCapabilities([]); }
         const authHeaders = {
             'user-name': localStorage.getItem(STORAGE_KEYS.USERNAME) || '游客',
             'user-token': userStore.userToken,
@@ -177,11 +187,19 @@ export const usePlayerStore = defineStore('player', () => {
         // 补充 UserMe 的特殊处理 (因为它需要用到 renameUser，如果放在 socketHandler 会导致循环依赖)
         subscriptions[WS_DEST.USER_ME] = (me) => {
             // me: { token, sessionId, name, isGuest }
-            userStore.initUser(me.sessionId, me.name, me.isGuest);
+            userStore.applyIdentity(me);
+            if (socketService.client) {
+                socketService.client.connectHeaders['user-token'] = userStore.recoveryKey;
+                socketService.client.connectHeaders['user-recovery-key'] = userStore.recoveryKey;
+            }
         };
 
         subscriptions[WS_DEST.USER_ME_UPDATE] = (me) => {
-            userStore.initUser(me.sessionId, me.name, me.isGuest);
+            userStore.applyIdentity(me);
+            if (socketService.client) {
+                socketService.client.connectHeaders['user-token'] = userStore.recoveryKey;
+                socketService.client.connectHeaders['user-recovery-key'] = userStore.recoveryKey;
+            }
         };
 
         subscriptions[WS_DEST.USER_PLAYLIST_CLEAR] = (result) => {
@@ -219,6 +237,16 @@ export const usePlayerStore = defineStore('player', () => {
 
     const tryReconnect = () => {
         socketService.forceReconnect();
+    };
+
+    const endSession = () => {
+        socketService.disconnect();
+        connected.value = false;
+        nowPlaying.value = null;
+        queue.value = [];
+        lyricText.value = '';
+        lyricsGeneration++;
+        clearRoomToken();
     };
 
     // --- 指令发送 ---
@@ -322,7 +350,7 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const renameUser = (newName) => {
-        socketService.send(WS_DEST.USER_RENAME, { newName });
+        return socketService.send(WS_DEST.USER_RENAME, { newName });
     };
 
     const sendLike = () => {

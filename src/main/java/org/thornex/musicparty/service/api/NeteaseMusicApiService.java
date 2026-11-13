@@ -3,6 +3,7 @@ package org.thornex.musicparty.service.api;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -12,6 +13,7 @@ import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
 import org.thornex.musicparty.exception.ApiRequestException;
+import org.thornex.musicparty.service.SecretStoreService;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -38,6 +40,8 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private final String quality;
     private volatile String currentCookie;
     private final AtomicLong credentialRevision = new AtomicLong();
+    @Autowired(required = false)
+    private SecretStoreService secretStoreService;
     private static final String PLATFORM = "netease";
 
     public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties) {
@@ -64,14 +68,20 @@ public class NeteaseMusicApiService implements IMusicApiService {
         this.currentCookie = newCookie;
         this.neteaseConfig.setCookie(newCookie);
         credentialRevision.incrementAndGet();
+        if (secretStoreService != null) secretStoreService.updateNeteaseCookie(newCookie);
     }
 
     private String getCookie() {
+        String stored = secretStoreService == null ? null : secretStoreService.getNeteaseCookie();
+        if (stored != null) return stored;
+        String configured = neteaseConfig.getCookie();
+        if (configured != null) return configured;
         return currentCookie != null ? currentCookie : "";
     }
 
     public boolean isCookieConfigured() {
-        return StringUtils.hasText(neteaseConfig.getCookie());
+        String cookie = getCookie();
+        return StringUtils.hasText(cookie) && !"YOUR_NETEASE_COOKIE_STRING_HERE".equals(cookie);
     }
 
     public Mono<JsonNode> fetchPersonalFm() {
@@ -363,12 +373,11 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
-                    // 尝试获取 lrc.lyric
-                    if (json.has("lrc") && json.get("lrc").has("lyric")) {
-                        return json.get("lrc").get("lyric").asText();
-                    }
-                    return ""; // 没有歌词
-                });
+                    String original = json.path("lrc").path("lyric").asText("");
+                    String translation = json.path("tlyric").path("lyric").asText("");
+                    return LyricTranslationMerger.merge(original, translation);
+                })
+                .onErrorReturn("");
     }
 
     private void validateAlbumId(String id) {

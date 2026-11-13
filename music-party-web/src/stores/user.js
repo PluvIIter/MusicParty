@@ -15,7 +15,10 @@ if (!storedToken) {
     storedToken = generateToken();
     localStorage.setItem(STORAGE_KEYS.TOKEN, storedToken);
 }
+// userToken remains a public-id alias for existing UI components. Never set it
+// to a v2 recoveryKey: broadcasts, likes and chat now refer to the public id.
 const userToken = ref(storedToken);
+const recoveryKey = ref(localStorage.getItem(STORAGE_KEYS.RECOVERY_KEY) || storedToken);
 
 export const useUserStore = defineStore('user', () => {
     const onlineUsers = ref([]);
@@ -99,7 +102,25 @@ export const useUserStore = defineStore('user', () => {
     };
 
     const setOnlineUsers = (users) => {
-        onlineUsers.value = users;
+        onlineUsers.value = (Array.isArray(users) ? users : []).map(u => ({
+            id: publicUserId(u), name: u.name, isGuest: u.isGuest,
+            // Legacy UI alias contains the PUBLIC id only.
+            token: publicUserId(u)
+        }));
+    };
+
+    const applyIdentity = (me) => {
+        const identity = readIdentity(me);
+        if (!identity.id) return;
+        userToken.value = identity.id;
+        if (identity.recoveryKey) {
+            recoveryKey.value = identity.recoveryKey;
+            localStorage.setItem(STORAGE_KEYS.RECOVERY_KEY, identity.recoveryKey);
+            // Do not leave the recovery secret under the legacy public-id key.
+            localStorage.removeItem(STORAGE_KEYS.TOKEN);
+        }
+        currentUser.value.id = identity.id;
+        initUser(me.sessionId || '', identity.name, identity.isGuest);
     };
 
     const updateBinding = (platform, accountId) => {
@@ -128,6 +149,8 @@ export const useUserStore = defineStore('user', () => {
         renameError,
         resolveName,
         userToken,
+        recoveryKey,
+        applyIdentity,
         setPostNameAction,
         isAuthPassed,
         resetAuthentication,
