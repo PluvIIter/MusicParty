@@ -143,9 +143,10 @@ export const createSocketCallbacks = () => {
             console.error('STOMP Error:', frame);
 
             // 无论是密码错误，还是其他未知的协议级错误，都强制刷新以重置状态
-            const isAuthError = frame.body && frame.body.includes('INVALID_ROOM_PASSWORD');
+            const isAuthError = `${frame.body || ''} ${frame.headers?.message || ''}`.includes('INVALID_ROOM_PASSWORD');
 
             if (isAuthError) {
+                playerStore.endSession();
                 userStore.resetAuthentication();
             }
 

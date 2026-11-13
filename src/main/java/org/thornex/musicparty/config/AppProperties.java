@@ -17,6 +17,8 @@ public class AppProperties {
         private org.thornex.musicparty.source.DeliveryMode deliveryMode;
     }
     private String adminPassword;
+    private boolean allowDefaultAdminPassword = true;
+    private String secretsFile = "data/secrets.json";
     private String baseUrl;
     private String authorName = "ThorNex";
     private String backWords = "THORNEX";

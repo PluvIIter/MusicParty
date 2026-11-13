@@ -4,8 +4,10 @@ package org.thornex.musicparty.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.service.SecretStoreService;
 
 import java.time.Instant;
 import java.util.Map;
@@ -23,6 +25,8 @@ public class AuthController {
     private final AtomicReference<String> roomPassword = new AtomicReference<>(null);
     private final String adminPassword;
     private final AppProperties.AuthConfig authConfig;
+    @Autowired(required = false)
+    private SecretStoreService secretStoreService;
 
     // IP限流记录
     private final ConcurrentHashMap<String, FailedAttempt> ipAttempts = new ConcurrentHashMap<>();
@@ -118,7 +122,8 @@ public class AuthController {
         }
 
         // 3. 如果输入的是管理员密码，直接通过 (万能钥匙)
-        if (adminPassword != null && adminPassword.equals(inputPassword)) {
+        String configuredAdminPassword = secretStoreService == null ? adminPassword : secretStoreService.getAdminPassword();
+        if (configuredAdminPassword != null && configuredAdminPassword.equals(inputPassword)) {
             clearAttempts(clientIp);
             return ResponseEntity.ok(Map.of("valid", true));
         }

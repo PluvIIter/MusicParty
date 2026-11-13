@@ -13,6 +13,8 @@ logging:
 app:
   music-api:
     admin-password: ${ADMIN_PASSWORD:admin123}
+    allow-default-admin-password: ${ALLOW_DEFAULT_ADMIN_PASSWORD:true}
+    secrets-file: ${SECRETS_FILE:data/secrets.json}
     base-url: ${BASE_URL:http://localhost:8080}
     author-name: ${APP_AUTHOR_NAME:ThorNex}
     back-words: ${APP_BACK_WORDS:THORNEX}

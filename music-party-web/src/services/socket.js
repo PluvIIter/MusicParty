@@ -106,6 +106,8 @@ class SocketService {
             this.client.publish({ destination, body: JSON.stringify(body) });
         } else {
             console.warn('Socket not connected, cannot send:', destination);
+            useToast().warning('连接已断开，操作未发送');
+            return Promise.resolve({ok:false, confirmed:false, code:'DISCONNECTED'});
         }
     }
 
@@ -135,6 +137,7 @@ class SocketService {
      * 断开连接
      */
     disconnect() {
+        this.clearPending();
         if (this.client) {
             this.client.deactivate();
             this.client = null;
