@@ -76,13 +76,13 @@ jobs:
       - name: Start upstream Web offline in isolated Python environments
         run: python smoke.py --source "$QQMUSIC_UPSTREAM_SOURCE"
       - name: Build upstream QQMusicApi Web image
-        run: docker build -t musicparty-qqmusic:test .
+        run: docker build -t musicparty-qqmusic:test -f web/Dockerfile "https://github.com/L-1124/QQMusicApi.git#c046788dd1f11daacc74da487cbbf1bcd8ac6f33"
       - name: Check upstream Web readiness and OpenAPI
         run: |
           docker run -d --name qqmusic-gateway-test musicparty-qqmusic:test
           trap 'docker rm -f qqmusic-gateway-test' EXIT
           docker cp smoke.py qqmusic-gateway-test:/tmp/smoke.py
-          docker exec qqmusic-gateway-test python /tmp/smoke.py
+          docker exec qqmusic-gateway-test python /tmp/smoke.py --port 8080
 
   launcher-config:
     name: launcher-config

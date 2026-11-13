@@ -26,7 +26,9 @@ describe('user tutorial content and exact text export', () => {
     });
     it('explains configured-account queries, target identity and FM-only recommendations', () => {
         expect(tutorialText()).toContain('网易云和 QQ 音乐主要是歌单');
-        expect(tutorialText()).toContain('所有音源的数据查询都会携带管理员配置的该源 Cookie，未配置才匿名');
+        expect(tutorialText()).toContain('请求会携带管理员配置的该源 Cookie');
+        expect(tutorialText()).toContain('缓存行为按上游接口原生规则处理');
+        expect(tutorialText()).toContain('资源目标仍是 B，不会自动换成 A 的收藏');
         expect(tutorialText()).toContain('配置账号 A 查询目标 B');
         expect(tutorialText()).toContain('绑定 B 不等于登录 B');
         expect(tutorialText()).not.toContain('只有房间音频解析和私人推荐使用房间凭据');

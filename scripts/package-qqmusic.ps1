@@ -134,7 +134,7 @@ Path(output).write_text(json.dumps({"commit": commit, "files": files}, indent=2)
 
     & $hostExecutable -I -m pip --isolated install --disable-pip-version-check --no-warn-script-location --no-compile --only-binary=:all: --target $sitePackages --report (Join-Path $upstreamDir 'pip-install-report.json') -r $requirements
     if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned sidecar requirements and Windows wheels.' }
-    foreach ($name in @('requirements.txt', 'UPSTREAM-NOTICE.md', 'run_web.py')) {
+    foreach ($name in @('requirements.txt', 'UPSTREAM-NOTICE.md')) {
         Copy-Item -LiteralPath (Join-Path $sidecar $name) -Destination (Join-Path $bundle $name)
     }
     $manifest = [ordered]@{
@@ -144,7 +144,7 @@ Path(output).write_text(json.dumps({"commit": commit, "files": files}, indent=2)
         pythonHashSource = $pythonHashSource
         upstreamUrl = $upstreamUrl
         upstreamCommit = $upstreamCommit
-        entryPoint = 'run_web.py'
+        entryPoint = 'upstream/source/web/run.py'
         workingDirectory = 'upstream/source'
         requirementsSha256 = (Get-FileHash -LiteralPath $requirements -Algorithm SHA256).Hash.ToLowerInvariant()
     }

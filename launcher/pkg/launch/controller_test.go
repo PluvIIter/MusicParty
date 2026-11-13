@@ -34,7 +34,7 @@ func TestLaunchHelper(t *testing.T) {
 		os.Exit(2)
 	}
 	mux := http.NewServeMux()
-	if !strings.Contains(strings.Join(os.Args, " "), "-I -B") || filepath.Base(os.Args[len(os.Args)-1]) != "run_web.py" {
+	if !strings.Contains(strings.Join(os.Args, " "), "-I -B") || filepath.Base(os.Args[len(os.Args)-1]) != "run.py" || filepath.Base(filepath.Dir(os.Args[len(os.Args)-1])) != "web" {
 		os.Exit(8)
 	}
 	cwd, _ := os.Getwd()
@@ -84,7 +84,7 @@ func fixtureController(t *testing.T) (*Controller, *config.AppConfig, string) {
 		}
 	}
 	os.WriteFile(filepath.Join(bin, "server.jar"), []byte("fixture"), 0644)
-	for _, name := range []string{"run_web.py", "upstream/source/web/run.py", "upstream/source/web/src/app.py"} {
+	for _, name := range []string{"upstream/source/web/run.py", "upstream/source/web/src/app.py"} {
 		path := filepath.Join(bin, "qqmusic", filepath.FromSlash(name))
 		os.MkdirAll(filepath.Dir(path), 0755)
 		os.WriteFile(path, []byte("fixture"), 0644)

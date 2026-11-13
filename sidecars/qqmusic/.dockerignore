@@ -1,7 +1,0 @@
-.venv
-.uv-cache
-.pytest_cache
-__pycache__
-tests
-*.pyc
-*.log

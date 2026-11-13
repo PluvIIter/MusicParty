@@ -33,7 +33,7 @@ services:
       - NETEASE_ENABLED=true         # 是否开启网易云音乐源
       - BILIBILI_ENABLED=true        # 是否开启 Bilibili 源
       - QQMUSIC_ENABLED=${QQMUSIC_ENABLED:-false}
-      - QQMUSIC_API_URL=${QQMUSIC_API_URL:-http://qqmusic-api:8000}
+      - QQMUSIC_API_URL=${QQMUSIC_API_URL:-http://qqmusic-api:8080}
       - QQMUSIC_COOKIE=${QQMUSIC_COOKIE:-}
       - QQMUSIC_QUALITY=${QQMUSIC_QUALITY:-MP3_128}
       - QQMUSIC_DELIVERY_MODE=${QQMUSIC_DELIVERY_MODE:-SERVER_DOWNLOAD}
@@ -72,16 +72,22 @@ services:
 
   qqmusic-api:
     profiles: [qqmusic]
-    build: ./sidecars/qqmusic
-    restart: unless-stopped
+    image: music-party-qqmusic-api:c046788
+    build:
+      context: https://github.com/L-1124/QQMusicApi.git#c046788dd1f11daacc74da487cbbf1bcd8ac6f33
+      dockerfile: web/Dockerfile
+    container_name: music-party-qqmusic
+    restart: always
     environment:
       - QQMUSIC_SERVER_HOST=0.0.0.0
-      - QQMUSIC_SERVER_PORT=8000
-      - QQMUSIC_SERVER_WORKERS=1
-      - QQMUSIC_CREDENTIAL_ENABLED=false
+    volumes:
+      - qqmusic-data:/app/web/data
     networks:
       - music-net
 
 networks:
   music-net:
     driver: bridge
+
+volumes:
+  qqmusic-data:

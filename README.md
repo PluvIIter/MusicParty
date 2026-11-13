@@ -110,7 +110,7 @@ docker run -d \
 | `BILIBILI_DELIVERY_MODE` | 否 | `SERVER_DOWNLOAD`（默认）或 `DIRECT_URL`；直链格式及可用性取决于上游。 |
 | `PRIVATE_DJ_SOURCE` | 否 | 私人 FM / DJ 唯一提供源，默认 `netease`；`qqmusic` 提供原生 FM，不提供 DJ 语音，推荐使用所选源配置凭据。 |
 | `QQMUSIC_ENABLED` | 否 | QQ音乐源，默认 `false`。 |
-| `QQMUSIC_API_URL` | 否 | L-1124原生Web API地址；随包服务为本机动态端口，Compose 为 `http://qqmusic-api:8000`，独立上游默认端口为8080。 |
+| `QQMUSIC_API_URL` | 否 | L-1124原生Web API地址；随包服务为本机动态端口，Compose 为 `http://qqmusic-api:8080`，独立上游默认端口为8080。 |
 | `QQMUSIC_COOKIE` | 否 | Web凭据JSON，至少含 `musicid`、`musickey`；可补充上游支持的Cookie字段。用于QQ所有上游查询，未配置时匿名请求。 |
 | `QQMUSIC_QUALITY` | 否 | `MP3_128`（默认）、`MP3_320`、普通 `FLAC`；不支持DRM加密格式，FLAC不显示文件下载按钮。 |
 | `QQMUSIC_DELIVERY_MODE` | 否 | 默认 `SERVER_DOWNLOAD`；可配置 `DIRECT_URL`，真实播放受CDN、浏览器与账号权限限制。 |
@@ -187,13 +187,13 @@ QQ源默认关闭，直接使用 [L-1124/QQMusicApi 自带的Web服务](https://
 Docker启用步骤（使用本PR构建的主应用镜像，旧发布镜像不包含QQ功能）：
 
 1. 在本地 `.env` 设置 `QQMUSIC_ENABLED=true`。需要账号权限时设置单个 `QQMUSIC_COOKIE`，格式示例：`{"musicid":"123456789","musickey":"Q_H_L_..."}`，不要提交该文件。凭据必须来自合法账号，不能用目标用户ID代替。
-2. 执行 `docker compose --profile qqmusic up -d --build`。QQ Web API只加入内部网络，不映射主机端口；默认凭据池关闭，不配置共享账号。QQ不可用不影响其他源。
+2. 执行 `docker compose --profile qqmusic up -d --build`。Compose直接使用固定上游源码和其自带的 `web/Dockerfile` 构建QQ API，与网易云API同处内部网络；Java连接 `http://qqmusic-api:8080`，无需补丁入口。QQ状态保存在命名卷中，不映射主机端口。
 3. 管理员可在管理界面替换或清空QQ凭据，旧凭据不回显。运行期更新不写入房间存档，重启后仍以部署/启动器配置为准。
 4. 私人FM需同时将部署 `PRIVATE_DJ_SOURCE=qqmusic`，再在管理界面开启FM；收藏绑定不会改变推荐账号。
 
 **Windows启动器**：在音源设置中启用QQ即可，默认使用随包的上游Web服务，无需安装Python或填写服务地址。需要使用独立部署的API时，切换到外部模式并填写根地址；启动器不会关闭外部服务。QQ关闭时不启动API。
 
-**外部API**：部署与本项目匹配的上游版本及随附的 `run_web.py` 启动入口，关闭默认凭据池且不要配置账号种子；MusicParty会在所有查询中携带该源配置凭据。启动入口只把原生匿名业务路由改为可选Cookie认证并关闭其共享响应缓存，保留上游业务接口和权限处理；直接运行未调整的上游入口会忽略部分查询的Cookie。上游Web不使用原自写网关的Bearer令牌，请勿把它直接公开到公网。旧的 `loginType`、`encrypt_uin` JSON字段不再使用；可选字段为 `openid`、`refresh_token`、`access_token`、`expired_at`、`unionid`、`str_musicid`、`refresh_key`，按真实Cookie填写。
+**外部API**：按上游说明部署匹配版本，使用原生 `web/run.py` 或上游Docker镜像，填写API根地址即可，不需要随附启动补丁。MusicParty正常传递配置Cookie；哪些接口匿名、如何使用凭据和缓存，完全遵循上游原生行为，不修改路由认证或共享缓存。请勿把API直接公开到公网。旧的 `loginType`、`encrypt_uin` JSON字段不再使用；可选字段为 `openid`、`refresh_token`、`access_token`、`expired_at`、`unionid`、`str_musicid`、`refresh_key`，按真实Cookie填写。
 
 独立部署与接口说明见 [QQ API说明](sidecars/qqmusic/README.md)，分发时请保留 [上游许可说明](sidecars/qqmusic/UPSTREAM-NOTICE.md)及随包源码。
 

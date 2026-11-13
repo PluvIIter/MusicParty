@@ -342,7 +342,7 @@ const openPublicUrl = async () => {
 
           <!-- 接口设置 -->
           <div v-if="activeTab === 'api'" class="space-y-4">
-            <p class="text-[10px] text-medical-500">各音源配置的 Cookie 用于该源所有数据查询、音频解析及支持的私人推荐；未配置才匿名。网页绑定用户只是查询目标，不会登录对方账号，能读取哪些内容由上游按配置账号权限决定。</p>
+            <p class="text-[10px] text-medical-500">请求会携带该音源已配置的 Cookie；是否采用登录身份、可访问内容及缓存行为按上游接口原生规则处理。网页绑定用户只是查询目标，不会登录对方账号，也不会自动改为查询配置账号的收藏。</p>
             <div v-for="source in sourceRows" :key="source.id" class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="flex items-center justify-between border-b border-medical-100 pb-2 mb-2">
                 <h3 class="text-[10px] font-black uppercase">{{ source.label }}</h3>

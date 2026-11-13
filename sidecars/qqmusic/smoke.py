@@ -64,15 +64,12 @@ def verify(port=8000):
     assert status == 200 and schema["info"]["title"] == "QQMusic API", schema
     assert EXPECTED_ROUTES <= schema["paths"].keys(), EXPECTED_ROUTES - schema["paths"].keys()
     assert not any(path.startswith("/v1/") for path in schema["paths"])
-    for path in EXPECTED_ROUTES - {"/recommend/get_guess_recommend"}:
-        operation = next(iter(schema["paths"][path].values()))
-        assert operation["security"] == [{"MusicId": [], "MusicKey": []}], path
     assert request(port, "/health")[0] == 404
     assert request(port, "/v1/search")[0] == 404
 
 
-def smoke(source, python, env, working, label, entry=None):
-    entry = (entry or Path(__file__).with_name("run_web.py")).resolve(strict=True)
+def smoke(source, python, env, working, label):
+    entry = (source / "web/run.py").resolve(strict=True)
     for name in [".env", "web/accounts.toml", "web/config.toml"]:
         assert not (source / name).exists(), f"Unexpected active upstream configuration: {name}"
     with socket.socket() as listener:
@@ -85,9 +82,6 @@ def smoke(source, python, env, working, label, entry=None):
         "QQMUSIC_CREDENTIAL_STORE_PATH": str(working / f"credentials-{label}.sqlite3"),
         "QQMUSIC_LOGGING_LEVEL": "WARNING", "PYTHONDONTWRITEBYTECODE": "1",
     }
-    child_env.pop("QQMUSIC_UPSTREAM_SOURCE", None)
-    if source != entry.parent / "upstream/source":
-        child_env["QQMUSIC_UPSTREAM_SOURCE"] = str(source)
     with tempfile.TemporaryFile(mode="w+b") as log:
         process = subprocess.Popen(
             [str(python), "-I", "-B", "-c", BOOTSTRAP, str(entry)],

@@ -15,7 +15,6 @@ from pathlib import Path
 import site
 import struct
 import sys
-import run_web
 import web.src.app as app
 from web.src.routes import ROUTES as upstream_routes
 from web.src.routing.route_types import AuthPolicy
@@ -70,13 +69,9 @@ upstream = metadata.distribution("qqmusic-api-python")
 direct_url = json.loads(upstream.read_text("direct_url.json"))
 assert direct_url["vcs_info"]["commit_id"] == manifest["upstreamCommit"], direct_url
 assert app.settings.credential.enabled is False
-assert Path(run_web.__file__).resolve() == bundle / "run_web.py"
-assert len(app.ROUTES) == len(upstream_routes)
-for before, after in zip(upstream_routes, app.ROUTES, strict=True):
-    if before.auth is AuthPolicy.NONE:
-        assert after.auth is AuthPolicy.OPTIONAL and after.cache is None
-    else:
-        assert after is before
+assert app.ROUTES is upstream_routes
+assert any(route.auth is AuthPolicy.NONE and route.cache is not None for route in app.ROUTES)
+assert any(route.auth is AuthPolicy.OPTIONAL for route in app.ROUTES)
 print(json.dumps({"python": sys.version.split()[0], "distributions": len(distributions)}))
 '''
 
@@ -87,7 +82,7 @@ def require(condition, message):
 
 
 def validate_layout(bundle):
-    required = ["requirements.txt", "UPSTREAM-NOTICE.md", "run_web.py", "bundle-manifest.json",
+    required = ["requirements.txt", "UPSTREAM-NOTICE.md", "bundle-manifest.json",
                 "python/python.exe", "python/python313.zip", "python/python313._pth", "python/LICENSE.txt",
                 "upstream/LICENSE", "upstream/COMMIT", "upstream/source/LICENSE",
                 "upstream/source/pyproject.toml", "upstream/source/qqmusic_api/__init__.py",
@@ -96,7 +91,7 @@ def validate_layout(bundle):
                 "upstream/source-manifest.json", "upstream/python-runtime.spdx.json", "upstream/pip-install-report.json"]
     for name in required:
         require((bundle / name).is_file(), f"Missing bundle file: {name}")
-    for name in ["app.py", "gateway.py", "upstream/source/.env", "upstream/source/web/accounts.toml",
+    for name in ["app.py", "gateway.py", "run_web.py", "upstream/source/.env", "upstream/source/web/accounts.toml",
                  "upstream/source/web/config.toml"]:
         require(not (bundle / name).exists(), f"Unexpected private gateway or runtime configuration: {name}")
     require((bundle / "python/Lib/site-packages").is_dir(), "Missing bundled site-packages")
@@ -105,7 +100,7 @@ def validate_layout(bundle):
             "Unexpected embedded Python search paths")
     manifest = json.loads((bundle / "bundle-manifest.json").read_text(encoding="utf-8"))
     require(manifest["pythonVersion"] == "3.13.9", "Unexpected Python runtime version")
-    require(manifest["entryPoint"] == "run_web.py", "Unexpected runtime policy entry point")
+    require(manifest["entryPoint"] == "upstream/source/web/run.py", "Unexpected native Web entry point")
     require(manifest["workingDirectory"] == "upstream/source", "Unexpected native Web working directory")
     requirements = (bundle / "requirements.txt").read_bytes()
     require(hashlib.sha256(requirements).hexdigest() == manifest["requirementsSha256"], "Requirements checksum mismatch")
@@ -154,7 +149,7 @@ def main():
                                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=45)
             require(probe.returncode == 0, f"Bundled import/isolation check failed ({label}):\n{probe.stdout}\n{probe.stderr}")
             print(f"Bundled import/isolation check passed ({label}): {probe.stdout.strip()}")
-            native.smoke(source, python, env, working, label, entry=bundle / "run_web.py")
+            native.smoke(source, python, env, working, label)
     validate_layout(bundle)
 
 

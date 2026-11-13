@@ -27,7 +27,7 @@ app:
         enabled: ${QQMUSIC_ENABLED:false}
         delivery-mode: ${QQMUSIC_DELIVERY_MODE:SERVER_DOWNLOAD}
     qqmusic:
-      base-url: ${QQMUSIC_API_URL:http://localhost:8000}
+      base-url: ${QQMUSIC_API_URL:http://localhost:8080}
       cookie: ${QQMUSIC_COOKIE:}
       quality: ${QQMUSIC_QUALITY:MP3_128}
     netease:

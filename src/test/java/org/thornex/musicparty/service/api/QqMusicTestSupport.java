@@ -15,7 +15,7 @@ final class QqMusicTestSupport {
 
     static AppProperties properties() {
         var properties = new AppProperties();
-        properties.getQqmusic().setBaseUrl("http://web.test:8000");
+        properties.getQqmusic().setBaseUrl("http://web.test:8080");
         properties.getQqmusic().setQuality("MP3_128");
         return properties;
     }

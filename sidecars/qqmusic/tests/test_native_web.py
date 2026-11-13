@@ -1,4 +1,3 @@
-from dataclasses import fields, replace
 import os
 import runpy
 from pathlib import Path
@@ -23,9 +22,6 @@ from web.src import app as native
 from web.src.core.credential_store import load_account_configs
 from web.src.routes import ROUTES as upstream_routes
 from web.src.routing.route_types import AuthPolicy
-
-os.environ["QQMUSIC_UPSTREAM_SOURCE"] = str(SOURCE)
-runpy.run_path(str(Path(__file__).parents[1] / "run_web.py"))
 
 
 class OfflineTransport:
@@ -92,49 +88,45 @@ def test_native_readiness_schema_and_empty_pool(application):
     assert executor.calls == []
 
 
-def test_policy_only_changes_native_none_auth_and_public_cache():
-    assert len(native.ROUTES) == len(upstream_routes)
-    assert any(route.cache is not None for route in upstream_routes)
-    for before, after in zip(upstream_routes, native.ROUTES, strict=True):
-        if before.auth is AuthPolicy.NONE:
-            assert after == replace(before, auth=AuthPolicy.OPTIONAL, cache=None)
-            for field in fields(before):
-                if field.name not in {"auth", "cache"}:
-                    assert getattr(after, field.name) is getattr(before, field.name)
-        else:
-            assert after is before
-    assert all(route.cache is None for route in native.ROUTES)
+def test_native_route_policies_are_unchanged():
+    assert native.ROUTES is upstream_routes
+    assert any(route.auth is AuthPolicy.NONE and route.cache is not None for route in native.ROUTES)
+    assert any(route.auth is AuthPolicy.OPTIONAL for route in native.ROUTES)
+    assert any(route.auth is AuthPolicy.COOKIE_OR_DEFAULT for route in native.ROUTES)
 
 
-def test_native_route_uses_request_cookie_without_cross_account_cache(application):
+@pytest.mark.parametrize("first_cookie", ["musicid=123; musickey=fixture-123", "musicid=bad"])
+def test_native_none_auth_ignores_cookies_and_keeps_public_cache(application, first_cookie):
     client, engine, executor = application
-    for musicid in (123, 456, None, 123):
-        headers = {"Cookie": f"musicid={musicid}; musickey=fixture-{musicid}"} if musicid else {}
-        response = client.get("/search/get_hotkey", headers=headers)
+    etags = set()
+    for cookie in (first_cookie, "musicid=456; musickey=fixture-456", "", "musicid=bad"):
+        response = client.get("/search/get_hotkey", headers={"Cookie": cookie})
         assert response.status_code == 200
         assert response.json()["code"] == 0
         assert response.json()["data"]["vec_hotkey"][0]["query"] == "offline"
-        assert "etag" not in response.headers and "cache-control" not in response.headers
-        credential = executor.calls[-1].scope.credential
-        assert credential.musicid == (musicid or 0)
-        assert credential.musickey == (f"fixture-{musicid}" if musicid else "")
-        assert credential.is_valid() == bool(musicid)
-    assert len(executor.calls) == 4
+        assert response.headers["cache-control"] == "public, max-age=600"
+        etags.add(response.headers["etag"])
+    assert len(etags) == 1
+    assert len(executor.calls) == 1
+    assert not executor.calls[0].scope.credential.is_valid()
+    response = client.get("/search/get_hotkey", headers={"If-None-Match": etags.pop()})
+    assert response.status_code == 304
+    assert len(executor.calls) == 1
 
 
 READ_ROUTES = [
-    ("/search/search_by_type?keyword=fixture&search_type=0", "music.search.SearchCgiService", "DoSearchForQQMusicMobile"),
-    ("/song/123/detail", "music.pf_song_detail_svr", "get_song_detail_yqq"),
-    ("/song/123/lyric", "music.musichallSong.PlayLyricInfo", "GetPlayLyricInfo"),
-    ("/album/123/detail", "music.musichallAlbum.AlbumInfoServer", "GetAlbumDetail"),
-    ("/user/999/created_songlists", "music.musicasset.PlaylistBaseRead", "GetPlaylistByUin"),
-    ("/songlist/123/detail", "music.srfDissInfo.DissInfo", "CgiGetDiss"),
+    ("/search/search_by_type?keyword=fixture&search_type=0", "music.search.SearchCgiService", "DoSearchForQQMusicMobile", False),
+    ("/song/123/detail", "music.pf_song_detail_svr", "get_song_detail_yqq", False),
+    ("/song/123/lyric", "music.musichallSong.PlayLyricInfo", "GetPlayLyricInfo", False),
+    ("/album/123/detail", "music.musichallAlbum.AlbumInfoServer", "GetAlbumDetail", False),
+    ("/user/999/created_songlists", "music.musicasset.PlaylistBaseRead", "GetPlaylistByUin", True),
+    ("/songlist/123/detail", "music.srfDissInfo.DissInfo", "CgiGetDiss", False),
 ]
 
 
-@pytest.mark.parametrize("path,module,method", READ_ROUTES)
+@pytest.mark.parametrize("path,module,method,optional_auth", READ_ROUTES)
 @pytest.mark.parametrize("musicid", [123, 456, None])
-def test_native_read_routes_reach_real_engine_with_request_scope(application, path, module, method, musicid):
+def test_native_read_routes_respect_upstream_auth_policy(application, path, module, method, optional_auth, musicid):
     client, engine, executor = application
     executor.error = CgiApiException("upstream permission denied", code=10001)
     headers = {"Cookie": (
@@ -148,14 +140,15 @@ def test_native_read_routes_reach_real_engine_with_request_scope(application, pa
     call = executor.calls[0]
     assert call.request.module == module
     assert call.request.method == method
-    assert call.scope.credential.musicid == (musicid or 0)
-    assert call.scope.credential.is_valid() == bool(musicid)
-    assert call.scope.credential.openid == ("fixture-openid" if musicid else "")
-    assert call.scope.credential.access_token == ("fixture-access" if musicid else "")
-    assert call.scope.credential.refresh_token == ("fixture-refresh" if musicid else "")
-    assert call.scope.credential.expired_at == (4102444800 if musicid else 0)
-    assert call.scope.credential.unionid == ("fixture-union" if musicid else "")
-    assert call.scope.credential.refresh_key == ("fixture-key" if musicid else "")
+    caller = musicid if optional_auth else None
+    assert call.scope.credential.musicid == (caller or 0)
+    assert call.scope.credential.is_valid() == bool(caller)
+    assert call.scope.credential.openid == ("fixture-openid" if caller else "")
+    assert call.scope.credential.access_token == ("fixture-access" if caller else "")
+    assert call.scope.credential.refresh_token == ("fixture-refresh" if caller else "")
+    assert call.scope.credential.expired_at == (4102444800 if caller else 0)
+    assert call.scope.credential.unionid == ("fixture-union" if caller else "")
+    assert call.scope.credential.refresh_key == ("fixture-key" if caller else "")
     assert client.app.state.services.credential_pool.acquire() == ()
 
 
@@ -168,18 +161,24 @@ def test_native_user_result_is_not_filtered_by_local_visibility_policy(applicati
         play_cnt=0, comment_cnt=0, op_type=0, sort_weight=0,
     )
     executor.result = UserCreatedSonglistResponse(total=1, playlists=[playlist], deleted_ids=[], finished=True)
-    response = client.get("/user/999/created_songlists", headers={"Cookie": "musicid=123; musickey=fixture"})
-    assert response.status_code == 200
-    assert response.json()["data"]["playlists"][0]["id"] == 321
-    assert response.json()["data"]["playlists"][0]["dir_show"] == 0
-    assert executor.calls[0].scope.credential.musicid == 123
+    for musicid in (123, 456, None, 123):
+        headers = {"Cookie": f"musicid={musicid}; musickey=fixture-{musicid}"} if musicid else {}
+        response = client.get("/user/999/created_songlists", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["data"]["playlists"][0]["id"] == 321
+        assert response.json()["data"]["playlists"][0]["dir_show"] == 0
+        assert "cache-control" not in response.headers and "etag" not in response.headers
+        credential = executor.calls[-1].scope.credential
+        assert credential.musicid == (musicid or 0)
+        assert credential.musickey == (f"fixture-{musicid}" if musicid else "")
+    assert len(executor.calls) == 4
 
 
 def test_native_strict_auth_and_cookie_validation_are_preserved(application):
     client, engine, executor = application
     assert client.get("/user/999/fans").status_code == 401
     for cookie in ("musicid=123", "musicid=bad; musickey=fixture"):
-        response = client.get("/search/get_hotkey", headers={"Cookie": cookie})
+        response = client.get("/user/999/created_songlists", headers={"Cookie": cookie})
         assert response.status_code == 422
         assert response.json()["msg"] == "请求参数校验失败"
     assert executor.calls == []
@@ -188,7 +187,7 @@ def test_native_strict_auth_and_cookie_validation_are_preserved(application):
 def test_expired_caller_cookie_does_not_refresh_or_retry(application):
     client, engine, executor = application
     executor.error = CredentialExpiredError("fixture expired", code=1000)
-    response = client.get("/search/get_hotkey", headers={"Cookie": "musicid=123; musickey=expired"})
+    response = client.get("/user/999/created_songlists", headers={"Cookie": "musicid=123; musickey=expired"})
     assert response.status_code == 401
     assert response.json() == {"code": -1, "msg": "fixture expired"}
     assert len(executor.calls) == 1
