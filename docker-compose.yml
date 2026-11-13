@@ -80,14 +80,9 @@ services:
     restart: always
     environment:
       - QQMUSIC_SERVER_HOST=0.0.0.0
-    volumes:
-      - qqmusic-data:/app/web/data
     networks:
       - music-net
 
 networks:
   music-net:
     driver: bridge
-
-volumes:
-  qqmusic-data:

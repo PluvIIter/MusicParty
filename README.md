@@ -173,7 +173,7 @@ docker run -d \
 ---
 
 ## 用户歌单
-可以搜索并选择网易云、Bilibili或QQ音乐用户，查看其歌单/收藏夹，再按房间限额导入。绑定决定查询目标，不是登录该用户，不支持直接输入UID；所有查询都使用对应音源配置的Cookie，未配置才匿名。能否访问由上游决定，不额外判断资源是否私密；失败不会回退成配置账号的收藏。
+可以搜索并选择网易云、Bilibili或QQ音乐用户，查看其歌单/收藏夹，再按房间限额导入。绑定决定查询目标，不是登录该用户，不支持直接输入UID；查询请求携带对应音源配置的Cookie，未配置时不附带账号Cookie；上游自行决定是否采用该身份及如何缓存。能否访问由上游决定，不额外判断资源是否私密；失败不会回退成配置账号的收藏。
 
 ## QQ音乐源
 
@@ -187,7 +187,7 @@ QQ源默认关闭，直接使用 [L-1124/QQMusicApi 自带的Web服务](https://
 Docker启用步骤（使用本PR构建的主应用镜像，旧发布镜像不包含QQ功能）：
 
 1. 在本地 `.env` 设置 `QQMUSIC_ENABLED=true`。需要账号权限时设置单个 `QQMUSIC_COOKIE`，格式示例：`{"musicid":"123456789","musickey":"Q_H_L_..."}`，不要提交该文件。凭据必须来自合法账号，不能用目标用户ID代替。
-2. 执行 `docker compose --profile qqmusic up -d --build`。Compose直接使用固定上游源码和其自带的 `web/Dockerfile` 构建QQ API，与网易云API同处内部网络；Java连接 `http://qqmusic-api:8080`，无需补丁入口。QQ状态保存在命名卷中，不映射主机端口。
+2. 执行 `docker compose --profile qqmusic up -d --build`。Compose直接使用固定上游源码和其自带的 `web/Dockerfile` 构建QQ API，与网易云API同处内部网络；Java连接 `http://qqmusic-api:8080`，无需补丁入口。不映射主机端口；默认不额外挂载QQ账号或状态目录，需要持久化时按上游文档配置。
 3. 管理员可在管理界面替换或清空QQ凭据，旧凭据不回显。运行期更新不写入房间存档，重启后仍以部署/启动器配置为准。
 4. 私人FM需同时将部署 `PRIVATE_DJ_SOURCE=qqmusic`，再在管理界面开启FM；收藏绑定不会改变推荐账号。
 

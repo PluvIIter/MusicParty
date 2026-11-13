@@ -18,7 +18,7 @@ const config = reactive({
   neteaseQuality: 'exhigh',
   biliCookie: '',
   qqmusicGatewayMode: 'bundled',
-  qqmusicBaseUrl: 'http://127.0.0.1:8000',
+  qqmusicBaseUrl: 'http://127.0.0.1:8080',
   qqmusicCookie: '',
   qqmusicQuality: 'MP3_128',
   sources: {},

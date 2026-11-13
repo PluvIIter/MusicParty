@@ -56,7 +56,7 @@ def request(port, path):
         connection.close()
 
 
-def verify(port=8000):
+def verify(port=8080):
     status, health = request(port, "/")
     assert status == 200 and health["code"] == 0 and health["msg"] == "ok", health
     assert isinstance(health["time"], str) and health["time"], health
@@ -120,7 +120,7 @@ def smoke(source, python, env, working, label):
 def main():
     parser = argparse.ArgumentParser(description="Verify the pinned native QQMusic Web service offline.")
     parser.add_argument("--source", type=Path)
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=8080)
     options = parser.parse_args()
     if options.source is None:
         deadline = time.monotonic() + 45

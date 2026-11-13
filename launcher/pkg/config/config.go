@@ -55,7 +55,7 @@ func DefaultConfig() *AppConfig {
 	return &AppConfig{
 		ServerIP: "0.0.0.0", ServerPort: "8080", BaseURL: "http://localhost:8080",
 		AuthorName: "ThorNex", BackWords: "THORNEX", NeteaseQuality: "exhigh",
-		QqmusicGatewayMode: "bundled", QqmusicBaseURL: "http://127.0.0.1:8000", QqmusicQuality: "MP3_128",
+		QqmusicGatewayMode: "bundled", QqmusicBaseURL: "http://127.0.0.1:8080", QqmusicQuality: "MP3_128",
 		Sources: DefaultSources(), QueueMaxSize: 1000, QueueHistorySize: 50,
 		QueueMaxUserSongs: 100, MaxPlaylistImportSize: 100, ChatMaxHistorySize: 1000,
 		ChatMinIntervalMs: 1000, ChatMaxMessageLength: 200, CacheMaxSize: "1GB",
@@ -67,7 +67,7 @@ func DefaultConfig() *AppConfig {
 func DecodeConfig(data []byte) (*AppConfig, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	cfg := AppConfig{QqmusicBaseURL: "http://127.0.0.1:8000", QqmusicQuality: "MP3_128"}
+	cfg := AppConfig{QqmusicBaseURL: "http://127.0.0.1:8080", QqmusicQuality: "MP3_128"}
 	if err := decoder.Decode(&cfg); err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func DecodeConfig(data []byte) (*AppConfig, error) {
 	}
 	if cfg.QqmusicGatewayMode == "" {
 		cfg.QqmusicGatewayMode = "bundled"
-		if cfg.QqmusicBaseURL != "http://127.0.0.1:8000" && cfg.QqmusicBaseURL != "" {
+		if cfg.QqmusicBaseURL != "http://127.0.0.1:8080" && cfg.QqmusicBaseURL != "" {
 			cfg.QqmusicGatewayMode = "external"
 		}
 	}

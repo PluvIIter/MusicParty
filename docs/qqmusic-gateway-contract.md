@@ -4,7 +4,7 @@ MusicParty calls the unmodified native Web application included in L-1124/QQMusi
 
 ## Deployment and identity
 
-- Entry point: upstream `web/run.py`, FastAPI application `web.src.app:create_app`. Standalone and Compose use the native default port 8080; the Windows launcher selects a loopback port. Compose builds the pinned Git source with its original `web/Dockerfile` and stores `/app/web/data` in a named volume, with no local Docker wrapper.
+- Entry point: upstream `web/run.py`, FastAPI application `web.src.app:create_app`. Standalone and Compose use the native default port 8080; the Windows launcher selects a loopback port. Compose builds the pinned Git source with its original `web/Dockerfile` with no local Docker wrapper or additional state-volume provisioning. Optional persistence follows upstream deployment instructions.
 - Readiness: GET `/` returns `{code:0,msg:"ok",time:...}`; GET `/openapi.json` identifies `QQMusic API` and its routes. This pinned upstream does not have `/health`.
 - Do not expose this API publicly. Bundled mode binds loopback; Compose does not publish its port. It has no MusicParty gateway Bearer token. External deployments must apply their own network access controls.
 - Use upstream configuration as documented by its maintainers. Bundled mode uses a clean source export and upstream's default-disabled credential pool; external deployments do not require MusicParty-specific account or cache policy changes.

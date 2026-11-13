@@ -9,14 +9,14 @@ import (
 
 func TestNativeQqDefaultsAndMissingCurrentConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Sources["qqmusic"] != (SourceConfig{false, ServerDownload}) || cfg.QqmusicGatewayMode != "bundled" || cfg.QqmusicBaseURL != "http://127.0.0.1:8000" {
+	if cfg.Sources["qqmusic"] != (SourceConfig{false, ServerDownload}) || cfg.QqmusicGatewayMode != "bundled" || cfg.QqmusicBaseURL != "http://127.0.0.1:8080" {
 		t.Fatal("unsafe QQ defaults")
 	}
 	cfg, err := DecodeConfig([]byte(`{"sources":{"netease":{"enabled":false,"deliveryMode":"DIRECT_URL"}},"serverPort":"9000"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Sources["qqmusic"] != (SourceConfig{false, ServerDownload}) || cfg.ServerPort != "9000" || cfg.Sources["netease"].Enabled {
+	if cfg.Sources["qqmusic"] != (SourceConfig{false, ServerDownload}) || cfg.QqmusicBaseURL != "http://127.0.0.1:8080" || cfg.QqmusicGatewayMode != "bundled" || cfg.ServerPort != "9000" || cfg.Sources["netease"].Enabled {
 		t.Fatal("missing QQ defaults changed configured values")
 	}
 	cfg, err = DecodeConfig([]byte(`{"sources":{"qqmusic":{"enabled":false,"deliveryMode":"DIRECT_URL"}},"qqmusicBaseUrl":"http://external.test:8001","qqmusicCookie":"kept credential"}`))

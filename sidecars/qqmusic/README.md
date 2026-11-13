@@ -39,7 +39,7 @@ The bundle manifest declares `entryPoint=upstream/source/web/run.py` and `workin
 | Native environment variable | Bundled integration value |
 | --- | --- |
 | `QQMUSIC_SERVER_HOST` | `127.0.0.1` |
-| `QQMUSIC_SERVER_PORT` | Launcher-selected free port, based on 8000 |
+| `QQMUSIC_SERVER_PORT` | Launcher-selected free loopback port |
 | `QQMUSIC_SERVER_WORKERS` | `1` |
 | `QQMUSIC_CLIENT_DEVICE_PATH` | Writable device-state path |
 | `QQMUSIC_CREDENTIAL_STORE_PATH` | Writable SQLite-state path |
