@@ -76,7 +76,7 @@ func TestNativeQqConfigAndArgumentsPreserveSettings(t *testing.T) {
 
 func TestNativeQqCookieCredentials(t *testing.T) {
 	for _, value := range []string{
-		"musicid=1; musickey=private\n", "musicid=1\r; musickey=private", "musicid=secret\tvalue",
+		"musicid=1; music\nkey=private", "musicid=1\r; musickey=private", "musicid=secret\tvalue",
 		strings.Repeat("x", qqCookieMaximum+1), `{"musicid":1,"musickey":"secret"}`,
 	} {
 		if err := validateQqCredential(value); err == nil || strings.Contains(err.Error(), "private") {

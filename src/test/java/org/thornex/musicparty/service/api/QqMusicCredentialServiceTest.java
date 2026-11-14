@@ -41,7 +41,7 @@ class QqMusicCredentialServiceTest {
 
     @Test void headerBreakingOrOversizedInputIsRejectedWithoutEchoingIt() {
         var service = new QqMusicCredentialService(new AppProperties());
-        for (String value : new String[]{"musicid=1; musickey=private\n", "musicid=1\r; musickey=private", "x".repeat(8193)}) {
+        for (String value : new String[]{"musicid=1; music\nkey=private", "musicid=1\r; musickey=private", "x".repeat(8193)}) {
             var error = assertThrows(ApiRequestException.class, () -> service.updateCookie(value));
             assertFalse(error.getMessage().contains("private"));
         }

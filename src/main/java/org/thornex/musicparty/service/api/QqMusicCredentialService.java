@@ -30,7 +30,7 @@ public class QqMusicCredentialService {
             configured = "";
         }
         // 部署配置里的非法值只按未配置处理，不阻断其他音源启动。
-        this.cookie = configured == null || !isValid(configured) ? "" : configured.strip();
+        this.cookie = configured == null || !isValid(configured.strip()) ? "" : configured.strip();
     }
 
     public String cookie() {
@@ -46,12 +46,12 @@ public class QqMusicCredentialService {
     }
 
     public synchronized void updateCookie(String value) {
-        String raw = value == null ? "" : value;
-        if (raw.strip().startsWith("{")) {
+        // 先去掉首尾空白（粘贴常见），再校验：行尾换行可以接受，内嵌控制字符仍然拒绝。
+        String normalized = value == null ? "" : value.strip();
+        if (normalized.startsWith("{")) {
             throw new ApiRequestException("INVALID_CREDENTIAL: QQ音乐凭据已改为 Cookie 串，请粘贴浏览器 Cookie");
         }
-        if (!isValid(raw)) throw new ApiRequestException("INVALID_CREDENTIAL: QQ音乐Cookie格式无效");
-        String normalized = raw.strip();
+        if (!isValid(normalized)) throw new ApiRequestException("INVALID_CREDENTIAL: QQ音乐Cookie格式无效");
         if (normalized.equals(cookie)) return;
         cookie = normalized;
         properties.getQqmusic().setCookie(normalized);
