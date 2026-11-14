@@ -32,7 +32,7 @@ describe('user tutorial content and exact text export', () => {
         expect(tutorialText()).toContain('配置账号 A 查询目标 B');
         expect(tutorialText()).toContain('绑定 B 不等于登录 B');
         expect(tutorialText()).not.toContain('只有房间音频解析和私人推荐使用房间凭据');
-        expect(tutorialText()).toContain('QQ 音乐当前只提供 FM，不提供 DJ');
+        expect(tutorialText()).toContain('QQ 音乐不提供 FM／DJ');
         expect(tutorialText()).toContain('QQ 音乐登录凭据由管理员');
         expect(tutorialText()).toContain('不回显原值');
     });
