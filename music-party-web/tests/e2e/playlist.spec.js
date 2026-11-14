@@ -62,6 +62,15 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
                     })),
             };
         if (path === '/api/admin/verify') body = { message: 'VERIFIED' };
+        if (path === '/api/admin/sources')
+            body = {
+                sources: Object.entries(config.sources).map(([id, settings]) => ({
+                    id,
+                    label: id,
+                    enabled: settings.enabled,
+                    credential: null,
+                })),
+            };
         if (path === '/api/admin/config/update') {
             const update = route.request().postDataJSON();
             updates.push(update);

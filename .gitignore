@@ -40,6 +40,7 @@ build/
 
 /docs/*
 !/docs/source-architecture.md
+!/docs/qqmusic-gateway-contract.md
 !/docs/新手教程全部文案.txt
 /secrets/
 /.frontend-audit/
@@ -71,3 +72,4 @@ build/
 /data/*.legacy-*
 /data/*.unreadable-*
 /data/
+/scripts/__pycache__/

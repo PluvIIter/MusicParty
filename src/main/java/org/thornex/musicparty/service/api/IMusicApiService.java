@@ -24,6 +24,7 @@ public interface IMusicApiService {
     default org.thornex.musicparty.source.DeliveryMode defaultDeliveryMode() {
         return org.thornex.musicparty.source.DeliveryMode.DIRECT_URL;
     }
+    default boolean defaultDisabled() { return false; }
     default long credentialRevision() { return 0; }
     default String externalUrl(String id) { return null; }
 

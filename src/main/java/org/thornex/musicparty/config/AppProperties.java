@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AppProperties {
     private NeteaseApiConfig  netease  = new NeteaseApiConfig();
     private BilibiliApiConfig bilibili = new BilibiliApiConfig();
+    private QqMusicApiConfig qqmusic = new QqMusicApiConfig();
     private java.util.Map<String, SourceConfig> sources = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Data
@@ -119,6 +120,14 @@ public class AppProperties {
         private String cookie;
         /** B站视频时长上限（分钟），超过则前端标记为不可播放 */
         private int maxDurationMinutes = 10;
+    }
+
+    @EqualsAndHashCode(callSuper = true)
+    @Data
+    public static class QqMusicApiConfig extends ApiConfig {
+        public QqMusicApiConfig() { setBaseUrl("http://localhost:8080"); }
+        private String cookie;
+        private String quality = "MP3_320";
     }
 
     @EqualsAndHashCode(callSuper = true)

@@ -39,6 +39,108 @@ class ResourceServiceTest {
     }
 
     @Test
+    void credentialRotationInvalidatesCollectionAndTrackCursorsWithoutChangingTarget() {
+        var adapter = adapter();
+        when(adapter.credentialRevision()).thenReturn(4L);
+        when(adapter.publicCollections("target-b", "public", 0, 20))
+                .thenReturn(Mono.just(new SourcePage<>(List.of(), 20, null)));
+        when(adapter.containerPage("favorites", "42", 0, 20))
+                .thenReturn(Mono.just(new SourcePage<>(List.of(), 20, null)));
+        var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
+        var collections = service.collections("fixture", "public", "target-b", null, 20).block();
+        var tracks = service.tracks("fixture", "favorites", "42", null, 20).block();
+        when(adapter.credentialRevision()).thenReturn(5L);
+        assertThrows(RuntimeException.class, () -> service.collections("fixture", "public", "target-b", collections.nextCursor(), 20));
+        assertThrows(RuntimeException.class, () -> service.tracks("fixture", "favorites", "42", tracks.nextCursor(), 20));
+        verify(adapter, never()).publicCollections(anyString(), anyString(), eq(20), anyInt());
+        verify(adapter, never()).containerPage(anyString(), anyString(), eq(20), anyInt());
+        verify(adapter).publicCollections("target-b", "public", 0, 20);
+    }
+
+    @Test
+    void sourceReenableInvalidatesCursorEvenWhenCredentialRevisionStaysTheSame() {
+        var adapter = adapter();
+        when(adapter.publicCollections("target-b", "public", 0, 20))
+                .thenReturn(Mono.just(new SourcePage<>(List.of(), 20, null)));
+        var registry = new SourceRegistry(List.of(adapter), new AppProperties());
+        var service = new ResourceService(registry, new ResourceCursor());
+        var page = service.collections("fixture", "public", "target-b", null, 20).block();
+        registry.update("fixture", false, null);
+        registry.update("fixture", true, null);
+        assertThrows(RuntimeException.class, () -> service.collections("fixture", "public", "target-b", page.nextCursor(), 20));
+    }
+
+    @Test
+    void delayedCollectionResponseCannotReturnUnderNewCredentials() {
+        var adapter = adapter();
+        var response = reactor.core.publisher.Sinks.<SourcePage<Playlist>>one();
+        when(adapter.publicCollections("target-b", "public", 0, 20)).thenReturn(response.asMono());
+        var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
+        var pending = service.collections("fixture", "public", "target-b", null, 20).toFuture();
+        when(adapter.credentialRevision()).thenReturn(1L);
+        response.tryEmitValue(new SourcePage<>(List.of(new Playlist("42", "Old account view", "", 1, "fixture")), null, 1L));
+        assertTrue(pending.isCompletedExceptionally());
+    }
+
+    @Test
+    void delayedSearchAndContainerResponsesRejectCredentialRotation() {
+        var adapter = adapter();
+        var search = reactor.core.publisher.Sinks.<List<Music>>one();
+        var detail = reactor.core.publisher.Sinks.<Playlist>one();
+        when(adapter.searchMusic("query")).thenReturn(search.asMono());
+        when(adapter.containerDetail("favorites", "42")).thenReturn(detail.asMono());
+        var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
+        var pendingSearch = service.search("fixture", "query").toFuture();
+        var pendingDetail = service.container("fixture", "favorites", "42").toFuture();
+        when(adapter.credentialRevision()).thenReturn(1L);
+        search.tryEmitValue(List.of());
+        detail.tryEmitValue(new Playlist("42", "Old account view", "", 0, "fixture"));
+        assertTrue(pendingSearch.isCompletedExceptionally());
+        assertTrue(pendingDetail.isCompletedExceptionally());
+    }
+
+    @Test
+    void albumCursorIsBoundToCredentialRevision() {
+        var adapter = adapter();
+        when(adapter.descriptor()).thenReturn(new SourceDescriptor("fixture", "Fixture", "music",
+                new SourceCapabilities(true, true, true, true, true, false, false, true),
+                Set.of(DeliveryMode.DIRECT_URL), List.of(new CollectionCategory("public", "公开收藏", "favorites", "CONTAINER"))));
+        var song = new Music("first", "Song", List.of(), 1000, "fixture", "", null);
+        when(adapter.getAlbum("album")).thenReturn(Mono.just(new org.thornex.musicparty.dto.AlbumInfo(
+                "album", "Album", List.of(), "", 2, List.of(song, song))));
+        var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
+        var page = service.tracks("fixture", "album", "album", null, 1).block();
+        when(adapter.credentialRevision()).thenReturn(1L);
+        assertThrows(RuntimeException.class, () -> service.tracks("fixture", "album", "album", page.nextCursor(), 1));
+        verify(adapter, times(1)).getAlbum("album");
+    }
+
+    @Test
+    void requestCreatedBeforeCredentialRotationCannotSubscribeAsNewAccount() {
+        var adapter = adapter();
+        var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
+        var pending = service.collections("fixture", "public", "target-b", null, 20);
+        when(adapter.credentialRevision()).thenReturn(1L);
+        assertThrows(RuntimeException.class, pending::block);
+        verify(adapter, never()).publicCollections(anyString(), anyString(), anyInt(), anyInt());
+    }
+
+    @Test
+    void credentialRotationBetweenImportPagesCannotMixAccountViews() {
+        var adapter = adapter();
+        var second = reactor.core.publisher.Sinks.<SourcePage<Music>>one();
+        var firstTrack = new Music("first", "First", List.of(), 1000, "fixture", "", null);
+        when(adapter.containerPage("favorites", "42", 0, 20))
+                .thenReturn(Mono.just(new SourcePage<>(List.of(firstTrack), 20, null)));
+        when(adapter.containerPage("favorites", "42", 20, 20)).thenReturn(second.asMono());
+        var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
+        var pending = service.importTracks("fixture", "favorites", "42", 100).toFuture();
+        when(adapter.credentialRevision()).thenReturn(1L);
+        second.tryEmitValue(new SourcePage<>(List.of(new Music("second", "Second", List.of(), 1000, "fixture", "", null)), null, null));
+        assertTrue(pending.isCompletedExceptionally());
+    }
+
+    @Test
     void emptyFilteredPageStillAdvancesAndImportTraversesNextPage() {
         var adapter = adapter();
         when(adapter.containerPage("favorites", "42", 0, 20)).thenReturn(Mono.just(new SourcePage<>(List.of(), 20, null)));

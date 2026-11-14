@@ -68,7 +68,7 @@ class PlaylistClaimLockOrderTest {
         var auth = mock(AuthController.class);
         persistence = new QueuePersistenceService(queue, chat, properties, new ObjectMapper(), player, auth, stream);
         claims = new PlaylistClaimService(users, queue, player, persistence, properties);
-        admin = new AdminController(player, chat, properties, auth, netease, mock(BilibiliMusicApiService.class), stream, dj, persistence);
+        admin = new AdminController(player, chat, properties, auth, mock(org.thornex.musicparty.source.SourceCredentialRegistry.class), stream, dj, persistence);
     }
 
     @AfterEach

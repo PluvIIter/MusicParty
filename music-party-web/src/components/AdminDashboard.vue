@@ -517,6 +517,15 @@
                                     >
                                 </div>
                                 <div class="p-4 space-y-4">
+                                    <p v-if="sourceDirectoryLoading" role="status" class="text-xs text-ink-muted">
+                                        正在读取音乐源管理目录…
+                                    </p>
+                                    <div v-if="sourceDirectoryError" role="alert" class="text-xs text-danger">
+                                        {{ sourceDirectoryError }}
+                                        <button type="button" class="ml-2 underline" @click="reloadSourceDirectory">
+                                            重试
+                                        </button>
+                                    </div>
                                     <div
                                         v-for="plat in platforms"
                                         :key="plat.id"
@@ -542,20 +551,45 @@
                                                 ></div>
                                             </button>
                                         </div>
-                                        <div v-if="plat.supportsCookie" class="flex gap-2">
-                                            <input
-                                                type="password"
-                                                v-model="cookieInputs[plat.id]"
-                                                :aria-label="plat.label + ' COOKIE'"
-                                                :placeholder="'输入新 ' + plat.label + ' COOKIE...'"
-                                                class="flex-1 min-w-0 bg-surface border border-line px-2 py-1 text-[10px] outline-none focus:border-accent font-mono"
-                                            />
+                                        <div v-if="plat.credential" class="space-y-2">
+                                            <div class="flex justify-between gap-2 text-[10px] text-ink-muted">
+                                                <label :for="'source-credential-' + plat.id">{{
+                                                    plat.credential.label
+                                                }}</label>
+                                                <span>{{ plat.credential.configured ? '已配置' : '未配置' }}</span>
+                                            </div>
+                                            <form class="flex gap-2" @submit.prevent="saveCredential(plat.id)">
+                                                <input
+                                                    :id="'source-credential-' + plat.id"
+                                                    v-model="credentialInputs[plat.id]"
+                                                    type="password"
+                                                    autocomplete="new-password"
+                                                    spellcheck="false"
+                                                    :placeholder="'输入新' + plat.credential.label"
+                                                    :disabled="credentialSaving.has(plat.id)"
+                                                    class="flex-1 min-w-0 bg-surface border border-line px-2 py-1 text-[10px] outline-none focus:border-accent font-mono"
+                                                />
+                                                <button
+                                                    type="submit"
+                                                    :aria-label="'更新' + plat.credential.label"
+                                                    :disabled="
+                                                        credentialSaving.has(plat.id) ||
+                                                        !(credentialInputs[plat.id] || '').trim()
+                                                    "
+                                                    class="bg-brand text-ink-inverse px-2 py-2 text-[10px] font-bold hover:bg-accent hover:text-accent-contrast disabled:opacity-40 transition-colors"
+                                                >
+                                                    {{ credentialSaving.has(plat.id) ? '更新中…' : '更新' }}
+                                                </button>
+                                            </form>
                                             <button
-                                                @click="updateCookie(plat.id, cookieInputs[plat.id])"
-                                                :disabled="!(cookieInputs[plat.id] || '').trim()"
-                                                class="bg-brand text-ink-inverse px-2 text-[10px] font-bold hover:bg-accent hover:text-accent-contrast disabled:opacity-40 disabled:hover:bg-brand disabled:hover:text-ink-inverse transition-colors"
+                                                v-if="plat.credential.configured"
+                                                type="button"
+                                                :aria-label="'清除' + plat.credential.label"
+                                                :disabled="credentialSaving.has(plat.id)"
+                                                class="text-[10px] text-danger border border-danger/40 px-2 py-1 disabled:opacity-40"
+                                                @click="clearCredential(plat.id)"
                                             >
-                                                更新
+                                                清除已保存凭据
                                             </button>
                                         </div>
                                     </div>
@@ -622,6 +656,7 @@ import { useToast } from '../composables/useToast';
 import { toAdminConfigPayload } from '../domain/adminConfig';
 import { PLAY_MODES } from '../domain/playModes';
 import { useSourcesStore } from '../stores/sources';
+import { useAdminSources } from '../composables/useAdminSources';
 import {
     Settings,
     X,
@@ -727,30 +762,16 @@ const locks = computed(() => [
     { key: 'SHUFFLE', cnLabel: '锁定模式', value: playerStore.isPlayModeLocked },
 ]);
 
-const COOKIE_SOURCES = new Set(['netease', 'bilibili']);
-const cookieInputs = ref({});
-const platforms = computed(() =>
-    [...new Set([...sources.sources.map((source) => source.id), ...Object.keys(playerStore.config.sources || {})])].map(
-        (id) => ({
-            id,
-            label: sources.descriptor(id)?.label || id,
-            enabled: playerStore.config.sources?.[id]?.enabled ?? sources.isEnabled(id),
-            supportsCookie: COOKIE_SOURCES.has(id),
-        })
-    )
-);
-
-const updateCookie = async (platform, value) => {
-    const cookie = (value || '').trim();
-    if (!cookie) return;
-    try {
-        const data = await adminApi.setCookie(adminStore.adminPassword, platform, cookie);
-        success(data.message);
-        cookieInputs.value[platform] = '';
-    } catch {
-        error('凭据更新失败');
-    }
-};
+const {
+    platforms,
+    credentialInputs,
+    saving: credentialSaving,
+    loading: sourceDirectoryLoading,
+    loadError: sourceDirectoryError,
+    load: reloadSourceDirectory,
+    saveCredential,
+    clearCredential,
+} = useAdminSources();
 
 // 私人电台/私人DJ 状态（来自 config.privateDj，服务端广播；mode 即开关：OFF=关闭/FM=私人FM/DJ=私人DJ）
 const privateDj = computed(

@@ -13,7 +13,7 @@ func TestDecodeCanonicalSourceMapWithoutImplicitDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]SourceConfig{"test-source": {false, ServerDownload}}
+	want := map[string]SourceConfig{"test-source": {false, ServerDownload}, "qqmusic": {false, DirectURL}}
 	if !reflect.DeepEqual(cfg.Sources, want) {
 		t.Fatalf("sources = %#v, want %#v", cfg.Sources, want)
 	}
@@ -84,6 +84,8 @@ func TestJavaArgsUseGenericSourceProperties(t *testing.T) {
 		"--app.music-api.sources.bilibili.delivery-mode=DIRECT_URL",
 		"--app.music-api.sources.netease.enabled=false",
 		"--app.music-api.sources.netease.delivery-mode=SERVER_DOWNLOAD",
+		"--app.music-api.sources.qqmusic.enabled=false",
+		"--app.music-api.sources.qqmusic.delivery-mode=DIRECT_URL",
 		"--app.music-api.sources.test-source.enabled=true",
 		"--app.music-api.sources.test-source.delivery-mode=SERVER_DOWNLOAD",
 	}
@@ -142,6 +144,10 @@ func TestJavaArgsUseCanonicalAuthProperties(t *testing.T) {
 
 func TestLocalSidecarRequiresEnabledAdapter(t *testing.T) {
 	cfg := DefaultConfig()
+	if cfg.LocalServiceEnabled("NETEASE_API") {
+		t.Fatal("sidecar must not start without an explicit enable")
+	}
+	cfg.Sources["netease"] = SourceConfig{true, DirectURL}
 	if !cfg.LocalServiceEnabled("NETEASE_API") {
 		t.Fatal("enabled Netease should start its sidecar")
 	}
@@ -184,8 +190,13 @@ func TestDescriptorManifestDeclaresDefaultsAndFieldsOnly(t *testing.T) {
 		}
 	}
 	defaults := DefaultSources()
-	defaults["netease"] = SourceConfig{false, ServerDownload}
-	if !DefaultSources()["netease"].Enabled {
+	defaults["netease"] = SourceConfig{true, ServerDownload}
+	if DefaultSources()["netease"].Enabled {
 		t.Fatal("default configurations share mutable state")
+	}
+	for _, descriptor := range SourceDescriptors() {
+		if descriptor.DefaultEnabled {
+			t.Fatalf("sources must start disabled: %s", descriptor.ID)
+		}
 	}
 }

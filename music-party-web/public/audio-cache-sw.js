@@ -4,6 +4,11 @@ const META_CACHE = 'mp-audio-metadata-v1';
 const ROUTE = '/__mp_audio_cache/v1/';
 const STORE = '/__mp_audio_store/v1/';
 const CHUNK_SIZE = 512 * 1024;
+// 与 src/services/audioCache.js 保持一致：只缓存支持 CORS + Range 的音源 CDN。
+const PLATFORM_HOSTS = {
+    netease: ['.music.126.net', '.music.163.com'],
+    qqmusic: ['.qq.com'],
+};
 const inFlight = new Map();
 let epoch = 0;
 let writes = Promise.resolve();
@@ -215,20 +220,23 @@ async function getChunk(key, index, source, signal) {
 
 async function fileIdentity(url) {
     const id = decodeURIComponent(url.pathname.slice(ROUTE.length));
+    const platform = url.searchParams.get('platform') || 'netease';
     const source = new URL(url.searchParams.get('source'));
     const name = source.pathname.split('/').pop();
+    const hosts = PLATFORM_HOSTS[platform];
     if (
         !/^[\w-]{1,100}$/.test(id) ||
+        !hosts ||
         source.protocol !== 'https:' ||
         source.username ||
         source.password ||
         source.port ||
-        !(source.hostname.endsWith('.music.126.net') || source.hostname.endsWith('.music.163.com')) ||
+        !hosts.some((host) => source.hostname.endsWith(host)) ||
         !/^[\w.-]{8,160}\.(flac|mp3|m4a|aac|wav|ogg)$/i.test(name)
     )
         throw new Error('Unsupported audio source');
     // CDN directory, host and signing query may rotate. The file name identifies encoded content/quality.
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`netease:${id}:${name}`));
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${platform}:${id}:${name}`));
     const key = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
     return { key, source: source.href };
 }

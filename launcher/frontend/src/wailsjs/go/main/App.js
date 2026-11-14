@@ -22,6 +22,10 @@ export function GetServiceStatuses() {
   return window['go']['main']['App']['GetServiceStatuses']();
 }
 
+export function GetTunnelStatus() {
+  return window['go']['main']['App']['GetTunnelStatus']();
+}
+
 export function GetSourceDescriptors() {
   return window['go']['main']['App']['GetSourceDescriptors']();
 }

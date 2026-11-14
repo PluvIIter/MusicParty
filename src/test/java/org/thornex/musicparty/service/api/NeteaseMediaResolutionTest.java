@@ -31,6 +31,7 @@ class NeteaseMediaResolutionTest {
         List<URI> requests = new ArrayList<>();
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             requests.add(request.url());
+            assertEquals("MUSIC_U=fixture; __csrf=a+b/&=?", request.headers().getFirst("Cookie"));
             return Mono.just(json("{\"data\":[{\"url\":\"http://audio.test/fresh\"}]}"));
         }).build();
         var media = new NeteaseMusicApiService(client, properties()).resolveMedia("123", MediaConsumer.BROWSER).block();
@@ -39,7 +40,7 @@ class NeteaseMediaResolutionTest {
         assertEquals("/song/url/v1", requests.getFirst().getPath());
         assertTrue(requests.getFirst().getQuery().contains("level=lossless"));
         assertTrue(requests.getFirst().getQuery().contains("timestamp="));
-        assertTrue(requests.getFirst().getQuery().contains("cookie=MUSIC_U=fixture; __csrf=a+b/&=?"));
+        assertFalse(requests.getFirst().getQuery().contains("cookie="));
     }
 
     @Test
@@ -47,6 +48,7 @@ class NeteaseMediaResolutionTest {
         List<URI> requests = new ArrayList<>();
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             requests.add(request.url());
+            assertEquals("MUSIC_U=fixture; __csrf=a+b/&=?", request.headers().getFirst("Cookie"));
             return Mono.just(request.url().getPath().endsWith("/v1")
                     ? ClientResponse.create(HttpStatus.SERVICE_UNAVAILABLE).body("private-data").build()
                     : json("{\"data\":[{\"url\":\"https://audio.test/fallback\"}]}"));

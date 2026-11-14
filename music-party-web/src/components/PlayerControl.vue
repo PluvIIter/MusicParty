@@ -273,6 +273,7 @@ import CoverImage from './CoverImage.vue';
 import PlayModePicker from './PlayModePicker.vue';
 import { useToast } from '../composables/useToast';
 import { openExternal, safeExternalUrl } from '../domain/sources';
+import { mediaExtension, downloadName } from '../services/musicDownload';
 
 const player = usePlayerStore();
 const sources = useSourcesStore();
@@ -487,11 +488,12 @@ const downloadCurrentMusic = async () => {
     try {
         const response = await fetch(music.url);
         if (!response.ok) throw new Error('Network error');
+        const extension = mediaExtension(response.headers.get('content-type'), music.url);
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.download = `${music.name} - ${music.artists[0]}.mp3`;
+        link.download = downloadName(music, extension);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

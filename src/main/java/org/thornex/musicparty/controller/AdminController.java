@@ -10,8 +10,7 @@ import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.QueuePersistenceService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.PrivateDjService;
-import org.thornex.musicparty.service.api.BilibiliMusicApiService;
-import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import org.thornex.musicparty.source.SourceCredentialRegistry;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 
 import java.io.IOException;
@@ -27,20 +26,18 @@ public class AdminController {
     private final AppProperties appProperties;
     private final String adminPassword;
     private final AuthController authController;
-    private final NeteaseMusicApiService neteaseMusicApiService;
-    private final BilibiliMusicApiService bilibiliMusicApiService;
+    private final SourceCredentialRegistry credentials;
     private final LiveStreamService liveStreamService;
     private final PrivateDjService privateDjService;
     private final QueuePersistenceService persistence;
 
-    public AdminController(MusicPlayerService musicPlayerService, ChatService chatService, AppProperties appProperties, AuthController authController, NeteaseMusicApiService neteaseMusicApiService, BilibiliMusicApiService bilibiliMusicApiService, LiveStreamService liveStreamService, PrivateDjService privateDjService, QueuePersistenceService persistence) {
+    public AdminController(MusicPlayerService musicPlayerService, ChatService chatService, AppProperties appProperties, AuthController authController, SourceCredentialRegistry credentials, LiveStreamService liveStreamService, PrivateDjService privateDjService, QueuePersistenceService persistence) {
         this.musicPlayerService = musicPlayerService;
         this.chatService = chatService;
         this.adminPassword = appProperties.getAdminPassword();
         this.appProperties = appProperties;
         this.authController = authController;
-        this.neteaseMusicApiService = neteaseMusicApiService;
-        this.bilibiliMusicApiService = bilibiliMusicApiService;
+        this.credentials = credentials;
         this.liveStreamService = liveStreamService;
         this.privateDjService = privateDjService;
         this.persistence = persistence;
@@ -139,20 +136,23 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("message", "系统核心已完成全量重置并重启"));
     }
 
+    @GetMapping("/sources")
+    public ResponseEntity<?> sources(@RequestHeader("X-Admin-Password") String password) {
+        if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        return ResponseEntity.ok(credentials.catalog());
+    }
+
     @PostMapping("/config/cookie")
     public ResponseEntity<?> setCookie(@RequestHeader("X-Admin-Password") String password, @RequestBody AdminCookieRequest request) {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-
-        if ("netease".equalsIgnoreCase(request.platform())) {
-            neteaseMusicApiService.updateCookie(request.value());
-            musicPlayerService.broadcastFullPlayerState();
-            return ResponseEntity.ok(Map.of("message", "网易云音乐凭据已更新"));
-        } else if ("bilibili".equalsIgnoreCase(request.platform())) {
-            bilibiliMusicApiService.updateCookie(request.value());
-            return ResponseEntity.ok(Map.of("message", "Bilibili Cookie 已更新"));
-        } else {
-            return ResponseEntity.badRequest().build();
+        try {
+            credentials.update(request.platform(), request.value());
+        } catch (IllegalArgumentException | org.thornex.musicparty.exception.ApiRequestException error) {
+            return ResponseEntity.badRequest().body(Map.of("message", "凭据更新失败，请检查格式与音源"));
         }
+        privateDjService.invalidate();
+        musicPlayerService.broadcastFullPlayerState();
+        return ResponseEntity.ok(Map.of("message", "音源凭据已更新"));
     }
 
     @PostMapping("/room/stream")

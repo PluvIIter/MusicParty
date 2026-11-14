@@ -64,6 +64,9 @@ public class BilibiliCookieService {
     private volatile long wbiKeyTime;
 
     private final Object initLock = new Object();
+    private volatile long credentialRevision;
+
+    public long credentialRevision() { return credentialRevision; }
 
     public record WbiKeys(String imgKey, String subKey) {}
 
@@ -103,15 +106,24 @@ public class BilibiliCookieService {
      * 管理员热更新完整 Cookie（AdminController 调用）。
      */
     public void updateCookie(String newCookie) {
-        this.fullCookie = null;
-        this.buvid3 = null;
-        this.buvid4 = null;
-        this.bNut = null;
-        this.biliTicket = null;
-        this.fingerprintReady = false;
-        if (StringUtils.hasText(newCookie)) {
-            this.fullCookie = newCookie;
-            parseFullCookie(newCookie);
+        synchronized (initLock) {
+            credentialRevision++;
+            fingerprintInit = null;
+            ticketInit = null;
+            lastFingerprintAttempt = 0;
+            lastTicketAttempt = 0;
+            ticketFetchTime = 0;
+            invalidateWbiKeys();
+            this.fullCookie = null;
+            this.buvid3 = null;
+            this.buvid4 = null;
+            this.bNut = null;
+            this.biliTicket = null;
+            this.fingerprintReady = false;
+            if (StringUtils.hasText(newCookie)) {
+                this.fullCookie = newCookie;
+                parseFullCookie(newCookie);
+            }
         }
         log.info("Bilibili Cookie Service cookie updated.");
     }
@@ -122,14 +134,12 @@ public class BilibiliCookieService {
 
     /** 完整 Cookie 头，确保设备指纹与 bili_ticket 已初始化（惰性 + 并发去重）。 */
     public Mono<String> getPublicCookieHeader() {
-        return ensureFingerprint().then(Mono.fromSupplier(() -> "buvid3=" + (buvid3 == null ? "" : buvid3)
-                + "; buvid4=" + (buvid4 == null ? "" : buvid4)));
+        return getCookieHeader();
     }
 
     public Mono<String> getCookieHeader() {
-        return ensureFingerprint()
-                .then(ensureTicket())
-                .then(Mono.defer(() -> Mono.just(buildCookie())));
+        return Mono.defer(() -> ensureFingerprint().then(Mono.defer(this::ensureTicket))
+                .then(Mono.fromSupplier(this::buildCookie)));
     }
 
     /** 若最近从 bili_ticket 响应中收割到新鲜 WBI key，则返回之；否则为空。 */
@@ -165,15 +175,16 @@ public class BilibiliCookieService {
                     return Mono.empty(); // 失败冷却期内不再尝试，降级请求
                 }
                 lastFingerprintAttempt = now;
+                long revision = credentialRevision;
                 fingerprintInit = fetchFingerprint()
-                        .doOnSuccess(v -> fingerprintReady = true)
+                        .doOnSuccess(v -> { synchronized (initLock) { if (revision == credentialRevision) fingerprintReady = true; } })
                         .onErrorResume(e -> {
                             log.warn("Bilibili device fingerprint init failed: {}", e.getMessage());
                             return Mono.empty(); // 降级：无指纹也能请求，只是风控概率升高
                         })
                         .doFinally(sig -> {
-                            if (!fingerprintReady) {
-                                synchronized (initLock) { fingerprintInit = null; } // 失败则冷却后重试
+                            if (!fingerprintReady && revision == credentialRevision) {
+                                synchronized (initLock) { if (revision == credentialRevision) fingerprintInit = null; } // 失败则冷却后重试
                             }
                         })
                         .cache();
@@ -183,23 +194,28 @@ public class BilibiliCookieService {
     }
 
     private Mono<Void> fetchFingerprint() {
+        long revision = credentialRevision;
         return webClient.get()
                 .uri("https://api.bilibili.com/x/frontend/finger/spi")
+                .header("Cookie", buildCookie())
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .doOnNext(json -> {
-                    JsonNode data = json.path("data");
-                    String b3 = data.path("b_3").asText();
-                    String b4 = data.path("b_4").asText();
-                    if (StringUtils.hasText(b3)) {
-                        this.buvid3 = b3;
-                        this.buvid4 = StringUtils.hasText(b4) ? b4 : "";
-                        // 文档：无 Cookie 请求时 b_nut 为响应生成时刻的 UNIX 秒级时间戳
-                        this.bNut = String.valueOf(System.currentTimeMillis() / 1000);
-                        log.info("Bilibili device fingerprint acquired: buvid3={}", buvid3);
-                    } else {
-                        // 抛错走 onErrorResume 降级路径：fingerprintReady 保持 false，冷却后重试
-                        throw new IllegalStateException("Bilibili fingerprint spi returned no buvid3");
+                    synchronized (initLock) {
+                        if (revision != credentialRevision) return;
+                        JsonNode data = json.path("data");
+                        String b3 = data.path("b_3").asText();
+                        String b4 = data.path("b_4").asText();
+                        if (StringUtils.hasText(b3)) {
+                            this.buvid3 = b3;
+                            this.buvid4 = StringUtils.hasText(b4) ? b4 : "";
+                            // 文档：无 Cookie 请求时 b_nut 为响应生成时刻的 UNIX 秒级时间戳
+                            this.bNut = String.valueOf(System.currentTimeMillis() / 1000);
+                            log.info("Bilibili device fingerprint acquired: buvid3={}", buvid3);
+                        } else {
+                            // 抛错走 onErrorResume 降级路径：fingerprintReady 保持 false，冷却后重试
+                            throw new IllegalStateException("Bilibili fingerprint spi returned no buvid3");
+                        }
                     }
                 })
                 // 防挂起：无响应超时会污染缓存的 fingerprintInit，导致后续 getCookieHeader 永久卡死
@@ -218,6 +234,7 @@ public class BilibiliCookieService {
                     return Mono.empty(); // 失败冷却期内不再尝试
                 }
                 lastTicketAttempt = now;
+                long revision = credentialRevision;
                 ticketInit = fetchTicket()
                         .onErrorResume(e -> {
                             log.warn("bili_ticket generation failed: {}", e.getMessage());
@@ -227,7 +244,7 @@ public class BilibiliCookieService {
                             // 无论成败都清空 ticketInit：
                             //  成功 → 由顶部 ticketFresh() 门控短路，过期后能重新进入本段刷新；
                             //  失败 → 由冷却时间（TICKET_RETRY_MIN_MS）避免频繁重试。
-                            synchronized (initLock) { ticketInit = null; }
+                            synchronized (initLock) { if (revision == credentialRevision) ticketInit = null; }
                         })
                         .cache();
             }
@@ -241,6 +258,7 @@ public class BilibiliCookieService {
     }
 
     private Mono<Void> fetchTicket() {
+        long revision = credentialRevision;
         long ts = System.currentTimeMillis() / 1000;
         String hexSign = hmacSha256Hex(TICKET_SECRET, "ts" + ts);
         String uri = UriComponentsBuilder
@@ -254,29 +272,33 @@ public class BilibiliCookieService {
 
         return webClient.post()
                 .uri(uri)
+                .header("Cookie", buildCookie())
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .doOnNext(json -> {
-                    if (json.path("code").asInt() == 0) {
-                        String ticket = json.path("data").path("ticket").asText();
-                        if (StringUtils.hasText(ticket)) {
-                            this.biliTicket = ticket;
-                            this.ticketFetchTime = System.currentTimeMillis();
-                            log.info("bili_ticket acquired (valid for 3 days).");
-                            // 收割 WBI img/sub key（文档：ticket 响应的 nav 即最新 key）
-                            String img = json.path("data").path("nav").path("img").asText();
-                            String sub = json.path("data").path("nav").path("sub").asText();
-                            if (StringUtils.hasText(img) && StringUtils.hasText(sub)) {
-                                this.imgKey = getFileName(img);
-                                this.subKey = getFileName(sub);
-                                this.wbiKeyTime = System.currentTimeMillis();
-                                log.info("WBI keys harvested from bili_ticket response.");
+                    synchronized (initLock) {
+                        if (revision != credentialRevision) return;
+                        if (json.path("code").asInt() == 0) {
+                            String ticket = json.path("data").path("ticket").asText();
+                            if (StringUtils.hasText(ticket)) {
+                                this.biliTicket = ticket;
+                                this.ticketFetchTime = System.currentTimeMillis();
+                                log.info("bili_ticket acquired (valid for 3 days).");
+                                // 收割 WBI img/sub key（文档：ticket 响应的 nav 即最新 key）
+                                String img = json.path("data").path("nav").path("img").asText();
+                                String sub = json.path("data").path("nav").path("sub").asText();
+                                if (StringUtils.hasText(img) && StringUtils.hasText(sub)) {
+                                    this.imgKey = getFileName(img);
+                                    this.subKey = getFileName(sub);
+                                    this.wbiKeyTime = System.currentTimeMillis();
+                                    log.info("WBI keys harvested from bili_ticket response.");
+                                }
+                            } else {
+                                log.warn("bili_ticket response missing ticket field");
                             }
                         } else {
-                            log.warn("bili_ticket response missing ticket field");
+                            log.warn("bili_ticket generation failed, code: {}", json.path("code").asInt());
                         }
-                    } else {
-                        log.warn("bili_ticket generation failed, code: {}", json.path("code").asInt());
                     }
                 })
                 // 防挂起：无响应超时会污染缓存的 ticketInit
@@ -287,12 +309,22 @@ public class BilibiliCookieService {
     // ==================== 工具 ====================
 
     private String buildCookie() {
-        // 以完整 Cookie 为基础，运行期刷新 bili_ticket 后替换回，其余字段保持浏览器原样
-        String base = fullCookie == null ? "" : fullCookie;
-        if (StringUtils.hasText(biliTicket)) {
-            base = replaceCookie(base, "bili_ticket", biliTicket);
+        synchronized (initLock) {
+            String base = fullCookie == null ? "" : fullCookie;
+            if (StringUtils.hasText(biliTicket)) base = replaceCookie(base, "bili_ticket", biliTicket);
+            base = appendMissingCookie(base, "buvid3", buvid3);
+            base = appendMissingCookie(base, "buvid4", buvid4);
+            return appendMissingCookie(base, "b_nut", bNut);
         }
-        return base != null ? base : "";
+    }
+
+    private static String appendMissingCookie(String cookie, String name, String value) {
+        if (!StringUtils.hasText(value)) return cookie;
+        for (String part : cookie.split(";")) {
+            int separator = part.indexOf('=');
+            if (separator > 0 && part.substring(0, separator).trim().equals(name)) return cookie;
+        }
+        return cookie.isBlank() ? name + "=" + value : cookie + "; " + name + "=" + value;
     }
 
     /** 替换（或追加）Cookie 串中指定键的值。 */

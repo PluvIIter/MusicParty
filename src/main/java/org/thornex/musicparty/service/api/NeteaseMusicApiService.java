@@ -41,7 +41,16 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private static final String PLATFORM = "netease";
 
     public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties) {
-        this.webClient = webClient;
+        this.webClient = webClient.mutate().defaultHeaders(headers -> headers.remove("Cookie"))
+                .defaultCookies(cookies -> cookies.clear()).filter((request, next) -> {
+            String cookie = getCookie();
+            var authenticated = org.springframework.web.reactive.function.client.ClientRequest.from(request)
+                    .headers(headers -> {
+                        headers.remove("Cookie");
+                        if (StringUtils.hasText(cookie)) headers.set("Cookie", cookie);
+                    }).build();
+            return next.exchange(authenticated);
+        }).build();
         this.baseUrl = appProperties.getNetease().getBaseUrl();
         this.neteaseConfig = appProperties.getNetease();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
@@ -75,7 +84,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     }
 
     public Mono<JsonNode> fetchPersonalFm() {
-        return fetchRecommendations("/personal_fm?cookie={cookie}&timestamp={timestamp}", null, null);
+        return fetchRecommendations("/personal_fm?timestamp={timestamp}", null, null);
     }
 
     public Mono<JsonNode> fetchAidjRcmd(Double latitude, Double longitude) {
@@ -85,7 +94,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                     || Math.abs(latitude) > 90 || Math.abs(longitude) > 180))) {
                 return Mono.error(new ApiRequestException("推荐位置参数无效"));
             }
-            String route = "/aidj/content/rcmd?cookie={cookie}&timestamp={timestamp}";
+            String route = "/aidj/content/rcmd?timestamp={timestamp}";
             if (latitude != null) route += "&latitude={latitude}&longitude={longitude}";
             return fetchRecommendations(route, latitude, longitude);
         });
@@ -98,8 +107,8 @@ public class NeteaseMusicApiService implements IMusicApiService {
             }
             long revision = credentialRevision.get();
             Object[] parameters = latitude == null
-                    ? new Object[]{getCookie(), System.currentTimeMillis()}
-                    : new Object[]{getCookie(), System.currentTimeMillis(), latitude, longitude};
+                    ? new Object[]{System.currentTimeMillis()}
+                    : new Object[]{System.currentTimeMillis(), latitude, longitude};
             return webClient.get().uri(baseUrl + route, parameters).retrieve()
                     .onStatus(HttpStatusCode::isError, response -> response.releaseBody().thenReturn(
                             new ApiRequestException(response.statusCode().value() == 401 || response.statusCode().value() == 403
@@ -226,9 +235,9 @@ public class NeteaseMusicApiService implements IMusicApiService {
     }
 
     private Mono<ResolvedMedia> requestMedia(String id, boolean v1, MediaConsumer consumer) {
-        String route = v1 ? "/song/url/v1?id={id}&level={quality}&cookie={cookie}&timestamp={timestamp}"
-                : "/song/url?id={id}&br={quality}&cookie={cookie}&timestamp={timestamp}";
-        return webClient.get().uri(baseUrl + route, id, v1 ? quality : resolveBr(quality), getCookie(), System.currentTimeMillis())
+        String route = v1 ? "/song/url/v1?id={id}&level={quality}&timestamp={timestamp}"
+                : "/song/url?id={id}&br={quality}&timestamp={timestamp}";
+        return webClient.get().uri(baseUrl + route, id, v1 ? quality : resolveBr(quality), System.currentTimeMillis())
                 .retrieve().bodyToMono(JsonNode.class).map(json -> {
                     JsonNode data = json.path("data").path(0);
                     String url = data.path("url").asText("");
@@ -363,11 +372,9 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
-                    // 尝试获取 lrc.lyric
-                    if (json.has("lrc") && json.get("lrc").has("lyric")) {
-                        return json.get("lrc").get("lyric").asText();
-                    }
-                    return ""; // 没有歌词
+                    String lyric = json.path("lrc").path("lyric").asText("");
+                    // tlyric 与 lrc 同时间轴，按原歌词行合并译文后返回单行 LRC。
+                    return LyricTranslations.merge(lyric, json.path("tlyric").path("lyric").asText(""));
                 });
     }
 
