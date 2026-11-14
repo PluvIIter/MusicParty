@@ -18,10 +18,10 @@ app:
     back-words: ${APP_BACK_WORDS:THORNEX}
     sources:
       netease:
-        enabled: ${NETEASE_ENABLED:true}
+        enabled: ${NETEASE_ENABLED:false}
         delivery-mode: ${NETEASE_DELIVERY_MODE:DIRECT_URL}
       bilibili:
-        enabled: ${BILIBILI_ENABLED:true}
+        enabled: ${BILIBILI_ENABLED:false}
         delivery-mode: ${BILIBILI_DELIVERY_MODE:SERVER_DOWNLOAD}
       qqmusic:
         enabled: ${QQMUSIC_ENABLED:false}

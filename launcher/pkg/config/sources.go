@@ -34,7 +34,7 @@ type SourceDescriptor struct {
 func SourceDescriptors() []SourceDescriptor {
 	return []SourceDescriptor{
 		{
-			ID: "netease", Label: "网易云音乐", DefaultMode: DirectURL, DefaultEnabled: true,
+			ID: "netease", Label: "网易云音乐", DefaultMode: DirectURL, DefaultEnabled: false,
 			SupportedModes: []string{DirectURL, ServerDownload}, LocalService: "NETEASE_API",
 			ConnectionFields: []ConnectionField{
 				{Key: "neteaseCookie", Label: "网易云账号 Cookie", Kind: "password", Placeholder: "数据查询、音频解析和私人推荐请求会携带该 Cookie；认证与可访问内容按上游接口规则处理"},
@@ -46,7 +46,7 @@ func SourceDescriptors() []SourceDescriptor {
 			},
 		},
 		{
-			ID: "bilibili", Label: "Bilibili", DefaultMode: ServerDownload, DefaultEnabled: true,
+			ID: "bilibili", Label: "Bilibili", DefaultMode: ServerDownload, DefaultEnabled: false,
 			SupportedModes: []string{DirectURL, ServerDownload},
 			ConnectionFields: []ConnectionField{
 				{Key: "biliCookie", Label: "Bilibili 账号 Cookie", Kind: "password", Placeholder: "数据查询和音频解析请求会携带该 Cookie（含 SESSDATA）；认证与可访问内容按上游接口规则处理"},

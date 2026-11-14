@@ -186,8 +186,13 @@ func TestDescriptorManifestDeclaresDefaultsAndFieldsOnly(t *testing.T) {
 		}
 	}
 	defaults := DefaultSources()
-	defaults["netease"] = SourceConfig{false, ServerDownload}
-	if !DefaultSources()["netease"].Enabled {
+	defaults["netease"] = SourceConfig{true, ServerDownload}
+	if DefaultSources()["netease"].Enabled {
 		t.Fatal("default configurations share mutable state")
+	}
+	for _, descriptor := range SourceDescriptors() {
+		if descriptor.DefaultEnabled {
+			t.Fatalf("sources must start disabled: %s", descriptor.ID)
+		}
 	}
 }
