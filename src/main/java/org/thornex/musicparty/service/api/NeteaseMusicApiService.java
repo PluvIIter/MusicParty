@@ -372,11 +372,9 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
-                    // 尝试获取 lrc.lyric
-                    if (json.has("lrc") && json.get("lrc").has("lyric")) {
-                        return json.get("lrc").get("lyric").asText();
-                    }
-                    return ""; // 没有歌词
+                    String lyric = json.path("lrc").path("lyric").asText("");
+                    // tlyric 与 lrc 同时间轴，按原歌词行合并译文后返回单行 LRC。
+                    return LyricTranslations.merge(lyric, json.path("tlyric").path("lyric").asText(""));
                 });
     }
 
