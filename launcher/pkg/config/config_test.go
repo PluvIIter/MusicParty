@@ -144,6 +144,10 @@ func TestJavaArgsUseCanonicalAuthProperties(t *testing.T) {
 
 func TestLocalSidecarRequiresEnabledAdapter(t *testing.T) {
 	cfg := DefaultConfig()
+	if cfg.LocalServiceEnabled("NETEASE_API") {
+		t.Fatal("sidecar must not start without an explicit enable")
+	}
+	cfg.Sources["netease"] = SourceConfig{true, DirectURL}
 	if !cfg.LocalServiceEnabled("NETEASE_API") {
 		t.Fatal("enabled Netease should start its sidecar")
 	}
