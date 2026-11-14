@@ -17,16 +17,6 @@
 
 <img width="1778" height="1080" alt="image" src="https://github.com/user-attachments/assets/64d7f5d1-9837-43ab-8c1b-dad78361b348" />
 
-## 版本与数据
-
-本分支只支持当前网络协议和配置格式，不保留旧版接口或配置别名。请同时更新服务端、Web 客户端和启动器。房间旧存档会尝试备份后导入并改写为当前格式，读取失败时尝试备份并允许后续覆盖；内置备份失败不阻止继续写入，升级前请务必自行备份。音源启停只配置 `sources.<sourceId>.enabled`，不再读取适配器连接配置中的启用字段。
-
-## 新手教程
-
-进入房间后，点顶部“新手教程”查看快速入门或按主题搜索完整说明；精简模式下也有入口。教程涵盖点歌、用户收藏、本机喜欢、队列与模式、投票和权限、FM/DJ、手机后台及常见问题。
-
-[教程全部文案（TXT）](docs/新手教程全部文案.txt)与界面共用同一份内容。修改 `music-party-web/src/constants/tutorial.js` 后，在 `music-party-web` 目录执行 `node scripts/export-tutorial.mjs` 更新文本。
-
 ## 核心特性
 
 *   **多平台支持**：
@@ -35,8 +25,8 @@
     *   **Bilibili**：支持搜索、收藏夹导入。 
         * 注意：b站源由于防盗链问题，方案是先下载本地缓存，然后由服务器将音频提供给用户，可能会占用较多网络带宽，消耗大量流量。
         * 此外，b站源风控现象严重，极不稳定，建议能用网易云就用网易云。
-    *   **QQ音乐**（默认关闭）：支持搜索、歌单导入，启用方式与网易云一致。
-        * QQ音乐的API实现依赖 [L-1124/QQMusicApi](https://github.com/L-1124/QQMusicApi)；Windows启动器已内置，不支持DRM加密音频与私人DJ语音。
+    *   **QQ音乐**：支持搜索、歌单导入。
+        * QQ音乐的API实现依赖 [L-1124/QQMusicApi](https://github.com/L-1124/QQMusicApi)；Windows启动器已内置服务，不支持DRM加密音频与私人DJ语音。
 *   **一键内网穿透**：Windows启动器内置 Cloudflare Tunnel，打开开关即可生成临时公网地址，方便邀请朋友加入。
 *   **精准同步**：基于 WebSocket (STOMP) 的状态分发，结合前端追帧，实现播放状态、进度、歌单、歌词的实时同步。
 *   **响应式设计**：完美适配 PC 宽屏与移动端；支持媒体会话锁屏控制，移动端推荐『添加到主屏幕』以启用 PWA 后台播放。
@@ -54,7 +44,7 @@
 
 ### 1. 使用 Docker Compose 一键启动 (最简方案)
 
-下载项目自带的 `docker-compose.yml` 并根据需要修改其中的环境变量，compose中带有NeteaseCloudMusicApi；QQ音乐源默认关闭，需要时用 `docker compose --profile qqmusic up -d --build` 一并启动其API。
+下载项目自带的 `docker-compose.yml` 并根据需要修改其中的环境变量。compose 会一并启动网易云和 QQ 音乐的上游 API，主应用按 `*_ENABLED` 选择启用哪些音源。
 
 ```bash
 # 下载配置
@@ -64,23 +54,51 @@ curl -sSL https://raw.githubusercontent.com/pluviiter/MusicParty/main/docker-com
 vi docker-compose.yml
 
 # 启动服务
-docker-compose up -d
+docker compose up -d --build
 ```
 
 ### 2. 使用 Docker Run 启动
 
-如果你已有现成的网易云 API 服务，可以使用以下命令部署主应用：
+#### 单独部署上游 API
+
+网易云音乐 API：
+
+```bash
+docker run -d --name netease-api --restart always -p 3000:3000 \
+  -e PORT=3000 -e HTTPS=true \
+  moefurina/ncm-api:latest
+```
+
+QQ 音乐 API（固定上游版本，先构建再运行）：
+
+```bash
+docker build -f web/Dockerfile -t music-party-qqmusic-api:c046788 \
+  'https://github.com/L-1124/QQMusicApi.git#c046788dd1f11daacc74da487cbbf1bcd8ac6f33'
+
+docker run -d --name qqmusic-api --restart always -p 8080:8080 \
+  -e QQMUSIC_SERVER_HOST=0.0.0.0 \
+  music-party-qqmusic-api:c046788
+```
+
+#### 启动主应用
+
+把上面两个地址填进 `NETEASE_API_URL`、`QQMUSIC_API_URL`，再按需打开 `*_ENABLED`：
 
 ```bash
 docker run -d \
   --name music-party \
   -p 8848:8080 \
   -e ADMIN_PASSWORD=admin123 \
-  -e NETEASE_API_URL=http://your-api-ip:3000 \
   -e BASE_URL=http://localhost:8848 \
   -e APP_AUTHOR_NAME="ThorNex" \
   -e APP_BACK_WORDS="MUSIC PARTY" \
+  -e NETEASE_ENABLED=true \
+  -e NETEASE_API_URL=http://your-netease-api:3000 \
   -e NETEASE_COOKIE="" \
+  -e QQMUSIC_ENABLED=true \
+  -e QQMUSIC_API_URL=http://your-qqmusic-api:8080 \
+  -e QQMUSIC_COOKIE="" \
+  -e BILIBILI_ENABLED=false \
   -e BILIBILI_COOKIE="" \
   -e QUEUE_MAX_SIZE=1000 \
   -e QUEUE_HISTORY_SIZE=50 \
@@ -95,38 +113,59 @@ docker run -d \
 
 ### 环境变量说明
 
-| 变量名                       | 必填 | 说明                                                                          |
-|:--------------------------|:---|:----------------------------------------------------------------------------|
-| `APP_AUTHOR_NAME`         | 否  | 页面显示的作者名字，地点在左上角标题后面。默认为 `ThorNex`。                                         |
-| `APP_BACK_WORDS`          | 否  | 中间专辑封面后方的装饰性背景字，强制大写。默认为 `MUSIC PARTY`。                                     |
-| `ADMIN_PASSWORD`          | 是  | 管理员密码，用于打开管理员面板。                                                            |
-| `NETEASE_ENABLED`         | 是  | 网易云源是否开启。                                                                   |
-| `NETEASE_API_URL`         | 是  | NeteaseCloudMusicApi 的地址，Docker 部署时默认为 `http://netease-api:3000`。           |
-| `BASE_URL`                | 否  | 服务的域名（带协议）。用户获取直播流链接时，拼接在前面。默认为 `http://localhost:8848`。                    |
-| `BILIBILI_ENABLED`        | 否  | B站源是否开启。                                                                    |
-| `BILIBILI_COOKIE`         | 否  | 各类上游查询均使用此Cookie；未配置时使用匿名设备信息。是否可访问由上游权限和风控决定。 |
-| `NETEASE_DELIVERY_MODE` | 否 | `DIRECT_URL`（默认）或 `SERVER_DOWNLOAD`。 |
-| `BILIBILI_DELIVERY_MODE` | 否 | `SERVER_DOWNLOAD`（默认）或 `DIRECT_URL`；直链格式及可用性取决于上游。 |
-| `PRIVATE_DJ_SOURCE` | 否 | 私人 FM / DJ 唯一提供源，默认 `netease`；QQ 音乐不提供推荐能力，选择 `qqmusic` 会明确提示不可用。 |
-| `QQMUSIC_ENABLED` | 否 | QQ音乐源是否开启，默认 `false`。 |
-| `QQMUSIC_API_URL` | 否 | L-1124 Web API 的地址，Compose 部署时默认为 `http://qqmusic-api:8080`。 |
-| `QQMUSIC_COOKIE` | 否 | QQ音乐账号 Cookie，写法与网易云相同；未配置时匿名。 |
-| `QQMUSIC_QUALITY` | 否 | QQ音乐音质等级。可选：`MP3_128`, `MP3_320`, `FLAC`。默认 `MP3_320`。 |
-| `QQMUSIC_DELIVERY_MODE` | 否 | `DIRECT_URL`（默认）或 `SERVER_DOWNLOAD`。 |
-| `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。用于所有上游查询及音频、FM/DJ，未配置时匿名；不会改变所查询的用户或歌单。                                          |
-| `NETEASE_QUALITY`         | 否  | 网易云音质等级。可选：`standard`, `higher`, `exhigh`, `lossless`, `hires`。默认 `exhigh`。 |
-| `QUEUE_MAX_SIZE`          | 否  | 播放队列最大长度，默认 `1000`。                                                         |
-| `QUEUE_HISTORY_SIZE`      | 否  | 播放历史记录保留数量，默认 `50`。当播放列表里没有音乐时，会从历史记录随机抽选。                                  |
-| `QUEUE_MAX_USER_SONGS`    | 否  | 单个用户在队列中允许的最大点歌数量，默认 `100`。                                                 |
-| `PLAYLIST_IMPORT_LIMIT`   | 否  | 导入歌单时的最大歌曲数限制，默认 `100`。                                                     |
-| `CHAT_HISTORY_LIMIT`      | 否  | 聊天历史记录保留数量，默认 `1000`。                                                       |
-| `CHAT_MIN_INTERVAL`       | 否  | 聊天发言最小间隔 (毫秒)，默认 `1000`。                                                    |
-| `CHAT_MAX_LENGTH`         | 否  | 单条聊天消息最大长度 (字符)，默认 `200`。                                                   |
-| `CACHE_MAX_SIZE`          | 否  | 本地音乐缓存上限，默认 `1GB`。支持格式如 `512MB`, `2GB`。                                     |
-| `AUTH_RATE_LIMIT_ENABLED` | 否  | 是否开启密码验证频率限制，默认 `true`。                                                     |
-| `AUTH_MAX_ATTEMPTS`       | 否  | 密码验证最大尝试次数，默认 `5`。                                                          |
-| `AUTH_WINDOW_SECONDS`     | 否  | 密码验证统计时间窗口 (秒)，默认 `60`。                                                     |
-| `AUTH_BLOCK_DURATION`     | 否  | 超过尝试次数后的封锁时长 (秒)，默认 `300`。                                                  |
+**基础**
+
+| 变量名 | 说明 |
+|:--|:--|
+| `ADMIN_PASSWORD` | 管理员密码（必填），用于打开管理员面板。 |
+| `BASE_URL` | 服务的域名（带协议），用于拼接直播流链接。 |
+| `APP_AUTHOR_NAME` | 页面左上角显示的作者名。 |
+| `APP_BACK_WORDS` | 中间专辑封面后方的装饰性背景字，强制大写。 |
+
+**音源**
+
+音源按需启用，需要哪个源就把对应的 `*_ENABLED` 设为 `true`。
+
+| 变量名 | 说明 |
+|:--|:--|
+| `NETEASE_ENABLED` | 是否启用网易云音乐源。 |
+| `NETEASE_API_URL` | NeteaseCloudMusicApi 的地址，Compose 中为 `http://netease-api:3000`。 |
+| `NETEASE_COOKIE` | 网易云账号 Cookie；不填时匿名请求，可读内容由上游权限决定。 |
+| `NETEASE_QUALITY` | 音质等级：`standard`、`higher`、`exhigh`、`lossless`、`hires`。 |
+| `NETEASE_DELIVERY_MODE` | `DIRECT_URL` 或 `SERVER_DOWNLOAD`。 |
+| `BILIBILI_ENABLED` | 是否启用 Bilibili 源。 |
+| `BILIBILI_COOKIE` | B 站完整 Cookie；不填时使用匿名设备信息。 |
+| `BILIBILI_DELIVERY_MODE` | `DIRECT_URL` 或 `SERVER_DOWNLOAD`；直链格式及可用性取决于上游。 |
+| `BILIBILI_MAX_DURATION_MINUTES` | 单曲最长时长（分钟），超出的视频标记为不可播放。 |
+| `QQMUSIC_ENABLED` | 是否启用 QQ 音乐源。 |
+| `QQMUSIC_API_URL` | L-1124 Web API 的地址，Compose 中为 `http://qqmusic-api:8080`。 |
+| `QQMUSIC_COOKIE` | QQ 音乐账号 Cookie；不填时匿名请求。 |
+| `QQMUSIC_QUALITY` | 音质等级：`MP3_128`、`MP3_320`、`FLAC`。 |
+| `QQMUSIC_DELIVERY_MODE` | `DIRECT_URL` 或 `SERVER_DOWNLOAD`。 |
+| `PRIVATE_DJ_SOURCE` | 私人 FM / DJ 的唯一提供源：`netease` 或 `qqmusic`。QQ 音乐只提供 FM，选择它时私人 DJ 会提示不可用。 |
+
+**队列、播放与缓存**
+
+| 变量名 | 说明 |
+|:--|:--|
+| `QUEUE_MAX_SIZE` | 播放队列最大长度。 |
+| `QUEUE_HISTORY_SIZE` | 播放历史保留数量；队列为空时从历史随机选曲。 |
+| `QUEUE_MAX_USER_SONGS` | 单个用户在队列中允许的最大点歌数量。 |
+| `PLAYLIST_IMPORT_LIMIT` | 导入歌单时的最大歌曲数限制。 |
+| `SYNC_BROADCAST_INTERVAL_MS` | 播放状态广播间隔（毫秒）。 |
+| `CACHE_MAX_SIZE` | 本地音乐缓存上限，支持 `512MB`、`1GB`、`2GB` 等写法。 |
+
+**聊天与安全**
+
+| 变量名 | 说明 |
+|:--|:--|
+| `CHAT_HISTORY_LIMIT` | 聊天历史记录保留数量。 |
+| `CHAT_MIN_INTERVAL` | 聊天发言最小间隔（毫秒）。 |
+| `CHAT_MAX_LENGTH` | 单条聊天消息最大长度（字符）。 |
+| `AUTH_RATE_LIMIT_ENABLED` | 是否开启密码验证频率限制。 |
+| `AUTH_MAX_ATTEMPTS` | 密码验证最大尝试次数。 |
+| `AUTH_WINDOW_SECONDS` | 密码验证统计时间窗口（秒）。 |
+| `AUTH_BLOCK_DURATION` | 超过尝试次数后的封锁时长（秒）。 |
 
 ---
 
@@ -148,7 +187,7 @@ docker run -d \
 
 ### Cloudflare Tunnel
 
-*   开关默认关闭，修改后在下次启动系统时生效。只转发应用的HTTP端口，不对外开放网易云API或QQ网关端口。
+*   开关位于启动器界面，修改后在下次启动系统时生效。只转发应用的HTTP端口，不对外开放网易云API或QQ网关端口。
 *   使用免登录的 **Quick Tunnel**，生成 `https://….trycloudflare.com` 临时地址。地址每次启动可能变化，停止隧道后失效；启动器不会把临时地址写入配置。
 *   **开启即向公网开放服务**。管理员密码为空或使用默认的 `admin123` 时，启动器只显示风险提示，不阻止启动。建议设置强管理员密码与房间密码，不要把成员凭据或管理员密码发给其他人。知道链接不等于有访问权限，成员仍需遵守房间的密码设置。
 *   隧道启动失败、超时或运行中退出会停止本次应用服务，并清除已显示地址，避免把失效链接当成可用服务。请查看启动器提示；不需要穿透时关闭开关再启动。
@@ -287,6 +326,7 @@ docker run -d \
     npm run dev
     ```
 4.  配置代理：`vite.config.js` 默认将 `/api` 和 `/ws` 代理到 `http://localhost:8080`。
+5.  修改 `src/constants/tutorial.js` 后，在同一目录执行 `node scripts/export-tutorial.mjs`，同步更新 `docs/新手教程全部文案.txt`。
 
 ### 后端 (Java)
 

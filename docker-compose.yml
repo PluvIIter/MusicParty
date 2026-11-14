@@ -10,39 +10,56 @@ services:
     networks:
       - music-net
 
-  # 2. Music Party 主应用
+  # 2. QQ 音乐 API 服务（固定上游版本，随 compose 一起构建）
+  qqmusic-api:
+    image: music-party-qqmusic-api:c046788
+    build:
+      context: https://github.com/L-1124/QQMusicApi.git#c046788dd1f11daacc74da487cbbf1bcd8ac6f33
+      dockerfile: web/Dockerfile
+    container_name: music-party-qqmusic
+    restart: always
+    environment:
+      - QQMUSIC_SERVER_HOST=0.0.0.0
+    networks:
+      - music-net
+
+  # 3. Music Party 主应用
   music-party:
     image: thornex/music-party:latest
     container_name: music-party-app
     restart: always
     ports:
-      - "8848:8080" 
+      - "8848:8080"
     environment:
       # 管理员密码，用于在搜索框输入指令控制系统
       - ADMIN_PASSWORD=admin123
-      
-      # 网易云 API 地址，指向上面的容器名
-      - NETEASE_API_URL=http://netease-api:3000
-      
+
       # [基础配置]
       - BASE_URL=http://localhost:8848    #你的基础url，用于直播流链接的拼接
       - APP_AUTHOR_NAME=ThorNex      # 页面左上角显示的作者名
       - APP_BACK_WORDS=MUSIC PARTY    # 中间背景装饰文字
-      
-      # [平台凭证]
-      - NETEASE_ENABLED=true         # 是否开启网易云音乐源
-      - BILIBILI_ENABLED=true        # 是否开启 Bilibili 源
+
+      # [音源开关] 需要哪个源就把对应的值改成 true
+      - NETEASE_ENABLED=${NETEASE_ENABLED:-false}
+      - BILIBILI_ENABLED=${BILIBILI_ENABLED:-false}
       - QQMUSIC_ENABLED=${QQMUSIC_ENABLED:-false}
-      - QQMUSIC_API_URL=${QQMUSIC_API_URL:-http://qqmusic-api:8080}
-      - QQMUSIC_COOKIE=${QQMUSIC_COOKIE:-}
-      - QQMUSIC_QUALITY=${QQMUSIC_QUALITY:-MP3_320}
-      - QQMUSIC_DELIVERY_MODE=${QQMUSIC_DELIVERY_MODE:-DIRECT_URL}
-      - NETEASE_DELIVERY_MODE=DIRECT_URL
-      - BILIBILI_DELIVERY_MODE=SERVER_DOWNLOAD
-      - PRIVATE_DJ_SOURCE=${PRIVATE_DJ_SOURCE:-netease}
+
+      # [上游 API 地址]
+      - NETEASE_API_URL=http://netease-api:3000
+      - QQMUSIC_API_URL=http://qqmusic-api:8080
+
+      # [音源凭据与音质]
       - NETEASE_COOKIE=""            # 网易云 Cookie
       - NETEASE_QUALITY=exhigh       # 网易云音质 (standard, higher, exhigh, lossless, hires)
       - BILIBILI_COOKIE=""           # B站完整Cookie(可选，仅B站源需要)
+      - QQMUSIC_COOKIE=${QQMUSIC_COOKIE:-}
+      - QQMUSIC_QUALITY=${QQMUSIC_QUALITY:-MP3_320}
+
+      # [交付方式]
+      - NETEASE_DELIVERY_MODE=DIRECT_URL
+      - BILIBILI_DELIVERY_MODE=SERVER_DOWNLOAD
+      - QQMUSIC_DELIVERY_MODE=${QQMUSIC_DELIVERY_MODE:-DIRECT_URL}
+      - PRIVATE_DJ_SOURCE=${PRIVATE_DJ_SOURCE:-netease}
 
       # [性能/策略配置]
       - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
@@ -62,6 +79,7 @@ services:
 
     depends_on:
       - netease-api
+      - qqmusic-api
     networks:
       - music-net
     volumes:
@@ -69,19 +87,6 @@ services:
       - ./music_party/cached_media:/app/cached_media
       # 挂载数据目录，用于持久化播放列表和历史记录
       - ./music_party/data:/app/data
-
-  qqmusic-api:
-    profiles: [qqmusic]
-    image: music-party-qqmusic-api:c046788
-    build:
-      context: https://github.com/L-1124/QQMusicApi.git#c046788dd1f11daacc74da487cbbf1bcd8ac6f33
-      dockerfile: web/Dockerfile
-    container_name: music-party-qqmusic
-    restart: always
-    environment:
-      - QQMUSIC_SERVER_HOST=0.0.0.0
-    networks:
-      - music-net
 
 networks:
   music-net:
