@@ -35,7 +35,22 @@ public class BilibiliMusicApiService implements IMusicApiService {
     private static final String PLATFORM = "bilibili";
     private final AtomicLong credentialRevision = new AtomicLong();
     private final java.util.Map<String, CachedVideoInfo> videoInfoCache = new java.util.concurrent.ConcurrentHashMap<>();
-    private record CachedVideoInfo(BilibiliApiUtils.BilibiliVideoInfo info, java.time.Instant expiresAt) {}
+    private final Object videoInfoLock = new Object();
+
+    /**
+     * 同一 bvid 在同一个凭据版本下的 view 请求：既保存 60 秒结果，也保存尚未完成的在途请求，
+     * 让入队（getMusic）与预取（resolveMedia）共享同一次上游调用。
+     */
+    private static final class CachedVideoInfo {
+        private Mono<BilibiliApiUtils.BilibiliVideoInfo> result;
+        private volatile java.time.Instant expiresAt;
+
+        boolean isUsable() {
+            java.time.Instant expiry = expiresAt;
+            // 尚未完成（expiry==null）时同样复用，避免并发订阅各发一次请求。
+            return expiry == null || expiry.isAfter(java.time.Instant.now());
+        }
+    }
 
     private final BilibiliWbiService wbiService;
     private final BilibiliCookieService cookieService;
@@ -86,19 +101,38 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     /**
      * /x/web-interface/view 结果短缓存：入队（getMusic）与预取（resolveMedia）会各请求一次，
-     * 缓存 60 秒可把同一首的 view 请求从 2 次降到 1 次，降低风控概率。
+     * 缓存 60 秒可把同一首的 view 请求从 2 次降到 1 次；并发时合并同一个在途请求，
+     * 避免两次同时打到上游、提高触发风控的概率。失败或空结果不留在缓存里，允许下次重试。
      */
     private Mono<BilibiliApiUtils.BilibiliVideoInfo> getVideoInfo(String bvid) {
         return Mono.defer(() -> {
-            String cacheKey = credentialRevision.get() + ":" + bvid;
-            CachedVideoInfo cached = videoInfoCache.get(cacheKey);
-            if (cached != null && cached.expiresAt().isAfter(java.time.Instant.now())) return Mono.just(cached.info());
-            return cookieService.getCookieHeader()
-                    .flatMap(cookie -> BilibiliApiUtils.getVideoInfo(bvid, webClient, baseUrl, cookie))
-                    .doOnNext(info -> {
-                        if (videoInfoCache.size() > 512) videoInfoCache.clear();
-                        videoInfoCache.put(cacheKey, new CachedVideoInfo(info, java.time.Instant.now().plusSeconds(60)));
-                    });
+            long revision = credentialRevision.get();
+            String cacheKey = revision + ":" + bvid;
+            synchronized (videoInfoLock) {
+                CachedVideoInfo cached = videoInfoCache.get(cacheKey);
+                if (cached != null && cached.isUsable()) return cached.result;
+                if (videoInfoCache.size() >= 512) videoInfoCache.clear();
+                CachedVideoInfo entry = new CachedVideoInfo();
+                entry.result = cookieService.getCookieHeader()
+                        .flatMap(cookie -> BilibiliApiUtils.getVideoInfo(bvid, webClient, baseUrl, cookie))
+                        .timeout(java.time.Duration.ofSeconds(15))
+                        .doOnNext(info -> {
+                            synchronized (videoInfoLock) {
+                                // 迟到结果不能写进新凭据版本的缓存。
+                                if (revision != credentialRevision.get()) videoInfoCache.remove(cacheKey, entry);
+                                else entry.expiresAt = java.time.Instant.now().plusSeconds(60);
+                            }
+                        })
+                        .doOnError(error -> {
+                            synchronized (videoInfoLock) { videoInfoCache.remove(cacheKey, entry); }
+                        })
+                        .doOnSuccess(info -> {
+                            if (info == null) synchronized (videoInfoLock) { videoInfoCache.remove(cacheKey, entry); }
+                        })
+                        .cache();
+                videoInfoCache.put(cacheKey, entry);
+                return entry.result;
+            }
         });
     }
 
