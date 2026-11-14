@@ -35,9 +35,8 @@
     *   **Bilibili**：支持搜索、收藏夹导入。 
         * 注意：b站源由于防盗链问题，方案是先下载本地缓存，然后由服务器将音频提供给用户，可能会占用较多网络带宽，消耗大量流量。
         * 此外，b站源风控现象严重，极不稳定，建议能用网易云就用网易云。
-    *   **QQ音乐**：支持歌曲搜索、歌词（含翻译）、专辑、歌单导入与个人收藏，默认关闭。
-        * QQ源直接对接 [L-1124/QQMusicApi](https://github.com/L-1124/QQMusicApi) 自带的Web API；Windows启动器已内置服务与Python环境，无需另外安装。
-        * 会员歌曲仍需要有效账号凭据，不支持DRM加密音频和私人DJ语音。
+    *   **QQ音乐**（默认关闭）：支持搜索、歌单导入，启用方式与网易云一致。
+        * QQ音乐的API实现依赖 [L-1124/QQMusicApi](https://github.com/L-1124/QQMusicApi)；Windows启动器已内置，不支持DRM加密音频与私人DJ语音。
 *   **一键内网穿透**：Windows启动器内置 Cloudflare Tunnel，打开开关即可生成临时公网地址，方便邀请朋友加入。
 *   **精准同步**：基于 WebSocket (STOMP) 的状态分发，结合前端追帧，实现播放状态、进度、歌单、歌词的实时同步。
 *   **响应式设计**：完美适配 PC 宽屏与移动端；支持媒体会话锁屏控制，移动端推荐『添加到主屏幕』以启用 PWA 后台播放。
@@ -55,7 +54,7 @@
 
 ### 1. 使用 Docker Compose 一键启动 (最简方案)
 
-下载项目自带的 `docker-compose.yml` 并根据需要修改其中的环境变量，compose中带有NeteaseCloudMusicApi。
+下载项目自带的 `docker-compose.yml` 并根据需要修改其中的环境变量，compose中带有NeteaseCloudMusicApi；QQ音乐源默认关闭，需要时用 `docker compose --profile qqmusic up -d --build` 一并启动其API。
 
 ```bash
 # 下载配置
@@ -109,11 +108,11 @@ docker run -d \
 | `NETEASE_DELIVERY_MODE` | 否 | `DIRECT_URL`（默认）或 `SERVER_DOWNLOAD`。 |
 | `BILIBILI_DELIVERY_MODE` | 否 | `SERVER_DOWNLOAD`（默认）或 `DIRECT_URL`；直链格式及可用性取决于上游。 |
 | `PRIVATE_DJ_SOURCE` | 否 | 私人 FM / DJ 唯一提供源，默认 `netease`；QQ 音乐不提供推荐能力，选择 `qqmusic` 会明确提示不可用。 |
-| `QQMUSIC_ENABLED` | 否 | QQ音乐源，默认 `false`。 |
-| `QQMUSIC_API_URL` | 否 | L-1124原生Web API地址；随包服务为本机动态端口，Compose 为 `http://qqmusic-api:8080`，独立上游默认端口为8080。 |
-| `QQMUSIC_COOKIE` | 否 | 与网易云一致的 Cookie 串（`musicid=...; musickey=...`），可补充上游支持的其它 Cookie 字段。用于QQ所有上游查询，未配置时匿名请求。 |
-| `QQMUSIC_QUALITY` | 否 | `MP3_320`（默认）、`MP3_128`、普通 `FLAC`；不支持DRM加密格式。 |
-| `QQMUSIC_DELIVERY_MODE` | 否 | 默认 `DIRECT_URL`（与网易云一致）；需要服务器统一转发时配置 `SERVER_DOWNLOAD`。 |
+| `QQMUSIC_ENABLED` | 否 | QQ音乐源是否开启，默认 `false`。 |
+| `QQMUSIC_API_URL` | 否 | L-1124 Web API 的地址，Compose 部署时默认为 `http://qqmusic-api:8080`。 |
+| `QQMUSIC_COOKIE` | 否 | QQ音乐账号 Cookie，写法与网易云相同；未配置时匿名。 |
+| `QQMUSIC_QUALITY` | 否 | QQ音乐音质等级。可选：`MP3_128`, `MP3_320`, `FLAC`。默认 `MP3_320`。 |
+| `QQMUSIC_DELIVERY_MODE` | 否 | `DIRECT_URL`（默认）或 `SERVER_DOWNLOAD`。 |
 | `NETEASE_COOKIE`          | 否  | 网易云账号 Cookie。用于所有上游查询及音频、FM/DJ，未配置时匿名；不会改变所查询的用户或歌单。                                          |
 | `NETEASE_QUALITY`         | 否  | 网易云音质等级。可选：`standard`, `higher`, `exhigh`, `lossless`, `hires`。默认 `exhigh`。 |
 | `QUEUE_MAX_SIZE`          | 否  | 播放队列最大长度，默认 `1000`。                                                         |
@@ -140,7 +139,7 @@ docker run -d \
 1.  前往 [GitHub Releases](https://github.com/pluviiter/MusicParty/releases) 下载最新的 `MusicParty.exe`。
 2.  将 `MusicParty.exe` 放置在你喜欢的文件夹中。
 3.  **直接双击运行**：
-    *   启动器会自动释放内置的 JRE、网易云 API、QQMusicApi Web 服务及其 Python 运行环境、Cloudflare Tunnel，以及 Java 核心程序；按配置启动相应服务。
+    *   启动器会自动释放内置的 JRE、网易云 API、QQ音乐 API、Cloudflare Tunnel，以及 Java 核心程序；按配置启动相应服务。
     *   所有的配置、运行环境、缓存都保存在 EXE 同级目录下。
 4.  在 UI 界面上修改端口、密码、网易云 Cookie 等配置，点击“启动系统”即可。
 5.  系统就绪后，点击界面上的“打开网页”即可。
@@ -174,30 +173,6 @@ docker run -d \
 
 ## 用户歌单
 可以搜索并选择网易云、Bilibili或QQ音乐用户，查看其歌单/收藏夹，再按房间限额导入。绑定决定查询目标，不是登录该用户，不支持直接输入UID；查询请求携带对应音源配置的Cookie，未配置时不附带账号Cookie；上游自行决定是否采用该身份及如何缓存。能否访问由上游决定，不额外判断资源是否私密；失败不会回退成配置账号的收藏。
-
-## QQ音乐源
-
-QQ源默认关闭，直接使用 [L-1124/QQMusicApi 自带的Web服务](https://github.com/L-1124/QQMusicApi/tree/c046788dd1f11daacc74da487cbbf1bcd8ac6f33/web)，不再维护额外的HTTP网关，也不调用第三方公用会员池。
-
-*   支持歌曲搜索、详情、普通LRC歌词、专辑、歌单与分页导入。
-*   支持直链和服务器下载两种交付方式，接入现有播放器、缓存和直播音频流。
-*   不提供私人FM／DJ：本音源不声明推荐能力，私人推荐仍由部署指定的其他音源提供。
-*   用户绑定决定查询哪位用户；请求使用部署配置的QQ账号凭据，读取权限由上游判断，不额外过滤隐私标记，也不会把目标换成配置账号。
-
-Docker启用步骤（使用本PR构建的主应用镜像，旧发布镜像不包含QQ功能）：
-
-1. 在本地 `.env` 设置 `QQMUSIC_ENABLED=true`。需要账号权限时设置单个 `QQMUSIC_COOKIE`，与网易云一样直接粘贴 Cookie 串，格式示例：`musicid=123456789; musickey=Q_H_L_...`，不要提交该文件。凭据必须来自合法账号，不能用目标用户ID代替。
-2. 执行 `docker compose --profile qqmusic up -d --build`。Compose直接使用固定上游源码和其自带的 `web/Dockerfile` 构建QQ API，与网易云API同处内部网络；Java连接 `http://qqmusic-api:8080`，无需补丁入口。不映射主机端口；默认不额外挂载QQ账号或状态目录，需要持久化时按上游文档配置。
-3. 管理员可在管理界面替换或清空QQ凭据，旧凭据不回显。运行期更新不写入房间存档，重启后仍以部署/启动器配置为准。
-4. 收藏绑定只决定查询目标，不会改变登录账号；QQ 音乐不提供私人FM，因此不建议把 `PRIVATE_DJ_SOURCE` 指向它。
-
-**Windows启动器**：在音源设置中启用QQ即可，默认使用随包的上游Web服务，无需安装Python或填写服务地址。需要使用独立部署的API时，切换到外部模式并填写根地址；启动器不会关闭外部服务。QQ关闭时不启动API。
-
-**外部API**：按上游说明部署匹配版本，使用原生 `web/run.py` 或上游Docker镜像，填写API根地址即可，不需要随附启动补丁。MusicParty正常传递配置Cookie；哪些接口匿名、如何使用凭据和缓存，完全遵循上游原生行为，不修改路由认证或共享缓存。请勿把API直接公开到公网。与网易云一致，直接粘贴浏览器 Cookie 串；`musicid` 与 `musickey` 必须成对出现，可选 `openid`、`refresh_token`、`access_token`、`expired_at`、`unionid`、`str_musicid`、`refresh_key` 按真实 Cookie 填写；旧的 `loginType`、`encrypt_uin` JSON 字段不再使用。
-
-独立部署与接口说明见 [QQ API说明](sidecars/qqmusic/README.md)，分发时请保留 [上游许可说明](sidecars/qqmusic/UPSTREAM-NOTICE.md)及随包源码。
-
-QQ音频只支持有权取得的普通MP3/FLAC，不解密DRM；按上游Web正常响应处理，不再因模型缺少原始试听或可见性标记而一律拒绝。会员也不保证所有地区/单购歌曲可播。服务器缓存、下载和Radio不自动获得音乐再分发授权；请核对平台规则与版权。公开匿名样本的验证不能替代登录账号、CDN、多端和Radio实测。
 
 ---
 
@@ -292,6 +267,9 @@ QQ音频只支持有权取得的普通MP3/FLAC，不解密DRM；按上游Web正�
 浏览器打开bilibili，登录，进入我的收藏页面，按F12开启控制台，选择网络，然后收藏夹翻页，在控制台中寻找list开头的请求，然后找到请求头中的 Cookie，将所有内容复制。
 <img width="1604" height="921" alt="Snipaste_2026-08-01_19-48-25" src="https://github.com/user-attachments/assets/4d9e9a29-e4d9-4e2f-877e-e22fde7b1f56" />
 
+* **QQ音乐**
+浏览器打开QQ音乐网页版并登录，按F12开启控制台，选择网络，随便点开一个 `musicu.fcg` 请求，复制请求头中完整的 Cookie（含 `musicid`、`musickey`）。
+
 ---
 
 ## 本地开发指南
@@ -329,6 +307,7 @@ QQ音频只支持有权取得的普通MP3/FLAC，不解密DRM；按上游Web正�
 
 *   本项目仅供学习交流使用，请勿用于商业用途。
 *   本项目涉及的音乐平台接口（网易云音乐、Bilibili、QQ音乐）均为非官方接口，项目开发者不对接口可用性及账号风险负责。Cloudflare Tunnel同样受上游服务政策与网络可用性限制。
+*   QQ音乐源的部署与上游许可说明见 [sidecars/qqmusic](sidecars/qqmusic/README.md)，分发时请保留[上游许可声明](sidecars/qqmusic/UPSTREAM-NOTICE.md)及随包源码。
 *   请尊重版权，支持正版音乐。
 
 ---
