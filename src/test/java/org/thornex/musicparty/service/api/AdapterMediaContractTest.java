@@ -19,11 +19,12 @@ class AdapterMediaContractTest {
         return ClientResponse.create(HttpStatus.OK).header("Content-Type", "application/json").body(body).build();
     }
 
-    @Test void neteaseMetadataDoesNotRequireOrSendAccountCookie() {
+    @Test void neteaseMetadataUsesConfiguredAccountCookie() {
         AppProperties props = new AppProperties(); props.getNetease().setBaseUrl("http://sidecar.test"); props.getNetease().setCookie("MUSIC_U=secret");
         List<String> routes = new ArrayList<>();
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             routes.add(request.url().getPath()); assertFalse(request.url().getQuery().contains("cookie="));
+            assertEquals("MUSIC_U=secret", request.headers().getFirst("Cookie"));
             return Mono.just(json("{\"songs\":[{\"id\":1,\"name\":\"Track\",\"ar\":[],\"dt\":1000}]}"));
         }).build();
         var music = new NeteaseMusicApiService(client, props).getMusic("1").block();
@@ -33,7 +34,7 @@ class AdapterMediaContractTest {
     @Test void neteaseLosslessMediaCarriesActualFormatAndCredentialsOnlyOnResolve() {
         AppProperties props = new AppProperties(); props.getNetease().setBaseUrl("http://sidecar.test"); props.getNetease().setCookie("MUSIC_U=secret");
         WebClient client = WebClient.builder().exchangeFunction(request -> {
-            assertTrue(request.url().getQuery().contains("cookie=MUSIC_U=secret"));
+            assertEquals("MUSIC_U=secret", request.headers().getFirst("Cookie"));
             return Mono.just(json("{\"data\":[{\"url\":\"https://cdn.test/song.flac\",\"type\":\"flac\",\"br\":999000,\"time\":1000,\"freeTrialInfo\":null}]}"));
         }).build();
         var media = new NeteaseMusicApiService(client, props).resolveMedia("1", MediaConsumer.SERVER).block();
@@ -41,18 +42,18 @@ class AdapterMediaContractTest {
         assertFalse(media.headers().containsKey("Cookie")); assertTrue(media.representationKey().contains("flac"));
     }
 
-    @Test void bilibiliMetadataUsesDeviceCookieButNeverAccountCookieOrDownload() {
+    @Test void bilibiliMetadataUsesFullConfiguredCookieWithoutDownload() {
         AppProperties props = new AppProperties(); props.getBilibili().setBaseUrl("http://bili.test");
         var cookie = mock(BilibiliCookieService.class); var wbi = mock(BilibiliWbiService.class);
-        when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device; buvid4=device4"));
+        when(cookie.getCookieHeader()).thenReturn(Mono.just("SESSDATA=account; buvid3=device; buvid4=device4"));
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             // 只允许设备指纹，不能带 SESSDATA 等账号凭据：境外 IP 匿名 view 会被 412
-            assertEquals("buvid3=device; buvid4=device4", request.headers().getFirst("Cookie"));
+            assertEquals("SESSDATA=account; buvid3=device; buvid4=device4", request.headers().getFirst("Cookie"));
             return Mono.just(json("{\"code\":0,\"data\":{\"cid\":10,\"title\":\"Track\",\"duration\":1,\"owner\":{\"name\":\"Artist\"}}}"));
         }).build();
         var music = new BilibiliMusicApiService(client, props, wbi, cookie).getMusic("BV1abc").block();
         assertEquals("BV1abc", music.id()); assertEquals("https://www.bilibili.com/video/BV1abc", music.externalUrl());
-        verify(cookie).getPublicCookieHeader();
+        verify(cookie).getCookieHeader();
         verifyNoInteractions(wbi);
     }
 
@@ -97,9 +98,11 @@ class AdapterMediaContractTest {
         assertTrue(server.timelineKey().contains("cid:10"));
     }
 
-    @Test void publicBilibiliCookieNeverContainsSessionSecrets() {
-        AppProperties props = new AppProperties(); props.getBilibili().setCookie("SESSDATA=secret; bili_jct=secret; buvid3=device; buvid4=device4");
+    @Test void bilibiliCookieIncludesConfiguredSessionAndDeviceValues() {
+        AppProperties props = new AppProperties();
+        String configured = "SESSDATA=secret; bili_jct=secret; buvid3=device; buvid4=device4; bili_ticket=ticket";
+        props.getBilibili().setCookie(configured);
         var service = new BilibiliCookieService(WebClient.builder().build(), props);
-        assertEquals("buvid3=device; buvid4=device4", service.getPublicCookieHeader().block());
+        assertEquals(configured, service.getCookieHeader().block());
     }
 }

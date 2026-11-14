@@ -52,3 +52,86 @@ jobs:
         run: npm run test:run
       - name: 构建
         run: npm run build
+
+  launcher-config:
+    name: launcher-config
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - run: go test -mod=mod -race ./pkg/config ./pkg/process ./pkg/launch
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/*.test.js
+        working-directory: launcher/frontend
+
+  launcher-qqmusic-bundle:
+    name: launcher-qqmusic-bundle
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Package and smoke-test embedded QQ runtime
+        shell: pwsh
+        run: |
+          try {
+            ./scripts/package-qqmusic.ps1 -OutputDir "${{ runner.temp }}/qqmusic-bundle"
+          } catch {
+            $diagnostic = ($_ | Format-List * -Force | Out-String)
+            Write-Output "::error::$($diagnostic.Replace("`r", '').Replace("`n", '%0A'))"
+            Write-Error $diagnostic -ErrorAction Continue
+            $diagnostic | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+            throw
+          }
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Test Windows launcher service lifecycle
+        working-directory: launcher
+        env:
+          QQMUSIC_TEST_BUNDLE: ${{ runner.temp }}/qqmusic-bundle
+        run: go test -mod=mod ./pkg/config ./pkg/process ./pkg/launch
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test repeatable sidecar packaging without downloads
+        shell: pwsh
+        run: ./scripts/test-package-launcher-sidecars.ps1
+      - name: Package and verify cloudflared without opening a tunnel
+        shell: pwsh
+        run: |
+          ./scripts/package-cloudflared.ps1 -OutputDir launcher/bin
+          python scripts/test-cloudflared.py --output-dir launcher/bin
+          if ($LASTEXITCODE -ne 0) { throw 'Cloudflared bundle verification failed' }
+      - name: Compile Windows launcher with embedded gateway assets
+        shell: pwsh
+        run: |
+          Push-Location launcher/frontend
+          npm install
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher dependency installation failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher frontend build failed' }
+          Pop-Location
+          New-Item -ItemType Directory -Force launcher/bin | Out-Null
+          Copy-Item -Recurse "${{ runner.temp }}/qqmusic-bundle" launcher/bin/qqmusic
+          Push-Location launcher
+          go build -mod=mod -o "${{ runner.temp }}/MusicParty-compile-check.exe" .
+          if ($LASTEXITCODE -ne 0) { throw 'Windows launcher compilation failed' }
+          $env:LAUNCHER_EXTRACT_TEST_DIR = "${{ runner.temp }}/launcher-extracted"
+          go test -mod=mod -run '^TestExtractPublishedAssets$' .
+          if ($LASTEXITCODE -ne 0) { throw 'Embedded launcher assets could not be extracted' }
+          Pop-Location
+          python scripts/test-cloudflared.py --output-dir "${{ runner.temp }}/launcher-extracted/bin"
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted cloudflared assets are incomplete' }
+          python scripts/test-qqmusic-bundle.py --bundle "${{ runner.temp }}/launcher-extracted/bin/qqmusic"
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted QQ runtime is incomplete' }

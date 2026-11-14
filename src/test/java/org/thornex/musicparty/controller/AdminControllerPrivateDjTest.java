@@ -24,6 +24,7 @@ class AdminControllerPrivateDjTest {
     private NeteaseMusicApiService api;
     private PrivateDjService djService;
     private AdminController controller;
+    private org.thornex.musicparty.source.SourceCredentialRegistry credentials;
     private org.thornex.musicparty.service.QueuePersistenceService persistence;
 
     @BeforeEach
@@ -34,9 +35,10 @@ class AdminControllerPrivateDjTest {
         api = mock(NeteaseMusicApiService.class);
         djService = mock(PrivateDjService.class);
         persistence = mock(org.thornex.musicparty.service.QueuePersistenceService.class);
+        credentials = mock(org.thornex.musicparty.source.SourceCredentialRegistry.class);
         controller = new AdminController(player,
                 mock(ChatService.class), props, mock(AuthController.class),
-                api, mock(BilibiliMusicApiService.class), mock(LiveStreamService.class), djService, persistence);
+                credentials, mock(LiveStreamService.class), djService, persistence);
     }
 
     @Test
@@ -108,7 +110,7 @@ class AdminControllerPrivateDjTest {
     void setNeteaseCookieBroadcastsPlayerState() {
         ResponseEntity<?> resp = controller.setCookie("pw", new AdminCookieRequest("netease", "MUSIC_U=abc"));
         assertEquals(HttpStatus.OK, resp.getStatusCode());
-        verify(api).updateCookie("MUSIC_U=abc");
+        verify(credentials).update("netease", "MUSIC_U=abc");
         verify(player).broadcastFullPlayerState(); // 刷新控制面板开启门禁
     }
 }

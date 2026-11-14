@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,30 +26,36 @@ type AppConfig struct {
 	AuthorName    string `json:"authorName"`
 	BackWords     string `json:"backWords"`
 
-	Sources        map[string]SourceConfig `json:"sources"`
-	NeteaseCookie  string                  `json:"neteaseCookie"`
-	NeteaseQuality string                  `json:"neteaseQuality"`
-	BiliCookie     string                  `json:"biliCookie"`
+	Sources            map[string]SourceConfig `json:"sources"`
+	NeteaseCookie      string                  `json:"neteaseCookie"`
+	NeteaseQuality     string                  `json:"neteaseQuality"`
+	BiliCookie         string                  `json:"biliCookie"`
+	QqmusicGatewayMode string                  `json:"qqmusicGatewayMode"`
+	QqmusicBaseURL     string                  `json:"qqmusicBaseUrl"`
+	QqmusicCookie      string                  `json:"qqmusicCookie"`
+	QqmusicQuality     string                  `json:"qqmusicQuality"`
 
-	QueueMaxSize          int    `json:"queueMaxSize"`
-	QueueHistorySize      int    `json:"queueHistorySize"`
-	QueueMaxUserSongs     int    `json:"queueMaxUserSongs"`
-	MaxPlaylistImportSize int    `json:"maxPlaylistImportSize"`
-	ChatMaxHistorySize    int    `json:"chatMaxHistorySize"`
-	ChatMinIntervalMs     int    `json:"chatMinIntervalMs"`
-	ChatMaxMessageLength  int    `json:"chatMaxMessageLength"`
-	CacheMaxSize          string `json:"cacheMaxSize"`
-	AuthRateLimitEnabled  bool   `json:"authRateLimitEnabled"`
-	AuthMaxAttempts       int    `json:"authMaxAttempts"`
-	AuthWindowSeconds     int    `json:"authWindowSeconds"`
-	AuthBlockDuration     int    `json:"authBlockDuration"`
-	AutoStart             bool   `json:"autoStart"`
+	QueueMaxSize            int    `json:"queueMaxSize"`
+	QueueHistorySize        int    `json:"queueHistorySize"`
+	QueueMaxUserSongs       int    `json:"queueMaxUserSongs"`
+	MaxPlaylistImportSize   int    `json:"maxPlaylistImportSize"`
+	ChatMaxHistorySize      int    `json:"chatMaxHistorySize"`
+	ChatMinIntervalMs       int    `json:"chatMinIntervalMs"`
+	ChatMaxMessageLength    int    `json:"chatMaxMessageLength"`
+	CacheMaxSize            string `json:"cacheMaxSize"`
+	AuthRateLimitEnabled    bool   `json:"authRateLimitEnabled"`
+	AuthMaxAttempts         int    `json:"authMaxAttempts"`
+	AuthWindowSeconds       int    `json:"authWindowSeconds"`
+	AuthBlockDuration       int    `json:"authBlockDuration"`
+	AutoStart               bool   `json:"autoStart"`
+	CloudflareTunnelEnabled bool   `json:"cloudflareTunnelEnabled"`
 }
 
 func DefaultConfig() *AppConfig {
 	return &AppConfig{
 		ServerIP: "0.0.0.0", ServerPort: "8080", BaseURL: "http://localhost:8080",
 		AuthorName: "ThorNex", BackWords: "THORNEX", NeteaseQuality: "exhigh",
+		QqmusicGatewayMode: "bundled", QqmusicBaseURL: "http://127.0.0.1:8080", QqmusicQuality: "MP3_320",
 		Sources: DefaultSources(), QueueMaxSize: 1000, QueueHistorySize: 50,
 		QueueMaxUserSongs: 100, MaxPlaylistImportSize: 100, ChatMaxHistorySize: 1000,
 		ChatMinIntervalMs: 1000, ChatMaxMessageLength: 200, CacheMaxSize: "1GB",
@@ -60,12 +67,23 @@ func DefaultConfig() *AppConfig {
 func DecodeConfig(data []byte) (*AppConfig, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	var cfg AppConfig
+	cfg := AppConfig{QqmusicBaseURL: "http://127.0.0.1:8080", QqmusicQuality: "MP3_320"}
 	if err := decoder.Decode(&cfg); err != nil {
 		return nil, err
 	}
 	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("configuration must contain one JSON object")
+	}
+	if cfg.QqmusicGatewayMode == "" {
+		cfg.QqmusicGatewayMode = "bundled"
+		if cfg.QqmusicBaseURL != "http://127.0.0.1:8080" && cfg.QqmusicBaseURL != "" {
+			cfg.QqmusicGatewayMode = "external"
+		}
+	}
+	if cfg.Sources != nil {
+		if _, exists := cfg.Sources["qqmusic"]; !exists {
+			cfg.Sources["qqmusic"] = DefaultSources()["qqmusic"]
+		}
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -86,6 +104,23 @@ func (c *AppConfig) Validate() error {
 		}
 		if source.DeliveryMode != DirectURL && source.DeliveryMode != ServerDownload {
 			return fmt.Errorf("invalid delivery mode for %s: %q", id, source.DeliveryMode)
+		}
+	}
+	if c.QqmusicGatewayMode != "bundled" && c.QqmusicGatewayMode != "external" {
+		return fmt.Errorf("QQ gateway mode must be bundled or external")
+	}
+	if c.SourceEnabled("qqmusic") {
+		if c.QqmusicGatewayMode == "external" {
+			gateway, err := url.Parse(c.QqmusicBaseURL)
+			if err != nil || gateway == nil || (gateway.Scheme != "http" && gateway.Scheme != "https") || gateway.Host == "" || gateway.User != nil || gateway.RawQuery != "" || gateway.Fragment != "" {
+				return fmt.Errorf("QQ API gateway requires an HTTP(S) address without embedded credentials, query or fragment")
+			}
+		}
+		if c.QqmusicQuality != "MP3_128" && c.QqmusicQuality != "MP3_320" && c.QqmusicQuality != "FLAC" {
+			return fmt.Errorf("unsupported QQ audio quality")
+		}
+		if err := validateQqCredential(c.QqmusicCookie); err != nil {
+			return err
 		}
 	}
 	return nil

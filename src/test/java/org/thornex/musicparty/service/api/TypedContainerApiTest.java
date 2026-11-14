@@ -51,9 +51,9 @@ class TypedContainerApiTest {
     @Test
     void bilibiliFilteredPageUsesRawCountToAdvanceWithoutInventingTracks() {
         var cookie = mock(BilibiliCookieService.class);
-        when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
+        when(cookie.getCookieHeader()).thenReturn(Mono.just("SESSDATA=account; buvid3=device"));
         WebClient client = WebClient.builder().exchangeFunction(request -> {
-            assertEquals("buvid3=device", request.headers().getFirst("Cookie"));
+            assertEquals("SESSDATA=account; buvid3=device", request.headers().getFirst("Cookie"));
             assertTrue(request.url().getQuery().contains("media_id=42"));
             assertTrue(request.url().getQuery().contains("ps=2"));
             assertTrue(request.url().getQuery().contains("pn=3"));
@@ -63,7 +63,7 @@ class TypedContainerApiTest {
         var page = adapter.containerPage("favorites", "42", 4, 2).block();
         assertTrue(page.items().isEmpty());
         assertEquals(6, page.nextOffset());
-        verify(cookie, never()).getCookieHeader();
+        verify(cookie, atLeastOnce()).getCookieHeader();
     }
 
     @Test
@@ -71,7 +71,7 @@ class TypedContainerApiTest {
         for (String media : List.of("{\"bvid\":\"BV-last\",\"title\":\"Last\",\"duration\":1}",
                 "{\"title\":\"已失效视频\"}")) {
             var cookie = mock(BilibiliCookieService.class);
-            when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
+            when(cookie.getCookieHeader()).thenReturn(Mono.just("SESSDATA=account; buvid3=device"));
             WebClient client = WebClient.builder().exchangeFunction(request -> Mono.just(json(
                     "{\"code\":0,\"data\":{\"has_more\":false,\"medias\":[" + media + "]}}"))).build();
             var adapter = new BilibiliMusicApiService(client, properties(), mock(BilibiliWbiService.class), cookie);
@@ -81,7 +81,7 @@ class TypedContainerApiTest {
                 if (media.contains("BV-last")) assertEquals("BV-last", page.items().getFirst().id());
                 else assertTrue(page.items().isEmpty());
             }
-            verify(cookie, never()).getCookieHeader();
+            verify(cookie, atLeastOnce()).getCookieHeader();
         }
     }
 
@@ -90,7 +90,7 @@ class TypedContainerApiTest {
         for (String data : List.of("{\"has_more\":false,\"medias\":null}",
                 "{\"has_more\":false,\"medias\":[]}", "{}")) {
             var cookie = mock(BilibiliCookieService.class);
-            when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
+            when(cookie.getCookieHeader()).thenReturn(Mono.just("SESSDATA=account; buvid3=device"));
             WebClient client = WebClient.builder().exchangeFunction(request -> Mono.just(json(
                     "{\"code\":0,\"data\":" + data + "}"))).build();
             var adapter = new BilibiliMusicApiService(client, properties(), mock(BilibiliWbiService.class), cookie);
@@ -104,7 +104,7 @@ class TypedContainerApiTest {
     void bilibiliShortPagesAdvanceByPageSizeEvenWhenAllItemsAreFiltered() {
         List<URI> requests = new ArrayList<>();
         var cookie = mock(BilibiliCookieService.class);
-        when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
+        when(cookie.getCookieHeader()).thenReturn(Mono.just("SESSDATA=account; buvid3=device"));
         WebClient client = WebClient.builder().exchangeFunction(request -> {
             requests.add(request.url());
             return Mono.just(json(requests.size() == 1
@@ -130,9 +130,9 @@ class TypedContainerApiTest {
     }
 
     @Test
-    void bilibiliPublicCollectionPagingAndTypedDetailNeverUseMediaCredentials() {
+    void bilibiliCollectionPagingAndTypedDetailUseConfiguredAccountCookie() {
         var cookie = mock(BilibiliCookieService.class);
-        when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
+        when(cookie.getCookieHeader()).thenReturn(Mono.just("SESSDATA=account; buvid3=device"));
         WebClient client = WebClient.builder().exchangeFunction(request -> Mono.just(json(
                 request.url().getPath().endsWith("list-all")
                         ? "{\"code\":0,\"data\":{\"list\":[{\"id\":1,\"title\":\"One\",\"media_count\":1},{\"id\":2,\"title\":\"Two\",\"media_count\":2}]}}"
@@ -144,18 +144,18 @@ class TypedContainerApiTest {
         assertNull(page.nextOffset());
         assertEquals("Two", adapter.containerDetail("favorites", "2").block().name());
         assertThrows(ApiRequestException.class, () -> adapter.containerDetail("playlist", "2").block());
-        verify(cookie, never()).getCookieHeader();
+        verify(cookie, atLeastOnce()).getCookieHeader();
     }
 
     @Test
-    void privateContainersAndInvalidPagePositionsRemainErrors() {
+    void upstreamDeniedContainersAndInvalidPagePositionsRemainErrors() {
         var cookie = mock(BilibiliCookieService.class);
-        when(cookie.getPublicCookieHeader()).thenReturn(Mono.just("buvid3=device"));
+        when(cookie.getCookieHeader()).thenReturn(Mono.just("SESSDATA=account; buvid3=device"));
         WebClient client = WebClient.builder().exchangeFunction(request -> Mono.just(json("{\"code\":-404}"))).build();
         var adapter = new BilibiliMusicApiService(client, properties(), mock(BilibiliWbiService.class), cookie);
         assertThrows(ApiRequestException.class, () -> adapter.containerDetail("favorites", "42").block());
         assertThrows(ApiRequestException.class, () -> adapter.containerPage("favorites", "42", 0, 20).block());
         assertThrows(ApiRequestException.class, () -> adapter.containerPage("favorites", "42", 3, 20).block());
-        verify(cookie, times(2)).getPublicCookieHeader();
+        verify(cookie, times(2)).getCookieHeader();
     }
 }

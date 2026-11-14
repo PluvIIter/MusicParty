@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { sourceSettingsRows, deliveryModeLabel } from '../src/sourceSettings.js';
+import { sourceSettingsRows, deliveryModeLabel, connectionFieldsFor } from '../src/sourceSettings.js';
 
 test('settings render arbitrary source descriptors and preserve disabled sources', () => {
   const fields = [{ key: 'adapterCredential', label: 'Media credential', kind: 'password' }];
@@ -13,10 +13,26 @@ test('settings render arbitrary source descriptors and preserve disabled sources
     supportedModes: ['DIRECT_URL', 'SERVER_DOWNLOAD'], connectionFields: fields,
   }], sources);
   assert.deepEqual(rows, [
-    { id: 'new-source', label: 'New adapter', supportedModes: ['DIRECT_URL', 'SERVER_DOWNLOAD'], connectionFields: fields },
-    { id: 'unknown-source', label: 'unknown-source', supportedModes: ['DIRECT_URL'], connectionFields: [] },
+    { id: 'new-source', label: 'New adapter', description: '', supportedModes: ['DIRECT_URL', 'SERVER_DOWNLOAD'], connectionFields: fields },
+    { id: 'unknown-source', label: 'unknown-source', description: '', supportedModes: ['DIRECT_URL'], connectionFields: [] },
   ]);
   assert.equal(sources['new-source'].enabled, false);
+});
+
+test('native QQ Web API description and masked cookie survive generic rendering', () => {
+  const source = { enabled: false, deliveryMode: 'SERVER_DOWNLOAD' };
+  const description = '1124 原生 QQMusic Web API，一键运行';
+  const connectionFields = [
+    { key: 'qqmusicBaseUrl', kind: 'url' },
+    { key: 'qqmusicCookie', kind: 'password' },
+  ];
+  const [row] = sourceSettingsRows([{
+    id: 'qqmusic', label: 'QQ 音乐', description,
+    supportedModes: ['DIRECT_URL', 'SERVER_DOWNLOAD'], connectionFields,
+  }], { qqmusic: source });
+  assert.equal(row.description, description);
+  assert.equal(row.connectionFields[1].kind, 'password');
+  assert.equal(source.enabled, false);
 });
 
 test('delivery mode labels use contract values', () => {

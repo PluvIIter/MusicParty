@@ -8,6 +8,7 @@ export namespace config {
     serverIp: string;
     serverPort: string;
     baseUrl: string;
+    cloudflareTunnelEnabled: boolean;
     adminPassword: string;
     authorName: string;
     backWords: string;
@@ -15,6 +16,10 @@ export namespace config {
     neteaseCookie: string;
     neteaseQuality: string;
     biliCookie: string;
+    qqmusicGatewayMode: 'bundled' | 'external';
+    qqmusicBaseUrl: string;
+    qqmusicCookie: string;
+    qqmusicQuality: 'MP3_128' | 'MP3_320' | 'FLAC';
     queueMaxSize: number;
     queueHistorySize: number;
     queueMaxUserSongs: number;
@@ -34,6 +39,8 @@ export namespace config {
     id: string;
     label: string;
     defaultMode: string;
+    defaultEnabled: boolean;
+    description?: string;
     supportedModes: string[];
     localService?: string;
     connectionFields: Array<{
@@ -41,6 +48,7 @@ export namespace config {
       label: string;
       placeholder: string;
       kind: string;
+      gatewayMode?: 'external' | 'bundled';
       options?: Array<{ value: string; label: string }>;
     }>;
   }

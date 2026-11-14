@@ -21,6 +21,7 @@ import static org.mockito.Mockito.*;
 class ContainerImportServiceTest {
     private ResourceService resources;
     private SourceRegistry sources;
+    private org.thornex.musicparty.service.api.IMusicApiService adapter;
     private MediaDeliveryService media;
     private UserService users;
     private MusicQueueManager queue;
@@ -34,6 +35,8 @@ class ContainerImportServiceTest {
         properties.getQueue().setMaxUserSongs(1);
         resources = mock(ResourceService.class);
         sources = mock(SourceRegistry.class);
+        adapter = mock(org.thornex.musicparty.service.api.IMusicApiService.class);
+        when(sources.getRequired("third")).thenReturn(adapter);
         media = mock(MediaDeliveryService.class);
         users = mock(UserService.class);
         queue = new MusicQueueManager(properties);
@@ -112,6 +115,28 @@ class ContainerImportServiceTest {
         response.tryEmitValue(List.of(track));
         assertTrue(result.join().error());
         assertTrue(queue.getQueueSnapshot().isEmpty());
+    }
+
+    @Test
+    void credentialRotationDuringFetchRejectsOriginalAccountView() {
+        Sinks.One<List<Music>> response = Sinks.one();
+        when(resources.importTracks(anyString(), anyString(), anyString(), anyInt())).thenReturn(response.asMono());
+        when(adapter.credentialRevision()).thenReturn(10L);
+        var result = imports.enqueue(request, "session").toFuture();
+        when(adapter.credentialRevision()).thenReturn(11L);
+        response.tryEmitValue(List.of(track));
+        assertTrue(result.join().error());
+        assertTrue(queue.getQueueSnapshot().isEmpty());
+        verify(media, never()).prefetch(any());
+        verify(media, never()).retry(any());
+    }
+
+    @Test
+    void credentialRevisionIsRevalidatedInsideQueueGate() {
+        when(adapter.credentialRevision()).thenAnswer(invocation -> Thread.holdsLock(queue) ? 1L : 0L);
+        assertTrue(imports.enqueue(request, "session").block().error());
+        assertTrue(queue.getQueueSnapshot().isEmpty());
+        verify(media, never()).prefetch(any());
     }
 
     @Test

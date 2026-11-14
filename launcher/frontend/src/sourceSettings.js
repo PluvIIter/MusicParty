@@ -5,10 +5,15 @@ export function sourceSettingsRows(descriptors, sources) {
     return {
       id,
       label: descriptor?.label || id,
+      description: descriptor?.description || '',
       supportedModes: descriptor?.supportedModes || [sources[id].deliveryMode],
       connectionFields: descriptor?.connectionFields || [],
     };
   });
+}
+
+export function connectionFieldsFor(source, config) {
+  return source.connectionFields.filter(field => !field.gatewayMode || field.gatewayMode === config.qqmusicGatewayMode);
 }
 
 export function deliveryModeLabel(mode) {

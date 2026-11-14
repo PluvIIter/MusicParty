@@ -6,6 +6,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class AppPropertiesTest {
 
     @Test
+    void qqMusicDefaultsToNativeWebPort() {
+        assertEquals("http://localhost:8080", new AppProperties().getQqmusic().getBaseUrl());
+    }
+
+    @Test
     void privateDjDefaultsAreOff() {
         AppProperties props = new AppProperties();
         AppProperties.PrivateDjConfig c = props.getPrivateDj();

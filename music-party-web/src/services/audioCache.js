@@ -1,6 +1,13 @@
 import { ref } from 'vue';
 
 export const audioCacheStatus = ref('starting');
+// 支持分段缓存音源：CDN 需要支持 CORS + Range；不满足时 service worker 会自动回退直连。
+const CACHEABLE_PLATFORMS = new Set(['netease', 'qqmusic']);
+const PLATFORM_HOSTS = {
+    netease: ['.music.126.net', '.music.163.com'],
+    qqmusic: ['.qq.com'],
+};
+const AUDIO_FILE = /^[\w.-]{8,160}\.(flac|mp3|m4a|aac|wav|ogg)$/i;
 let initialization;
 let selection = null;
 const ourWorker = () =>
@@ -36,23 +43,25 @@ export function initializeAudioCache() {
 }
 
 export function cachedAudioSource(music, source) {
-    if (!source || music?.platform !== 'netease') return source;
+    const platform = music?.platform;
+    if (!source || !CACHEABLE_PLATFORMS.has(platform)) return source;
     // Becoming ready after audio has already started must not reload the current source.
     if (selection?.source === source && selection?.id === music.id) return selection.result;
     let result = source;
     if (audioCacheStatus.value === 'ready') {
         try {
             const url = new URL(source);
+            const hosts = PLATFORM_HOSTS[platform] || [];
             if (
                 /^[\w-]{1,100}$/.test(music.id) &&
                 url.protocol === 'https:' &&
                 !url.port &&
                 !url.username &&
                 !url.password &&
-                (url.hostname.endsWith('.music.126.net') || url.hostname.endsWith('.music.163.com')) &&
-                /^[\w.-]{8,160}\.(flac|mp3|m4a|aac|wav|ogg)$/i.test(url.pathname.split('/').pop())
+                hosts.some((host) => url.hostname.endsWith(host)) &&
+                AUDIO_FILE.test(url.pathname.split('/').pop())
             ) {
-                result = `/__mp_audio_cache/v1/${encodeURIComponent(music.id)}?source=${encodeURIComponent(source)}`;
+                result = `/__mp_audio_cache/v1/${encodeURIComponent(music.id)}?platform=${encodeURIComponent(platform)}&source=${encodeURIComponent(source)}`;
             }
         } catch {
             /* Preserve native media URLs that cannot be cached. */

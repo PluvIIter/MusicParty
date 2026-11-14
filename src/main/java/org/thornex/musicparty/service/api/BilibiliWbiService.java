@@ -49,27 +49,28 @@ public class BilibiliWbiService {
      * 获取最新的 WBI 密钥。
      * 优先使用 bili_ticket 响应中收割的 key；否则请求 nav 接口（带完整 Cookie）。
      */
-    private Mono<String> getMixinKey() {
-        if (System.currentTimeMillis() - lastCacheTime < CACHE_DURATION && keyCache.containsKey("mixin_key")) {
-            return Mono.just(keyCache.get("mixin_key"));
+    private Mono<String> getMixinKey(String cookie) {
+        long revision = cookieService.credentialRevision();
+        String cacheKey = "mixin_key:" + revision;
+        if (System.currentTimeMillis() - lastCacheTime < CACHE_DURATION && keyCache.containsKey(cacheKey)) {
+            return Mono.just(keyCache.get(cacheKey));
         }
 
-        return cookieService.getPublicCookieHeader()
-                .flatMap(cookie -> {
+        return Mono.defer(() -> {
                     // ① 优先使用 bili_ticket 收割的 WBI key
                     Optional<BilibiliCookieService.WbiKeys> fresh = cookieService.getFreshWbiKeys();
                     if (fresh.isPresent()) {
                         String mixinKey = computeMixinKey(fresh.get().imgKey(), fresh.get().subKey());
-                        keyCache.put("mixin_key", mixinKey);
+                        if (revision == cookieService.credentialRevision()) keyCache.put(cacheKey, mixinKey);
                         lastCacheTime = System.currentTimeMillis();
                         return Mono.just(mixinKey);
                     }
                     // ② 退化为请求 nav 接口（key 每日更替，ticket 收割可能已过期）
-                    return fetchMixinKeyFromNav(cookie);
+                    return fetchMixinKeyFromNav(cookie, revision, cacheKey);
                 });
     }
 
-    private Mono<String> fetchMixinKeyFromNav(String cookie) {
+    private Mono<String> fetchMixinKeyFromNav(String cookie, long revision, String cacheKey) {
         return webClient.get()
                 .uri("https://api.bilibili.com/x/web-interface/nav")
                 .header("Cookie", cookie)
@@ -81,7 +82,7 @@ public class BilibiliWbiService {
                     String imgUrl = wbiImg.path("img_url").asText();
                     String subUrl = wbiImg.path("sub_url").asText();
                     String mixinKey = computeMixinKey(getFileName(imgUrl), getFileName(subUrl));
-                    keyCache.put("mixin_key", mixinKey);
+                    if (revision == cookieService.credentialRevision()) keyCache.put(cacheKey, mixinKey);
                     lastCacheTime = System.currentTimeMillis();
                     return mixinKey;
                 })
@@ -115,7 +116,11 @@ public class BilibiliWbiService {
      * 对参数进行 WBI 加签
      */
     public Mono<Map<String, String>> signParams(Map<String, String> params) {
-        return getMixinKey().map(mixinKey -> {
+        return cookieService.getCookieHeader().flatMap(cookie -> signParams(params, cookie));
+    }
+
+    public Mono<Map<String, String>> signParams(Map<String, String> params, String cookie) {
+        return getMixinKey(cookie).map(mixinKey -> {
             TreeMap<String, String> sortedParams = new TreeMap<>(params);
             sortedParams.put("wts", String.valueOf(System.currentTimeMillis() / 1000));
 
@@ -155,7 +160,7 @@ public class BilibiliWbiService {
     }
 
     public void invalidateCache() {
-        keyCache.remove("mixin_key");
+        keyCache.clear();
         lastCacheTime = 0;
         // 同时清除 bili_ticket 收割的 WBI key：
         // 否则 -403 重试期间 getFreshWbiKeys() 仍返回旧 key，nav 兜底在 24h 有效期内不可达

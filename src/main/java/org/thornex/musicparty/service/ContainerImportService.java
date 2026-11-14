@@ -57,8 +57,12 @@ public class ContainerImportService {
 
     private Mono<Result> importContainer(Request request, String sessionId, String token) {
         return Mono.defer(() -> {
-            sources.getRequired(request.platform());
-            long epoch = sources.authorizationEpoch(request.platform());
+            long epoch;
+            long credentialRevision;
+            synchronized (sources) {
+                credentialRevision = sources.getRequired(request.platform()).credentialRevision();
+                epoch = sources.authorizationEpoch(request.platform());
+            }
             int maximum = Math.max(1, Math.min(1000, properties.getPlayer().getMaxPlaylistImportSize()));
             return resources.container(request.platform(), request.collectionType(), request.containerId())
                     .zipWith(resources.importTracks(request.platform(), request.collectionType(), request.containerId(), maximum))
@@ -77,9 +81,9 @@ public class ContainerImportService {
                         synchronized (users) {
                             synchronized (sources) {
                                 synchronized (queue) {
-                                    sources.getRequired(request.platform());
-                                    if (epoch != sources.authorizationEpoch(request.platform())) {
-                                        return failure(request, "音源配置已改变，未导入歌曲");
+                                    if (credentialRevision != sources.getRequired(request.platform()).credentialRevision()
+                                            || epoch != sources.authorizationEpoch(request.platform())) {
+                                        return failure(request, "音源凭据或配置已改变，未导入歌曲");
                                     }
                                     var member = users.getUser(sessionId);
                                     if (member.isEmpty() || member.get().isGuest() || !token.equals(member.get().getToken())
