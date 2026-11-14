@@ -1,5 +1,6 @@
 package org.thornex.musicparty.service.api;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.exception.ApiRequestException;
@@ -12,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>上游 {@code web/src/core/auth.py} 直接从请求 Cookie 读取
  * {@code musicid}/{musickey}（其余字段可选），因此这里不再解析 JSON。</p>
  */
+@Slf4j
 @Service
 public class QqMusicCredentialService {
     private static final int MAXIMUM_LENGTH = 8192;
@@ -21,8 +23,13 @@ public class QqMusicCredentialService {
 
     public QqMusicCredentialService(AppProperties properties) {
         this.properties = properties;
-        // 部署配置里的非法值只按未配置处理，不阻断其他音源启动。
         String configured = properties.getQqmusic().getCookie();
+        // 旧版把凭据写成 JSON；现在只接受 Cookie 串，部署配置降级为匿名但明确记录原因。
+        if (configured != null && configured.strip().startsWith("{")) {
+            log.warn("QQ Music credential uses the removed JSON format and is ignored; configure a Cookie header instead");
+            configured = "";
+        }
+        // 部署配置里的非法值只按未配置处理，不阻断其他音源启动。
         this.cookie = configured == null || !isValid(configured) ? "" : configured.strip();
     }
 
@@ -40,6 +47,9 @@ public class QqMusicCredentialService {
 
     public synchronized void updateCookie(String value) {
         String raw = value == null ? "" : value;
+        if (raw.strip().startsWith("{")) {
+            throw new ApiRequestException("INVALID_CREDENTIAL: QQ音乐凭据已改为 Cookie 串，请粘贴浏览器 Cookie");
+        }
         if (!isValid(raw)) throw new ApiRequestException("INVALID_CREDENTIAL: QQ音乐Cookie格式无效");
         String normalized = raw.strip();
         if (normalized.equals(cookie)) return;

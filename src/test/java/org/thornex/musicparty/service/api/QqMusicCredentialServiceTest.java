@@ -48,6 +48,20 @@ class QqMusicCredentialServiceTest {
         assertFalse(service.configured());
     }
 
+    @Test void legacyJsonCredentialIsRejectedWithAMigrationHint() {
+        var service = new QqMusicCredentialService(new AppProperties());
+        var error = assertThrows(ApiRequestException.class,
+                () -> service.updateCookie("{\"musicid\":123,\"musickey\":\"private\"}"));
+        assertTrue(error.getMessage().contains("Cookie"));
+        assertFalse(error.getMessage().contains("private"));
+    }
+
+    @Test void legacyJsonDeploymentValueDegradesToAnonymous() {
+        var properties = new AppProperties();
+        properties.getQqmusic().setCookie("{\"musicid\":123,\"musickey\":\"private\"}");
+        assertFalse(new QqMusicCredentialService(properties).configured());
+    }
+
     @Test void invalidDeploymentCookieDegradesToAnonymousInsteadOfBreakingStartup() {
         var properties = new AppProperties();
         properties.getQqmusic().setCookie("musicid=1; musickey=bad\nvalue");

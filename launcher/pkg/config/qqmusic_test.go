@@ -45,7 +45,7 @@ func TestNativeQqConfigAndArgumentsPreserveSettings(t *testing.T) {
 	cfg.Sources["qqmusic"] = SourceConfig{true, DirectURL}
 	cfg.QqmusicGatewayMode = "external"
 	cfg.QqmusicBaseURL = "http://api.test:8001"
-	cfg.QqmusicCookie = `{"musicid":123,"musickey":"private value; ascii","str_musicid":"123","openid":"id","refresh_token":"refresh","access_token":"access","expired_at":1234567890,"unionid":"union","refresh_key":"key"}`
+	cfg.QqmusicCookie = "musicid=123; musickey=private value; ascii; openid=id; refresh_token=refresh"
 	cfg.QqmusicQuality = "FLAC"
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -74,23 +74,18 @@ func TestNativeQqConfigAndArgumentsPreserveSettings(t *testing.T) {
 	}
 }
 
-func TestNativeQqCredentialFields(t *testing.T) {
+func TestNativeQqCookieCredentials(t *testing.T) {
 	for _, value := range []string{
-		`{"musicid":0,"musickey":"private"}`, `{"musicid":9223372036854775808,"musickey":"private"}`, `{"musicid":"01","musickey":"private"}`,
-		`{"musicid":1,"musickey":"private","loginType":2}`, `{"musicid":1,"musickey":"private","encrypt_uin":"private"}`,
-		`{"musicid":1,"musickey":"private","musicid":2}`, `{"musicid":1,"musickey":"private","expired_at":-1}`,
-		`{"musicid":1,"musickey":"private","refresh_token":null}`, `{"musicid":1,"musickey":"private\n"}`,
-		`{"musicid":1,"musickey":"` + strings.Repeat("x", 4097) + `"}`,
-		"musicid=1; musickey=private\n",
+		"musicid=1; musickey=private\n", "musicid=1\r; musickey=private", "musicid=secret\tvalue",
+		strings.Repeat("x", qqCookieMaximum+1), `{"musicid":1,"musickey":"secret"}`,
 	} {
 		if err := validateQqCredential(value); err == nil || strings.Contains(err.Error(), "private") {
-			t.Fatal("invalid native cookie accepted or exposed")
+			t.Fatal("invalid cookie accepted or exposed")
 		}
 	}
-	for _, value := range []string{"", `{}`, `{"musicid":"9223372036854775807","musickey":"private","refresh_token":"","expired_at":0}`,
-		"musicid=1; musickey=private", "musicid=123; musickey=a; openid=x; refresh_key=k"} {
+	for _, value := range []string{"", "musicid=1; musickey=private", "musicid=123; musickey=a; openid=x; refresh_key=k"} {
 		if err := validateQqCredential(value); err != nil {
-			t.Fatal("valid native cookie rejected")
+			t.Fatal("valid cookie rejected")
 		}
 	}
 }
