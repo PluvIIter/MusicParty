@@ -37,4 +37,4 @@ Media still requires a usable ordinary-format authorization result and URL, a su
 
 This source declares no recommendation capability: the native guess-recommend endpoint is not used, and neither FM nor DJ is offered. Existing `/api/v2`, queue limits, source epochs, credential revision checks, media URL policy, and local LIKESONG behavior remain in place.
 
-The upstream SDK, Web sources and license are retained in distribution. Follow its GPL-3.0-or-later terms. Fixture and startup tests do not establish live member playback, CDN availability or rights to redistribute music.
+The upstream SDK, Web sources and license are retained in distribution. Follow its GPL-3.0-or-later terms. Offline startup checks do not establish live member playback, CDN availability or rights to redistribute music.

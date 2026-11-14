@@ -129,7 +129,7 @@ def main():
     require(os.name == "nt", "Run this smoke test on Windows; it executes the bundled python.exe")
     bundle = options.bundle.resolve(strict=True)
     validate_layout(bundle)
-    spec = importlib.util.spec_from_file_location("native_smoke", Path(__file__).resolve().parents[1] / "sidecars/qqmusic/smoke.py")
+    spec = importlib.util.spec_from_file_location("native_smoke", Path(__file__).resolve().parent / "qqmusic-smoke.py")
     native = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(native)
     python = bundle / "python/python.exe"

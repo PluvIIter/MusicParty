@@ -14,16 +14,35 @@ if (-not $IsWindows) {
     throw 'Build this Windows amd64 bundle on Windows with setup-python 3.13 and Git installed.'
 }
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$sidecar = Join-Path $repoRoot 'sidecars/qqmusic'
-$requirements = Join-Path $sidecar 'requirements.txt'
-$requirementText = Get-Content -LiteralPath $requirements -Raw
-$pin = [regex]::Matches($requirementText, '(?m)^qqmusic-api-python\s*@\s*git\+https://github\.com/l-1124/QQMusicApi\.git@([0-9a-f]{40})\s*$')
-if ($pin.Count -ne 1) {
-    throw 'requirements.txt must contain exactly one full, pinned QQMusicApi commit.'
-}
-$upstreamCommit = $pin[0].Groups[1].Value
 $upstreamUrl = 'https://github.com/l-1124/QQMusicApi.git'
+$upstreamCommit = 'c046788dd1f11daacc74da487cbbf1bcd8ac6f33'
+# Windows sidecar dependencies; the first line also pins the corresponding source revision.
+$requirementLines = @(
+    "qqmusic-api-python @ git+$upstreamUrl@$upstreamCommit",
+    'fastapi==0.162.5',
+    'uvicorn==0.54.0',
+    'griffe==2.3.0',
+    'pydantic-settings[toml]==2.15.0',
+    'python-dotenv==1.2.4'
+)
+$upstreamNotice = @'
+# Upstream dependency notice
+
+This integration uses QQMusicApi / qqmusic-api-python by Luren and its upstream contributors:
+
+- Repository: https://github.com/l-1124/QQMusicApi
+- Exact source revision: c046788dd1f11daacc74da487cbbf1bcd8ac6f33
+- Upstream declared license: GNU General Public License version 3 or later (GPL-3.0-or-later)
+- Upstream copyright and license notices remain in the installed package and complete source distribution.
+
+The native Web source and runtime behavior are not patched or replaced. Authentication, shared caching, account pools, routes, operations, adapters, responses and errors follow the pinned upstream implementation. Production startup executes the original `web/run.py` directly.
+
+The Windows launcher bundle retains the complete upstream Git archive, LICENSE, commit and source-file hash inventory under `bin/qqmusic/upstream/`, together with installed dependency dist-info/licenses and CPython's LICENSE/SBOM. The build script verifies CPython 3.13.9 against the pinned official SHA256 and checks runtime isolation from a system Python installation. Keep those files when redistributing or repackaging the launcher and satisfy the upstream GPL corresponding-source and notice obligations.
+
+Docker deployments build the upstream `web/Dockerfile` directly from the pinned upstream Git context. This repository maintains no alternate image implementation. Preserve required notices and provide corresponding source when redistributing images; a repository URL alone does not replace those obligations.
+
+Upstream has no affiliation with MusicParty. API availability, authentication and licensing do not grant rights to redistribute music, bypass DRM, access private collections or use someone else's account credentials. The bundled offline fixture has no account seeds; independent deployments may use native upstream account configuration. Keep the native service away from untrusted networks.
+'@
 $pythonVersion = '3.13.9'
 $pythonUrl = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-embed-amd64.zip"
 $pythonHashSource = "$pythonUrl.spdx.json"
@@ -56,6 +75,8 @@ $upstreamDir = Join-Path $bundle 'upstream'
 $sourceDir = Join-Path $upstreamDir 'source'
 $checkout = Join-Path $buildDir 'checkout'
 $null = New-Item -ItemType Directory -Path $buildDir, $upstreamDir
+$requirementsPath = Join-Path $buildDir 'requirements.txt'
+[IO.File]::WriteAllText($requirementsPath, ($requirementLines -join "`n") + "`n", [Text.Encoding]::ASCII)
 
 function Invoke-Git {
     param([string[]]$GitArgs)
@@ -132,11 +153,10 @@ Path(output).write_text(json.dumps({"commit": commit, "files": files}, indent=2)
     Copy-Item -LiteralPath (Join-Path $sourceDir 'LICENSE') -Destination (Join-Path $upstreamDir 'LICENSE')
     [IO.File]::WriteAllText((Join-Path $upstreamDir 'COMMIT'), "$upstreamCommit`n", [Text.Encoding]::ASCII)
 
-    & $hostExecutable -I -m pip --isolated install --disable-pip-version-check --no-warn-script-location --no-compile --only-binary=:all: --target $sitePackages --report (Join-Path $upstreamDir 'pip-install-report.json') -r $requirements
+    & $hostExecutable -I -m pip --isolated install --disable-pip-version-check --no-warn-script-location --no-compile --only-binary=:all: --target $sitePackages --report (Join-Path $upstreamDir 'pip-install-report.json') -r $requirementsPath
     if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned sidecar requirements and Windows wheels.' }
-    foreach ($name in @('requirements.txt', 'UPSTREAM-NOTICE.md')) {
-        Copy-Item -LiteralPath (Join-Path $sidecar $name) -Destination (Join-Path $bundle $name)
-    }
+    Copy-Item -LiteralPath $requirementsPath -Destination (Join-Path $bundle 'requirements.txt')
+    [IO.File]::WriteAllText((Join-Path $bundle 'UPSTREAM-NOTICE.md'), $upstreamNotice, [Text.Encoding]::UTF8)
     $manifest = [ordered]@{
         pythonVersion = $pythonVersion
         pythonUrl = $pythonUrl
@@ -146,7 +166,7 @@ Path(output).write_text(json.dumps({"commit": commit, "files": files}, indent=2)
         upstreamCommit = $upstreamCommit
         entryPoint = 'upstream/source/web/run.py'
         workingDirectory = 'upstream/source'
-        requirementsSha256 = (Get-FileHash -LiteralPath $requirements -Algorithm SHA256).Hash.ToLowerInvariant()
+        requirementsSha256 = (Get-FileHash -LiteralPath $requirementsPath -Algorithm SHA256).Hash.ToLowerInvariant()
     }
     $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $bundle 'bundle-manifest.json') -Encoding utf8NoBOM
 

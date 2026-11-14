@@ -1,6 +1,0 @@
-.venv/
-.uv-cache/
-__pycache__/
-.pytest_cache/
-*.pyc
-.qqmusic-device*

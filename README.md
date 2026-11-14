@@ -347,7 +347,7 @@ docker run -d \
 
 *   本项目仅供学习交流使用，请勿用于商业用途。
 *   本项目涉及的音乐平台接口（网易云音乐、Bilibili、QQ音乐）均为非官方接口，项目开发者不对接口可用性及账号风险负责。Cloudflare Tunnel同样受上游服务政策与网络可用性限制。
-*   QQ音乐源的部署与上游许可说明见 [sidecars/qqmusic](sidecars/qqmusic/README.md)，分发时请保留[上游许可声明](sidecars/qqmusic/UPSTREAM-NOTICE.md)及随包源码。
+*   QQ音乐源的上游许可、对应源码与打包说明见 [第三方许可说明](launcher/THIRDPARTY-LICENSE.md) 和 [QQ API 契约](docs/qqmusic-gateway-contract.md)。
 *   请尊重版权，支持正版音乐。
 
 ---
