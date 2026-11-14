@@ -127,7 +127,7 @@ public class AppProperties {
     public static class QqMusicApiConfig extends ApiConfig {
         public QqMusicApiConfig() { setBaseUrl("http://localhost:8080"); }
         private String cookie;
-        private String quality = "MP3_128";
+        private String quality = "MP3_320";
     }
 
     @EqualsAndHashCode(callSuper = true)

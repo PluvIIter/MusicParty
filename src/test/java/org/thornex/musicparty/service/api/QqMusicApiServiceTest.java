@@ -2,91 +2,205 @@ package org.thornex.musicparty.service.api;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.reactive.function.client.ClientRequest;
+import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.media.MediaConsumer;
+import org.thornex.musicparty.source.DeliveryMode;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
 
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.thornex.musicparty.service.api.QqMusicTestSupport.*;
 
 class QqMusicApiServiceTest {
-    private String user() { return "q1." + Base64.getUrlEncoder().withoutPadding().encodeToString("{\"uin\":\"123\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8)); }
-    private String query(org.springframework.web.reactive.function.client.ClientRequest request) { return request.url().getQuery(); }
+    private static String reference(String uin, String euin) {
+        StringBuilder json = new StringBuilder("{");
+        if (uin != null) json.append("\"uin\":\"").append(uin).append('"');
+        if (euin != null) {
+            if (json.length() > 1) json.append(',');
+            json.append("\"euin\":\"").append(euin).append('"');
+        }
+        json.append('}');
+        return "q1." + Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(json.toString().getBytes(StandardCharsets.UTF_8));
+    }
 
-    @Test void allNativeQueryRoutesUseConfiguredAccountButKeepExplicitTarget() {
+    private static String user() {
+        return reference("123", "oKEA");
+    }
+
+    private static String query(ClientRequest request) {
+        return request.url().getQuery();
+    }
+
+    @Test void descriptorMatchesNeteaseDefaultsApartFromPrivateFm() {
+        var api = api(properties(), client((request, ignored) -> Mono.empty()), credentials());
+        var descriptor = api.descriptor();
+        assertEquals("QQ音乐", descriptor.label());
+        assertEquals("QQ音乐", descriptor.tabLabel());
+        assertEquals(DeliveryMode.DIRECT_URL, api.defaultDeliveryMode());
+        assertTrue(descriptor.supportedModes().contains(DeliveryMode.DIRECT_URL));
+        var capabilities = descriptor.capabilities();
+        assertTrue(capabilities.search());
+        assertTrue(capabilities.lyrics());
+        assertTrue(capabilities.album());
+        assertTrue(capabilities.userSearch());
+        assertTrue(capabilities.personalCollections());
+        assertTrue(capabilities.download());
+        assertTrue(capabilities.radioInput());
+        assertFalse(capabilities.recommendations(), "QQ 音乐不再声明私人 FM/DJ");
+        assertEquals(List.of("playlists"), descriptor.collectionCategories().stream()
+                .map(org.thornex.musicparty.source.CollectionCategory::id).toList());
+    }
+
+    private static QqMusicCredentialService credentials() {
+        return new QqMusicCredentialService(new AppProperties());
+    }
+
+    @Test void searchCollectsNativePagesInsteadOfOnlyTheFirstPage() {
         var properties = properties();
-        properties.getQqmusic().setCookie("{\"musicid\":999,\"musickey\":\"accountA\"}");
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        List<String> requests = new ArrayList<>();
+        var credentials = new QqMusicCredentialService(properties);
+        List<String> pages = new ArrayList<>();
         var api = api(properties, client((request, ignored) -> {
-            assertEquals(org.springframework.http.HttpMethod.GET, request.method());
-            assertTrue(request.headers().getFirst("Cookie").contains("musicid=\"999\""));
-            assertTrue(request.headers().getFirst("Cookie").contains("musickey=\"accountA\""));
-            assertNull(request.headers().getFirst("Authorization"));
-            requests.add(request.url().getPath());
-            String body = switch (request.url().getPath()) {
-                case "/search/search_by_type" -> query(request).contains("search_type=8")
-                        ? "{\"user\":[{\"uin\":\"123\",\"encrypt_uin\":\"oKEA**\",\"title\":\"<em>Public</em>\",\"pic\":\"https://y.qq.com/avatar\"}]}"
-                        : "{\"song\":[" + TRACK + "]}";
-                case "/song/songMID/detail" -> "{\"track\":" + TRACK + "}";
-                case "/song/songMID/lyric" -> "{\"lyric\":\"[00:00.00]Song\"}";
-                case "/user/123/created_songlists" -> "{\"playlists\":[{\"id\":42,\"title\":\"Playlist\",\"songnum\":1,\"picurl\":\"\"}],\"finished\":true,\"total\":1}";
-                case "/songlist/42/detail" -> "{\"info\":{\"id\":42,\"title\":\"Playlist\",\"songnum\":1},\"songs\":[" + TRACK + "],\"total\":1,\"hasmore\":0}";
-                case "/album/albumMID/detail" -> "{\"album\":{\"mid\":\"albumMID\",\"name\":\"Album\"},\"singers\":[{\"name\":\"Artist\"}]}";
-                case "/album/albumMID/songs" -> "{\"album_mid\":\"albumMID\",\"song_list\":[" + TRACK + "],\"total_num\":1}";
-                default -> throw new AssertionError(request.url());
+            String queryString = query(request);
+            assertEquals("/search/search_by_type", request.url().getPath());
+            assertTrue(queryString.contains("num=30"));
+            int page = queryString.contains("page=2") ? 2 : queryString.contains("page=3") ? 3 : 1;
+            pages.add("page=" + page);
+            var songs = MAPPER.createArrayNode();
+            for (int index = (page - 1) * 30; index < page * 30; index++) {
+                var song = (com.fasterxml.jackson.databind.node.ObjectNode) json(TRACK).deepCopy();
+                song.put("mid", "songMID" + index);
+                songs.add(song);
+            }
+            var body = MAPPER.createObjectNode().put("nextpage", page < 3 ? page + 1 : -1);
+            body.set("song", songs);
+            return Mono.just(data(body));
+        }), credentials);
+        var result = api.searchMusic("Song").block();
+        assertEquals(90, result.size());
+        assertEquals(List.of("page=1", "page=2", "page=3"), pages);
+        assertEquals("songMID89", result.getLast().id());
+    }
+
+    @Test void searchStopsWhenUpstreamReportsNoNextPage() {
+        var properties = properties();
+        var calls = new ArrayList<String>();
+        var api = api(properties, client((request, ignored) -> {
+            calls.add(request.url().getQuery());
+            return Mono.just(data(json("{\"nextpage\":-1,\"song\":[" + TRACK + "]}")));
+        }), new QqMusicCredentialService(properties));
+        assertEquals(1, api.searchMusic("Song").block().size());
+        assertEquals(1, calls.size());
+    }
+
+    @Test void lyricsMergeTranslationOnTheOriginalTimeline() {
+        var properties = properties();
+        var api = api(properties, client((request, ignored) -> {
+            assertEquals("/song/songMID/lyric", request.url().getPath());
+            assertTrue(query(request).contains("trans=true"));
+            return Mono.just(data(json("{\"lyric\":\"[00:01.00]Hello\\n[00:02.50]World\","
+                    + "\"trans\":\"[00:01.00]你好\\n[00:02.50]世界\"}")));
+        }), new QqMusicCredentialService(properties));
+        assertEquals("[00:01.00]Hello ／ 你好\n[00:02.50]World ／ 世界", api.getLyric("songMID").block());
+    }
+
+    @Test void lyricsWithoutTranslationStayUnchanged() {
+        var properties = properties();
+        var api = api(properties,
+                client((request, ignored) -> Mono.just(data(json("{\"lyric\":\"[00:01.00]Hello\"}")))),
+                new QqMusicCredentialService(properties));
+        assertEquals("[00:01.00]Hello", api.getLyric("songMID").block());
+    }
+
+    @Test void cookieIsForwardedAsConfiguredAccountOverEveryRoute() {
+        var properties = properties();
+        properties.getQqmusic().setCookie("musicid=999; musickey=accountA");
+        var credentials = new QqMusicCredentialService(properties);
+        var api = api(properties, client((request, ignored) -> {
+            assertEquals("musicid=999; musickey=accountA", request.headers().getFirst("Cookie"));
+            assertFalse(request.url().toString().contains("accountA"));
+            return Mono.just(data(json("{\"song\":[" + TRACK + "]}")));
+        }), credentials);
+        assertEquals(1, api.searchMusic("Song").block().size());
+        assertTrue(api.isCredentialConfigured());
+    }
+
+    @Test void userBindingReadsCreatedAndFavouritePlaylists() {
+        var properties = properties();
+        List<String> paths = new ArrayList<>();
+        var api = api(properties, client((request, ignored) -> {
+            String path = request.url().getPath();
+            paths.add(path);
+            return switch (path) {
+                case "/user/123/created_songlists" -> Mono.just(data(json(
+                        "{\"playlists\":[{\"id\":11,\"title\":\"Created one\",\"songnum\":1},{\"id\":12,\"title\":\"Created two\",\"songnum\":2}]}")));
+                case "/user/oKEA/fav/songlists" -> Mono.just(data(json(
+                        "{\"playlists\":[{\"id\":21,\"title\":\"Collected\",\"songnum\":3}],\"total\":1,\"hasmore\":0}")));
+                default -> throw new AssertionError(path);
             };
-            return Mono.just(data(json(body)));
-        }), credentials);
-        assertEquals("songMID", api.searchMusic("Song").block().getFirst().id());
-        assertEquals("Public", api.searchUsers("Public").block().getFirst().name());
-        assertEquals(180000, api.getMusic("songMID").block().duration());
-        assertEquals("[00:00.00]Song", api.getLyric("songMID").block());
-        assertEquals("42", api.publicCollections(user(), "playlists", 0, 20).block().items().getFirst().id());
-        assertEquals("Playlist", api.containerDetail("playlist", "42").block().name());
-        assertEquals(1, api.containerPage("playlist", "42", 0, 20).block().items().size());
-        assertEquals("Artist", api.getAlbum("albumMID").block().artists().getFirst());
-        assertEquals("albumMID", api.getAlbumForSong("songMID").block().id());
-        assertFalse(requests.stream().anyMatch(path -> path.startsWith("/v1/")));
+        }), new QqMusicCredentialService(properties));
+        var page = api.publicCollections(user(), "playlists", 0, 10).block();
+        assertEquals(List.of("11", "12", "21"), page.items().stream().map(p -> p.id()).toList());
+        assertNull(page.nextOffset());
+        assertEquals(List.of("/user/123/created_songlists", "/user/oKEA/fav/songlists"), paths);
+        assertEquals("Collected", page.items().getLast().name());
+        assertEquals("qqmusic", page.items().getLast().platform());
     }
 
-    @Test void targetReadFailureNeverFallsBackToConfiguredAccountsOwnCollections() {
+    @Test void userBindingPagesAcrossCreatedAndFavouritePlaylists() {
         var properties = properties();
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        credentials.updateCookie("{\"musicid\":999,\"musickey\":\"accountA\"}");
-        var requests = new ArrayList<String>();
         var api = api(properties, client((request, ignored) -> {
-            requests.add(request.url().getPath());
-            assertTrue(request.headers().getFirst("Cookie").contains("musicid=\"999\""));
+            if (request.url().getPath().equals("/user/123/created_songlists")) {
+                return Mono.just(data(json("{\"playlists\":[{\"id\":11,\"title\":\"Created\",\"songnum\":1},"
+                        + "{\"id\":12,\"title\":\"Created two\",\"songnum\":1}]}")));
+            }
+            assertTrue(query(request).contains("page=1"));
+            return Mono.just(data(json("{\"playlists\":[{\"id\":21,\"title\":\"A\",\"songnum\":1},"
+                    + "{\"id\":22,\"title\":\"B\",\"songnum\":1}],\"total\":2}")));
+        }), new QqMusicCredentialService(properties));
+        var first = api.publicCollections(user(), "playlists", 1, 2).block();
+        assertEquals(List.of("12", "21"), first.items().stream().map(p -> p.id()).toList());
+        assertEquals(3, first.nextOffset());
+        var second = api.publicCollections(user(), "playlists", 3, 2).block();
+        assertEquals(List.of("22"), second.items().stream().map(p -> p.id()).toList());
+        assertNull(second.nextOffset());
+    }
+
+    @Test void userWithoutEncryptedIdStillReadsCreatedPlaylists() {
+        var properties = properties();
+        var api = api(properties, client((request, ignored) -> {
             assertEquals("/user/123/created_songlists", request.url().getPath());
-            return Mono.just(response(HttpStatus.OK, "{\"code\":-1,\"msg\":\"upstream refused\"}"));
-        }), credentials);
-        assertThrows(ApiRequestException.class, () -> api.publicCollections(user(), "playlists", 0, 20).block());
-        assertEquals(List.of("/user/123/created_songlists"), requests);
+            return Mono.just(data(json("{\"playlists\":[{\"id\":11,\"title\":\"Created\",\"songnum\":1}]}")));
+        }), new QqMusicCredentialService(properties));
+        var page = api.publicCollections(reference("123", null), "playlists", 0, 10).block();
+        assertEquals(1, page.items().size());
+        assertNull(page.nextOffset());
     }
 
-    @Test void albumChainStopsRatherThanMixingAccountsAfterCredentialUpdate() {
+    @Test void searchUsersEncodesBothIdentifiersIntoOpaqueReference() {
         var properties = properties();
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        credentials.updateCookie("{\"musicid\":999,\"musickey\":\"accountA\"}");
-        var calls = new AtomicInteger();
         var api = api(properties, client((request, ignored) -> {
-            calls.incrementAndGet();
-            assertEquals("/album/albumMID/detail", request.url().getPath());
-            credentials.updateCookie("{\"musicid\":888,\"musickey\":\"accountC\"}");
-            return Mono.just(data(json("{\"album\":{\"mid\":\"albumMID\",\"name\":\"Album\"},\"singers\":[]}")));
-        }), credentials);
-        assertTrue(assertThrows(ApiRequestException.class, () -> api.getAlbum("albumMID").block()).getMessage().startsWith("CREDENTIAL_CHANGED"));
-        assertEquals(1, calls.get());
+            assertEquals("/search/search_by_type", request.url().getPath());
+            assertTrue(query(request).contains("search_type=8"));
+            return Mono.just(data(json("{\"user\":[{\"uin\":\"123\",\"encrypt_uin\":\"oKEA\","
+                    + "\"title\":\"<em>Public</em>\",\"pic\":\"https://y.qq.com/avatar\"}]}")));
+        }), new QqMusicCredentialService(properties));
+        var user = api.searchUsers("Public").block().getFirst();
+        assertEquals("Public", user.name());
+        String payload = new String(Base64.getUrlDecoder().decode(user.id().substring(3)), StandardCharsets.UTF_8);
+        assertTrue(payload.contains("\"uin\":\"123\""));
+        assertTrue(payload.contains("\"euin\":\"oKEA\""));
     }
 
-    @Test void arbitraryOffsetsCrossNativePageBoundaryWithoutDroppingOrRepeatingSongs() {
+    @Test void containerPagingCrossesNativePageBoundaryWithoutLosingSongs() {
         var properties = properties();
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
+        var credentials = new QqMusicCredentialService(properties);
         List<Integer> pages = new ArrayList<>();
         var api = api(properties, client((request, ignored) -> {
             boolean second = query(request).contains("page=2");
@@ -103,120 +217,21 @@ class QqMusicApiServiceTest {
             return Mono.just(data(body));
         }), credentials);
         var first = api.containerPage("playlist", "42", 95, 20).block();
-        assertEquals(List.of(1, 2), pages);
         assertEquals("songMID95", first.items().getFirst().id());
         assertEquals("songMID114", first.items().getLast().id());
         assertEquals(115, first.nextOffset());
-        pages.clear();
         var last = api.containerPage("playlist", "42", 145, 20).block();
         assertEquals(5, last.items().size());
         assertNull(last.nextOffset());
     }
 
-    @Test void createdListsDoNotInferPrivacyFromReturnedFlags() {
+    @Test void albumCollectsEveryPageWithoutArtificialLimit() {
         var properties = properties();
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        var api = api(properties, client((request, ignored) -> Mono.just(data(json("{\"playlists\":[{\"id\":41,\"title\":\"Private\",\"songnum\":1,\"dir_show\":2,\"invalid\":true},{\"id\":42,\"title\":\"Public\",\"songnum\":1}],\"finished\":true}")))), credentials);
-        var first = api.publicCollections(user(), "playlists", 0, 1).block();
-        assertEquals("41", first.items().getFirst().id());
-        assertEquals(1, first.nextOffset());
-        assertEquals("42", api.publicCollections(user(), "playlists", 1, 1).block().items().getFirst().id());
-    }
-
-    @Test void mediaUsesNativeFileEnumAndCookieHeaderNeverQueryAndKeepsFullTimeline() {
-        var properties = properties();
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        credentials.updateCookie("{\"musicid\":123,\"musickey\":\"secret;\\\"x\",\"str_musicid\":\"different\",\"refresh_token\":\"refresh\"}");
         var api = api(properties, client((request, ignored) -> {
             if (request.url().getPath().endsWith("/detail")) {
-                assertTrue(request.headers().getFirst("Cookie").contains("musicid=\"123\""));
-                assertTrue(request.headers().getFirst("Cookie").contains("musickey=\"secret\\073\\\"x\""));
-                return Mono.just(data(json("{\"track\":" + TRACK.replace("\"size_128mp3\":12345", "\"size_128mp3\":12345,\"size_try\":5000") + "}")));
+                return Mono.just(data(json("{\"album\":{\"mid\":\"albumMID\",\"name\":\"Album\"},\"singers\":[]}")));
             }
-            assertTrue(request.headers().getFirst("Cookie").contains("musicid=\"123\""));
-            assertTrue(request.headers().getFirst("Cookie").contains("musickey=\"secret\\073\\\"x\""));
-            assertFalse(request.url().toString().contains("secret"));
-            assertTrue(query(request).contains("media_mid=mediaMID"));
-            String quality = query(request).contains("file_type=7") ? "FLAC" : query(request).contains("file_type=12") ? "MP3_320" : "MP3_128";
-            return Mono.just(data(media(quality, "mediaMID")));
-        }), credentials);
-        var standard = api.resolveMedia("songMID", MediaConsumer.BROWSER).block();
-        assertEquals(".mp3", standard.extension());
-        assertTrue(standard.url().startsWith("https://isure.stream.qqmusic.qq.com/M500mediaMID.mp3"));
-        properties.getQqmusic().setQuality("MP3_320");
-        var high = api.resolveMedia("songMID", MediaConsumer.SERVER).block();
-        assertTrue(high.url().contains("M800mediaMID.mp3"));
-        assertEquals(standard.timelineKey(), high.timelineKey());
-        properties.getQqmusic().setQuality("FLAC");
-        var flac = api.resolveMedia("songMID", MediaConsumer.SERVER).block();
-        assertEquals(".flac", flac.extension());
-        assertEquals(standard.timelineKey(), flac.timelineKey());
-        assertNotEquals(standard.representationKey(), flac.representationKey());
-        assertEquals(".mp3", api.resolveFallbackMedia("songMID").block().extension());
-    }
-
-    @Test void inaccessiblePrimaryDoesNotBlockIndependentStandardFallback() {
-        var properties = properties();
-        properties.getQqmusic().setQuality("FLAC");
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        var api = api(properties, client((request, ignored) -> {
-            if (request.url().getPath().endsWith("/detail")) return Mono.just(data(json("{\"track\":" + TRACK.replace("\"size_flac\":34567", "\"size_flac\":0") + "}")));
-            assertTrue(query(request).contains("file_type=13"));
-            return Mono.just(data(media("MP3_128", "mediaMID")));
-        }), credentials);
-        assertThrows(ApiRequestException.class, () -> api.resolveMedia("songMID", MediaConsumer.SERVER).block());
-        assertEquals(".mp3", api.resolveFallbackMedia("songMID").block().extension());
-    }
-
-    @Test void encryptedWrongFileOrExpiredAuthorizationRemainsRejected() {
-        var properties = properties();
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        for (String replacement : List.of("encrypted", "wrongfile", "expired", "denied", "empty")) {
-            var api = api(properties, client((request, ignored) -> {
-                if (request.url().getPath().endsWith("/detail")) return Mono.just(data(json("{\"track\":" + TRACK + "}")));
-                var authorization = (com.fasterxml.jackson.databind.node.ObjectNode) media("MP3_128", "mediaMID");
-                var file = (com.fasterxml.jackson.databind.node.ObjectNode) authorization.path("data").get(0);
-                switch (replacement) {
-                    case "encrypted" -> file.put("ekey", "secret");
-                    case "wrongfile" -> file.put("purl", "RS02mediaMID.mgg?vkey=x");
-                    case "expired" -> authorization.put("expiration", 1);
-                    case "denied" -> file.put("result", 104003);
-                    case "empty" -> file.put("purl", "");
-                }
-                return Mono.just(data(authorization));
-            }), credentials);
-            assertThrows(ApiRequestException.class, () -> api.resolveMedia("songMID", MediaConsumer.SERVER).block());
-        }
-    }
-
-    @Test void pendingMetadataAndLateResponsesRespectCredentialRevocation() {
-        for (boolean update : List.of(false, true)) {
-            var properties = properties();
-            var credentials = new QqMusicCredentialService(properties, MAPPER);
-            credentials.updateCookie("{\"musicid\":123,\"musickey\":\"old\"}");
-            Sinks.One<org.springframework.web.reactive.function.client.ClientResponse> pending = Sinks.one();
-            AtomicInteger privateCalls = new AtomicInteger();
-            var api = api(properties, client((request, ignored) -> {
-                if (request.url().getPath().endsWith("/detail")) return pending.asMono();
-                privateCalls.incrementAndGet();
-                return Mono.just(data(media("MP3_128", "mediaMID")));
-            }), credentials);
-            var result = api.resolveMedia("songMID", MediaConsumer.SERVER).toFuture();
-            credentials.updateCookie(update ? "{\"musicid\":123,\"musickey\":\"new\"}" : "");
-            pending.tryEmitValue(data(json("{\"track\":" + TRACK + "}")));
-            assertTrue(result.isCompletedExceptionally());
-            assertEquals(0, privateCalls.get());
-        }
-    }
-
-    @Test void albumPaginationCollectsEveryNativeSongAndRejectsIncompleteCollections() {
-        var properties = properties();
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        List<Integer> pages = new ArrayList<>();
-        var api = api(properties, client((request, ignored) -> {
-            if (request.url().getPath().endsWith("/detail")) return Mono.just(data(json("{\"album\":{\"mid\":\"albumMID\",\"name\":\"Album\"},\"singers\":[]}")));
             int page = query(request).contains("page=2") ? 2 : 1;
-            pages.add(page);
             var songs = MAPPER.createArrayNode();
             for (int index = (page - 1) * 100; index < Math.min(page * 100, 101); index++) {
                 var song = (com.fasterxml.jackson.databind.node.ObjectNode) json(TRACK).deepCopy();
@@ -226,37 +241,99 @@ class QqMusicApiServiceTest {
             var body = MAPPER.createObjectNode().put("album_mid", "albumMID").put("total_num", 101);
             body.set("song_list", songs);
             return Mono.just(data(body));
-        }), credentials);
+        }), new QqMusicCredentialService(properties));
         var album = api.getAlbum("albumMID").block();
         assertEquals(101, album.trackCount());
         assertEquals("songMID100", album.songs().getLast().id());
-        assertEquals(List.of(1, 2), pages);
-        for (String value : List.of("{\"playlists\":[],\"finished\":false,\"total\":0}", "{\"playlists\":[],\"finished\":true,\"total\":20}")) {
-            var truncated = api(properties, client((request, ignored) -> Mono.just(data(json(value)))), credentials);
-            assertTrue(assertThrows(ApiRequestException.class, () -> truncated.publicCollections(user(), "playlists", 0, 20).block()).getMessage().startsWith("COLLECTION_INCOMPLETE"));
-        }
     }
 
-    @Test void lateAuthorizedResponseAfterCredentialUpdateCannotBeCommitted() {
+    @Test void mediaUsesNativeFileTypeAndKeepsTimelineAcrossQualities() {
         var properties = properties();
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        credentials.updateCookie("{\"musicid\":123,\"musickey\":\"old\"}");
-        Sinks.One<org.springframework.web.reactive.function.client.ClientResponse> authorization = Sinks.one();
-        var api = api(properties, client((request, ignored) -> request.url().getPath().endsWith("/detail")
-                ? Mono.just(data(json("{\"track\":" + TRACK + "}"))) : authorization.asMono()), credentials);
-        var result = api.resolveMedia("songMID", MediaConsumer.SERVER).toFuture();
-        credentials.updateCookie("{\"musicid\":123,\"musickey\":\"new\"}");
-        authorization.tryEmitValue(data(media("MP3_128", "mediaMID")));
-        assertTrue(result.isCompletedExceptionally());
+        var credentials = new QqMusicCredentialService(properties);
+        var api = api(properties, client((request, ignored) -> {
+            if (request.url().getPath().endsWith("/detail")) return Mono.just(data(json("{\"track\":" + TRACK + "}")));
+            assertTrue(query(request).contains("media_mid=mediaMID"));
+            String quality = query(request).contains("file_type=7") ? "FLAC"
+                    : query(request).contains("file_type=12") ? "MP3_320" : "MP3_128";
+            return Mono.just(data(media(quality, "mediaMID")));
+        }), credentials);
+        var standard = api.resolveMedia("songMID", MediaConsumer.BROWSER).block();
+        assertEquals(".mp3", standard.extension());
+        assertTrue(standard.url().startsWith("https://isure.stream.qqmusic.qq.com/M800mediaMID.mp3"));
+        assertEquals("MP3_320:M800mediaMID.mp3", standard.representationKey());
+        properties.getQqmusic().setQuality("FLAC");
+        var flac = api.resolveMedia("songMID", MediaConsumer.SERVER).block();
+        assertEquals(".flac", flac.extension());
+        assertEquals("audio/flac", flac.mimeType());
+        assertEquals(standard.timelineKey(), flac.timelineKey());
+        assertNotEquals(standard.representationKey(), flac.representationKey());
+        assertEquals(".mp3", api.resolveFallbackMedia("songMID").block().extension());
     }
 
-    @Test void nativeErrorEnvelopeIsSanitizedAndInvalidConfiguredAccountIsNotAnonymous() {
+    @Test void mediaAcceptsUpstreamAuthorisationWithoutReimplementingItsPolicy() {
         var properties = properties();
-        properties.getQqmusic().setCookie("invalid-secret");
-        var credentials = new QqMusicCredentialService(properties, MAPPER);
-        var api = api(properties, client((request, ignored) -> Mono.just(response(HttpStatus.OK, "{\"code\":-1,\"msg\":\"private-secret\"}"))), credentials);
+        var api = api(properties, client((request, ignored) -> {
+            if (request.url().getPath().endsWith("/detail")) return Mono.just(data(json("{\"track\":" + TRACK + "}")));
+            return Mono.just(data(json("{\"expiration\":1200,\"data\":[{\"mid\":\"songMID\","
+                    + "\"filename\":\"M800mediaMID.m4a\",\"purl\":\"M800mediaMID.m4a?vkey=v\",\"vkey\":\"v\","
+                    + "\"ekey\":\"encrypted-but-upstream-authorised\",\"result\":0}]}")));
+        }), new QqMusicCredentialService(properties));
+        var media = api.resolveMedia("songMID", MediaConsumer.SERVER).block();
+        assertNotNull(media);
+        assertEquals(".m4a", media.extension());
+        assertEquals("audio/mp4", media.mimeType());
+        assertTrue(media.url().contains("M800mediaMID.m4a"));
+    }
+
+    @Test void mediaWithoutUsablePurlIsReportedAsUnavailable() {
+        var properties = properties();
+        var api = api(properties, client((request, ignored) -> {
+            if (request.url().getPath().endsWith("/detail")) return Mono.just(data(json("{\"track\":" + TRACK + "}")));
+            return Mono.just(data(json("{\"data\":[{\"mid\":\"songMID\",\"filename\":\"M800mediaMID.mp3\","
+                    + "\"purl\":\"\",\"ekey\":\"\",\"result\":104003}]}")));
+        }), new QqMusicCredentialService(properties));
+        assertTrue(assertThrows(ApiRequestException.class,
+                () -> api.resolveMedia("songMID", MediaConsumer.SERVER).block()).getMessage().startsWith("MEDIA_UNAVAILABLE"));
+    }
+
+    @Test void encryptedNativeContainerStaysUnsupported() {
+        var properties = properties();
+        var api = api(properties, client((request, ignored) -> {
+            if (request.url().getPath().endsWith("/detail")) return Mono.just(data(json("{\"track\":" + TRACK + "}")));
+            return Mono.just(data(json("{\"data\":[{\"mid\":\"songMID\",\"filename\":\"F0M0mediaMID.mflac\","
+                    + "\"purl\":\"F0M0mediaMID.mflac\",\"ekey\":\"k\",\"result\":0}]}")));
+        }), new QqMusicCredentialService(properties));
+        assertTrue(assertThrows(ApiRequestException.class,
+                () -> api.resolveMedia("songMID", MediaConsumer.SERVER).block()).getMessage().startsWith("MEDIA_UNAVAILABLE"));
+    }
+
+    @Test void unknownQualityFallsBackTo320InsteadOfFailing() {
+        var properties = properties();
+        properties.getQqmusic().setQuality("turbo");
+        var api = api(properties, client((request, ignored) -> {
+            if (request.url().getPath().endsWith("/detail")) return Mono.just(data(json("{\"track\":" + TRACK + "}")));
+            assertTrue(query(request).contains("file_type=12"));
+            return Mono.just(data(media("FLAC", "mediaMID")));
+        }), new QqMusicCredentialService(properties));
+        assertEquals(".flac", api.resolveMedia("songMID", MediaConsumer.SERVER).block().extension());
+    }
+
+    @Test void upstreamBusinessFailureYieldsNoSongsInsteadOfEchoingTheEnvelope() {
+        var properties = properties();
+        var api = api(properties, client((request, ignored) ->
+                Mono.just(response(HttpStatus.OK, "{\"code\":-1,\"msg\":\"private-secret\"}"))),
+                new QqMusicCredentialService(properties));
+        assertEquals(0, api.searchMusic("song").block().size());
+    }
+
+    @Test void unconfiguredSourceSendsNoCookieHeader() {
+        var properties = properties();
+        var api = api(properties, client((request, ignored) -> {
+            assertNull(request.headers().getFirst("Cookie"));
+            assertNull(request.headers().getFirst("Authorization"));
+            return Mono.just(data(json("{\"song\":[]}")));
+        }), new QqMusicCredentialService(properties));
         assertFalse(api.isCredentialConfigured());
-        assertFalse(assertThrows(ApiRequestException.class, () -> api.searchMusic("song").block()).getMessage().contains("private-secret"));
-        assertTrue(assertThrows(ApiRequestException.class, () -> api.resolveMedia("songMID", MediaConsumer.SERVER).block()).getMessage().startsWith("INVALID_CREDENTIAL"));
+        assertEquals(0, api.searchMusic("song").block().size());
     }
 }

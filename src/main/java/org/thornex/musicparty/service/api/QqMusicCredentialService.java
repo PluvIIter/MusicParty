@@ -1,122 +1,56 @@
 package org.thornex.musicparty.service.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.exception.ApiRequestException;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * QQ 音乐凭据：与网易云源保持一致，按原始 Cookie 字符串配置并原样转发给上游 Web.
+ *
+ * <p>上游 {@code web/src/core/auth.py} 直接从请求 Cookie 读取
+ * {@code musicid}/{musickey}（其余字段可选），因此这里不再解析 JSON。</p>
+ */
 @Service
 public class QqMusicCredentialService {
-    private static final Set<String> FIELDS = Set.of("musicid", "musickey", "openid", "refresh_token", "access_token",
-            "expired_at", "unionid", "str_musicid", "refresh_key");
+    private static final int MAXIMUM_LENGTH = 8192;
     private final AppProperties properties;
-    private final ObjectMapper mapper;
-    private volatile Snapshot current;
+    private final AtomicLong revision = new AtomicLong();
+    private volatile String cookie;
 
-    public static final class Snapshot {
-        private final long revision;
-        private final Map<String, Object> credential;
-        private final boolean valid;
-
-        private Snapshot(long revision, Map<String, Object> credential, boolean valid) {
-            this.revision = revision;
-            this.credential = Map.copyOf(credential);
-            this.valid = valid;
-        }
-
-        public void requireValid() {
-            if (!valid) throw invalid();
-        }
-
-        public long revision() { return revision; }
-        public boolean configured() { return !credential.isEmpty(); }
-        Map<String, Object> credential() { return credential; }
-
-        String cookieHeader() {
-            requireValid();
-            return credential.entrySet().stream().sorted(Map.Entry.comparingByKey())
-                    .map(entry -> entry.getKey() + "=" + quoted(entry.getValue().toString()))
-                    .collect(Collectors.joining("; "));
-        }
-
-        private String quoted(String value) {
-            StringBuilder result = new StringBuilder("\"");
-            for (char character : value.toCharArray()) {
-                if (character == '"' || character == '\\') result.append('\\').append(character);
-                else if (character == ';' || character == ',') result.append('\\').append(String.format("%03o", (int) character));
-                else result.append(character);
-            }
-            return result.append('"').toString();
-        }
-
-        @Override public String toString() { return "QQ Music credential snapshot"; }
-    }
-
-    public QqMusicCredentialService(AppProperties properties, ObjectMapper mapper) {
+    public QqMusicCredentialService(AppProperties properties) {
         this.properties = properties;
-        this.mapper = mapper.copy().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
-        try { current = new Snapshot(0, parse(properties.getQqmusic().getCookie()), true); }
-        catch (ApiRequestException error) { current = new Snapshot(0, Map.of(), false); }
+        // 部署配置里的非法值只按未配置处理，不阻断其他音源启动。
+        String configured = properties.getQqmusic().getCookie();
+        this.cookie = configured == null || !isValid(configured) ? "" : configured.strip();
     }
 
-    public Snapshot snapshot() { return current; }
+    public String cookie() {
+        return cookie;
+    }
 
-    public void requireCurrent(Snapshot snapshot) {
-        if (current != snapshot) throw new ApiRequestException("CREDENTIAL_CHANGED: QQ音乐凭据已更新，请重试");
+    public boolean configured() {
+        return !cookie.isBlank();
+    }
+
+    public long revision() {
+        return revision.get();
     }
 
     public synchronized void updateCookie(String value) {
-        Map<String, Object> parsed = parse(value);
-        if (current.valid && parsed.equals(current.credential)) return;
-        String normalized;
-        try { normalized = parsed.isEmpty() ? "" : mapper.writeValueAsString(parsed); }
-        catch (Exception error) { throw invalid(); }
-        current = new Snapshot(current.revision + 1, parsed, true);
+        String raw = value == null ? "" : value;
+        if (!isValid(raw)) throw new ApiRequestException("INVALID_CREDENTIAL: QQ音乐Cookie格式无效");
+        String normalized = raw.strip();
+        if (normalized.equals(cookie)) return;
+        cookie = normalized;
         properties.getQqmusic().setCookie(normalized);
+        revision.incrementAndGet();
     }
 
-    private Map<String, Object> parse(String value) {
-        if (value == null || value.isBlank()) return Map.of();
-        if (value.length() > 32768) throw invalid();
-        try {
-            JsonNode root = mapper.readTree(value);
-            if (!root.isObject()) throw invalid();
-            if (root.isEmpty()) return Map.of();
-            root.fieldNames().forEachRemaining(field -> { if (!FIELDS.contains(field)) throw invalid(); });
-            String id = root.path("musicid").asText();
-            if ((!root.path("musicid").isTextual() && !root.path("musicid").isIntegralNumber())
-                    || !id.matches("[1-9][0-9]{0,18}") || new java.math.BigInteger(id).bitLength() > 63) throw invalid();
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("musicid", id);
-            result.put("musickey", token(root.path("musickey"), true));
-            result.put("str_musicid", id);
-            if (root.has("str_musicid")) result.put("str_musicid", token(root.get("str_musicid"), false));
-            for (String field : FIELDS) {
-                if (Set.of("musicid", "musickey", "str_musicid").contains(field) || !root.has(field)) continue;
-                if (field.equals("expired_at")) {
-                    JsonNode expiry = root.get(field);
-                    if ((!expiry.isIntegralNumber() && !expiry.isTextual()) || !expiry.asText().matches("[0-9]{1,18}")) throw invalid();
-                    result.put(field, Long.parseLong(expiry.asText()));
-                } else result.put(field, token(root.get(field), false));
-            }
-            return Map.copyOf(result);
-        } catch (Exception error) { throw invalid(); }
-    }
-
-    private String token(JsonNode value, boolean required) {
-        if (!value.isTextual() || (required && value.textValue().isBlank()) || value.textValue().length() > 4096
-                || !value.textValue().chars().allMatch(character -> character >= 32 && character <= 126)) throw invalid();
-        return value.textValue();
-    }
-
-    private static ApiRequestException invalid() {
-        return new ApiRequestException("INVALID_CREDENTIAL: QQ音乐凭据须为上游Web支持的Credential JSON");
+    private static boolean isValid(String value) {
+        if (value == null) return true;
+        return value.length() <= MAXIMUM_LENGTH
+                && value.chars().noneMatch(character -> character < 32 || character == 127);
     }
 }

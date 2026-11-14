@@ -3,6 +3,7 @@ package org.thornex.musicparty.service.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.UriUtils;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.exception.ApiRequestException;
@@ -16,323 +17,425 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
+/**
+ * QQ 音乐音源适配器.
+ *
+ * <p>直接调用 L-1124/QQMusicApi 原生 Web 服务，行为与网易云源保持一致：
+ * 只做字段映射与必要的空值判断，不重复实现上游的权限、风控与音质策略。</p>
+ */
 @Service
 public class QqMusicApiService implements IMusicApiService, SourceCredentialManager {
     private static final String SOURCE = "qqmusic";
+    /** 上游歌单/专辑分页的每页数量。 */
     private static final int PAGE_SIZE = 100;
+    /** 搜索每页数量与最多抓取页数：一次搜索最多返回 90 条，不再只有第一页。 */
+    private static final int SEARCH_PAGE_SIZE = 30;
+    private static final int SEARCH_MAX_PAGES = 3;
+
     private final QqMusicWebClient web;
     private final QqMusicCredentialService credentials;
     private final AppProperties properties;
     private final ObjectMapper mapper;
 
-    public QqMusicApiService(QqMusicWebClient web, QqMusicCredentialService credentials, AppProperties properties, ObjectMapper mapper) {
+    public QqMusicApiService(QqMusicWebClient web, QqMusicCredentialService credentials,
+                             AppProperties properties, ObjectMapper mapper) {
         this.web = web;
         this.credentials = credentials;
         this.properties = properties;
-        this.mapper = mapper.copy().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        this.mapper = mapper;
     }
 
     @Override public String getPlatformName() { return SOURCE; }
     @Override public boolean defaultDisabled() { return true; }
-    @Override public DeliveryMode defaultDeliveryMode() { return DeliveryMode.SERVER_DOWNLOAD; }
-    @Override public long credentialRevision() { return credentials.snapshot().revision(); }
+    @Override public DeliveryMode defaultDeliveryMode() { return DeliveryMode.DIRECT_URL; }
+    @Override public long credentialRevision() { return credentials.revision(); }
     @Override public String credentialSourceId() { return SOURCE; }
-    @Override public String credentialType() { return "qqmusic-credential"; }
-    @Override public String credentialLabel() { return "QQ音乐Web登录凭据（JSON）"; }
-    @Override public boolean isCredentialConfigured() { return credentials.snapshot().configured(); }
+    @Override public String credentialType() { return "cookie"; }
+    @Override public String credentialLabel() { return "QQ音乐 Cookie"; }
+    @Override public boolean isCredentialConfigured() { return credentials.configured(); }
     @Override public void updateCredential(String value) { credentials.updateCookie(value); }
     public void updateCookie(String value) { updateCredential(value); }
     public boolean isCookieConfigured() { return isCredentialConfigured(); }
-    @Override public String externalUrl(String id) { return "https://y.qq.com/n/ryqq/songDetail/" + mid(id); }
+    @Override public String externalUrl(String id) { return "https://y.qq.com/n/ryqq/songDetail/" + segment(id); }
 
     @Override public SourceDescriptor descriptor() {
-        return new SourceDescriptor(SOURCE, "QQ音乐", "music",
-                new SourceCapabilities(true, true, true, true, true, true, !"FLAC".equals(properties.getQqmusic().getQuality()), true),
+        // 与网易云一致：搜索/歌词/专辑/用户/收藏/下载/Radio 全部支持，QQ 不提供私人 FM。
+        return new SourceDescriptor(SOURCE, "QQ音乐", "QQ音乐", "music",
+                new SourceCapabilities(true, true, true, true, true, false, true, true),
                 Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
                 List.of(new CollectionCategory("playlists", "歌单", "playlist", "CONTAINER")));
     }
 
+    // === 搜索 ===
+
     @Override public Mono<List<Music>> searchMusic(String keyword) {
-        return Mono.defer(() -> web.get("/search/search_by_type", Map.of("keyword", query(keyword), "search_type", 0, "num", 20, "page", 1))
-                .map(data -> tracks(data.path("song"))));
+        return Mono.defer(() -> search(keyword, 1, new ArrayList<>()));
     }
 
-    private Mono<JsonNode> detail(String id, QqMusicCredentialService.Snapshot snapshot) {
-        return web.get("/song/" + mid(id) + "/detail", Map.of(), snapshot).map(data -> {
-            JsonNode track = data.path("track");
-            if (!id.equals(track.path("mid").asText())) throw invalid();
-            return track;
-        });
-    }
-
-    @Override public Mono<Music> getMusic(String id) { return Mono.defer(() -> detail(id, credentials.snapshot()).map(this::track)); }
-
-    @Override public Mono<String> getLyric(String id) {
-        return Mono.defer(() -> web.get("/song/" + mid(id) + "/lyric", Map.of()).map(data -> {
-            JsonNode lyric = data.path("lyric");
-            if (!lyric.isTextual() || lyric.textValue().length() > 500_000) throw invalid();
-            return lyric.textValue();
-        }));
+    private Mono<List<Music>> search(String keyword, int page, List<Music> output) {
+        return web.get("/search/search_by_type",
+                        Map.of("keyword", keyword, "search_type", 0, "num", SEARCH_PAGE_SIZE, "page", page))
+                .flatMap(data -> {
+                    JsonNode songs = data.path("song");
+                    for (JsonNode song : songs) output.add(track(song));
+                    boolean more = page < SEARCH_MAX_PAGES
+                            && data.path("nextpage").asInt(-1) > 0
+                            && songs.size() >= SEARCH_PAGE_SIZE;
+                    return more ? search(keyword, page + 1, output) : Mono.just(List.copyOf(output));
+                });
     }
 
     @Override public Mono<List<UserSearchResult>> searchUsers(String keyword) {
-        return Mono.defer(() -> web.get("/search/search_by_type", Map.of("keyword", query(keyword), "search_type", 8, "num", 20, "page", 1))
+        return Mono.defer(() -> web.get("/search/search_by_type",
+                        Map.of("keyword", keyword, "search_type", 8, "num", SEARCH_PAGE_SIZE, "page", 1))
                 .map(data -> {
                     List<UserSearchResult> result = new ArrayList<>();
-                    for (JsonNode user : array(data.path("user"), 100)) {
-                        String uin = user.path("uin").asText("");
-                        String euin = user.path("encrypt_uin").asText("");
-                        Map<String, String> reference = new TreeMap<>();
-                        if (uin.matches("[1-9][0-9]{0,19}")) reference.put("uin", uin);
-                        if (!euin.isBlank() && euin.length() <= 256 && !euin.chars().anyMatch(Character::isISOControl)) reference.put("euin", euin);
-                        if (reference.isEmpty()) continue;
-                        String id;
-                        try { id = "q1." + Base64.getUrlEncoder().withoutPadding().encodeToString(mapper.writeValueAsBytes(reference)); }
-                        catch (Exception error) { throw invalid(); }
-                        result.add(new UserSearchResult(id, name(user.path("title").asText(user.path("name").asText(""))), url(user.path("pic").asText("")), SOURCE));
+                    for (JsonNode user : data.path("user")) {
+                        String reference = userReference(user);
+                        if (reference == null) continue;
+                        result.add(new UserSearchResult(reference,
+                                text(user.path("title").asText(user.path("name").asText(""))),
+                                user.path("pic").asText(""), SOURCE));
                     }
                     return List.copyOf(result);
                 }));
     }
 
-    @Override public Mono<SourcePage<Playlist>> publicCollections(String userId, String category, int offset, int limit) {
-        return Mono.defer(() -> {
-            if (!"playlists".equals(category)) throw unsupported();
-            bounds(offset, limit);
-            String uin = userUin(userId);
-            return web.get("/user/" + uin + "/created_songlists", Map.of()).map(data -> {
-                JsonNode raw = array(data.path("playlists"), 10000);
-                if ((data.has("finished") && !data.path("finished").asBoolean())
-                        || data.path("total").asLong(raw.size()) > raw.size()) throw new ApiRequestException("COLLECTION_INCOMPLETE");
-                List<Playlist> result = new ArrayList<>();
-                int end = Math.min(raw.size(), offset + limit);
-                for (int index = Math.min(offset, raw.size()); index < end; index++) {
-                    JsonNode entry = raw.get(index);
-                    result.add(playlist(entry));
-                }
-                return new SourcePage<>(result, end < raw.size() ? end : null, (long) raw.size());
-            });
-        });
+    private String userReference(JsonNode user) {
+        Map<String, String> reference = new TreeMap<>();
+        String uin = user.path("uin").asText("").strip();
+        String euin = user.path("encrypt_uin").asText("").strip();
+        if (isUsableReference(uin)) reference.put("uin", uin);
+        if (isUsableReference(euin)) reference.put("euin", euin);
+        if (reference.isEmpty()) return null;
+        try {
+            return "q1." + Base64.getUrlEncoder().withoutPadding().encodeToString(mapper.writeValueAsBytes(reference));
+        } catch (Exception error) {
+            return null;
+        }
     }
 
-    @Override public Mono<Playlist> containerDetail(String type, String id) {
-        return Mono.defer(() -> {
-            if (!"playlist".equals(type)) throw unsupported();
-            return songlist(id, 1, credentials.snapshot()).map(data -> {
-                Playlist playlist = playlist(data.path("info"));
-                if (!id.equals(playlist.id())) throw invalid();
-                return playlist;
-            });
-        });
+    private boolean isUsableReference(String value) {
+        return !value.isEmpty() && value.length() <= 256
+                && value.chars().noneMatch(character -> character < 32 || character == 127);
     }
 
-    private Mono<JsonNode> songlist(String id, int page, QqMusicCredentialService.Snapshot snapshot) {
-        return web.get("/songlist/" + numeric(id) + "/detail", Map.of("num", PAGE_SIZE, "page", page), snapshot).map(data -> {
-            if (data.path("code").asInt(0) != 0 || data.path("subcode").asInt(0) != 0) throw invalid();
-            return data;
-        });
+    // === 歌曲 / 歌词 / 专辑 ===
+
+    private Mono<JsonNode> detail(String id) {
+        return web.get("/song/" + segment(id) + "/detail", Map.of()).map(data -> data.path("track"));
     }
 
-    @Override public Mono<SourcePage<Music>> containerPage(String type, String id, int offset, int limit) {
-        return Mono.defer(() -> {
-            if (!"playlist".equals(type)) throw unsupported();
-            bounds(offset, limit);
-            return collectSonglist(id, offset, limit, null, new ArrayList<>(), 0, credentials.snapshot());
-        });
+    @Override public Mono<Music> getMusic(String id) {
+        return Mono.defer(() -> detail(id).map(song -> track(song, id)));
     }
 
-    private Mono<SourcePage<Music>> collectSonglist(String id, int cursor, int remaining, Long expectedTotal, List<Music> output, int requests, QqMusicCredentialService.Snapshot snapshot) {
-        if (requests > 2) return Mono.error(invalid());
-        return songlist(id, cursor / PAGE_SIZE + 1, snapshot).flatMap(data -> {
-            long total = nonnegative(data.path("total"));
-            if (expectedTotal != null && expectedTotal != total) throw new ApiRequestException("COLLECTION_CHANGED");
-            JsonNode raw = array(data.path("songs"), PAGE_SIZE);
-            int start = cursor % PAGE_SIZE;
-            int take = Math.min(remaining, Math.max(0, raw.size() - start));
-            for (int index = start; index < start + take; index++) output.add(track(raw.get(index)));
-            int next = cursor + take;
-            boolean more = next < total;
-            if (more && take == 0) throw new ApiRequestException("PAGINATION_STALLED");
-            if (take < remaining && next < total && raw.size() == PAGE_SIZE) {
-                return collectSonglist(id, next, remaining - take, total, output, requests + 1, snapshot);
-            }
-            return Mono.just(new SourcePage<>(List.copyOf(output), more ? next : null, total));
-        });
+    @Override public Mono<String> getLyric(String id) {
+        return Mono.defer(() -> web.get("/song/" + segment(id) + "/lyric", Map.of("trans", true))
+                .map(data -> LyricTranslations.merge(
+                        data.path("lyric").asText(""), data.path("trans").asText(""))));
     }
 
     @Override public Mono<AlbumInfo> getAlbum(String id) {
-        return Mono.defer(() -> album(id, credentials.snapshot())).timeout(Duration.ofSeconds(30));
+        return Mono.defer(() -> album(id)).timeout(Duration.ofSeconds(30));
     }
 
-    private Mono<AlbumInfo> album(String id, QqMusicCredentialService.Snapshot snapshot) {
-        return web.get("/album/" + mid(id) + "/detail", Map.of(), snapshot).flatMap(data -> {
+    private Mono<AlbumInfo> album(String id) {
+        return web.get("/album/" + segment(id) + "/detail", Map.of()).flatMap(data -> {
             JsonNode album = data.path("album");
-            if (!id.equals(album.path("mid").asText())) throw invalid();
-            return albumSongs(id, 1, null, new ArrayList<>(), snapshot).map(songs -> new AlbumInfo(id,
-                    name(album.path("name").asText()), artists(data.path("singers")), cover(album), songs.size(), songs));
+            return albumSongs(id, 1, new ArrayList<>(), 0).map(songs -> new AlbumInfo(
+                    album.path("mid").asText(id), text(album.path("name").asText("未命名专辑")),
+                    artists(data.path("singers")), cover(album), songs.size(), songs));
         });
     }
 
-    private Mono<List<Music>> albumSongs(String id, int page, Long expected, List<Music> output, QqMusicCredentialService.Snapshot snapshot) {
-        if (page > 20) return Mono.error(new ApiRequestException("COLLECTION_INCOMPLETE"));
-        return web.get("/album/" + id + "/songs", Map.of("num", PAGE_SIZE, "page", page), snapshot).flatMap(data -> {
-            if (!id.equals(data.path("album_mid").asText())) throw invalid();
-            long total = nonnegative(data.path("total_num"));
-            if (total > 2000 || (expected != null && expected != total)) throw new ApiRequestException("COLLECTION_INCOMPLETE");
-            List<Music> songs = tracks(data.path("song_list"));
-            output.addAll(songs);
-            if (output.size() > total) throw invalid();
-            if (output.size() < total) {
-                if (songs.isEmpty()) throw new ApiRequestException("PAGINATION_STALLED");
-                return albumSongs(id, page + 1, total, output, snapshot);
-            }
-            if (output.isEmpty() || output.stream().map(Music::id).distinct().count() != output.size()) throw invalid();
-            return Mono.just(List.copyOf(output));
+    private Mono<List<Music>> albumSongs(String id, int page, List<Music> output, int requests) {
+        if (requests > 200) return Mono.error(new ApiRequestException("UPSTREAM_UNAVAILABLE: QQ音乐专辑分页异常"));
+        return web.get("/album/" + segment(id) + "/songs", Map.of("num", PAGE_SIZE, "page", page)).flatMap(data -> {
+            JsonNode songs = data.path("song_list");
+            for (JsonNode song : songs) output.add(track(song));
+            long total = data.path("total_num").asLong(output.size());
+            if (songs.isEmpty() || output.size() >= total) return Mono.just(List.copyOf(output));
+            return albumSongs(id, page + 1, output, requests + 1);
         });
     }
 
     @Override public Mono<AlbumInfo> getAlbumForSong(String id) {
+        return Mono.defer(() -> detail(id).flatMap(song -> {
+            String album = song.path("album").path("mid").asText("");
+            if (album.isBlank()) return Mono.error(new ApiRequestException("这首歌暂无可添加的专辑"));
+            return album(album);
+        }));
+    }
+
+    // === 收藏与歌单 ===
+
+    @Override public Mono<SourcePage<Playlist>> publicCollections(String userId, String category, int offset, int limit) {
         return Mono.defer(() -> {
-            var snapshot = credentials.snapshot();
-            return detail(id, snapshot).flatMap(song -> album(mid(song.path("album").path("mid").asText()), snapshot));
+            if (!"playlists".equals(category)) throw unsupported();
+            if (offset < 0 || limit < 1) throw new ApiRequestException("INVALID_CURSOR: 无效分页参数");
+            Target target = target(userId);
+            return created(target).flatMap(created -> {
+                List<Playlist> items = new ArrayList<>();
+                int index = Math.min(offset, created.size());
+                while (index < created.size() && items.size() < limit) items.add(created.get(index++));
+                if (items.size() == limit) {
+                    return Mono.just(new SourcePage<>(items, index < created.size() ? index : null, null));
+                }
+                int favouriteOffset = Math.max(0, offset - created.size());
+                return favourites(target, favouriteOffset, limit - items.size()).map(page -> {
+                    items.addAll(page.items());
+                    Integer next = page.nextOffset() == null ? null : created.size() + page.nextOffset();
+                    return new SourcePage<>(items, next, null);
+                });
+            });
         });
     }
 
+    /** 与网易云一致：绑定用户后的“歌单”包含他创建的歌单与他人公开收藏的歌单。 */
+    private Mono<List<Playlist>> created(Target target) {
+        if (target.uin().isBlank()) return Mono.just(List.of());
+        return web.get("/user/" + segment(target.uin()) + "/created_songlists", Map.of())
+                .map(data -> {
+                    List<Playlist> result = new ArrayList<>();
+                    for (JsonNode item : data.path("playlists")) result.add(playlist(item));
+                    return List.copyOf(result);
+                });
+    }
+
+    private Mono<SourcePage<Playlist>> favourites(Target target, int offset, int limit) {
+        if (target.euin().isBlank()) return Mono.just(new SourcePage<>(List.of(), null, null));
+        return web.get("/user/" + segment(target.euin()) + "/fav/songlists",
+                        Map.of("num", PAGE_SIZE, "page", offset / PAGE_SIZE + 1))
+                .map(data -> {
+                    JsonNode raw = data.path("playlists");
+                    List<Playlist> items = new ArrayList<>();
+                    int start = offset % PAGE_SIZE;
+                    int end = Math.min(raw.size(), start + limit);
+                    for (int index = Math.min(start, raw.size()); index < end; index++) items.add(playlist(raw.get(index)));
+                    long total = data.path("total").asLong(-1);
+                    boolean more = end < raw.size() || (total >= 0 && offset + items.size() < total);
+                    return new SourcePage<>(items, more && !items.isEmpty() ? offset + items.size() : null, null);
+                });
+    }
+
+    @Override public Mono<Playlist> containerDetail(String type, String id) {
+        if (!"playlist".equals(type)) return IMusicApiService.super.containerDetail(type, id);
+        return Mono.defer(() -> songlist(id, 1).map(data -> playlist(data.path("info"))));
+    }
+
+    private Mono<JsonNode> songlist(String id, int page) {
+        return web.get("/songlist/" + segment(id) + "/detail", Map.of("num", PAGE_SIZE, "page", page));
+    }
+
+    @Override public Mono<SourcePage<Music>> containerPage(String type, String id, int offset, int limit) {
+        if (!"playlist".equals(type)) return IMusicApiService.super.containerPage(type, id, offset, limit);
+        return Mono.defer(() -> {
+            if (offset < 0 || limit < 1) return Mono.error(new ApiRequestException("INVALID_CURSOR: 无效分页参数"));
+            return playlistPage(id, offset, limit, new ArrayList<>(), 0);
+        });
+    }
+
+    private Mono<SourcePage<Music>> playlistPage(String id, int cursor, int remaining,
+                                                 List<Music> output, int requests) {
+        if (requests > 200) return Mono.error(new ApiRequestException("UPSTREAM_UNAVAILABLE: QQ音乐歌单分页异常"));
+        return songlist(id, cursor / PAGE_SIZE + 1).flatMap(data -> {
+            JsonNode songs = data.path("songs");
+            long total = data.path("total").asLong(songs.size());
+            int start = cursor % PAGE_SIZE;
+            if (start >= songs.size()) return Mono.just(new SourcePage<>(List.copyOf(output), null, total));
+            int take = Math.min(remaining, songs.size() - start);
+            for (int index = start; index < start + take; index++) output.add(track(songs.get(index)));
+            int next = cursor + take;
+            boolean more = next < total;
+            if (take < remaining && more) return playlistPage(id, next, remaining - take, output, requests + 1);
+            return Mono.just(new SourcePage<>(List.copyOf(output), more ? next : null, total));
+        });
+    }
+
+    // === 媒体 ===
+
     @Override public Mono<ResolvedMedia> resolveMedia(String id, MediaConsumer consumer) {
-        return Mono.defer(() -> resolve(id, quality(), consumer));
+        return Mono.defer(() -> resolve(id, quality()));
     }
 
     @Override public Mono<ResolvedMedia> resolveFallbackMedia(String id) {
-        return Mono.defer(() -> {
-            if (quality().equals("MP3_128")) throw unsupported();
-            return resolve(id, "MP3_128", MediaConsumer.SERVER);
-        });
+        return Mono.defer(() -> "MP3_128".equals(quality()) ? Mono.error(unsupported())
+                : resolve(id, "MP3_128"));
     }
 
-    private Mono<ResolvedMedia> resolve(String id, String quality, MediaConsumer consumer) {
-        return Mono.defer(() -> {
-            var snapshot = credentials.snapshot();
-            snapshot.requireValid();
-            if (consumer == null) throw invalid();
-            return detail(id, snapshot).flatMap(song -> {
-                credentials.requireCurrent(snapshot);
-                Music metadata = track(song);
-                JsonNode file = song.path("file");
-                String mediaMid = identifier(file.path("media_mid").asText());
-                String field = quality.equals("FLAC") ? "size_flac" : quality.equals("MP3_320") ? "size_320mp3" : "size_128mp3";
-                long size = nonnegative(file.path(field));
-                if (size == 0) throw new ApiRequestException("MEDIA_UNAVAILABLE");
-                int fileType = quality.equals("FLAC") ? 7 : quality.equals("MP3_320") ? 12 : 13;
-                String extension = quality.equals("FLAC") ? ".flac" : ".mp3";
-                String filename = (quality.equals("FLAC") ? "F000" : quality.equals("MP3_320") ? "M800" : "M500") + mediaMid + extension;
-                return web.get("/song/" + mid(id) + "/url", Map.of("file_type", fileType, "song_type", song.path("type").asInt(1), "media_mid", mediaMid), snapshot)
-                        .map(data -> {
-                            credentials.requireCurrent(snapshot);
-                            JsonNode items = array(data.path("data"), 20);
-                            JsonNode authorized = null;
-                            for (JsonNode item : items) if (id.equals(item.path("mid").asText()) && filename.equals(item.path("filename").asText())) { authorized = item; break; }
-                            if (authorized == null || !authorized.path("result").isIntegralNumber() || authorized.path("result").intValue() != 0
-                                    || !authorized.path("ekey").asText("").isEmpty() || authorized.path("purl").asText("").isBlank()) throw new ApiRequestException("MEDIA_UNAVAILABLE");
-                            long expiration = nonnegative(data.path("expiration"));
-                            if (expiration <= 30) throw new ApiRequestException("MEDIA_UNAVAILABLE");
-                            String purl = authorized.path("purl").asText();
-                            URI relative;
-                            try { relative = URI.create(purl); }
-                            catch (Exception error) { throw invalid(); }
-                            if (!relative.getPath().equals(filename) && !relative.getPath().equals("/" + filename)) throw new ApiRequestException("MEDIA_UNAVAILABLE");
-                            if (relative.getRawAuthority() != null && !relative.isAbsolute()) throw new ApiRequestException("MEDIA_UNAVAILABLE");
-                            String location = relative.isAbsolute() ? url(purl) : "https://isure.stream.qqmusic.qq.com/" + (purl.startsWith("/") ? purl.substring(1) : purl);
-                            String host = URI.create(location).getHost();
-                            if (!host.equals("qq.com") && !host.endsWith(".qq.com")) throw new ApiRequestException("MEDIA_UNAVAILABLE");
-                            return new ResolvedMedia(new ResourceKey(SOURCE, id), quality + ":" + mediaMid + ":" + size,
-                                    location, quality.equals("FLAC") ? "audio/flac" : "audio/mpeg", extension,
-                                    Instant.now().plusSeconds(Math.min(expiration - 30, 3600)), Map.of(), true, timeline(id, mediaMid, metadata.duration()));
-                        });
-            });
-        });
+    private Mono<ResolvedMedia> resolve(String id, String quality) {
+        return Mono.defer(() -> detail(id).flatMap(song -> {
+            Music metadata = track(song, id);
+            String mediaMid = song.path("file").path("media_mid").asText("").strip();
+            Map<String, Object> query = new LinkedHashMap<>();
+            query.put("file_type", fileType(quality));
+            query.put("song_type", song.path("type").asInt(1));
+            if (!mediaMid.isEmpty()) query.put("media_mid", mediaMid);
+            return web.get("/song/" + segment(id) + "/url", query)
+                    .map(data -> authorized(data, id, quality, mediaMid, metadata));
+        }));
     }
 
-    public Mono<List<Music>> recommendations() {
-        return Mono.defer(() -> {
-            var snapshot = credentials.snapshot();
-            snapshot.requireValid();
-            if (!snapshot.configured()) throw new ApiRequestException("SOURCE_AUTH_REQUIRED: 请配置QQ音乐凭据");
-            return web.get("/recommend/get_guess_recommend", Map.of(), snapshot).map(data -> {
-                credentials.requireCurrent(snapshot);
-                List<Music> songs = tracks(data.path("songs"));
-                if (songs.isEmpty()) throw new ApiRequestException("RECOMMENDATION_UNAVAILABLE");
-                return songs;
-            });
-        });
+    private ResolvedMedia authorized(JsonNode data, String id, String quality, String mediaMid, Music metadata) {
+        JsonNode chosen = null;
+        for (JsonNode item : data.path("data")) {
+            if (id.equals(item.path("mid").asText("")) && !item.path("purl").asText("").isBlank()) {
+                chosen = item;
+                break;
+            }
+        }
+        if (chosen == null) {
+            for (JsonNode item : data.path("data")) {
+                if (!item.path("purl").asText("").isBlank()) {
+                    chosen = item;
+                    break;
+                }
+            }
+        }
+        if (chosen == null) throw new ApiRequestException("MEDIA_UNAVAILABLE: QQ音乐没有返回可播放地址");
+        String filename = chosen.path("filename").asText("");
+        String extension = extension(filename, quality);
+        String location = location(chosen.path("purl").asText(""));
+        // 同一媒体跨音质保持同一 timeline：media_mid 是内容身份，filename 会带音质前缀。
+        String identity = mediaMid.isEmpty() ? (filename.isBlank() ? id : filename) : mediaMid;
+        long expiration = Math.min(Math.max(data.path("expiration").asLong(600) - 30, 60), 3600);
+        return new ResolvedMedia(new ResourceKey(SOURCE, id),
+                quality + ":" + (filename.isBlank() ? identity : filename), location, mime(extension), extension,
+                Instant.now().plusSeconds(expiration), Map.of(), true,
+                timeline(id, identity, metadata.duration()));
     }
+
+    private String location(String purl) {
+        String location;
+        try {
+            location = URI.create(purl).isAbsolute()
+                    ? purl
+                    : "https://isure.stream.qqmusic.qq.com/" + (purl.startsWith("/") ? purl.substring(1) : purl);
+        } catch (Exception error) {
+            throw new ApiRequestException("MEDIA_UNAVAILABLE: QQ音乐没有返回可播放地址");
+        }
+        if (location.startsWith("http://")) location = "https://" + location.substring(7);
+        if (!location.startsWith("https://")) throw new ApiRequestException("MEDIA_UNAVAILABLE: QQ音乐没有返回可播放地址");
+        return location;
+    }
+
+    private String extension(String filename, String quality) {
+        String lower = filename.toLowerCase(Locale.ROOT);
+        for (String encrypted : List.of(".mgg", ".mflac", ".mmp4", ".mnac")) {
+            if (lower.endsWith(encrypted)) throw new ApiRequestException("MEDIA_UNAVAILABLE: QQ音乐加密音质暂不支持");
+        }
+        for (String known : List.of(".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".mp4")) {
+            if (lower.endsWith(known)) return known;
+        }
+        return "FLAC".equals(quality) ? ".flac" : ".mp3";
+    }
+
+    private String mime(String extension) {
+        return switch (extension) {
+            case ".flac" -> "audio/flac";
+            case ".m4a", ".mp4" -> "audio/mp4";
+            case ".aac" -> "audio/aac";
+            case ".ogg" -> "audio/ogg";
+            case ".wav" -> "audio/wav";
+            default -> "audio/mpeg";
+        };
+    }
+
+    private int fileType(String quality) {
+        return switch (quality) {
+            case "FLAC" -> 7;
+            case "MP3_320" -> 12;
+            default -> 13;
+        };
+    }
+
+    /** 音质配置与网易云一样“尽力而为”：无法识别时按 320 处理，不阻断播放。 */
+    private String quality() {
+        String value = properties.getQqmusic().getQuality();
+        String normalized = value == null ? "" : value.strip().toUpperCase(Locale.ROOT).replace('-', '_');
+        return switch (normalized) {
+            case "FLAC", "LOSSLESS", "SQ" -> "FLAC";
+            case "MP3_128", "STANDARD", "LOW" -> "MP3_128";
+            default -> "MP3_320";
+        };
+    }
+
+    // === 字段映射 ===
 
     private Music track(JsonNode song) {
-        String id = mid(song.path("mid").asText());
-        long seconds = nonnegative(song.path("interval"));
-        if (seconds == 0 || seconds > 86400) throw invalid();
-        return new Music(id, name(song.path("name").asText(song.path("title").asText())), artists(song.path("singer")), seconds * 1000,
-                SOURCE, cover(song.path("album")), externalUrl(id));
+        return track(song, song.path("mid").asText(""));
     }
 
-    private List<Music> tracks(JsonNode songs) {
-        List<Music> result = new ArrayList<>();
-        for (JsonNode song : array(songs, 2000)) result.add(track(song));
-        return List.copyOf(result);
+    private Music track(JsonNode song, String fallbackId) {
+        String id = song.path("mid").asText("");
+        if (id.isBlank()) id = fallbackId;
+        long seconds = Math.max(song.path("interval").asLong(0), 0);
+        return new Music(id, text(song.path("name").asText(song.path("title").asText(""))),
+                artists(song.path("singer")), seconds * 1000, SOURCE,
+                cover(song.path("album")), externalUrl(id));
     }
 
     private List<String> artists(JsonNode singers) {
         List<String> result = new ArrayList<>();
-        for (JsonNode singer : array(singers, 100)) {
-            String name = singer.path("name").asText("");
-            if (!name.isBlank()) result.add(name(name));
+        for (JsonNode singer : singers) {
+            String name = text(singer.path("name").asText(""));
+            if (!name.isEmpty()) result.add(name);
         }
         return List.copyOf(result);
     }
 
     private Playlist playlist(JsonNode item) {
-        return new Playlist(numeric(item.path("id").asText()), name(item.path("title").asText()),
-                url(item.path("picurl").asText("")), Math.toIntExact(nonnegative(item.path("songnum"))), SOURCE);
+        String id = item.path("id").asText(item.path("disstid").asText(""));
+        return new Playlist(id, text(item.path("title").asText(item.path("dissname").asText(""))),
+                item.path("picurl").asText(item.path("logo").asText("")),
+                item.path("songnum").asInt(item.path("song_cnt").asInt(0)), SOURCE);
     }
 
     private String cover(JsonNode album) {
-        String mid = album.path("mid").asText(album.path("pmid").asText(""));
-        return mid.isBlank() ? null : "https://y.gtimg.cn/music/photo_new/T002R300x300M000" + identifier(mid) + ".jpg";
+        String mid = album.path("mid").asText(album.path("pmid").asText("")).strip();
+        return mid.isEmpty() ? null : "https://y.gtimg.cn/music/photo_new/T002R300x300M000" + mid + ".jpg";
     }
 
-    private String userUin(String reference) {
+    private String text(String value) {
+        if (value == null) return "";
+        return org.springframework.web.util.HtmlUtils.htmlUnescape(value.replaceAll("<[^>]*>", "")).strip();
+    }
+
+    private String timeline(String id, String identity, long duration) {
         try {
-            if (reference == null || reference.length() > 512 || !reference.startsWith("q1.")) throw invalid();
+            String seed = id + ":" + identity + ":" + duration + ":full";
+            return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(seed.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception error) {
+            throw new IllegalStateException(error);
+        }
+    }
+
+    private String segment(String value) {
+        return UriUtils.encodePathSegment(value == null ? "" : value, StandardCharsets.UTF_8);
+    }
+
+    // === 用户绑定 ===
+
+    private record Target(String uin, String euin) { }
+
+    private Target target(String reference) {
+        if (reference == null || !reference.startsWith("q1.")) {
+            throw new ApiRequestException("USER_ID_UNAVAILABLE: 此用户标识不支持歌单读取");
+        }
+        try {
             JsonNode value = mapper.readTree(Base64.getUrlDecoder().decode(reference.substring(3)));
-            return numeric(value.path("uin").asText());
-        } catch (Exception error) { throw new ApiRequestException("USER_ID_UNAVAILABLE: 此用户标识不支持歌单读取"); }
+            String uin = value.path("uin").asText("").strip();
+            String euin = value.path("euin").asText("").strip();
+            if (uin.isEmpty() && euin.isEmpty()) throw new IllegalArgumentException();
+            return new Target(uin, euin);
+        } catch (Exception error) {
+            throw new ApiRequestException("USER_ID_UNAVAILABLE: 此用户标识不支持歌单读取");
+        }
     }
 
-    private String timeline(String id, String mediaMid, long duration) {
-        try { return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest((id + ":" + mediaMid + ":" + duration + ":full").getBytes(StandardCharsets.UTF_8))); }
-        catch (Exception error) { throw new IllegalStateException(error); }
+    private ApiRequestException unsupported() {
+        return new ApiRequestException("CAPABILITY_UNAVAILABLE: QQ音乐不支持此操作");
     }
-
-    private String quality() {
-        String value = properties.getQqmusic().getQuality();
-        if (!Set.of("MP3_128", "MP3_320", "FLAC").contains(value == null ? "" : value)) throw invalid();
-        return value;
-    }
-
-    private JsonNode array(JsonNode node, int max) { if (!node.isArray() || node.size() > max) throw invalid(); return node; }
-    private String identifier(String value) { if (value == null || !value.matches("[A-Za-z0-9]{1,128}")) throw invalid(); return value; }
-    private String mid(String value) { identifier(value); if (value.matches("[0-9]+")) throw invalid(); return value; }
-    private String numeric(String value) { if (value == null || !value.matches("[1-9][0-9]{0,19}")) throw invalid(); return value; }
-    private long nonnegative(JsonNode value) { if (!value.isIntegralNumber() || !value.canConvertToLong() || value.longValue() < 0) throw invalid(); return value.longValue(); }
-    private String query(String value) { if (value == null || value.isBlank() || value.length() > 200 || value.chars().anyMatch(Character::isISOControl)) throw invalid(); return value; }
-    private String name(String value) { return org.springframework.web.util.HtmlUtils.htmlUnescape(query(value.replaceAll("<[^>]*>", ""))); }
-    private void bounds(int offset, int limit) { if (offset < 0 || offset > 100000 || limit < 1 || limit > 100) throw invalid(); }
-    private String url(String value) {
-        if (value == null || value.isBlank()) return null;
-        try { URI uri = URI.create(value); if (!Set.of("http", "https").contains(uri.getScheme()) || uri.getHost() == null || uri.getRawUserInfo() != null || uri.getRawFragment() != null) throw invalid(); }
-        catch (Exception error) { throw invalid(); }
-        return value;
-    }
-    private ApiRequestException invalid() { return new ApiRequestException("UPSTREAM_UNAVAILABLE: QQ音乐资源或响应无效"); }
-    private ApiRequestException unsupported() { return new ApiRequestException("CAPABILITY_UNAVAILABLE: QQ音乐不支持此操作"); }
 }

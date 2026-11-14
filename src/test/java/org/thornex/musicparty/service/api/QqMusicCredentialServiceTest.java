@@ -1,61 +1,58 @@
 package org.thornex.musicparty.service.api;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.exception.ApiRequestException;
 
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 class QqMusicCredentialServiceTest {
-    @Test void supportsExactlyNativeWebCookieFieldsWithoutInventingUnsupportedFields() {
+    private static final String COOKIE = "musicid=123; musickey=secret; openid=open; refresh_token=refresh";
+
+    @Test void cookieIsStoredTrimmedAndPublishedAsConfiguredAccount() {
         var properties = new AppProperties();
-        var service = new QqMusicCredentialService(properties, new ObjectMapper());
-        service.updateCookie("{\"musicid\":123,\"musickey\":\"secret\",\"openid\":\"open\",\"refresh_token\":\"refresh\",\"access_token\":\"access\",\"expired_at\":1800000000,\"unionid\":\"union\",\"str_musicid\":\"account-string\",\"refresh_key\":\"refreshkey\"}");
-        var snapshot = service.snapshot();
-        assertEquals(9, snapshot.credential().size());
-        assertEquals("account-string", snapshot.credential().get("str_musicid"));
-        assertTrue(snapshot.cookieHeader().contains("expired_at=\"1800000000\""));
-        assertFalse(snapshot.toString().contains("secret"));
-        assertThrows(UnsupportedOperationException.class, () -> snapshot.credential().put("musickey", "other"));
-        service.updateCookie("{}");
-        assertFalse(service.snapshot().configured());
-        assertEquals(2, service.snapshot().revision());
-        assertThrows(ApiRequestException.class, () -> service.requireCurrent(snapshot));
+        var service = new QqMusicCredentialService(properties);
+        assertFalse(service.configured());
+        service.updateCookie("  " + COOKIE + "  ");
+        assertEquals(COOKIE, service.cookie());
+        assertTrue(service.configured());
+        assertEquals(COOKIE, properties.getQqmusic().getCookie());
+        assertEquals(1, service.revision());
     }
 
-    @Test void nativeCookieQuotingEscapesSeparatorsWithoutPercentEncodingCredential() {
-        var properties = new AppProperties();
-        var service = new QqMusicCredentialService(properties, new ObjectMapper());
-        service.updateCookie("{\"musicid\":123,\"musickey\":\"a;b,\\\"c\\\\d +/%\"}");
-        assertEquals("musicid=\"123\"; musickey=\"a\\073b\\054\\\"c\\\\d +/%\"; str_musicid=\"123\"", service.snapshot().cookieHeader());
+    @Test void rewritingTheSameCookieDoesNotAdvanceTheRevision() {
+        var service = new QqMusicCredentialService(new AppProperties());
+        service.updateCookie(COOKIE);
+        service.updateCookie(" " + COOKIE + " ");
+        assertEquals(1, service.revision());
+        service.updateCookie("musicid=123; musickey=other");
+        assertEquals(2, service.revision());
+        assertTrue(service.cookie().contains("musickey=other"));
     }
 
-    @Test void invalidStartupIsIsolatedButPrivateSnapshotRemainsExplicitlyInvalid() {
-        var properties = new AppProperties();
-        properties.getQqmusic().setCookie("invalid-secret");
-        var service = new QqMusicCredentialService(properties, new ObjectMapper());
-        assertFalse(service.snapshot().configured());
-        assertThrows(ApiRequestException.class, () -> service.snapshot().requireValid());
+    @Test void clearingTheCookieReturnsToAnonymous() {
+        var service = new QqMusicCredentialService(new AppProperties());
+        service.updateCookie(COOKIE);
         service.updateCookie("");
-        assertDoesNotThrow(() -> service.snapshot().requireValid());
+        assertFalse(service.configured());
+        assertEquals("", service.cookie());
+        assertEquals(2, service.revision());
     }
 
-    @Test void malformedUpdatesCannotReplaceCurrentAccountOrLeakInput() {
-        var properties = new AppProperties();
-        var service = new QqMusicCredentialService(properties, new ObjectMapper());
-        service.updateCookie("{\"musicid\":123,\"musickey\":\"original\"}");
-        var before = service.snapshot();
-        for (String value : List.of("[]", "{\"musicid\":0,\"musickey\":\"secret\"}",
-                "{\"musicid\":123,\"musickey\":\"secret\",\"loginType\":2}",
-                "{\"musicid\":123,\"musickey\":\"secret\",\"encrypt_uin\":\"old\"}",
-                "{\"musicid\":123,\"musickey\":\"secret\\n\"}",
-                "{\"musicid\":123,\"musicid\":456,\"musickey\":\"secret\"}",
-                "{\"musicid\":123,\"musickey\":\"secret\"} {}")) {
-            assertFalse(assertThrows(ApiRequestException.class, () -> service.updateCookie(value)).getMessage().contains("secret"));
-            assertSame(before, service.snapshot());
+    @Test void headerBreakingOrOversizedInputIsRejectedWithoutEchoingIt() {
+        var service = new QqMusicCredentialService(new AppProperties());
+        for (String value : new String[]{"musicid=1; musickey=private\n", "musicid=1\r; musickey=private", "x".repeat(8193)}) {
+            var error = assertThrows(ApiRequestException.class, () -> service.updateCookie(value));
+            assertFalse(error.getMessage().contains("private"));
         }
+        assertFalse(service.configured());
+    }
+
+    @Test void invalidDeploymentCookieDegradesToAnonymousInsteadOfBreakingStartup() {
+        var properties = new AppProperties();
+        properties.getQqmusic().setCookie("musicid=1; musickey=bad\nvalue");
+        var service = new QqMusicCredentialService(properties);
+        assertFalse(service.configured());
+        assertEquals("", service.cookie());
     }
 }

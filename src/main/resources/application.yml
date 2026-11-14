@@ -25,11 +25,13 @@ app:
         delivery-mode: ${BILIBILI_DELIVERY_MODE:SERVER_DOWNLOAD}
       qqmusic:
         enabled: ${QQMUSIC_ENABLED:false}
-        delivery-mode: ${QQMUSIC_DELIVERY_MODE:SERVER_DOWNLOAD}
+        delivery-mode: ${QQMUSIC_DELIVERY_MODE:DIRECT_URL}
     qqmusic:
+      # L-1124/QQMusicApi 原生 Web 服务地址（默认只在本机回环或 Compose 内网）
       base-url: ${QQMUSIC_API_URL:http://localhost:8080}
+      # 与网易云一致：直接粘贴浏览器里的 Cookie 串（musicid=...; musickey=...）
       cookie: ${QQMUSIC_COOKIE:}
-      quality: ${QQMUSIC_QUALITY:MP3_128}
+      quality: ${QQMUSIC_QUALITY:MP3_320}
     netease:
       # The base URL of your deployed NeteaseCloudMusicApi instance
       base-url: ${NETEASE_API_URL:http://netease-api:3000}
