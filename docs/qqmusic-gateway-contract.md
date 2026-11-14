@@ -9,8 +9,8 @@ MusicParty calls the unmodified native Web application included in L-1124/QQMusi
 - Do not expose this API publicly. Bundled mode binds loopback; Compose does not publish its port. It has no MusicParty gateway Bearer token. External deployments must apply their own network access controls.
 - Use upstream configuration as documented by its maintainers. Bundled mode uses a clean source export and upstream's default-disabled credential pool; external deployments do not require MusicParty-specific account or cache policy changes.
 - Java forwards the source's configured Cookie on queries and omits it when unconfigured. Native anonymous routes may ignore it and use shared caches; optional/required authentication follows upstream rules. Do not monkey-patch these policies or disable native caching.
-- Composite Java queries retain one local credential snapshot, and local credential updates invalidate pending operations and local media authorization. Cookie identity and query target are separate: requests for target B never silently substitute the configured account A as the target. These local guards do not override or claim account-specific behavior for upstream anonymous caches.
-- Administrator input remains JSON. Upstream-supported fields are `musicid`, `musickey`, `openid`, `refresh_token`, `access_token`, `expired_at`, `unionid`, `str_musicid`, and `refresh_key`; `musicid` and `musickey` form the required pair. `loginType` and `encrypt_uin` are not part of this Web Cookie interface.
+- The credential is a plain Cookie string, configured exactly like the NetEase source and forwarded verbatim on every query. Cookie identity and query target are separate: requests for target B never silently substitute the configured account A as the target. These local rules do not override or claim account-specific behavior for upstream anonymous caches.
+- Administrator input is a Cookie string, exactly like the NetEase source. Upstream reads `musicid` and `musickey` from it as a required pair and accepts the remaining optional Cookie fields (`openid`, `refresh_token`, `access_token`, `expired_at`, `unionid`, `str_musicid`, `refresh_key`); anything else is ignored by the upstream Web layer. `loginType` and `encrypt_uin` are not part of this Web Cookie interface.
 
 ## Native endpoints
 
@@ -18,10 +18,10 @@ Upstream responses use `{code:0,msg:"ok",data:...}` and typed snake_case models.
 
 | Capability | Upstream route |
 | --- | --- |
-| Song / user search | GET `/search/search_by_type`, `search_type=0` / `8` |
+| Song / user search | GET `/search/search_by_type`, `search_type=0` / `8`, paged by `page`/`num` |
 | Song detail | GET `/song/{mid}/detail` |
-| Lyrics | GET `/song/{mid}/lyric` |
-| Target user's created playlists | GET `/user/{uin}/created_songlists` |
+| Lyrics (with translation) | GET `/song/{mid}/lyric` with `trans=true`, merged on the original timeline |
+''s created playlists | GET `/user/{uin}/created_songlists` |
 | Playlist metadata / tracks | GET `/songlist/{id}/detail`, `num` and 1-based `page` |
 | Album metadata / tracks | GET `/album/{mid}/detail` and `/album/{mid}/songs` |
 | Ordinary media authorization | GET `/song/{mid}/url`, `file_type=13` (MP3_128), `12` (MP3_320), `7` (FLAC) |
@@ -35,6 +35,6 @@ Follow the upstream Web models rather than requiring raw-field presence evidence
 
 Media still requires a usable ordinary-format authorization result and URL, a supported codec, valid resource identity and expiry. Encrypted `ekey` media is not decrypted. Java supplies `ResolvedMedia` with representation and media-identity timeline keys so the existing player, fallback, cache and Radio can retain authorization and synchronization safeguards. Quality does not alter the timeline of the same file identity.
 
-FM uses the configured single account and the upstream id99 endpoint, not a random playlist or daily chart. Native DJ voice is not available. Existing `/api/v2`, queue limits, source epochs, credential revision checks, media URL policy, and local LIKESONG behavior remain in place.
+This source declares no recommendation capability: the native guess-recommend endpoint is not used, and neither FM nor DJ is offered. Existing `/api/v2`, queue limits, source epochs, credential revision checks, media URL policy, and local LIKESONG behavior remain in place.
 
 The upstream SDK, Web sources and license are retained in distribution. Follow its GPL-3.0-or-later terms. Fixture and startup tests do not establish live member playback, CDN availability or rights to redistribute music.

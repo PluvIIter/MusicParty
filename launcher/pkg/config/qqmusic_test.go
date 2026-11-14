@@ -9,14 +9,14 @@ import (
 
 func TestNativeQqDefaultsAndMissingCurrentConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Sources["qqmusic"] != (SourceConfig{false, ServerDownload}) || cfg.QqmusicGatewayMode != "bundled" || cfg.QqmusicBaseURL != "http://127.0.0.1:8080" {
+	if cfg.Sources["qqmusic"] != (SourceConfig{false, DirectURL}) || cfg.QqmusicGatewayMode != "bundled" || cfg.QqmusicBaseURL != "http://127.0.0.1:8080" {
 		t.Fatal("unsafe QQ defaults")
 	}
 	cfg, err := DecodeConfig([]byte(`{"sources":{"netease":{"enabled":false,"deliveryMode":"DIRECT_URL"}},"serverPort":"9000"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Sources["qqmusic"] != (SourceConfig{false, ServerDownload}) || cfg.QqmusicBaseURL != "http://127.0.0.1:8080" || cfg.QqmusicGatewayMode != "bundled" || cfg.ServerPort != "9000" || cfg.Sources["netease"].Enabled {
+	if cfg.Sources["qqmusic"] != (SourceConfig{false, DirectURL}) || cfg.QqmusicBaseURL != "http://127.0.0.1:8080" || cfg.QqmusicGatewayMode != "bundled" || cfg.ServerPort != "9000" || cfg.Sources["netease"].Enabled {
 		t.Fatal("missing QQ defaults changed configured values")
 	}
 	cfg, err = DecodeConfig([]byte(`{"sources":{"qqmusic":{"enabled":false,"deliveryMode":"DIRECT_URL"}},"qqmusicBaseUrl":"http://external.test:8001","qqmusicCookie":"kept credential"}`))
@@ -81,12 +81,14 @@ func TestNativeQqCredentialFields(t *testing.T) {
 		`{"musicid":1,"musickey":"private","musicid":2}`, `{"musicid":1,"musickey":"private","expired_at":-1}`,
 		`{"musicid":1,"musickey":"private","refresh_token":null}`, `{"musicid":1,"musickey":"private\n"}`,
 		`{"musicid":1,"musickey":"` + strings.Repeat("x", 4097) + `"}`,
+		"musicid=1; musickey=private\n",
 	} {
 		if err := validateQqCredential(value); err == nil || strings.Contains(err.Error(), "private") {
 			t.Fatal("invalid native cookie accepted or exposed")
 		}
 	}
-	for _, value := range []string{"", `{}`, `{"musicid":"9223372036854775807","musickey":"private","refresh_token":"","expired_at":0}`} {
+	for _, value := range []string{"", `{}`, `{"musicid":"9223372036854775807","musickey":"private","refresh_token":"","expired_at":0}`,
+		"musicid=1; musickey=private", "musicid=123; musickey=a; openid=x; refresh_key=k"} {
 		if err := validateQqCredential(value); err != nil {
 			t.Fatal("valid native cookie rejected")
 		}
@@ -94,7 +96,7 @@ func TestNativeQqCredentialFields(t *testing.T) {
 }
 
 func TestNativeExternalQqValidationWithoutSecretEcho(t *testing.T) {
-	for _, update := range []func(*AppConfig){func(c *AppConfig) { c.QqmusicBaseURL = "http://user:private@api.test" }, func(c *AppConfig) { c.QqmusicBaseURL = "http://api.test?private=1" }, func(c *AppConfig) { c.QqmusicQuality = "private" }, func(c *AppConfig) { c.QqmusicCookie = "private raw cookie" }} {
+	for _, update := range []func(*AppConfig){func(c *AppConfig) { c.QqmusicBaseURL = "http://user:private@api.test" }, func(c *AppConfig) { c.QqmusicBaseURL = "http://api.test?private=1" }, func(c *AppConfig) { c.QqmusicQuality = "private" }, func(c *AppConfig) { c.QqmusicCookie = "private\ncookie" }} {
 		cfg := DefaultConfig()
 		cfg.Sources["qqmusic"] = SourceConfig{true, ServerDownload}
 		cfg.QqmusicGatewayMode = "external"

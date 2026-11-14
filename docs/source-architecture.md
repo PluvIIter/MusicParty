@@ -52,7 +52,7 @@ app:
 
 ## 私人 FM/DJ
 
-部署 `private-dj.source` 指定唯一提供源，网易云使用配置 Cookie 请求原生 FM/DJ，QQ音乐使用明确的单账号 Credential 请求原生 FM（不提供 DJ 语音）。提供者声明基础 FM 和可选 DJ；后端按指定源下发 `source`、`fmSupported`、`djSupported`。前端只展示明确支持的入口，其他已启用源不能借用能力，后端也拒绝不支持的模式。
+部署 `private-dj.source` 指定唯一提供源，网易云使用配置 Cookie 请求原生 FM/DJ，QQ音乐不声明推荐能力（不提供 FM/DJ）。提供者声明基础 FM 和可选 DJ；后端按指定源下发 `source`、`fmSupported`、`djSupported`。前端只展示明确支持的入口，其他已启用源不能借用能力，后端也拒绝不支持的模式。
 
 保留填空、固定 FM 入队和托管。推荐请求在调度时捕获模式与选择代次；关闭、切换模式、更新 Cookie 或启停后拒绝旧请求及迟到结果。推荐错误明确报告，不切换成公开歌单。
 

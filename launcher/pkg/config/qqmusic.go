@@ -8,10 +8,37 @@ import (
 	"strings"
 )
 
+const qqCookieMaximum = 8192
+
+// validateQqCredential accepts both credential shapes:
+//   - a raw Cookie header ("musicid=...; musickey=..."), the same way the NetEase source is configured;
+//   - the legacy native JSON object kept for existing launcher profiles.
+//
+// Both are forwarded to the upstream Web service as the Cookie header, so the
+// validation only rejects values that cannot be a header value.
 func validateQqCredential(value string) error {
-	if strings.TrimSpace(value) == "" {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
 		return nil
 	}
+	if strings.HasPrefix(trimmed, "{") {
+		return validateQqCredentialJSON(trimmed)
+	}
+	return validateQqCredentialCookie(trimmed)
+}
+
+func validateQqCredentialCookie(value string) error {
+	invalid := fmt.Errorf("QQ Cookie must be a Cookie header without control characters")
+	if len(value) > qqCookieMaximum {
+		return invalid
+	}
+	if strings.IndexFunc(value, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
+		return invalid
+	}
+	return nil
+}
+
+func validateQqCredentialJSON(value string) error {
 	invalid := fmt.Errorf("QQ Credential must use the native Web API cookie fields")
 	if len(value) > 32768 {
 		return invalid
