@@ -163,6 +163,11 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                     .bodyToMono(JsonNode.class)
                                     .handle((json, sink) -> {
                                         int code = json.path("code").asInt();
+                                        // -101 = 账号未登录：配置的 Cookie 已经失效。
+                                        if (code == -101) {
+                                            sink.error(SourceAuth.invalid("Bilibili"));
+                                            return;
+                                        }
                                         // 🟢 关键点 1: 检测 WBI 潜在的错误码
                                         // -403: 访问权限不足 (可能是签名挂了)
                                         // -400: 请求错误 (可能是参数/签名校验不过)

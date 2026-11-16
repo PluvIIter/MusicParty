@@ -67,7 +67,13 @@ public class BilibiliApiUtils {
                 .retrieve()
                 .bodyToMono(JsonNode.class))
                 .handle((jsonNode, sink) -> {
-                    if (jsonNode.path("code").asInt() != 0) {
+                    int code = jsonNode.path("code").asInt();
+                    // -101 = 账号未登录：配置的 Cookie 已经失效。
+                    if (code == -101) {
+                        sink.error(org.thornex.musicparty.service.api.SourceAuth.invalid("Bilibili"));
+                        return;
+                    }
+                    if (code != 0) {
                         sink.error(new ApiRequestException("Could not get Bilibili video info: " + jsonNode.path("message").asText()));
                         return;
                     }

@@ -90,4 +90,14 @@ class PlaybackRecoveryControllerTest {
         var error = assertThrows(RuntimeException.class, () -> controller.refreshCurrent("playback-1", "room-secret").block());
         assertFalse(error.getMessage().contains("private-cookie"));
     }
+
+    @Test void credentialErrorsKeepTheirActionableMessage() {
+        when(delivery.refreshSongUrl(track)).thenReturn(Mono.error(
+                new org.thornex.musicparty.exception.ApiRequestException(
+                        "SOURCE_AUTH_REQUIRED: 网易云音乐 Cookie 无效或已过期，请在管理员面板更新后重试")));
+        var error = assertThrows(org.thornex.musicparty.exception.ApiRequestException.class,
+                () -> controller.refreshCurrent("playback-1", "room-secret").block());
+        assertTrue(error.getMessage().startsWith("SOURCE_AUTH_REQUIRED"));
+        assertTrue(error.getMessage().contains("Cookie"));
+    }
 }

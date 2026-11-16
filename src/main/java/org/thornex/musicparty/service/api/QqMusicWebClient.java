@@ -66,9 +66,9 @@ public class QqMusicWebClient {
                         if (!cookie.isBlank()) headers.set("Cookie", cookie);
                     })
                     .exchangeToMono(response -> response.bodyToMono(JsonNode.class)
-                            .switchIfEmpty(Mono.error(unavailable()))
+                            .switchIfEmpty(Mono.error(failure(response.statusCode().value())))
                             .flatMap(root -> {
-                                if (response.statusCode().isError()) return Mono.error(unavailable());
+                                if (response.statusCode().isError()) return Mono.error(failure(response.statusCode().value()));
                                 JsonNode data = root.hasNonNull("data") ? root.get("data") : root;
                                 return Mono.just(data);
                             }));
@@ -76,6 +76,13 @@ public class QqMusicWebClient {
                 .onErrorMap(error -> error instanceof ApiRequestException ? error
                         : new ApiRequestException(error instanceof java.util.concurrent.TimeoutException
                         ? "UPSTREAM_TIMEOUT: QQ音乐Web请求超时" : "UPSTREAM_UNAVAILABLE: QQ音乐Web请求失败"));
+    }
+
+    /** 401/403 表示 Cookie 缺失或失效；429 是上游限流；其余按上游不可用处理。 */
+    private ApiRequestException failure(int status) {
+        if (status == 401 || status == 403) return SourceAuth.invalid("QQ音乐");
+        if (status == 429) return new ApiRequestException("SOURCE_RATE_LIMITED: QQ音乐请求过于频繁，请稍后重试");
+        return unavailable();
     }
 
     private ApiRequestException unavailable() {
