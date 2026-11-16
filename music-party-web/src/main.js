@@ -1,5 +1,6 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
+import './fonts.css';
 import './style.css';
 import App from './App.vue';
 import { APP_VERSION } from './constants/version.js';
