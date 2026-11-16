@@ -339,4 +339,47 @@ class QqMusicApiServiceTest {
         assertFalse(api.isCredentialConfigured());
         assertEquals(0, api.searchMusic("song").block().size());
     }
+    private static com.fasterxml.jackson.databind.node.ObjectNode oneSongPage() {
+        var body = MAPPER.createObjectNode().put("nextpage", -1);
+        body.set("song", MAPPER.createArrayNode().add(json(TRACK)));
+        return body;
+    }
+
+    @Test void repeatedSearchesReuseTheShortCache() {
+        var properties = properties();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        var api = api(properties, client((request, ignored) -> {
+            calls.incrementAndGet();
+            return Mono.just(data(oneSongPage()));
+        }), new QqMusicCredentialService(properties));
+        assertEquals(1, api.searchMusic("缓存关键词").block().size());
+        assertEquals(1, api.searchMusic("缓存关键词").block().size());
+        assertEquals(1, calls.get());
+    }
+
+    @Test void credentialChangeDropsTheSearchCache() {
+        var properties = properties();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        var api = api(properties, client((request, ignored) -> {
+            calls.incrementAndGet();
+            return Mono.just(data(oneSongPage()));
+        }), new QqMusicCredentialService(properties));
+        api.searchMusic("缓存关键词").block();
+        api.updateCookie("musicid=1; musickey=2");
+        api.searchMusic("缓存关键词").block();
+        assertEquals(2, calls.get());
+    }
+
+    @Test void rateLimitedSearchBacksOffAndRetriesOnce() {
+        var properties = properties();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        var api = api(properties, client((request, ignored) -> {
+            if (calls.incrementAndGet() == 1) {
+                return Mono.just(response(HttpStatus.TOO_MANY_REQUESTS, "{\"code\":-1,\"msg\":\"触发风控\"}"));
+            }
+            return Mono.just(data(oneSongPage()));
+        }), new QqMusicCredentialService(properties));
+        assertEquals(1, api.searchMusic("retry").block().size());
+        assertEquals(2, calls.get());
+    }
 }

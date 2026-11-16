@@ -31,11 +31,21 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     /** 搜索每页数量与最多抓取页数：一次搜索最多返回 90 条，不再只有第一页。 */
     private static final int SEARCH_PAGE_SIZE = 30;
     private static final int SEARCH_MAX_PAGES = 3;
+    /** 同一关键词 60 秒内复用结果：QQ 搜索接口按请求频率风控，重复搜索没必要再打上游。 */
+    private static final Duration SEARCH_CACHE_TTL = Duration.ofSeconds(60);
+    private static final int SEARCH_CACHE_LIMIT = 64;
+    /** 翻页之间留一点间隔，避免 3 个请求挤在同一瞬间触发风控。 */
+    private static final Duration SEARCH_PAGE_GAP = Duration.ofMillis(250);
+    /** 触发风控时退避后重试一次。 */
+    private static final Duration SEARCH_RETRY_DELAY = Duration.ofMillis(2000);
 
     private final QqMusicWebClient web;
     private final QqMusicCredentialService credentials;
     private final AppProperties properties;
     private final ObjectMapper mapper;
+    private final Map<String, CachedSearch> searchCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record CachedSearch(List<Music> results, Instant expiresAt) {}
 
     public QqMusicApiService(QqMusicWebClient web, QqMusicCredentialService credentials,
                              AppProperties properties, ObjectMapper mapper) {
@@ -53,7 +63,10 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     @Override public String credentialType() { return "cookie"; }
     @Override public String credentialLabel() { return "QQ音乐 Cookie"; }
     @Override public boolean isCredentialConfigured() { return credentials.configured(); }
-    @Override public void updateCredential(String value) { credentials.updateCookie(value); }
+    @Override public void updateCredential(String value) {
+        credentials.updateCookie(value);
+        searchCache.clear();
+    }
     public void updateCookie(String value) { updateCredential(value); }
     public boolean isCookieConfigured() { return isCredentialConfigured(); }
     @Override public String externalUrl(String id) { return "https://y.qq.com/n/ryqq/songDetail/" + segment(id); }
@@ -69,20 +82,59 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     // === 搜索 ===
 
     @Override public Mono<List<Music>> searchMusic(String keyword) {
-        return Mono.defer(() -> search(keyword, 1, new ArrayList<>()));
+        return Mono.defer(() -> {
+            String normalized = keyword == null ? "" : keyword.strip();
+            List<Music> cached = cachedSearch(normalized);
+            if (cached != null) return Mono.just(cached);
+            return search(normalized, 1, new ArrayList<>(), false)
+                    .doOnNext(result -> rememberSearch(normalized, result));
+        });
     }
 
-    private Mono<List<Music>> search(String keyword, int page, List<Music> output) {
-        return web.get("/search/search_by_type",
-                        Map.of("keyword", keyword, "search_type", 0, "num", SEARCH_PAGE_SIZE, "page", page))
-                .flatMap(data -> {
-                    JsonNode songs = data.path("song");
-                    for (JsonNode song : songs) output.add(track(song));
-                    boolean more = page < SEARCH_MAX_PAGES
-                            && data.path("nextpage").asInt(-1) > 0
-                            && songs.size() >= SEARCH_PAGE_SIZE;
-                    return more ? search(keyword, page + 1, output) : Mono.just(List.copyOf(output));
+    private Mono<List<Music>> search(String keyword, int page, List<Music> output, boolean retried) {
+        Mono<JsonNode> page$ = searchPage(keyword, page)
+                // 风控是瞬时的：隔 2 秒再试一次通常能过，直接失败反而让「搜索时好时坏」更明显。
+                .onErrorResume(error -> {
+                    if (retried || !rateLimited(error)) return Mono.error(error);
+                    return Mono.delay(SEARCH_RETRY_DELAY).then(searchPage(keyword, page));
                 });
+        return page$.flatMap(data -> {
+            JsonNode songs = data.path("song");
+            for (JsonNode song : songs) output.add(track(song));
+            boolean more = page < SEARCH_MAX_PAGES
+                    && data.path("nextpage").asInt(-1) > 0
+                    && songs.size() >= SEARCH_PAGE_SIZE;
+            return more
+                    ? Mono.delay(SEARCH_PAGE_GAP).then(search(keyword, page + 1, output, false))
+                    : Mono.just(List.copyOf(output));
+        });
+    }
+
+    private Mono<JsonNode> searchPage(String keyword, int page) {
+        return web.get("/search/search_by_type",
+                Map.of("keyword", keyword, "search_type", 0, "num", SEARCH_PAGE_SIZE, "page", page));
+    }
+
+    private static boolean rateLimited(Throwable error) {
+        String message = error == null ? null : error.getMessage();
+        return message != null && message.startsWith("SOURCE_RATE_LIMITED");
+    }
+
+    private List<Music> cachedSearch(String keyword) {
+        if (keyword.isEmpty()) return null;
+        CachedSearch entry = searchCache.get(keyword);
+        if (entry == null) return null;
+        if (Instant.now().isAfter(entry.expiresAt())) {
+            searchCache.remove(keyword, entry);
+            return null;
+        }
+        return entry.results();
+    }
+
+    private void rememberSearch(String keyword, List<Music> results) {
+        if (keyword.isEmpty() || results.isEmpty()) return;
+        if (searchCache.size() >= SEARCH_CACHE_LIMIT) searchCache.clear();
+        searchCache.put(keyword, new CachedSearch(List.copyOf(results), Instant.now().plus(SEARCH_CACHE_TTL)));
     }
 
     @Override public Mono<List<UserSearchResult>> searchUsers(String keyword) {
