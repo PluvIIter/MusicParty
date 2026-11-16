@@ -68,7 +68,7 @@
                         :key="`${line.time}-${i}`"
                         class="w-full transition-all duration-300"
                         :class="
-                            i === activeLines.length - 1
+                            isActiveLine(line)
                                 ? 'opacity-100 scale-105 md:scale-100 text-ink'
                                 : 'opacity-40 blur-[0.5px]'
                         "
@@ -78,7 +78,7 @@
                             class="flex items-center overflow-hidden whitespace-nowrap md:whitespace-normal"
                             :class="[
                                 // 当前行且文字溢出：黑色背景槽固定在容器上（居中，至多占屏幕 70%），文字在槽内滚动
-                                i === activeLines.length - 1 && isMobile && isOverflowing(i)
+                                isActiveLine(line) && isMobile && isOverflowing(i)
                                     ? 'bg-brand text-ink-inverse'
                                     : '',
                                 // 溢出行（当前或刚结束）：文字起始贴槽左缘，滚动/定格位置一致；其余行居中（桌面左对齐）
@@ -97,7 +97,7 @@
                         >
                             <span
                                 class="hidden md:inline text-accent mr-2 text-[10px] flex-shrink-0"
-                                :class="{ 'animate-pulse': i === activeLines.length - 1 }"
+                                :class="{ 'animate-pulse': isActiveLine(line) }"
                                 >></span
                             >
                             <span
@@ -106,12 +106,12 @@
                                     // 已测量且未溢出的当前行：保留紧凑黑底高亮（未测量前不渲染背景，避免闪全幅黑条）
                                     {
                                         'bg-brand text-ink-inverse px-1':
-                                            i === activeLines.length - 1 && isMobile && isShort(i),
+                                            isActiveLine(line) && isMobile && isShort(i),
                                     },
-                                    { 'marquee-scroll': i === activeLines.length - 1 && isOverflowing(i) && isMobile },
+                                    { 'marquee-scroll': isActiveLine(line) && isOverflowing(i) && isMobile },
                                 ]"
                                 :style="
-                                    i === activeLines.length - 1 && isOverflowing(i)
+                                    isActiveLine(line) && isOverflowing(i)
                                         ? {
                                               animationDuration: marqueeDuration(line.text, line.time),
                                               '--mp-scroll-dist': `-${scrollDist(i)}px`, // 首字贴左缘 → 末字右缘贴右缘
@@ -376,6 +376,13 @@ const triggerBurst = () => {
 // === 歌词逻辑 ===
 const parsedLyrics = ref([]);
 const currentLineIndex = ref(-1);
+
+// 同一时间戳可能对应多行（原文 + 译文），它们属于同一句，要一起高亮。
+const activeTime = computed(() => {
+    const index = currentLineIndex.value;
+    return index < 0 ? null : parsedLyrics.value[index]?.time ?? null;
+});
+const isActiveLine = (line) => activeTime.value !== null && line.time === activeTime.value;
 
 const activeLines = computed(() => {
     const idx = currentLineIndex.value;
