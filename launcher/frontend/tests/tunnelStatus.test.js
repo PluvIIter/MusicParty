@@ -7,7 +7,7 @@ const ready = { enabled: true, state: 'ready', url, error: '' };
 
 test('default or blank administrator passwords show advice without blocking', () => {
   for (const password of ['', '   ', 'admin123']) {
-    assert.match(tunnelPasswordWarning(true, password), /此提示不影响启动/);
+    assert.match(tunnelPasswordWarning(true, password), /建议设置强密码/);
     assert.equal(tunnelPasswordWarning(false, password), '');
   }
   assert.equal(tunnelPasswordWarning(true, 'a-stronger-password'), '');

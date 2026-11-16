@@ -310,7 +310,7 @@ const openPublicUrl = async () => {
                 <label for="cloudflareTunnel" class="text-[10px] font-black uppercase">Cloudflare 公网隧道</label>
                 <input id="cloudflareTunnel" type="checkbox" v-model="config.cloudflareTunnelEnabled" :disabled="configLocked" class="w-4 h-4 accent-medical-900 disabled:opacity-40" />
               </div>
-              <p class="text-[10px] text-medical-500">开启将把本机服务公开到互联网，建议设置强管理员密码与房间密码；Quick Tunnel临时域名每次重启变化，不保证在线率/大流量音频</p>
+              <p class="text-[10px] text-medical-500">开启将把本机服务公开到互联网，建议设置强管理员密码与房间密码；Quick Tunnel临时域名每次重启变化，无法保证在线率/大流量音频</p>
               <p v-if="passwordWarning" role="status" class="text-[10px] text-amber-700">{{ passwordWarning }}</p>
               <p class="text-[9px] text-medical-400">默认关闭，仅在下次启动时生效；运行或启动期间不可修改配置。</p>
               <div class="text-[10px] font-mono" role="status" aria-live="polite">

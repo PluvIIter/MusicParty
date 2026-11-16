@@ -3,7 +3,7 @@ const quickTunnelUrl = /^https:\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.trycl
 
 export function tunnelPasswordWarning(enabled, password) {
   return enabled && (typeof password !== 'string' || !password.trim() || password === 'admin123')
-    ? '当前管理员密码为空或使用默认值，公网访问存在风险，建议设置强密码；此提示不影响启动。'
+    ? '当前管理员密码为空或使用默认值，公网访问存在风险，建议设置强密码。'
     : '';
 }
 
@@ -27,7 +27,7 @@ export function normalizeTunnelStatus(status) {
   const url = validTunnelUrl(status.url);
   return url
     ? { enabled, state: 'ready', url, error }
-    : { enabled, state: 'failed', url: '', error: '公网隧道地址无效，已禁止访问和复制' };
+    : { enabled, state: 'failed', url: '', error: '公网隧道地址无效' };
 }
 
 export function tunnelUrl(status) {

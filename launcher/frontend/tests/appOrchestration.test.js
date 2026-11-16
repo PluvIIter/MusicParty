@@ -310,7 +310,7 @@ test('disabled tunnel stays off on process and startup failures and unlocks conf
 test('empty and default passwords warn but do not block real component startup', async () => {
   for (const adminPassword of ['', '   ', 'admin123']) {
     const fixture = await createApp({ adminPassword });
-    assert.match(fixture.app.passwordWarning.value, /此提示不影响启动/);
+    assert.match(fixture.app.passwordWarning.value, /建议设置强密码/);
     await start(fixture);
     assert.equal(fixture.calls.save.length, 1);
     assert.equal(fixture.calls.save[0].adminPassword, adminPassword);
