@@ -63,6 +63,41 @@ class LocalCacheServiceTest {
         finally { restored.cleanup(); }
     }
 
+    @Test void followsCdnRedirectsWhenDownloading() throws Exception {
+        byte[] bytes = mp3(512);
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            if (request.url().toString().contains("/primary")) {
+                return Mono.just(ClientResponse.create(HttpStatus.FOUND)
+                        .header("Location", "http://93.184.216.35/mirror").build());
+            }
+            return Mono.just(ClientResponse.create(HttpStatus.OK)
+                    .header("Content-Type", "audio/mpeg")
+                    .body(Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(bytes))).build());
+        }).build();
+        var events = new CopyOnWriteArrayList<String>();
+        ApplicationEventPublisher publisher = event -> events.add(((DownloadStatusEvent) event).getMusicId());
+        LocalCacheService cache = new LocalCacheService(client, publisher, new AppProperties(), directory); cache.init();
+        String key = ResourceKey.encode("stub", "redirected") + ":credentials:0";
+        try {
+            cache.submitDownload(key, Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/primary", ".mp3", Map.of(), "audio/mpeg", "test-audio")), Map.of(), () -> {});
+            await(cache, key, CacheStatus.COMPLETED);
+            assertEquals(512, Files.size(cache.localPath(key)));
+        } finally { cache.cleanup(); }
+    }
+
+    @Test void redirectsToPrivateAddressesAreRejected() {
+        WebClient client = WebClient.builder().exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.FOUND)
+                .header("Location", "http://127.0.0.1/audio").build())).build();
+        var events = new CopyOnWriteArrayList<String>();
+        ApplicationEventPublisher publisher = event -> events.add(((DownloadStatusEvent) event).getMusicId());
+        LocalCacheService cache = new LocalCacheService(client, publisher, new AppProperties(), directory); cache.init();
+        String key = ResourceKey.encode("stub", "ssrf") + ":credentials:0";
+        try {
+            cache.submitDownload(key, Mono.just(new LocalCacheService.DownloadSource("https://93.184.216.34/primary", ".mp3", Map.of(), "audio/mpeg", "test-audio")), Map.of(), () -> {});
+            await(cache, key, CacheStatus.FAILED);
+            assertNull(cache.localPath(key));
+        } finally { cache.cleanup(); }
+    }
     @Test void invalidFormatAndQuotaNeverBecomeReadyOrLeavePartial() throws Exception {
         AppProperties props = new AppProperties(); props.getCache().setMaxSize(DataSize.ofBytes(32));
         LocalCacheService cache = cache(props, mp3(64), new CopyOnWriteArrayList<>());

@@ -48,6 +48,9 @@ public class LocalCacheService {
     private final Object queueEmitter = new Object();
     private static final long MAX_DOWNLOAD_BYTES = 512L * 1024 * 1024;
     private static final Set<String> EXTENSIONS = Set.of(".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav");
+    /** CDN 镜像跳转的上限，防止重定向环。 */
+    private static final int MAX_MEDIA_REDIRECTS = 5;
+    private static final Set<Integer> REDIRECT_STATUS_CODES = Set.of(301, 302, 303, 307, 308);
 
     private record DownloadTask(String key, Mono<DownloadSource> source, Map<String, String> headers, Runnable beforeCommit) {}
 
@@ -188,6 +191,37 @@ public class LocalCacheService {
         });
     }
 
+    /**
+     * 拉取媒体字节流，并自行跟随重定向：B 站 CDN 经常先回 302 跳到另一个镜像，
+     * 而 WebClient 默认不跟随重定向，会把 302 当成「下载被拒」直接失败。
+     * 每一跳都重新走 {@link MediaUrlPolicy#validateUrl(String)}，避免被重定向到内网地址。
+     */
+    private reactor.core.publisher.Flux<DataBuffer> fetchMedia(String url, Map<String, String> headers, int hop) {
+        if (hop > MAX_MEDIA_REDIRECTS) return reactor.core.publisher.Flux.error(new IOException("Too many media redirects"));
+        return Mono.fromCallable(() -> {
+                    MediaUrlPolicy.validateUrl(url);
+                    return url;
+                }).subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(validated -> webClient.get().uri(validated)
+                        .headers(http -> headers.forEach(http::set))
+                        .exchangeToFlux(response -> {
+                            if (REDIRECT_STATUS_CODES.contains(response.statusCode().value())) {
+                                String location = response.headers().asHttpHeaders().getFirst("Location");
+                                String next = location == null || location.isBlank() ? null
+                                        : java.net.URI.create(validated).resolve(location).toString();
+                                if (next == null) return response.releaseBody()
+                                        .thenMany(reactor.core.publisher.Flux.error(new IOException("Media redirect without location")));
+                                return response.releaseBody().thenMany(fetchMedia(next, headers, hop + 1));
+                            }
+                            if (!response.statusCode().is2xxSuccessful()) return response.releaseBody()
+                                    .thenMany(reactor.core.publisher.Flux.error(new IOException("Media download rejected")));
+                            String type = response.headers().contentType().map(Object::toString).orElse("");
+                            if (type.startsWith("text/") || type.contains("json")) return response.releaseBody()
+                                    .thenMany(reactor.core.publisher.Flux.error(new IOException("Invalid media content")));
+                            return response.bodyToFlux(DataBuffer.class);
+                        }));
+    }
+
     private Mono<Void> download(DownloadTask task, CacheEntry entry, DownloadSource source) {
         return Mono.fromCallable(() -> {
             if (!EXTENSIONS.contains(source.extension())) throw new IOException("Unsupported media format");
@@ -201,15 +235,8 @@ public class LocalCacheService {
             Path partial = controlled(name + ".part");
             AtomicLong bytes = new AtomicLong();
             long limit = Math.min(MAX_DOWNLOAD_BYTES, appProperties.getCache().getMaxSize().toBytes());
-            var buffers = webClient.get().uri(source.url()).headers(http -> headers.forEach(http::set))
-                    .exchangeToFlux(response -> {
-                        if (!response.statusCode().is2xxSuccessful()) return response.releaseBody()
-                                .thenMany(reactor.core.publisher.Flux.error(new IOException("Media download rejected")));
-                        String type = response.headers().contentType().map(Object::toString).orElse("");
-                        if (type.startsWith("text/") || type.contains("json")) return response.releaseBody()
-                                .thenMany(reactor.core.publisher.Flux.error(new IOException("Invalid media content")));
-                        return response.bodyToFlux(DataBuffer.class);
-                    }).handle((DataBuffer buffer, reactor.core.publisher.SynchronousSink<DataBuffer> sink) -> {
+            var buffers = fetchMedia(source.url(), headers, 0)
+                    .handle((DataBuffer buffer, reactor.core.publisher.SynchronousSink<DataBuffer> sink) -> {
                         if (bytes.addAndGet(buffer.readableByteCount()) > limit) {
                             DataBufferUtils.release(buffer); sink.error(new IOException("Media exceeds cache quota"));
                         } else sink.next(buffer);
