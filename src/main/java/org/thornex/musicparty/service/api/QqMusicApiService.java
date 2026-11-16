@@ -60,7 +60,7 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
 
     @Override public SourceDescriptor descriptor() {
         // 与网易云一致：搜索/歌词/专辑/用户/收藏/下载/Radio 全部支持，QQ 不提供私人 FM。
-        return new SourceDescriptor(SOURCE, "QQ音乐", "QQ音乐", "music",
+        return new SourceDescriptor(SOURCE, "QQ音乐", "QQMusic", "music",
                 new SourceCapabilities(true, true, true, true, true, false, true, true),
                 Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
                 List.of(new CollectionCategory("playlists", "歌单", "playlist", "CONTAINER")));

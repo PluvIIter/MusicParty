@@ -79,8 +79,16 @@ public class PlaybackRecoveryController {
                 .map(url -> {
                     if (!Objects.equals(delivery.authorizationScope(track.platform()), authorizationScope)) throw new ApiRequestException("媒体凭据已更新，请重试");
                     return new PlayableMusic(track.id(), track.name(), track.artists(), track.duration(), track.platform(), url, track.coverUrl(), track.kind(), track.externalUrl());
-                }).onErrorMap(error -> new ApiRequestException("MEDIA_CONTENT_CHANGED".equals(error.getMessage())
-                        ? "MEDIA_CONTENT_CHANGED" : "播放地址刷新失败，请稍后重试")).cache(Duration.ofSeconds(5));
+                }).onErrorMap(error -> {
+                    String message = error == null ? null : error.getMessage();
+                    if ("MEDIA_CONTENT_CHANGED".equals(message)) return new ApiRequestException("MEDIA_CONTENT_CHANGED");
+                    // 凭据失效/需要会员的提示要原样带到前端，不要被通用文案覆盖。
+                    if (message != null && (message.startsWith(org.thornex.musicparty.service.api.SourceAuth.CODE)
+                            || message.startsWith("MEDIA_FORBIDDEN"))) {
+                        return new ApiRequestException(message);
+                    }
+                    return new ApiRequestException("播放地址刷新失败，请稍后重试");
+                }).cache(Duration.ofSeconds(5));
         return inFlight;
     }
 

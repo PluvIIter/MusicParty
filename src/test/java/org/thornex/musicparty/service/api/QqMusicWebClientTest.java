@@ -79,4 +79,25 @@ class QqMusicWebClientTest {
                 properties, new QqMusicCredentialService(properties));
         assertTrue(web.get("/user/123/created_songlists", Map.of()).block().path("playlists").isArray());
     }
+
+    @Test void unauthorizedResponseReportsAnInvalidCookie() {
+        var properties = properties();
+        var web = new QqMusicWebClient(client((request, ignored) ->
+                Mono.just(response(HttpStatus.UNAUTHORIZED, "{\"detail\":\"unauthorized\"}"))),
+                properties, new QqMusicCredentialService(properties));
+        var error = assertThrows(ApiRequestException.class,
+                () -> web.get("/user/123/created_songlists", Map.of()).block());
+        assertTrue(error.getMessage().startsWith("SOURCE_AUTH_REQUIRED"));
+        assertTrue(error.getMessage().contains("Cookie"));
+    }
+
+    @Test void rateLimitedResponseIsReportedSeparately() {
+        var properties = properties();
+        var web = new QqMusicWebClient(client((request, ignored) ->
+                Mono.just(response(HttpStatus.TOO_MANY_REQUESTS, "{\"detail\":\"slow down\"}"))),
+                properties, new QqMusicCredentialService(properties));
+        var error = assertThrows(ApiRequestException.class,
+                () -> web.get("/search/search_by_type", Map.of()).block());
+        assertTrue(error.getMessage().startsWith("SOURCE_RATE_LIMITED"));
+    }
 }

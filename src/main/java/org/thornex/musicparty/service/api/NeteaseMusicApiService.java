@@ -167,6 +167,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("search", response))
                 .bodyToMono(JsonNode.class)
                 .map(jsonNode -> {
+                    if (isCookieConfigured() && SourceAuth.requiresLogin(jsonNode)) throw SourceAuth.invalid("网易云音乐");
                     List<Music> musicList = new ArrayList<>();
                     JsonNode songs = jsonNode.path("result").path("songs");
                     if (songs.isArray()) {
@@ -231,7 +232,13 @@ public class NeteaseMusicApiService implements IMusicApiService {
     @Override
     public Mono<ResolvedMedia> resolveMedia(String musicId, MediaConsumer consumer) {
         return Mono.defer(() -> requestMedia(musicId, true, consumer)
-                .onErrorResume(error -> requestMedia(musicId, false, consumer)));
+                // 鉴权失败换老接口也没用，只会多打一次上游。
+                .onErrorResume(error -> requiresLogin(error) ? Mono.error(error) : requestMedia(musicId, false, consumer)));
+    }
+
+    private boolean requiresLogin(Throwable error) {
+        String message = error == null ? null : error.getMessage();
+        return message != null && message.startsWith(SourceAuth.CODE);
     }
 
     private Mono<ResolvedMedia> requestMedia(String id, boolean v1, MediaConsumer consumer) {
@@ -239,9 +246,15 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 : "/song/url?id={id}&br={quality}&timestamp={timestamp}";
         return webClient.get().uri(baseUrl + route, id, v1 ? quality : resolveBr(quality), System.currentTimeMillis())
                 .retrieve().bodyToMono(JsonNode.class).map(json -> {
+                    if (isCookieConfigured() && SourceAuth.requiresLogin(json)) throw SourceAuth.invalid("网易云音乐");
                     JsonNode data = json.path("data").path(0);
                     String url = data.path("url").asText("");
-                    if (!url.startsWith("http://") && !url.startsWith("https://")) throw new ApiRequestException("无有效播放地址");
+                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                        // 无地址通常意味着会员/版权限制；如果配置了 Cookie，也可能是 Cookie 已失效。
+                        throw new ApiRequestException(isCookieConfigured()
+                                ? "MEDIA_FORBIDDEN: 网易云返回无可用播放地址（可能需要会员，或 Cookie 已失效）"
+                                : "MEDIA_FORBIDDEN: 网易云返回无可用播放地址（可能需要会员，或未配置 Cookie）");
+                    }
                     String type = data.path("type").asText("mp3").toLowerCase();
                     String mime = switch (type) {
                         case "flac" -> "audio/flac";
@@ -282,6 +295,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("get public playlists", response))
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
+                    if (isCookieConfigured() && SourceAuth.requiresLogin(json)) throw SourceAuth.invalid("网易云音乐");
                     if (json.path("code").asInt(200) != 200 || !json.path("playlist").isArray()) {
                         throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 该用户的歌单不可读取");
                     }
@@ -303,6 +317,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
         if (!"playlist".equals(type)) return IMusicApiService.super.containerDetail(type, id);
         return webClient.get().uri(baseUrl + "/playlist/detail?id={id}", id)
                 .retrieve().bodyToMono(JsonNode.class).map(json -> {
+                    if (isCookieConfigured() && SourceAuth.requiresLogin(json)) throw SourceAuth.invalid("网易云音乐");
                     JsonNode playlist = json.path("playlist");
                     if (json.path("code").asInt(200) != 200 || playlist.path("id").asText("").isBlank()) {
                         throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 歌单不可读取");
@@ -321,6 +336,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("get playlist tracks", response))
                 .bodyToMono(JsonNode.class)
                 .map(jsonNode -> {
+                    if (isCookieConfigured() && SourceAuth.requiresLogin(jsonNode)) throw SourceAuth.invalid("网易云音乐");
                     if (jsonNode.path("code").asInt(200) != 200 || !jsonNode.path("songs").isArray()) {
                         throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 歌单内容不可读取");
                     }

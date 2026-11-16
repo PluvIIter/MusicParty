@@ -60,6 +60,8 @@ public class MusicPlayerService {
     private final AtomicLong timestampAnchor = new AtomicLong(0); // 上一次更新状态时的系统时间(ms)
     /** 每次房间级 seek 自增，客户端据此重锚本地时钟。 */
     private final AtomicLong seekNonce = new AtomicLong(0);
+    /** 每个音源最近一次「Cookie 失效」提示的时间，避免连续跳过时刷屏。 */
+    private final java.util.Map<String, Long> credentialHintAt = new java.util.concurrent.ConcurrentHashMap<>();
 
 
     private final AtomicReference<PlayMode> playMode = new AtomicReference<>(PlayMode.SEQUENTIAL);
@@ -322,6 +324,7 @@ public class MusicPlayerService {
                             queueManager.markPlaybackFailed(nextItem);
                             log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
                             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
+                            publishCredentialHint(nextItem.music().platform(), error);
                             isLoading.set(false);
                             broadcastFullPlayerState();
                             playNextInQueue();
@@ -333,6 +336,18 @@ public class MusicPlayerService {
             isLoading.set(false);
             broadcastFullPlayerState();
         }
+    }
+
+    /** Cookie 失效时给房间一条可操作的提示；同一音源 30 秒内只提示一次。 */
+    private void publishCredentialHint(String platform, Throwable error) {
+        String message = error == null ? null : error.getMessage();
+        if (message == null || !message.startsWith(org.thornex.musicparty.service.api.SourceAuth.CODE)) return;
+        long now = System.currentTimeMillis();
+        Long previous = credentialHintAt.get(platform);
+        if (previous != null && now - previous < 30_000) return;
+        credentialHintAt.put(platform, now);
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
+                PlayerAction.SYSTEM_MESSAGE, "SYSTEM", org.thornex.musicparty.service.api.SourceAuth.userMessage(message)));
     }
 
     /** 播放源决策：托管 > (队列有有效歌曲则队列) > 填充空白 */
@@ -748,7 +763,8 @@ public class MusicPlayerService {
                         },
                         error -> {
                             log.error("Enqueue failed for musicId: {}", request.musicId(), error);
-                            String msg = Objects.toString(error.getMessage(), "音源请求失败");
+                            String msg = org.thornex.musicparty.service.api.SourceAuth.userMessage(
+                                    Objects.toString(error.getMessage(), "音源请求失败"));
                             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, enqueuer.getToken(), "添加失败: " + msg));
                         });
     }

@@ -42,7 +42,7 @@ class QqMusicApiServiceTest {
         var api = api(properties(), client((request, ignored) -> Mono.empty()), credentials());
         var descriptor = api.descriptor();
         assertEquals("QQ音乐", descriptor.label());
-        assertEquals("QQ音乐", descriptor.tabLabel());
+        assertEquals("QQMusic", descriptor.tabLabel());
         assertEquals(DeliveryMode.DIRECT_URL, api.defaultDeliveryMode());
         assertTrue(descriptor.supportedModes().contains(DeliveryMode.DIRECT_URL));
         var capabilities = descriptor.capabilities();
