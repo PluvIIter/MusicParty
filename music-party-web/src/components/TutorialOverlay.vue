@@ -312,22 +312,41 @@ const updatePosition = () => {
         height = window.innerHeight;
     mobile.value = width < 768;
     const step = currentStep.value;
-    let rect = visibleRect(step.targetId && document.getElementById(step.targetId));
-    if (mobile.value && step.mobileTargetId) rect = visibleRect(document.getElementById(step.mobileTargetId)) || rect;
+    const element =
+        (mobile.value && step.mobileTargetId && document.getElementById(step.mobileTargetId)) ||
+        (step.targetId && document.getElementById(step.targetId)) ||
+        null;
+    let rect = visibleRect(element);
+    if (!rect && element) {
+        // 目标在视口外：先滚到中间，滚动事件会再次触发定位。
+        element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+    }
     targetRect.value = rect;
     const panelWidth = Math.min(420, width - 24);
     const panelHeight = Math.min(dialogRef.value?.offsetHeight || 380, height - 24);
+    const gap = 12;
     let top = (height - panelHeight) / 2;
     let left = (width - panelWidth) / 2;
     if (rect) {
-        left = Math.max(12, Math.min(width - panelWidth - 12, rect.left + rect.width / 2 - panelWidth / 2));
-        if (height - rect.bottom >= panelHeight + 24) top = rect.bottom + 12;
-        else if (rect.top >= panelHeight + 24) top = rect.top - panelHeight - 12;
+        left = Math.max(gap, Math.min(width - panelWidth - gap, rect.left + rect.width / 2 - panelWidth / 2));
+        const spaceBelow = height - rect.bottom;
+        const spaceAbove = rect.top;
+        const spaceRight = width - rect.right;
+        const spaceLeft = rect.left;
+        if (spaceBelow >= panelHeight + gap * 2) {
+            top = rect.bottom + gap;
+        } else if (spaceAbove >= panelHeight + gap * 2) {
+            top = rect.top - panelHeight - gap;
+        } else if (spaceRight >= panelWidth + gap * 2 || spaceLeft >= panelWidth + gap * 2) {
+            // 上下都放不下：改放左右，避免弹窗把高亮目标整个盖住。
+            left = spaceRight >= panelWidth + gap * 2 ? rect.right + gap : rect.left - panelWidth - gap;
+            top = Math.max(gap, Math.min(height - panelHeight - gap, rect.top));
+        }
     }
     tourStyle.value = {
         width: `${panelWidth}px`,
         left: `${left}px`,
-        top: `${Math.max(12, Math.min(height - panelHeight - 12, top))}px`,
+        top: `${Math.max(gap, Math.min(height - panelHeight - gap, top))}px`,
     };
 };
 const schedulePosition = () => {
