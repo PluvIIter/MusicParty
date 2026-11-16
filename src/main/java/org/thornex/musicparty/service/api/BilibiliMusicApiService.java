@@ -14,6 +14,7 @@ import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.util.BilibiliApiUtils;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
 import reactor.util.retry.Retry;
@@ -340,7 +341,13 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                 if (!StringUtils.hasText(url)) {
                                     return Mono.error(new ApiRequestException("Empty MP4 url"));
                                 }
-                                return Mono.just(new MediaUrl(url, ".mp4", timeline(cid, json.path("data"))));
+                                List<String> candidates = new ArrayList<>();
+                                candidates.add(url);
+                                for (String field : List.of("backup_url", "backupUrl")) {
+                                    durl.get(0).path(field).forEach(node -> candidates.add(node.asText()));
+                                }
+                                return firstReachable(candidates, Map.of())
+                                        .map(chosen -> new MediaUrl(chosen, ".mp4", timeline(cid, json.path("data"))));
                             });
                 });
     }
@@ -378,11 +385,15 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                 if (audioStreams.isMissingNode() || audioStreams.isEmpty()) {
                                     return Mono.error(new ApiRequestException("No DASH audio found"));
                                 }
-                                String url = pickBestAudioUrl(audioStreams);
-                                if (url == null) {
+                                List<String> candidates = pickAudioCandidates(audioStreams);
+                                if (candidates.isEmpty()) {
                                     return Mono.error(new ApiRequestException("No audio url found in json"));
                                 }
-                                return Mono.just(new MediaUrl(url, ".m4a", timeline(cid, jsonNode.path("data"))));
+                                Map<String, String> headers = Map.of(
+                                        "Referer", "https://www.bilibili.com/",
+                                        "User-Agent", USER_AGENT);
+                                return firstReachable(candidates, headers)
+                                        .map(chosen -> new MediaUrl(chosen, ".m4a", timeline(cid, jsonNode.path("data"))));
                             });
                 });
     }
@@ -402,24 +413,60 @@ public class BilibiliMusicApiService implements IMusicApiService {
     /**
      * 选择最稳的音频流：优先固定档位 192K/132K/64K，兜底取 id 最大。
      */
-    private static String pickBestAudioUrl(JsonNode audioStreams) {
+    static List<String> pickAudioCandidates(JsonNode audioStreams) {
+        JsonNode chosen = null;
         for (int prefId : PREFERRED_AUDIO_IDS) {
             for (JsonNode a : audioStreams) {
-                if (a.path("id").asInt() == prefId) {
-                    return a.path("baseUrl").asText();
-                }
+                if (a.path("id").asInt() == prefId) { chosen = a; break; }
+            }
+            if (chosen != null) break;
+        }
+        if (chosen == null) {
+            int bestId = -1;
+            for (JsonNode a : audioStreams) {
+                int id = a.path("id").asInt();
+                if (id > bestId) { bestId = id; chosen = a; }
             }
         }
-        JsonNode best = null;
-        int bestId = -1;
-        for (JsonNode a : audioStreams) {
-            int id = a.path("id").asInt();
-            if (id > bestId) {
-                bestId = id;
-                best = a;
-            }
+        if (chosen == null) return List.of();
+        // 同一档位通常带多个镜像（backupUrl/backup_url）：主地址失败时还能换一个。
+        LinkedHashSet<String> urls = new LinkedHashSet<>();
+        for (String field : List.of("baseUrl", "base_url")) {
+            String value = chosen.path(field).asText("");
+            if (StringUtils.hasText(value)) urls.add(value);
         }
-        return best != null ? best.path("baseUrl").asText() : null;
+        for (String field : List.of("backupUrl", "backup_url")) {
+            chosen.path(field).forEach(node -> {
+                String value = node.asText("");
+                if (StringUtils.hasText(value)) urls.add(value);
+            });
+        }
+        return List.copyOf(urls);
+    }
+
+    /**
+     * 并发探测候选镜像，返回第一个能拿到数据的地址；全部失败时仍回退到主地址，
+     * 让下载器去暴露真实错误（例如签名过期），而不是在解析阶段就放弃。
+     */
+    Mono<String> firstReachable(List<String> candidates, Map<String, String> headers) {
+        if (candidates.size() <= 1) return Mono.just(candidates.get(0));
+        // 只探测前三个：多打上游容易被 B 站限流，收益也很小。
+        List<String> targets = candidates.size() > 3 ? candidates.subList(0, 3) : candidates;
+        return Flux.fromIterable(targets)
+                .flatMap(url -> probeMedia(url, headers).map(reachable -> url), targets.size())
+                .next()
+                .defaultIfEmpty(candidates.get(0));
+    }
+
+    private Mono<Boolean> probeMedia(String url, Map<String, String> headers) {
+        return webClient.get().uri(url)
+                .headers(http -> headers.forEach(http::set))
+                .header("Range", "bytes=0-0")
+                .exchangeToMono(response -> response.releaseBody()
+                        .thenReturn(response.statusCode().is2xxSuccessful() || response.statusCode().value() == 206))
+                .timeout(java.time.Duration.ofSeconds(2))
+                .onErrorReturn(false)
+                .flatMap(reachable -> reachable ? Mono.just(true) : Mono.empty());
     }
 
     @Override
