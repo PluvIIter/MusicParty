@@ -62,40 +62,51 @@ class QqMusicApiServiceTest {
         return new QqMusicCredentialService(new AppProperties());
     }
 
-    @Test void searchCollectsNativePagesInsteadOfOnlyTheFirstPage() {
+    @Test void searchReturnsOnePagePlusTheNextCursor() {
         var properties = properties();
-        var credentials = new QqMusicCredentialService(properties);
-        List<String> pages = new ArrayList<>();
+        var pages = new ArrayList<String>();
         var api = api(properties, client((request, ignored) -> {
             String queryString = query(request);
             assertEquals("/search/search_by_type", request.url().getPath());
             assertTrue(queryString.contains("num=30"));
-            int page = queryString.contains("page=2") ? 2 : queryString.contains("page=3") ? 3 : 1;
-            pages.add("page=" + page);
+            assertTrue(queryString.contains("page=1"));
+            pages.add(queryString);
             var songs = MAPPER.createArrayNode();
-            for (int index = (page - 1) * 30; index < page * 30; index++) {
+            for (int index = 0; index < 30; index++) {
                 var song = (com.fasterxml.jackson.databind.node.ObjectNode) json(TRACK).deepCopy();
                 song.put("mid", "songMID" + index);
                 songs.add(song);
             }
-            var body = MAPPER.createObjectNode().put("nextpage", page < 3 ? page + 1 : -1);
+            var body = MAPPER.createObjectNode().put("nextpage", 2).put("total_num", 90);
             body.set("song", songs);
             return Mono.just(data(body));
-        }), credentials);
-        var result = api.searchMusic("Song").block();
-        assertEquals(90, result.size());
-        assertEquals(List.of("page=1", "page=2", "page=3"), pages);
-        assertEquals("songMID89", result.getLast().id());
+        }), new QqMusicCredentialService(properties));
+        var page = api.searchMusic("Song", null).block();
+        assertEquals(30, page.items().size());
+        assertEquals(2, page.nextOffset());
+        assertEquals(90L, page.total());
+        assertEquals(1, pages.size());
     }
 
-    @Test void searchStopsWhenUpstreamReportsNoNextPage() {
+    @Test void searchWithACursorAsksForThatPage() {
+        var properties = properties();
+        var api = api(properties, client((request, ignored) -> {
+            assertTrue(query(request).contains("page=3"));
+            return Mono.just(data(json("{\"nextpage\":-1,\"song\":[" + TRACK + "]}")));
+        }), new QqMusicCredentialService(properties));
+        var page = api.searchMusic("Song", 3).block();
+        assertEquals(1, page.items().size());
+    }
+    @Test void searchReportsNoCursorWhenUpstreamHasNoNextPage() {
         var properties = properties();
         var calls = new ArrayList<String>();
         var api = api(properties, client((request, ignored) -> {
             calls.add(request.url().getQuery());
             return Mono.just(data(json("{\"nextpage\":-1,\"song\":[" + TRACK + "]}")));
         }), new QqMusicCredentialService(properties));
-        assertEquals(1, api.searchMusic("Song").block().size());
+        var page = api.searchMusic("Song", null).block();
+        assertEquals(1, page.items().size());
+        assertNull(page.nextOffset());
         assertEquals(1, calls.size());
     }
 
@@ -343,31 +354,6 @@ class QqMusicApiServiceTest {
         var body = MAPPER.createObjectNode().put("nextpage", -1);
         body.set("song", MAPPER.createArrayNode().add(json(TRACK)));
         return body;
-    }
-
-    @Test void repeatedSearchesReuseTheShortCache() {
-        var properties = properties();
-        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
-        var api = api(properties, client((request, ignored) -> {
-            calls.incrementAndGet();
-            return Mono.just(data(oneSongPage()));
-        }), new QqMusicCredentialService(properties));
-        assertEquals(1, api.searchMusic("缓存关键词").block().size());
-        assertEquals(1, api.searchMusic("缓存关键词").block().size());
-        assertEquals(1, calls.get());
-    }
-
-    @Test void credentialChangeDropsTheSearchCache() {
-        var properties = properties();
-        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
-        var api = api(properties, client((request, ignored) -> {
-            calls.incrementAndGet();
-            return Mono.just(data(oneSongPage()));
-        }), new QqMusicCredentialService(properties));
-        api.searchMusic("缓存关键词").block();
-        api.updateCookie("musicid=1; musickey=2");
-        api.searchMusic("缓存关键词").block();
-        assertEquals(2, calls.get());
     }
 
     @Test void rateLimitedSearchBacksOffAndRetriesOnce() {

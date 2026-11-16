@@ -86,4 +86,32 @@ describe('source discovery and identity', () => {
         await nextTick();
         expect(state.songs.value).toEqual([]);
     });
+
+        it('appends the next page and stops at the last cursor', async () => {
+        const requests = [];
+        mocks.search.mockImplementation(() => {
+            const request = deferred();
+            requests.push(request);
+            return request.promise;
+        });
+        const scope = effectScope();
+        const state = scope.run(() => useSearchLogic());
+        state.platform.value = 'netease';
+        state.keyword.value = 'query';
+        state.doSearch();
+        requests[0].resolve({ items: [{ id: 'a' }], nextCursor: '30' });
+        await nextTick();
+        expect(state.songs.value).toEqual([{ id: 'a' }]);
+        expect(state.nextCursor.value).toBe('30');
+        state.loadMore();
+        expect(mocks.search).toHaveBeenCalledTimes(2);
+        expect(mocks.search.mock.calls[1][3]).toBe('30');
+        requests[1].resolve({ items: [{ id: 'b' }], nextCursor: null });
+        await nextTick();
+        expect(state.songs.value).toEqual([{ id: 'a' }, { id: 'b' }]);
+        expect(state.nextCursor.value).toBeNull();
+        state.loadMore();
+        expect(mocks.search).toHaveBeenCalledTimes(2);
+        scope.stop();
+    });
 });

@@ -11,7 +11,12 @@ const options = (signal, params) => ({
 
 export const musicApi = {
     getSources: (signal) => client.get('/api/v2/sources', options(signal)),
-    search: (source, q, signal) => client.get(`${sourcePath(source)}/tracks/search`, options(signal, { q })),
+    // cursor 由音源决定语义（网易云是 offset，QQ/B 站是页码）；为空表示第一页。
+    search: (source, q, signal, cursor) =>
+        client.get(
+            `${sourcePath(source)}/tracks/search`,
+            options(signal, cursor === null || cursor === undefined ? { q } : { q, cursor })
+        ),
     searchUser: (source, q, signal) => client.get(`${sourcePath(source)}/users/search`, options(signal, { q })),
     getCategories: (source, signal) => client.get(`${sourcePath(source)}/collection-categories`, options(signal)),
     getCollections: (source, category, userId, cursor, signal) =>

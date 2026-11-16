@@ -39,6 +39,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private volatile String currentCookie;
     private final AtomicLong credentialRevision = new AtomicLong();
     private static final String PLATFORM = "netease";
+    private static final int SEARCH_PAGE_SIZE = 30;
 
     public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties) {
         this.webClient = webClient.mutate().defaultHeaders(headers -> headers.remove("Cookie"))
@@ -161,8 +162,15 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Music>> searchMusic(String keyword) {
+        return searchMusic(keyword, null).map(SourcePage::items);
+    }
+
+    @Override
+    public Mono<SourcePage<Music>> searchMusic(String keyword, Integer cursor) {
+        int offset = cursor == null || cursor < 0 ? 0 : cursor;
         return webClient.get()
-                .uri(baseUrl + "/search?keywords={keyword}", keyword)
+                .uri(baseUrl + "/search?keywords={keyword}&limit={limit}&offset={offset}",
+                        keyword, SEARCH_PAGE_SIZE, offset)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("search", response))
                 .bodyToMono(JsonNode.class)
@@ -185,7 +193,10 @@ public class NeteaseMusicApiService implements IMusicApiService {
                                     externalUrl(song.path("id").asText())));
                         }
                     }
-                    return musicList;
+                    boolean more = songs.isArray() && songs.size() >= SEARCH_PAGE_SIZE;
+                    long total = jsonNode.path("result").path("songCount").asLong(-1);
+                    return new SourcePage<>(musicList, more ? offset + songs.size() : null,
+                            total >= 0 ? total : null);
                 });
     }
 

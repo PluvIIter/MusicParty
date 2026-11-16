@@ -39,4 +39,39 @@ class NeteaseMusicApiServiceTest {
         assertEquals(320_000, service.resolveBr("unknown"));
         assertEquals(320_000, service.resolveBr(null));
     }
+    @Test
+    void searchPagesByOffsetAndReturnsTheNextCursor() throws Exception {
+        var properties = new AppProperties();
+        properties.getNetease().setBaseUrl("https://netease.test");
+        var requests = new java.util.ArrayList<String>();
+        var songs = new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode();
+        for (int index = 0; index < 30; index++) {
+            var song = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode()
+                    .put("id", "song" + index).put("name", "Song " + index).put("dt", 180000);
+            song.putArray("artists").addObject().put("name", "Artist");
+            song.putObject("al").put("picUrl", "https://p1.music.126.net/cover.jpg");
+            songs.add(song);
+        }
+        var body = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("code", 200);
+        var result = body.putObject("result").put("songCount", 120);
+        result.set("songs", songs);
+        var client = org.springframework.web.reactive.function.client.WebClient.builder()
+                .exchangeFunction(request -> {
+                    requests.add(request.url().toString());
+                    return reactor.core.publisher.Mono.just(
+                            org.springframework.web.reactive.function.client.ClientResponse
+                                    .create(org.springframework.http.HttpStatus.OK)
+                                    .header("Content-Type", "application/json")
+                                    .body(body.toString()).build());
+                }).build();
+        var api = new NeteaseMusicApiService(client, properties);
+
+        var page = api.searchMusic("query", 30).block();
+
+        assertTrue(requests.get(0).contains("limit=30"));
+        assertTrue(requests.get(0).contains("offset=30"));
+        assertEquals(30, page.items().size());
+        assertEquals(60, page.nextOffset());
+        assertEquals(120L, page.total());
+    }
 }

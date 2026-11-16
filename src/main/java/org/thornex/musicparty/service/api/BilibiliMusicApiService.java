@@ -139,15 +139,22 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Music>> searchMusic(String keyword) {
+        return searchMusic(keyword, null).map(SourcePage::items);
+    }
+
+    /** 一次只取一页（20 条），更多结果由前端滚动到底再带 cursor 请求。 */
+    @Override
+    public Mono<SourcePage<Music>> searchMusic(String keyword, Integer cursor) {
+        int page = cursor == null || cursor < 1 ? 1 : cursor;
         // 1. 准备请求参数（严格按照文档要求的 type 搜索）
         Map<String, String> params = new HashMap<>();
         params.put("search_type", "video");
         params.put("keyword", keyword);
-        params.put("page", "1");      // 默认第一页
+        params.put("page", String.valueOf(page));
         params.put("page_size", "20"); // 文档默认 20
 
         // 2. 先取完整 Cookie（buvid3 是搜索接口硬性要求，缺失会 -412），再做 WBI 签名
-        Mono<List<Music>> requestMono = cookieService.getCookieHeader()
+        Mono<SourcePage<Music>> requestMono = cookieService.getCookieHeader()
                 .flatMap(cookie -> wbiService.signParams(params, cookie)
                         .flatMap(signedParams -> {
                             UriComponentsBuilder builder = UriComponentsBuilder
@@ -215,7 +222,12 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                                         picUrl, externalUrl(video.path("bvid").asText())));
                                             });
                                         }
-                                        sink.next(musicList);
+                                        JsonNode meta = json.path("data");
+                                        int numPages = meta.path("numPages").asInt(0);
+                                        int numResults = meta.path("numResults").asInt(0);
+                                        sink.next(new SourcePage<>(musicList,
+                                                page < numPages ? page + 1 : null,
+                                                numResults > 0 ? (long) numResults : null));
                                     });
                         }));
 

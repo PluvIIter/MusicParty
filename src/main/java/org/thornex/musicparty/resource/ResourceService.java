@@ -24,14 +24,14 @@ public class ResourceService {
         this.cursors = cursors;
     }
 
-    public Mono<List<Music>> search(String source, String query) {
+    public Mono<SourcePage<Music>> search(String source, String query, Integer cursor) {
         validateQuery(query);
         var adapter = registry.getRequired(source);
         if (!registry.descriptor(source).capabilities().search()) throw unsupported("此音源不支持搜索");
-        return scoped(queryScope(source), () -> adapter.searchMusic(query).timeout(Duration.ofSeconds(12))
-                .map(items -> items.stream().map(this::withExternalUrl).toList()));
+        return scoped(queryScope(source), () -> adapter.searchMusic(query, cursor).timeout(Duration.ofSeconds(12))
+                .map(page -> new SourcePage<>(page.items().stream().map(this::withExternalUrl).toList(),
+                        page.nextOffset(), page.total())));
     }
-
     public Mono<List<org.thornex.musicparty.dto.UserSearchResult>> users(String source, String query) {
         validateQuery(query);
         var adapter = registry.getRequired(source);

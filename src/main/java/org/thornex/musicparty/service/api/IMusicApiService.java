@@ -36,6 +36,13 @@ public interface IMusicApiService {
     }
     String getPlatformName();
     Mono<List<Music>> searchMusic(String keyword);
+    /**
+     * 分页搜索：{@code cursor} 为空表示第一页，返回的 {@code nextOffset} 为下一页游标
+     * （{@code null} 表示没有更多）。默认实现退化为「只有第一页」。
+     */
+    default Mono<org.thornex.musicparty.source.SourcePage<Music>> searchMusic(String keyword, Integer cursor) {
+        return searchMusic(keyword).map(items -> new org.thornex.musicparty.source.SourcePage<>(items, null, null));
+    }
     Mono<List<UserSearchResult>> searchUsers(String keyword);
     Mono<String> getLyric(String musicId);
     default Mono<org.thornex.musicparty.source.SourcePage<Playlist>> publicCollections(

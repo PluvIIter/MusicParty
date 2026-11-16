@@ -323,7 +323,7 @@
                         }}</span>
                     </div>
 
-                    <div @scroll="handleScroll" class="flex-1 overflow-y-auto overscroll-contain p-2 md:p-4">
+                    <div @scroll="handleResultsScroll" class="flex-1 overflow-y-auto overscroll-contain p-2 md:p-4">
                         <div v-if="loading" class="text-center py-10 font-mono text-accent animate-pulse">
                             > LOADING DATA STREAM...
                         </div>
@@ -418,20 +418,36 @@
                             </div>
                         </div>
 
-                        <!-- 加载更多 -->
-                        <div v-if="listMode === 'playlist' && !loading" class="py-4 text-center">
-                            <div v-if="isLoadingMore" class="flex justify-center text-accent">
+                        <!-- 加载更多：歌单与搜索结果都支持滚动加载，这里保留显式按钮兜底 -->
+                        <div v-if="!loading" class="py-4 text-center">
+                            <div
+                                v-if="listMode === 'playlist' ? isLoadingMore : loadingMore"
+                                class="flex justify-center text-accent"
+                            >
                                 <Loader2 class="w-6 h-6 animate-spin" />
                             </div>
                             <button
-                                v-else-if="hasMore"
+                                v-else-if="listMode === 'playlist' && hasMore"
                                 @click="loadMoreTracks"
                                 class="px-4 py-2 text-xs font-bold text-accent border border-line"
                             >
                                 加载更多曲目
                             </button>
-                            <div v-else-if="!hasMore && songs.length > 0" class="text-xs font-mono text-ink-subtle">
-                                -- END OF PLAYLIST --
+                            <button
+                                v-else-if="listMode === 'search' && nextCursor"
+                                @click="loadMore"
+                                class="px-4 py-2 text-xs font-bold text-accent border border-line"
+                            >
+                                加载更多结果
+                            </button>
+                            <div
+                                v-else-if="
+                                    songs.length > 0 &&
+                                    (listMode === 'playlist' ? !hasMore : !nextCursor)
+                                "
+                                class="text-xs font-mono text-ink-subtle"
+                            >
+                                {{ listMode === 'playlist' ? '-- END OF PLAYLIST --' : '-- NO MORE RESULTS --' }}
                             </div>
                         </div>
                     </div>
@@ -478,7 +494,8 @@ const playerStore = usePlayerStore();
 const userStore = useUserStore();
 const sources = useSourcesStore();
 const selectedAlbumSong = ref(null);
-const { platform, keyword, songs, loading, listMode, doSearch, cancelSearch } = useSearchLogic();
+const { platform, keyword, songs, loading, loadingMore, nextCursor, listMode, doSearch, loadMore, cancelSearch } =
+    useSearchLogic();
 const mode = ref('search');
 const mobileView = ref('playlists');
 const { likedSongs } = useLikedSongs();
@@ -518,6 +535,13 @@ const {
     loading,
     computed(() => props.isOpen && mode.value === 'search')
 );
+/** 搜索结果与歌单共用同一个滚动容器：歌单交给 usePlaylistLogic，搜索接近底部时追加下一页。 */
+const handleResultsScroll = (event) => {
+    handleScroll(event);
+    if (listMode.value !== 'search' || !nextCursor.value || loading.value || loadingMore.value) return;
+    const target = event.target;
+    if (target.scrollHeight - target.scrollTop - target.clientHeight < 160) loadMore();
+};
 watch(() => [bindings.value[platform.value], categoryId.value], cancelSearch, { flush: 'sync' });
 
 const categoryMenuOpen = ref(false);

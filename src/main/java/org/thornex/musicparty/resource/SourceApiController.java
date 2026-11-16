@@ -40,10 +40,22 @@ public class SourceApiController {
     }
 
     @GetMapping("/sources/{source}/tracks/search")
-    public Mono<ResourcePage<Music>> search(@PathVariable String source, @RequestParam String q) {
-        return resources.search(source, q).map(items -> new ResourcePage<>(items, null, null));
+    public Mono<ResourcePage<Music>> search(@PathVariable String source, @RequestParam String q,
+            @RequestParam(required = false) String cursor) {
+        return resources.search(source, q, cursor(cursor))
+                .map(page -> new ResourcePage<>(page.items(),
+                        page.nextOffset() == null ? null : page.nextOffset().toString(), page.total()));
     }
 
+    /** 分页游标由音源自己决定语义（网易云是 offset，QQ/B 站是页码），这里只做数字校验。 */
+    private static Integer cursor(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Integer.valueOf(value.strip());
+        } catch (NumberFormatException error) {
+            throw new org.thornex.musicparty.exception.ApiRequestException("INVALID_CURSOR: 无效分页参数");
+        }
+    }
     @GetMapping("/sources/{source}/users/search")
     public Mono<ResourcePage<UserSearchResult>> users(@PathVariable String source, @RequestParam String q) {
         return resources.users(source, q).map(items -> new ResourcePage<>(items, null, null));

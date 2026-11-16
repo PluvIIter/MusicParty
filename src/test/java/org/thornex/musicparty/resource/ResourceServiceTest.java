@@ -85,15 +85,15 @@ class ResourceServiceTest {
     @Test
     void delayedSearchAndContainerResponsesRejectCredentialRotation() {
         var adapter = adapter();
-        var search = reactor.core.publisher.Sinks.<List<Music>>one();
+        var search = reactor.core.publisher.Sinks.<SourcePage<Music>>one();
         var detail = reactor.core.publisher.Sinks.<Playlist>one();
-        when(adapter.searchMusic("query")).thenReturn(search.asMono());
+        when(adapter.searchMusic("query", null)).thenReturn(search.asMono());
         when(adapter.containerDetail("favorites", "42")).thenReturn(detail.asMono());
         var service = new ResourceService(new SourceRegistry(List.of(adapter), new AppProperties()), new ResourceCursor());
-        var pendingSearch = service.search("fixture", "query").toFuture();
+        var pendingSearch = service.search("fixture", "query", null).toFuture();
         var pendingDetail = service.container("fixture", "favorites", "42").toFuture();
         when(adapter.credentialRevision()).thenReturn(1L);
-        search.tryEmitValue(List.of());
+        search.tryEmitValue(new SourcePage<>(List.of(), null, null));
         detail.tryEmitValue(new Playlist("42", "Old account view", "", 0, "fixture"));
         assertTrue(pendingSearch.isCompletedExceptionally());
         assertTrue(pendingDetail.isCompletedExceptionally());
