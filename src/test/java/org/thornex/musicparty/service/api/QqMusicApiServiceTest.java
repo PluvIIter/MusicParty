@@ -307,7 +307,7 @@ class QqMusicApiServiceTest {
         var message = assertThrows(ApiRequestException.class,
                 () -> api.resolveMedia("songMID", MediaConsumer.SERVER).block()).getMessage();
         assertTrue(message.startsWith("MEDIA_FORBIDDEN"));
-        assertTrue(message.contains("104003"));
+        assertTrue(message.contains("没有返回播放地址"));
     }
 
     @Test void encryptedNativeContainerStaysUnsupported() {

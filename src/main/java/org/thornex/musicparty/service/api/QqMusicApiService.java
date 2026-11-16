@@ -344,8 +344,7 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
             }
             throw new ApiRequestException(result == 0
                     ? "MEDIA_UNAVAILABLE: QQ音乐没有返回可播放地址"
-                    : "MEDIA_FORBIDDEN: QQ音乐没有返回播放地址（result=" + result
-                    + "：该歌曲在 QQ 音乐暂无版权或受地区限制，会员账号也无法播放）");
+                    : "MEDIA_FORBIDDEN: QQ音乐没有返回播放地址");
         }
         String filename = chosen.path("filename").asText("");
         String extension = extension(filename, quality);

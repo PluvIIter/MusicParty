@@ -323,7 +323,9 @@ public class MusicPlayerService {
                             if (playHeadVersion.get() != currentVersion) return;
                             queueManager.markPlaybackFailed(nextItem);
                             log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
-                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
+                            // 失败原因写进那条「加载失败」消息里：它会进聊天历史，便于事后排查。
+                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
+                                    PlayerAction.ERROR_LOAD, "SYSTEM", describePlaybackFailure(nextItem.music(), error)));
                             publishCredentialHint(nextItem.music().platform(), error);
                             isLoading.set(false);
                             broadcastFullPlayerState();
@@ -336,6 +338,14 @@ public class MusicPlayerService {
             isLoading.set(false);
             broadcastFullPlayerState();
         }
+    }
+
+    /** 播放失败的持久化描述：歌名 + 音源 + 原因，写进聊天历史便于排查。 */
+    private static String describePlaybackFailure(Music music, Throwable error) {
+        String reason = org.thornex.musicparty.service.api.SourceAuth.userMessage(
+                error == null ? null : error.getMessage());
+        if (reason == null || reason.isBlank()) return music.name() + "（" + music.platform() + "）";
+        return music.name() + "（" + music.platform() + "：" + reason + "）";
     }
 
     /** Cookie 失效、会员/版权受限等可操作原因给房间一条提示；同一音源 30 秒内只提示一次。 */
