@@ -107,7 +107,8 @@ class QqMusicApiServiceTest {
             return Mono.just(data(json("{\"lyric\":\"[00:01.00]Hello\\n[00:02.50]World\","
                     + "\"trans\":\"[00:01.00]你好\\n[00:02.50]世界\"}")));
         }), new QqMusicCredentialService(properties));
-        assertEquals("[00:01.00]Hello ／ 你好\n[00:02.50]World ／ 世界", api.getLyric("songMID").block());
+        assertEquals("[00:01.00]Hello\n[00:01.000]你好\n[00:02.50]World\n[00:02.500]世界",
+                api.getLyric("songMID").block());
     }
 
     @Test void lyricsWithoutTranslationStayUnchanged() {

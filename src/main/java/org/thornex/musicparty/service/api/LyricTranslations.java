@@ -1,59 +1,84 @@
 package org.thornex.musicparty.service.api;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * 按原歌词时间轴合并译文歌词.
  *
- * <p>网易云的 {@code tlyric} 与 QQ 音乐的 {@code trans} 都是与原歌词同时间轴的 LRC，
- * 这里把同一时间点的译文追加到原文行尾，前端只需要继续按单行 LRC 渲染。</p>
+ * <p>网易云的 {@code tlyric} 与 QQ 音乐的 {@code trans} 都是与原歌词同时间轴的 LRC。
+ * 合并结果仍是纯 LRC：每一句原文后面紧跟一句同时间戳的译文，前端按单行 LRC 解析即可
+ * 把译文显示成独立的一行（原文在上、译文在下），不需要改动解析器。</p>
  */
 final class LyricTranslations {
     private static final Pattern TIME = Pattern.compile("\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?\\]");
     private static final Pattern TIMESTAMP_PREFIX = Pattern.compile("^(?:\\[[^\\]]*\\])+");
-    private static final String SEPARATOR = " ／ ";
+    /** 译文与原文时间戳允许的漂移：上游偶尔少/多几十毫秒。 */
+    private static final long MAX_DRIFT_MS = 300;
+
+    private record Line(long time, String text) { }
 
     private LyricTranslations() { }
 
     static String merge(String lyric, String translation) {
-        if (lyric == null || lyric.isBlank() || translation == null || translation.isBlank()) {
-            return lyric == null ? "" : lyric;
-        }
-        Map<Long, String> translated = parse(translation);
+        if (lyric == null || lyric.isBlank()) return lyric == null ? "" : lyric;
+        if (translation == null || translation.isBlank()) return lyric;
+        List<Line> translated = parse(translation);
         if (translated.isEmpty()) return lyric;
-        String[] lines = lyric.split("\n", -1);
-        StringBuilder merged = new StringBuilder(lyric.length() + translation.length());
-        for (int index = 0; index < lines.length; index++) {
-            if (index > 0) merged.append('\n');
-            String line = lines[index];
-            merged.append(line);
-            Long time = timestamp(line);
+
+        List<String> output = new ArrayList<>();
+        boolean[] used = new boolean[translated.size()];
+        for (String raw : lyric.split("\\R")) {
+            output.add(raw);
+            Long time = timestamp(raw);
             if (time == null) continue;
-            String text = translated.get(time);
-            if (text == null || text.isBlank()) continue;
-            String original = text(line);
-            if (original.isEmpty() || original.equals(text)) continue;
-            merged.append(SEPARATOR).append(text);
+            String original = text(raw);
+            if (original.isEmpty()) continue;
+            int match = nearest(translated, used, time);
+            if (match < 0) continue;
+            used[match] = true;
+            String translatedText = translated.get(match).text();
+            if (translatedText.equals(original)) continue;
+            output.add(format(time) + translatedText);
         }
-        return merged.toString();
+        return String.join("\n", output);
     }
 
-    private static Map<Long, String> parse(String lrc) {
-        Map<Long, String> translated = new LinkedHashMap<>();
-        for (String line : lrc.split("\n")) {
-            Long time = timestamp(line);
-            if (time == null) continue;
-            String text = text(line);
-            if (!text.isEmpty()) translated.putIfAbsent(time, text);
+    /** 找到与原文时间最接近、且尚未被使用的译文；超出漂移上限视为没有译文。 */
+    private static int nearest(List<Line> translated, boolean[] used, long time) {
+        int best = -1;
+        long distance = MAX_DRIFT_MS + 1;
+        for (int index = 0; index < translated.size(); index++) {
+            if (used[index]) continue;
+            long diff = Math.abs(translated.get(index).time() - time);
+            if (diff < distance) {
+                distance = diff;
+                best = index;
+            }
         }
-        return translated;
+        return distance <= MAX_DRIFT_MS ? best : -1;
+    }
+
+    private static List<Line> parse(String lrc) {
+        List<Line> lines = new ArrayList<>();
+        for (String raw : lrc.split("\\R")) {
+            Long time = timestamp(raw);
+            if (time == null) continue;
+            String text = text(raw);
+            if (!text.isEmpty()) lines.add(new Line(time, text));
+        }
+        return lines;
     }
 
     private static String text(String line) {
         return TIMESTAMP_PREFIX.matcher(line == null ? "" : line).replaceFirst("").trim();
+    }
+
+    private static String format(long millis) {
+        return String.format(Locale.ROOT, "[%02d:%02d.%03d]", millis / 60_000, millis % 60_000 / 1_000, millis % 1_000);
     }
 
     private static Long timestamp(String line) {
