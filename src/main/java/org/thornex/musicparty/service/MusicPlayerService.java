@@ -338,10 +338,13 @@ public class MusicPlayerService {
         }
     }
 
-    /** Cookie 失效时给房间一条可操作的提示；同一音源 30 秒内只提示一次。 */
+    /** Cookie 失效、会员/版权受限等可操作原因给房间一条提示；同一音源 30 秒内只提示一次。 */
     private void publishCredentialHint(String platform, Throwable error) {
         String message = error == null ? null : error.getMessage();
-        if (message == null || !message.startsWith(org.thornex.musicparty.service.api.SourceAuth.CODE)) return;
+        if (message == null) return;
+        boolean actionable = message.startsWith(org.thornex.musicparty.service.api.SourceAuth.CODE)
+                || message.startsWith("MEDIA_FORBIDDEN");
+        if (!actionable) return;
         long now = System.currentTimeMillis();
         Long previous = credentialHintAt.get(platform);
         if (previous != null && now - previous < 30_000) return;

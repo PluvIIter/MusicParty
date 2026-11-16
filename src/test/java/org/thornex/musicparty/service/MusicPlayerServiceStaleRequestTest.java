@@ -91,6 +91,17 @@ class MusicPlayerServiceStaleRequestTest {
     }
 
     @Test
+    void membershipRestrictionSurfacesAnActionableHint() {
+        player.playerLoop();
+        first.tryEmitError(new org.thornex.musicparty.exception.ApiRequestException(
+                "MEDIA_FORBIDDEN: QQ音乐拒绝提供播放地址（result=104003）"));
+        verify(PlayerTestFactory.media(player), timeout(5000)).getPlayableMusic("netease", "b");
+        verify(publisher, timeout(5000)).publishEvent(argThat((ApplicationEvent event) ->
+                event instanceof SystemMessageEvent message
+                        && message.getAction() == PlayerAction.SYSTEM_MESSAGE
+                        && message.getPayload().startsWith("MEDIA_FORBIDDEN")));
+    }
+    @Test
     void resetInvalidatesLateFailure() {
         player.playerLoop();
         player.resetSystem();
