@@ -175,7 +175,7 @@ DELIVERY_MODE决定由服务器分发音源链接还是通过服务器下载音�
 
 ### 获取与使用
 1.  前往 [GitHub Releases](https://github.com/pluviiter/MusicParty/releases) 下载最新的 `MusicParty.exe`。
-2.  将 `MusicParty.exe` 放置在你喜欢的文件夹中。
+2.  将 `MusicParty.exe` 放到**纯英文路径**（例如 `D:\MusicParty\`）。路径含中文时 WebView2 无法创建窗口，表现为双击没有反应。
 3.  **直接双击运行**：
     *   启动器会自动释放内置的 JRE、网易云 API、QQ音乐 API、Cloudflare Tunnel，以及 Java 核心程序；按配置启动相应服务。
     *   所有的配置、运行环境、缓存都保存在 EXE 同级目录下。
