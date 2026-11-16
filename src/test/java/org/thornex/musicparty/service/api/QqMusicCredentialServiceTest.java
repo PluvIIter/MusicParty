@@ -69,4 +69,42 @@ class QqMusicCredentialServiceTest {
         assertFalse(service.configured());
         assertEquals("", service.cookie());
     }
+    private static final String BROWSER_COOKIE =
+            "pgv_pvid=1; qlogin_uid=x; qm_keyst=KEY; uin=1534994648; qqmusic_key=KEY; "
+                    + "psrf_qqopenid=OPEN; psrf_qqrefresh_token=RT; psrf_qqaccess_token=AT; "
+                    + "psrf_access_token_expiresAt=1799993907; ts_last=y.qq.com/n/ryqq_v2/songDetail/1";
+
+    @Test void browserCookieIsMappedToMusicIdAndMusicKey() {
+        var service = new QqMusicCredentialService(new AppProperties());
+        service.updateCookie(BROWSER_COOKIE);
+        var cookie = service.cookie();
+        assertTrue(cookie.contains("musicid=1534994648"));
+        assertTrue(cookie.contains("musickey=KEY"));
+        assertTrue(cookie.contains("openid=OPEN"));
+        assertTrue(cookie.contains("refresh_token=RT"));
+        assertTrue(cookie.contains("access_token=AT"));
+        assertTrue(cookie.contains("expired_at=1799993907"));
+    }
+
+    @Test void mappingIsIdempotent() {
+        var service = new QqMusicCredentialService(new AppProperties());
+        service.updateCookie(BROWSER_COOKIE);
+        String mapped = service.cookie();
+        service.updateCookie(mapped);
+        assertEquals(mapped, service.cookie());
+        assertEquals(1, service.revision());
+    }
+
+    @Test void browserCookieWithoutAKeyStaysAnonymous() {
+        var service = new QqMusicCredentialService(new AppProperties());
+        service.updateCookie("uin=1534994648; pgv_pvid=1");
+        assertTrue(service.cookie().contains("uin=1534994648"));
+        assertFalse(service.cookie().contains("musicid"));
+    }
+
+    @Test void deploymentCookieIsNormalizedToo() {
+        var properties = new AppProperties();
+        properties.getQqmusic().setCookie(BROWSER_COOKIE);
+        assertTrue(new QqMusicCredentialService(properties).cookie().contains("musickey=KEY"));
+    }
 }
