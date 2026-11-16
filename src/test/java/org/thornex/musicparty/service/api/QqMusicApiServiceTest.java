@@ -286,15 +286,17 @@ class QqMusicApiServiceTest {
         assertTrue(media.url().contains("M800mediaMID.m4a"));
     }
 
-    @Test void mediaWithoutUsablePurlIsReportedAsUnavailable() {
+    @Test void mediaWithoutUsablePurlReportsTheMembershipRestriction() {
         var properties = properties();
         var api = api(properties, client((request, ignored) -> {
             if (request.url().getPath().endsWith("/detail")) return Mono.just(data(json("{\"track\":" + TRACK + "}")));
             return Mono.just(data(json("{\"data\":[{\"mid\":\"songMID\",\"filename\":\"M800mediaMID.mp3\","
                     + "\"purl\":\"\",\"ekey\":\"\",\"result\":104003}]}")));
         }), new QqMusicCredentialService(properties));
-        assertTrue(assertThrows(ApiRequestException.class,
-                () -> api.resolveMedia("songMID", MediaConsumer.SERVER).block()).getMessage().startsWith("MEDIA_UNAVAILABLE"));
+        var message = assertThrows(ApiRequestException.class,
+                () -> api.resolveMedia("songMID", MediaConsumer.SERVER).block()).getMessage();
+        assertTrue(message.startsWith("MEDIA_FORBIDDEN"));
+        assertTrue(message.contains("104003"));
     }
 
     @Test void encryptedNativeContainerStaysUnsupported() {

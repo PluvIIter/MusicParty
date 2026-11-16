@@ -293,7 +293,18 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
                 }
             }
         }
-        if (chosen == null) throw new ApiRequestException("MEDIA_UNAVAILABLE: QQ音乐没有返回可播放地址");
+        if (chosen == null) {
+            // 104003 = 版权限制 / 需要会员：带上上游 result，给出可操作提示而不是笼统的「没有地址」。
+            int result = 0;
+            for (JsonNode item : data.path("data")) {
+                int candidate = item.path("result").asInt(0);
+                if (candidate != 0) { result = candidate; break; }
+            }
+            throw new ApiRequestException(result == 0
+                    ? "MEDIA_UNAVAILABLE: QQ音乐没有返回可播放地址"
+                    : "MEDIA_FORBIDDEN: QQ音乐拒绝提供播放地址（result=" + result
+                    + "，通常表示该歌曲需要会员或受版权限制），请在管理员面板配置含会员的 QQ 音乐 Cookie");
+        }
         String filename = chosen.path("filename").asText("");
         String extension = extension(filename, quality);
         String location = location(chosen.path("purl").asText(""));
