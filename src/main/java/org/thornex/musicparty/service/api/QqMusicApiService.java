@@ -31,13 +31,17 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     /** 搜索每页数量与最多抓取页数：一次搜索最多返回 90 条，不再只有第一页。 */
     /** 每页 30 条：一次搜索只取一页，更多结果由前端滚动时再请求。 */
     private static final int SEARCH_PAGE_SIZE = 30;
-    /** 触发风控时退避后重试一次。 */
-    private static final Duration SEARCH_RETRY_DELAY = Duration.ofMillis(2000);
+    /** 本机搜索最小间隔与命中 429 后的退避序列。 */
+    private static final Duration SEARCH_MIN_GAP = Duration.ofMillis(1200);
+    private static final Duration[] SEARCH_RETRY_DELAYS = {
+            Duration.ofMillis(2500), Duration.ofMillis(6000) };
 
     private final QqMusicWebClient web;
     private final QqMusicCredentialService credentials;
     private final AppProperties properties;
     private final ObjectMapper mapper;
+    private final Object searchGate = new Object();
+    private final java.util.concurrent.atomic.AtomicLong nextSearchAt = new java.util.concurrent.atomic.AtomicLong();
 
     public QqMusicApiService(QqMusicWebClient web, QqMusicCredentialService credentials,
                              AppProperties properties, ObjectMapper mapper) {
@@ -81,24 +85,42 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     @Override public Mono<SourcePage<Music>> searchMusic(String keyword, Integer cursor) {
         String normalized = keyword == null ? "" : keyword.strip();
         int page = cursor == null || cursor < 1 ? 1 : cursor;
-        return Mono.defer(() -> searchPage(normalized, page)
-                // 风控是瞬时的：隔 2 秒再试一次通常能过，直接失败反而让「搜索时好时坏」更明显。
-                .onErrorResume(error -> {
-                    if (!rateLimited(error)) return Mono.error(error);
-                    return Mono.delay(SEARCH_RETRY_DELAY).then(searchPage(normalized, page));
-                })
+        return reserveSearchSlot()
+                .flatMap(wait -> wait <= 0 ? Mono.<Void>empty() : Mono.delay(Duration.ofMillis(wait)).then())
+                .then(searchPage(normalized, page, 0))
                 .map(data -> {
                     List<Music> items = new ArrayList<>();
                     for (JsonNode song : data.path("song")) items.add(track(song));
                     int nextPage = data.path("nextpage").asInt(-1);
                     long total = data.path("total_num").asLong(-1);
                     return new SourcePage<>(items, nextPage > 0 ? nextPage : null, total >= 0 ? total : null);
-                }));
+                });
     }
 
-    private Mono<JsonNode> searchPage(String keyword, int page) {
+    /**
+     * QQ 搜索风控按请求频率计算：先给本机加一道最小间隔，避免多人同时搜索时挤在一起；
+     * 命中 429 后再按 2.5s / 6s 退避重试两次（实测等几秒往往就能过）。
+     */
+    private Mono<JsonNode> searchPage(String keyword, int page, int attempt) {
         return web.get("/search/search_by_type",
-                Map.of("keyword", keyword, "search_type", 0, "num", SEARCH_PAGE_SIZE, "page", page));
+                        Map.of("keyword", keyword, "search_type", 0, "num", SEARCH_PAGE_SIZE, "page", page))
+                .onErrorResume(error -> {
+                    if (!rateLimited(error) || attempt >= SEARCH_RETRY_DELAYS.length) return Mono.error(error);
+                    return Mono.delay(SEARCH_RETRY_DELAYS[attempt])
+                            .then(searchPage(keyword, page, attempt + 1));
+                });
+    }
+
+    /** 预约一个搜索时隙：与上一次至少间隔 {@link #SEARCH_MIN_GAP}，返回需要等待的毫秒数。 */
+    private Mono<Long> reserveSearchSlot() {
+        return Mono.fromCallable(() -> {
+            synchronized (searchGate) {
+                long now = System.currentTimeMillis();
+                long start = Math.max(now, nextSearchAt.get());
+                nextSearchAt.set(start + SEARCH_MIN_GAP.toMillis());
+                return Math.max(0L, start - now);
+            }
+        });
     }
 
     private static boolean rateLimited(Throwable error) {
@@ -322,8 +344,8 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
             }
             throw new ApiRequestException(result == 0
                     ? "MEDIA_UNAVAILABLE: QQ音乐没有返回可播放地址"
-                    : "MEDIA_FORBIDDEN: QQ音乐拒绝提供播放地址（result=" + result
-                    + "，通常表示该歌曲需要会员或受版权限制），请在管理员面板配置含会员的 QQ 音乐 Cookie");
+                    : "MEDIA_FORBIDDEN: QQ音乐没有返回播放地址（result=" + result
+                    + "：该歌曲在 QQ 音乐暂无版权或受地区限制，会员账号也无法播放）");
         }
         String filename = chosen.path("filename").asText("");
         String extension = extension(filename, quality);
