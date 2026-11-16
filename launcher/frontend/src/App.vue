@@ -4,7 +4,7 @@ import { LoadConfig, SaveConfig, StartServices, StopServices, GetServiceStatuses
 import { emptyTunnelStatus, normalizeTunnelStatus, tunnelUrl, copyTunnelUrl, createStatusPoll, tunnelPasswordWarning } from './tunnelStatus';
 import { createServiceAttempt } from './serviceAttempt';
 import { EventsOn } from './wailsjs/runtime';
-import { sourceSettingsRows, deliveryModeLabel, connectionFieldsFor } from './sourceSettings';
+import { sourceSettingsRows, deliveryModeLabel } from './sourceSettings';
 
 const config = reactive({
   serverIp: '0.0.0.0',
@@ -17,8 +17,7 @@ const config = reactive({
   neteaseCookie: '',
   neteaseQuality: 'exhigh',
   biliCookie: '',
-  qqmusicGatewayMode: 'bundled',
-  qqmusicBaseUrl: 'http://127.0.0.1:8080',
+
   qqmusicCookie: '',
   qqmusicQuality: 'MP3_128',
   sources: {},
@@ -342,13 +341,11 @@ const openPublicUrl = async () => {
 
           <!-- 接口设置 -->
           <div v-if="activeTab === 'api'" class="space-y-4">
-            <p class="text-[10px] text-medical-500">请求会携带该音源已配置的 Cookie；是否采用登录身份、可访问内容及缓存行为按上游接口原生规则处理。网页绑定用户只是查询目标，不会登录对方账号，也不会自动改为查询配置账号的收藏。</p>
             <div v-for="source in sourceRows" :key="source.id" class="bg-white p-4 border border-medical-200 shadow-sm space-y-4">
               <div class="flex items-center justify-between border-b border-medical-100 pb-2 mb-2">
                 <h3 class="text-[10px] font-black uppercase">{{ source.label }}</h3>
                 <input :disabled="configLocked" type="checkbox" v-model="config.sources[source.id].enabled" :aria-label="`启用 ${source.label}`" class="w-4 h-4 accent-medical-900" />
               </div>
-              <p v-if="source.description" class="text-[10px] text-medical-500">{{ source.description }}</p>
               <fieldset :disabled="!config.sources[source.id].enabled" class="space-y-4 disabled:opacity-40">
                 <div class="space-y-1">
                   <label :for="`delivery-${source.id}`" class="text-[10px] font-bold text-medical-500 uppercase">音频交付方式</label>
@@ -356,13 +353,12 @@ const openPublicUrl = async () => {
                     <option v-for="mode in source.supportedModes" :key="mode" :value="mode">{{ deliveryModeLabel(mode) }}</option>
                   </select>
                 </div>
-                <div v-for="field in connectionFieldsFor(source, config)" :key="field.key" class="space-y-1">
+                <div v-for="field in source.connectionFields" :key="field.key" class="space-y-1">
                   <label :for="`connection-${field.key}`" class="text-[10px] font-bold text-medical-500 uppercase">{{ field.label }}</label>
                   <select :disabled="configLocked" v-if="field.kind === 'select'" :id="`connection-${field.key}`" v-model="config[field.key]" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-sm outline-none focus:border-medical-900">
                     <option v-for="option in field.options" :key="option.value" :value="option.value">{{ option.label }}</option>
                   </select>
-                  <input :disabled="configLocked" v-else :id="`connection-${field.key}`" v-model="config[field.key]" :type="field.kind" :placeholder="field.placeholder" autocomplete="off" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
-                  <p v-if="field.placeholder" class="text-[9px] text-medical-400">{{ field.placeholder }}</p>
+                  <input :disabled="configLocked" v-else :id="`connection-${field.key}`" v-model="config[field.key]" :type="field.kind" autocomplete="off" class="w-full bg-medical-50 border border-medical-200 px-2 py-1.5 text-[10px] font-mono outline-none focus:border-medical-900" />
                 </div>
               </fieldset>
             </div>

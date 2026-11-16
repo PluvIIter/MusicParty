@@ -62,7 +62,7 @@ func TestInvalidConfigIsRejected(t *testing.T) {
 	} {
 		cfg := DefaultConfig()
 		cfg.Sources[source.id] = SourceConfig{true, source.mode}
-		if _, err := cfg.JavaArgs("server.jar"); err == nil {
+		if _, err := cfg.JavaArgs("server.jar", "http://127.0.0.1:43210"); err == nil {
 			t.Fatalf("invalid source accepted: %#v", source)
 		}
 	}
@@ -75,7 +75,7 @@ func TestJavaArgsUseGenericSourceProperties(t *testing.T) {
 	cfg.Sources["test-source"] = SourceConfig{true, ServerDownload}
 	cfg.NeteaseCookie = "token=one two; value=三"
 	cfg.BiliCookie = "SESSDATA=private"
-	args, err := cfg.JavaArgs("path with spaces/server.jar")
+	args, err := cfg.JavaArgs("path with spaces/server.jar", "http://127.0.0.1:43210")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestJavaArgsUseCanonicalAuthProperties(t *testing.T) {
 	cfg.AuthMaxAttempts = 7
 	cfg.AuthWindowSeconds = 90
 	cfg.AuthBlockDuration = 600
-	args, err := cfg.JavaArgs("server.jar")
+	args, err := cfg.JavaArgs("server.jar", "http://127.0.0.1:43210")
 	if err != nil {
 		t.Fatal(err)
 	}

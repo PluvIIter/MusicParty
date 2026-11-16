@@ -31,7 +31,6 @@ type Controller struct {
 	manager       *process.ServiceManager
 	cancel        context.CancelFunc
 	ready         bool
-	bundled       bool
 }
 
 func NewController(binDir, deviceDir string, log func(string)) *Controller {
@@ -71,7 +70,7 @@ func (c *Controller) Statuses() map[string]bool {
 	for name, alive := range c.manager.GetStatuses() {
 		statuses[name] = alive
 	}
-	statuses["QQMUSIC_API"] = c.ready && (!c.bundled || statuses["QQMUSIC_API"])
+	statuses["QQMUSIC_API"] = c.ready && statuses["QQMUSIC_API"]
 	return statuses
 }
 
@@ -89,7 +88,7 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 	if c.cancel != nil {
 		c.cancel()
 	}
-	c.manager, c.cancel, c.ready, c.bundled = manager, cancel, false, false
+	c.manager, c.cancel, c.ready = manager, cancel, false
 	c.tunnel = TunnelStatus{State: "off"}
 	if cfg != nil && cfg.CloudflareTunnelEnabled {
 		c.tunnel = TunnelStatus{Enabled: true, State: "starting"}
@@ -141,47 +140,41 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 		active.Sources[id] = source
 	}
 	var handles []*process.Handle
+	qqBaseURL := ""
 	if active.SourceEnabled("qqmusic") {
-		bundled := active.QqmusicGatewayMode == "bundled"
-		c.mu.Lock()
-		c.bundled = bundled
-		c.mu.Unlock()
-		var gateway *process.Handle
-		if bundled {
-			gatewayDir := c.GatewayDir
-			if gatewayDir == "" {
-				gatewayDir = filepath.Join(c.BinDir, "qqmusic")
-			}
-			python := filepath.Join(gatewayDir, "python", executable("python"))
-			upstream := filepath.Join(gatewayDir, "upstream", "source")
-			app := filepath.Join(upstream, "web", "run.py")
-			for _, path := range []string{python, app, filepath.Join(upstream, "web", "src", "app.py")} {
-				info, statErr := os.Stat(path)
-				if statErr != nil || info.IsDir() {
-					return fmt.Errorf("bundled QQ runtime is incomplete; reinstall the complete launcher package")
-				}
-			}
-			listener, listenErr := net.Listen("tcp4", "127.0.0.1:0")
-			if listenErr != nil {
-				return fmt.Errorf("cannot allocate QQ loopback port")
-			}
-			port := listener.Addr().(*net.TCPAddr).Port
-			listener.Close()
-			active.QqmusicBaseURL = "http://127.0.0.1:" + strconv.Itoa(port)
-			if mkdirErr := os.MkdirAll(c.DeviceDir, 0700); mkdirErr != nil {
-				return fmt.Errorf("cannot prepare QQ device directory")
-			}
-			gateway, err = manager.Start(process.Spec{Name: "QQMUSIC_API", Command: python, Args: []string{"-I", "-B", app}, Dir: upstream, Quiet: true, UnsetEnv: inheritedQqVariables(os.Environ()),
-				Env: map[string]string{"QQMUSIC_SERVER_HOST": "127.0.0.1", "QQMUSIC_SERVER_PORT": strconv.Itoa(port), "QQMUSIC_SERVER_WORKERS": "1", "QQMUSIC_CREDENTIAL_ENABLED": "false",
-					"QQMUSIC_CREDENTIAL_STORE_PATH": filepath.Join(c.DeviceDir, "qqmusic-credentials.sqlite3"), "QQMUSIC_CLIENT_DEVICE_PATH": filepath.Join(c.DeviceDir, "qqmusic-device.json"), "QQMUSIC_LOGGING_LEVEL": "WARNING",
-					"PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "", "PYTHONHOME": ""}})
-			if err != nil {
-				return err
-			}
-			handles = append(handles, gateway)
+		gatewayDir := c.GatewayDir
+		if gatewayDir == "" {
+			gatewayDir = filepath.Join(c.BinDir, "qqmusic")
 		}
+		python := filepath.Join(gatewayDir, "python", executable("python"))
+		upstream := filepath.Join(gatewayDir, "upstream", "source")
+		app := filepath.Join(upstream, "web", "run.py")
+		for _, path := range []string{python, app, filepath.Join(upstream, "web", "src", "app.py")} {
+			info, statErr := os.Stat(path)
+			if statErr != nil || info.IsDir() {
+				return fmt.Errorf("bundled QQ runtime is incomplete; reinstall the complete launcher package")
+			}
+		}
+		listener, listenErr := net.Listen("tcp4", "127.0.0.1:0")
+		if listenErr != nil {
+			return fmt.Errorf("cannot allocate QQ loopback port")
+		}
+		port := listener.Addr().(*net.TCPAddr).Port
+		listener.Close()
+		qqBaseURL = "http://127.0.0.1:" + strconv.Itoa(port)
+		if mkdirErr := os.MkdirAll(c.DeviceDir, 0700); mkdirErr != nil {
+			return fmt.Errorf("cannot prepare QQ device directory")
+		}
+		gateway, startErr := manager.Start(process.Spec{Name: "QQMUSIC_API", Command: python, Args: []string{"-I", "-B", app}, Dir: upstream, Quiet: true, UnsetEnv: inheritedQqVariables(os.Environ()),
+			Env: map[string]string{"QQMUSIC_SERVER_HOST": "127.0.0.1", "QQMUSIC_SERVER_PORT": strconv.Itoa(port), "QQMUSIC_SERVER_WORKERS": "1", "QQMUSIC_CREDENTIAL_ENABLED": "false",
+				"QQMUSIC_CREDENTIAL_STORE_PATH": filepath.Join(c.DeviceDir, "qqmusic-credentials.sqlite3"), "QQMUSIC_CLIENT_DEVICE_PATH": filepath.Join(c.DeviceDir, "qqmusic-device.json"), "QQMUSIC_LOGGING_LEVEL": "WARNING",
+				"PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "", "PYTHONHOME": ""}})
+		if startErr != nil {
+			return startErr
+		}
+		handles = append(handles, gateway)
 		readyCtx, readyCancel := context.WithTimeout(ctx, c.ReadyTimeout)
-		err = waitGateway(readyCtx, c.Client, active.QqmusicBaseURL, gateway)
+		err = waitGateway(readyCtx, c.Client, qqBaseURL, gateway)
 		readyCancel()
 		if err != nil {
 			return err
@@ -224,7 +217,7 @@ func (c *Controller) Start(parent context.Context, cfg *config.AppConfig) (err e
 		active.BaseURL = publicURL
 		handles = append(handles, tunnelHandle)
 	}
-	args, err := active.JavaArgs(filepath.Join(c.BinDir, "server.jar"))
+	args, err := active.JavaArgs(filepath.Join(c.BinDir, "server.jar"), qqBaseURL)
 	if err != nil {
 		return err
 	}

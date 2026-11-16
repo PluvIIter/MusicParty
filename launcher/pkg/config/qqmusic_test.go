@@ -9,33 +9,52 @@ import (
 
 func TestNativeQqDefaultsAndMissingCurrentConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Sources["qqmusic"] != (SourceConfig{false, DirectURL}) || cfg.QqmusicGatewayMode != "bundled" || cfg.QqmusicBaseURL != "http://127.0.0.1:8080" {
+	if cfg.Sources["qqmusic"] != (SourceConfig{false, DirectURL}) || cfg.QqmusicQuality != "MP3_320" {
 		t.Fatal("unsafe QQ defaults")
 	}
 	cfg, err := DecodeConfig([]byte(`{"sources":{"netease":{"enabled":false,"deliveryMode":"DIRECT_URL"}},"serverPort":"9000"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Sources["qqmusic"] != (SourceConfig{false, DirectURL}) || cfg.QqmusicBaseURL != "http://127.0.0.1:8080" || cfg.QqmusicGatewayMode != "bundled" || cfg.ServerPort != "9000" || cfg.Sources["netease"].Enabled {
+	if cfg.Sources["qqmusic"] != (SourceConfig{false, DirectURL}) || cfg.QqmusicQuality != "MP3_320" || cfg.ServerPort != "9000" || cfg.Sources["netease"].Enabled {
 		t.Fatal("missing QQ defaults changed configured values")
 	}
-	cfg, err = DecodeConfig([]byte(`{"sources":{"qqmusic":{"enabled":false,"deliveryMode":"DIRECT_URL"}},"qqmusicBaseUrl":"http://external.test:8001","qqmusicCookie":"kept credential"}`))
+	for _, field := range SourceDescriptors() {
+		if field.ID != "qqmusic" {
+			continue
+		}
+		if field.LocalService != "QQMUSIC_API" {
+			t.Fatal("native Web API descriptor missing")
+		}
+		// 与网易云一致：只有 Cookie 与音质两个字段，没有「运行方式 / 外部 API 地址」。
+		var keys []string
+		for _, connection := range field.ConnectionFields {
+			keys = append(keys, connection.Key)
+			if connection.Key == "qqmusicCookie" && connection.Kind != "password" {
+				t.Fatal("credential is not masked")
+			}
+		}
+		if !reflect.DeepEqual(keys, []string{"qqmusicCookie", "qqmusicQuality"}) {
+			t.Fatalf("unexpected QQ connection fields: %v", keys)
+		}
+	}
+}
+
+func TestLegacyQqGatewayKeysAreIgnored(t *testing.T) {
+	cfg, err := DecodeConfig([]byte(`{"sources":{"qqmusic":{"enabled":false,"deliveryMode":"DIRECT_URL"}},"qqmusicBaseUrl":"http://external.test:8001","qqmusicGatewayMode":"external","qqmusicCookie":"kept credential"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.QqmusicGatewayMode != "external" || cfg.QqmusicCookie != "kept credential" {
-		t.Fatal("custom external API configuration changed")
+	if cfg.QqmusicCookie != "kept credential" {
+		t.Fatal("cookie lost while dropping legacy gateway keys")
 	}
-	for _, field := range SourceDescriptors() {
-		if field.ID == "qqmusic" {
-			if field.LocalService != "QQMUSIC_API" || !strings.Contains(field.Description, "1124") {
-				t.Fatal("native Web API descriptor missing")
-			}
-			for _, connection := range field.ConnectionFields {
-				if connection.Key == "qqmusicCookie" && connection.Kind != "password" {
-					t.Fatal("credential is not masked")
-				}
-			}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, legacy := range []string{"qqmusicGatewayMode", "qqmusicBaseUrl"} {
+		if strings.Contains(string(data), legacy) {
+			t.Fatalf("legacy key %s was written back", legacy)
 		}
 	}
 }
@@ -43,8 +62,6 @@ func TestNativeQqDefaultsAndMissingCurrentConfig(t *testing.T) {
 func TestNativeQqConfigAndArgumentsPreserveSettings(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Sources["qqmusic"] = SourceConfig{true, DirectURL}
-	cfg.QqmusicGatewayMode = "external"
-	cfg.QqmusicBaseURL = "http://api.test:8001"
 	cfg.QqmusicCookie = "musicid=123; musickey=private value; ascii; openid=id; refresh_token=refresh"
 	cfg.QqmusicQuality = "FLAC"
 	data, err := json.Marshal(cfg)
@@ -58,7 +75,7 @@ func TestNativeQqConfigAndArgumentsPreserveSettings(t *testing.T) {
 	if !reflect.DeepEqual(cfg, restored) {
 		t.Fatal("native config changed")
 	}
-	args, err := cfg.JavaArgs("server.jar")
+	args, err := cfg.JavaArgs("server.jar", "http://127.0.0.1:43210")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +85,11 @@ func TestNativeQqConfigAndArgumentsPreserveSettings(t *testing.T) {
 			actual = append(actual, arg)
 		}
 	}
-	want := []string{"--app.music-api.qqmusic.base-url=" + cfg.QqmusicBaseURL, "--app.music-api.qqmusic.cookie=" + cfg.QqmusicCookie, "--app.music-api.qqmusic.quality=FLAC"}
+	want := []string{
+		"--app.music-api.qqmusic.base-url=http://127.0.0.1:43210",
+		"--app.music-api.qqmusic.cookie=" + cfg.QqmusicCookie,
+		"--app.music-api.qqmusic.quality=FLAC",
+	}
 	if !reflect.DeepEqual(actual, want) {
 		t.Fatal("native QQ Java arguments do not match contract")
 	}
@@ -90,11 +111,13 @@ func TestNativeQqCookieCredentials(t *testing.T) {
 	}
 }
 
-func TestNativeExternalQqValidationWithoutSecretEcho(t *testing.T) {
-	for _, update := range []func(*AppConfig){func(c *AppConfig) { c.QqmusicBaseURL = "http://user:private@api.test" }, func(c *AppConfig) { c.QqmusicBaseURL = "http://api.test?private=1" }, func(c *AppConfig) { c.QqmusicQuality = "private" }, func(c *AppConfig) { c.QqmusicCookie = "private\ncookie" }} {
+func TestNativeQqValidationWithoutSecretEcho(t *testing.T) {
+	for _, update := range []func(*AppConfig){
+		func(c *AppConfig) { c.QqmusicQuality = "private" },
+		func(c *AppConfig) { c.QqmusicCookie = "private\ncookie" },
+	} {
 		cfg := DefaultConfig()
 		cfg.Sources["qqmusic"] = SourceConfig{true, ServerDownload}
-		cfg.QqmusicGatewayMode = "external"
 		update(cfg)
 		if err := cfg.Validate(); err == nil || strings.Contains(err.Error(), "private") {
 			t.Fatal("invalid native settings accepted or exposed")

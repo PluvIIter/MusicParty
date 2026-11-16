@@ -2,7 +2,9 @@ package config
 
 import "fmt"
 
-func (c *AppConfig) JavaArgs(jarPath string) ([]string, error) {
+// JavaArgs 生成主应用的启动参数。qqBaseURL 由启动器在运行时选定（内置 QQ API 的本地回环端口），
+// 不进入配置文件。
+func (c *AppConfig) JavaArgs(jarPath string, qqBaseURL string) ([]string, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -18,7 +20,7 @@ func (c *AppConfig) JavaArgs(jarPath string) ([]string, error) {
 		fmt.Sprintf("--app.music-api.netease.cookie=%s", c.NeteaseCookie),
 		fmt.Sprintf("--app.music-api.netease.quality=%s", c.NeteaseQuality),
 		fmt.Sprintf("--app.music-api.bilibili.cookie=%s", c.BiliCookie),
-		fmt.Sprintf("--app.music-api.qqmusic.base-url=%s", c.QqmusicBaseURL),
+		fmt.Sprintf("--app.music-api.qqmusic.base-url=%s", qqBaseURL),
 		fmt.Sprintf("--app.music-api.qqmusic.cookie=%s", c.QqmusicCookie),
 		fmt.Sprintf("--app.music-api.qqmusic.quality=%s", c.QqmusicQuality),
 		fmt.Sprintf("--app.music-api.queue.max-size=%d", c.QueueMaxSize),

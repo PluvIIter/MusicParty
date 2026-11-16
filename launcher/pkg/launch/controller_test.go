@@ -44,7 +44,11 @@ func TestLaunchHelper(t *testing.T) {
 	if os.Getenv("QQMUSIC_CREDENTIAL_ENABLED") != "false" || os.Getenv("QQMUSIC_SERVER_WORKERS") != "1" || os.Getenv("QQMUSIC_SERVER_HOST") != "127.0.0.1" || os.Getenv("QQMUSIC_DEFAULT_ACCOUNT") != "" {
 		os.Exit(7)
 	}
-	mux.HandleFunc("/", nativeQqTestHandler)
+	if os.Getenv("QQ_HELPER_MODE") == "unhealthy" {
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) })
+	} else {
+		mux.HandleFunc("/", nativeQqTestHandler)
+	}
 	http.ListenAndServe("127.0.0.1:"+os.Getenv("QQMUSIC_SERVER_PORT"), mux)
 	os.Exit(0)
 }
@@ -133,7 +137,7 @@ func TestBundledNativeRuntimeUsesEphemeralPortWithoutChangingStoredConfig(t *tes
 	}
 }
 
-func TestDisabledAndExternalGatewayDoNotStartLocalQqProcess(t *testing.T) {
+func TestDisabledGatewayDoesNotStartLocalQqProcess(t *testing.T) {
 	controller, cfg, _ := fixtureController(t)
 	if err := controller.Start(context.Background(), cfg); err != nil {
 		t.Fatal(err)
@@ -141,21 +145,6 @@ func TestDisabledAndExternalGatewayDoNotStartLocalQqProcess(t *testing.T) {
 	if controller.Statuses()["QQMUSIC_API"] {
 		t.Fatal("disabled QQ started")
 	}
-	controller.Stop()
-	server := httptest.NewServer(http.HandlerFunc(nativeQqTestHandler))
-	defer server.Close()
-	cfg.Sources["qqmusic"] = config.SourceConfig{Enabled: true, DeliveryMode: config.ServerDownload}
-	cfg.QqmusicGatewayMode = "external"
-	cfg.QqmusicBaseURL = server.URL
-	if err := controller.Start(context.Background(), cfg); err != nil {
-		t.Fatal(err)
-	}
-	controller.Stop()
-	response, err := http.Get(server.URL + "/")
-	if err != nil {
-		t.Fatal("external gateway was stopped")
-	}
-	response.Body.Close()
 }
 
 func TestReadinessRejectsProtocolAuthAndExitedProcess(t *testing.T) {
@@ -198,10 +187,8 @@ func TestStopCancelsPendingReadinessAndMissingRuntimeFails(t *testing.T) {
 	if controller.Start(context.Background(), cfg) == nil {
 		t.Fatal("missing runtime accepted")
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
-	defer server.Close()
-	cfg.QqmusicGatewayMode = "external"
-	cfg.QqmusicBaseURL = server.URL
+	controller.GatewayDir = ""
+	t.Setenv("QQ_HELPER_MODE", "unhealthy")
 	controller.ReadyTimeout = time.Minute
 	var wg sync.WaitGroup
 	wg.Add(1)

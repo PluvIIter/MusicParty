@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServiceAttempt } from '../src/serviceAttempt.js';
-import { connectionFieldsFor } from '../src/sourceSettings.js';
 
 test('cancel during save invalidates old start and completion', async () => {
   const attempts = createServiceAttempt();
@@ -18,10 +17,4 @@ test('cancel during save invalidates old start and completion', async () => {
   const second = attempts.begin();
   assert.equal(attempts.current(first), false);
   assert.equal(attempts.current(second), true);
-});
-
-test('bundled mode hides external API address but keeps credential', () => {
-  const source = { connectionFields: [{ key: 'mode' }, { key: 'url', gatewayMode: 'external' }, { key: 'credential' }] };
-  assert.deepEqual(connectionFieldsFor(source, { qqmusicGatewayMode: 'bundled' }).map(field => field.key), ['mode', 'credential']);
-  assert.equal(connectionFieldsFor(source, { qqmusicGatewayMode: 'external' }).length, 3);
 });
