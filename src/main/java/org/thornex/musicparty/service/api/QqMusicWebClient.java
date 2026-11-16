@@ -81,7 +81,7 @@ public class QqMusicWebClient {
     /** 401/403 表示 Cookie 缺失或失效；429 是上游限流；其余按上游不可用处理。 */
     private ApiRequestException failure(int status) {
         if (status == 401 || status == 403) return SourceAuth.invalid("QQ音乐");
-        if (status == 429) return new ApiRequestException("SOURCE_RATE_LIMITED: QQ音乐请求过于频繁，请稍后重试");
+        if (status == 429) return new ApiRequestException("SOURCE_RATE_LIMITED: QQ音乐触发风控（需要登录或安全验证），请稍后重试；配置 Cookie 可显著降低触发概率");
         return unavailable();
     }
 

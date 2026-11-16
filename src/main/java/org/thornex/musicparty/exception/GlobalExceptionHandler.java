@@ -14,14 +14,20 @@ import java.util.Map;
 @ControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+    /** 内部错误码前缀（如 {@code SOURCE_AUTH_REQUIRED: }），只给程序用，不展示给用户。 */
+    private static final java.util.regex.Pattern ERROR_CODE_PREFIX =
+            java.util.regex.Pattern.compile("^([A-Z][A-Z0-9_]{2,}):\\s*");
 
     @ExceptionHandler(ApiRequestException.class)
     public ResponseEntity<Object> handleApiRequestException(ApiRequestException ex) {
         // For failures related to external APIs, return 502 Bad Gateway
-        Map<String, Object> body = Map.of(
-                "message", ex.getMessage(),
-                "status", HttpStatus.BAD_GATEWAY.value()
-        );
+        String raw = ex.getMessage() == null || ex.getMessage().isBlank() ? "请求失败" : ex.getMessage();
+        var matcher = ERROR_CODE_PREFIX.matcher(raw);
+        String message = matcher.lookingAt() ? raw.substring(matcher.end()) : raw;
+        log.debug("API request failed ({}): {}", ex.getClass().getSimpleName(), raw);
+        Map<String, Object> body = matcher.lookingAt()
+                ? Map.of("message", message, "code", matcher.group(1), "status", HttpStatus.BAD_GATEWAY.value())
+                : Map.of("message", message, "status", HttpStatus.BAD_GATEWAY.value());
         return new ResponseEntity<>(body, HttpStatus.BAD_GATEWAY);
     }
 
