@@ -17,12 +17,13 @@
         ></audio>
     </div>
     <button
-        v-if="needsUserGesture || isErrorState"
+        v-if="needsUserGesture || isErrorState || unlockPreview"
+        id="tutorial-unlock"
         type="button"
         @click="retryLocally"
         class="fixed bottom-28 left-1/2 -translate-x-1/2 z-[250] max-w-[90vw] px-5 py-3 bg-brand text-ink-inverse text-sm font-bold shadow-lg"
     >
-        {{ needsUserGesture ? '点此开启声音' : '声音加载失败，点此重试' }}
+        {{ needsUserGesture || unlockPreview ? '点此开启声音' : '声音加载失败，点此重试' }}
     </button>
 </template>
 
@@ -31,6 +32,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
 import { useAudio } from '../composables/useAudio';
+import { unlockPreview } from '../domain/tutorialPreview';
 
 const player = usePlayerStore();
 const ui = useUiStore();

@@ -232,6 +232,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { X } from 'lucide-vue-next';
 import { STORAGE_KEYS } from '../constants/storage';
 import { TUTORIAL_UI, TUTORIAL_STEPS, TUTORIAL_TOPICS } from '../constants/tutorial';
+import { unlockPreview } from '../domain/tutorialPreview';
 
 const isActive = ref(false);
 const view = ref('tour');
@@ -383,6 +384,7 @@ const restart = () => {
 };
 const closeHelp = () => {
     if (!isActive.value) return;
+    unlockPreview.value = false;
     if (view.value === 'tour') markDone();
     isActive.value = false;
     targetRect.value = null;
@@ -437,7 +439,12 @@ const onFocusin = (event) => {
     if (isActive.value && dialogRef.value && !dialogRef.value.contains(event.target))
         dialogRef.value.focus({ preventScroll: true });
 };
-watch(currentStepIndex, async () => {
+/** 最后一步要指「点此开启声音」：该按钮平时不显示，进入这一步时临时展示。 */
+const syncUnlockPreview = () => {
+    unlockPreview.value = isActive.value && view.value === 'tour' && currentStep.value?.id === 'sound';
+};
+watch([currentStepIndex, view, isActive], async () => {
+    syncUnlockPreview();
     await nextTick();
     if (disposed) return;
     tourBodyRef.value?.scrollTo({ top: 0 });
