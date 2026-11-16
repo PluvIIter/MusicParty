@@ -213,7 +213,7 @@
             </div>
 
             <!-- 音量控制 -->
-            <div class="flex items-center gap-2 group">
+            <div id="tutorial-volume" class="flex items-center gap-2 group">
                 <button @click="toggleMute" class="text-ink-muted hover:text-ink transition-colors">
                     <VolumeX v-if="ui.volume === 0" class="w-5 h-5" />
                     <Volume1 v-else-if="ui.volume < 0.5" class="w-5 h-5" />

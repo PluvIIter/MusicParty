@@ -83,6 +83,12 @@
                     >
                         {{ paragraph }}
                     </p>
+                    <p
+                        v-if="view === 'tour' && currentStep.targetId && !targetRect"
+                        class="text-[11px] leading-relaxed text-ink-subtle border-l-2 border-line pl-2"
+                    >
+                        这一步要看的控件当前不在界面上（可能已收起，或该设备不显示），按上面的说明操作即可。
+                    </p>
                 </div>
                 <footer class="shrink-0 border-t border-line p-3 sm:p-4 space-y-3">
                     <div class="flex flex-wrap gap-2">
