@@ -92,7 +92,7 @@
                                                 @click.stop="askClaim(group)"
                                                 :disabled="!!claiming || !player.connected"
                                                 :aria-label="`认领 ${group.name} 的歌单`"
-                                                class="text-accent hover:underline disabled:opacity-40"
+                                                class="text-ink-subtle hover:text-ink hover:underline disabled:opacity-40"
                                             >
                                                 {{ claiming === group.token ? '认领中…' : '离线·点击认领' }}
                                             </button>
@@ -185,8 +185,22 @@
                         将 <span class="font-bold text-ink">{{ pendingClaim.name }}</span> 的歌单（{{
                             pendingClaim.totalCount
                         }}
-                        首）合并到自己名下，同时更改为此昵称。
+                        首）合并到自己名下<template v-if="claimInheritName">，同时更改为此昵称。</template
+                        ><template v-else>，保留当前昵称。</template>
                     </p>
+                    <label class="flex items-start gap-2 text-xs text-ink-muted cursor-pointer">
+                        <input
+                            type="checkbox"
+                            v-model="claimInheritName"
+                            class="mt-0.5 w-3.5 h-3.5 accent-accent"
+                        />
+                        <span>
+                            继承昵称
+                            <span class="block text-[10px] text-ink-subtle">
+                                勾选后会把昵称改为「{{ pendingClaim.name }}」；不勾选则只合并歌单。
+                            </span>
+                        </span>
+                    </label>
                     <div class="flex justify-end gap-2">
                         <button
                             type="button"
@@ -287,8 +301,11 @@ const claimableGroups = computed(() => userGroups.value.filter(canClaim));
 const claimPanelOpen = ref(false);
 // 点击「离线·点击认领」先弹确认，避免误触把别人的歌单并过来
 const pendingClaim = ref(null);
+// 认领时默认继承原昵称；用户可在确认框里取消勾选，只合并歌单。
+const claimInheritName = ref(true);
 const askClaim = (group) => {
     if (claiming.value || !player.connected || !canClaim(group)) return;
+    claimInheritName.value = true;
     pendingClaim.value = group;
 };
 const confirmClaim = async () => {
@@ -311,7 +328,7 @@ const claimGroup = async (group) => {
     if (claiming.value || !canClaim(group)) return;
     claiming.value = group.token;
     try {
-        const result = await player.claimPlaylist(group.token);
+        const result = await player.claimPlaylist(group.token, claimInheritName.value);
         expandedUsers.value = { ...expandedUsers.value, [userStore.userToken]: true };
         toast.success(result.message);
     } catch (error) {

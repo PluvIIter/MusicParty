@@ -300,7 +300,7 @@ export const usePlayerStore = defineStore('player', () => {
         });
     };
 
-    const claimPlaylist = (sourceToken) => {
+    const claimPlaylist = (sourceToken, inheritName = true) => {
         if (!connected.value || !socketService.connected)
             return Promise.reject(new Error('房间连接已断开，请重连后再试'));
         const requestId =
@@ -312,7 +312,7 @@ export const usePlayerStore = defineStore('player', () => {
             }, 15000);
             claimRequests.set(requestId, { resolve, reject, timer });
             try {
-                socketService.send(WS_DEST.QUEUE_CLAIM, { sourceToken, requestId });
+                socketService.send(WS_DEST.QUEUE_CLAIM, { sourceToken, inheritName: inheritName !== false, requestId });
             } catch (error) {
                 clearTimeout(timer);
                 claimRequests.delete(requestId);

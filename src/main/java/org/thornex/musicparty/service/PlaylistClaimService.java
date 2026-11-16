@@ -23,6 +23,11 @@ public class PlaylistClaimService {
     public record Claimed(int claimed, UserSummary member) {}
 
     public Claimed claim(String sessionId, String sourceToken) throws IOException {
+        return claim(sessionId, sourceToken, true);
+    }
+
+    /** inheritName=false 时只合并歌单，保留认领人当前昵称。 */
+    public Claimed claim(String sessionId, String sourceToken, boolean inheritName) throws IOException {
         if (sourceToken == null || sourceToken.isBlank() || sourceToken.length() > 200
                 || "SYSTEM".equals(sourceToken) || "ADMIN".equals(sourceToken) || sourceToken.startsWith("__"))
             throw new IllegalArgumentException("该歌单不可认领");
@@ -42,7 +47,7 @@ public class PlaylistClaimService {
                                 || owned.stream().anyMatch(i -> i.enqueuedBy().isGuest()
                                         || MusicQueueManager.FM_MARKER_ID.equals(i.music().platform())))
                             throw new IllegalArgumentException("该歌单不可认领");
-                        UserSummary member = users.preparePlaylistClaim(sessionId, sourceToken, name);
+                        UserSummary member = users.preparePlaylistClaim(sessionId, sourceToken, name, inheritName);
                         List<MusicQueueItem> after = new ArrayList<>(before.size());
                         for (MusicQueueItem item : before) {
                             boolean replace = sourceToken.equals(item.enqueuedBy().token()) || member.token().equals(item.enqueuedBy().token());

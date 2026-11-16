@@ -46,6 +46,14 @@ class PlaylistClaimServiceTest {
     @SuppressWarnings("unchecked") private <T> AtomicReference<T> reference(String field){return (AtomicReference<T>)ReflectionTestUtils.getField(player,field);}
     private void reject(String session,String token){var before=queue.getQueueSnapshot();String name=target.getName();assertThrows(IllegalArgumentException.class,()->claims.claim(session,token));assertEquals(before,queue.getQueueSnapshot());assertEquals(name,target.getName());}
 
+    @Test void claimingWithoutInheritingKeepsTheCurrentName() throws IOException {
+        assertEquals(2, claims.claim("target-session", "source", false).claimed());
+        assertEquals("游客", target.getName(), "未勾选继承时应保留自己当前的昵称");
+        assertFalse(target.isGuest());
+        assertTrue(queue.getQueueSnapshot().stream()
+                .filter(item -> "a".equals(item.queueId()) || "b".equals(item.queueId()))
+                .allMatch(item -> item.enqueuedBy().token().equals(target.getToken())));
+    }
     @Test void disabledByDefaultAndRejectsDirectCommands() {
         assertFalse(new AppProperties().getQueue().isAllowPlaylistClaim());
         properties.getQueue().setAllowPlaylistClaim(false);

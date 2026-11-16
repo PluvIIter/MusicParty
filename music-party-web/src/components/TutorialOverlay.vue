@@ -1,15 +1,39 @@
 <template>
-    <div
-        v-if="isActive"
-        class="tutorial-layer fixed inset-0 z-[9999] bg-brand/70 backdrop-blur-sm"
-        @pointerdown.self.prevent
-    >
+    <div v-if="isActive" class="tutorial-layer fixed inset-0 z-[9999]" @pointerdown.self.prevent>
+        <!-- 引导模式或没有高亮目标：整屏蒙层 -->
         <div
-            v-if="view === 'tour' && targetRect"
-            class="fixed pointer-events-none border-2 border-accent rounded-sm shadow-[0_0_20px_rgb(var(--mp-accent)/0.35)]"
-            :style="highlightStyle"
+            v-if="view !== 'tour' || !targetRect"
+            class="tutorial-shade pointer-events-none fixed inset-0 bg-brand/70 backdrop-blur-sm"
             aria-hidden="true"
         ></div>
+        <!-- 巡览模式：用四块蒙层围出高亮区域，目标本身保持清晰 -->
+        <template v-else>
+            <div
+                class="tutorial-shade pointer-events-none fixed bg-brand/70 backdrop-blur-sm"
+                :style="shadeStyles.top"
+                aria-hidden="true"
+            ></div>
+            <div
+                class="tutorial-shade pointer-events-none fixed bg-brand/70 backdrop-blur-sm"
+                :style="shadeStyles.bottom"
+                aria-hidden="true"
+            ></div>
+            <div
+                class="tutorial-shade pointer-events-none fixed bg-brand/70 backdrop-blur-sm"
+                :style="shadeStyles.left"
+                aria-hidden="true"
+            ></div>
+            <div
+                class="tutorial-shade pointer-events-none fixed bg-brand/70 backdrop-blur-sm"
+                :style="shadeStyles.right"
+                aria-hidden="true"
+            ></div>
+            <div
+                class="fixed pointer-events-none border-2 border-accent rounded-sm shadow-[0_0_20px_rgb(var(--mp-accent)/0.35)]"
+                :style="highlightStyle"
+                aria-hidden="true"
+            ></div>
+        </template>
         <section
             ref="dialogRef"
             role="dialog"
@@ -230,6 +254,20 @@ const highlightStyle = computed(() => ({
     width: `${targetRect.value.width}px`,
     height: `${targetRect.value.height}px`,
 }));
+// 四块蒙层围出目标区域：目标本身不被压暗或模糊。
+const shadeStyles = computed(() => {
+    const rect = targetRect.value || { top: 0, left: 0, width: 0, height: 0 };
+    const top = Math.max(0, rect.top);
+    const left = Math.max(0, rect.left);
+    const width = Math.max(0, rect.width);
+    const height = Math.max(0, rect.height);
+    return {
+        top: { top: '0', left: '0', right: '0', height: `${top}px` },
+        bottom: { top: `${top + height}px`, left: '0', right: '0', bottom: '0' },
+        left: { top: `${top}px`, left: '0', width: `${left}px`, height: `${height}px` },
+        right: { top: `${top}px`, left: `${left + width}px`, right: '0', height: `${height}px` },
+    };
+});
 const filteredTopics = computed(() => {
     const keyword = query.value.trim().toLocaleLowerCase();
     return TUTORIAL_TOPICS.filter((topic) => !selectedTopic.value || topic.id === selectedTopic.value).flatMap(
