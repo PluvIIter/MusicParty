@@ -23,7 +23,7 @@ class PlaylistControllerTest {
     private final PlaylistController controller = new PlaylistController(users, queue, player, persistence, messages);
 
     private MusicQueueItem add(String owner) {
-        return queue.add(new Music(owner, owner, List.of(), 1000, "netease", ""),
+        return queue.add(new Music(owner, owner, List.of(), 1000, "netease", "", null),
                 new UserSummary(owner, owner, owner, false), QueueItemStatus.READY);
     }
 

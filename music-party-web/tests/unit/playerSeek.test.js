@@ -52,7 +52,7 @@ describe('instance-bound seek store', () => {
     });
 
     it.each([
-        ['legacy server', state(null)],
+        ['missing playback identity', state(null)],
         ['cleared player', state(null, { nowPlaying: null })],
         ['loading', state('first', { isLoading: true })],
         ['permission disabled', state('first', { config: { allowSeek: false } })],

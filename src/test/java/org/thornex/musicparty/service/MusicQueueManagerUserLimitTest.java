@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class MusicQueueManagerUserLimitTest {
     private Music music(String id) {
-        return new Music(id, "Song " + id, List.of("Artist"), 180_000L, "netease", null);
+        return new Music(id, "Song " + id, List.of("Artist"), 180_000L, "netease", null, null);
     }
 
     private UserSummary user(String token, String session) {

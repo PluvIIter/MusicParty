@@ -4,6 +4,9 @@ import client from './client';
  * 管理员后台专用接口封装
  */
 export const adminApi = {
+    getSources: (adminPwd, signal) =>
+        client.get('/api/admin/sources', { signal, headers: { 'X-Admin-Password': adminPwd } }),
+
     // 验证密码
     verify: (password) => client.post('/api/admin/verify', { password }),
 
@@ -57,21 +60,21 @@ export const adminApi = {
             }
         ),
 
-    // 更新平台 Cookie
-    setCookie: (adminPwd, platform, value) =>
-        client.post(
-            '/api/admin/config/cookie',
-            { platform, value },
-            {
-                headers: { 'X-Admin-Password': adminPwd },
-            }
-        ),
-
     // 直播流控制
     setStream: (adminPwd, enabled) =>
         client.post(
             '/api/admin/room/stream',
             { enabled },
+            {
+                headers: { 'X-Admin-Password': adminPwd },
+            }
+        ),
+
+    // 更新平台凭据（COOKIE）
+    setCookie: (adminPwd, platform, value) =>
+        client.post(
+            '/api/admin/config/cookie',
+            { platform, value },
             {
                 headers: { 'X-Admin-Password': adminPwd },
             }

@@ -13,7 +13,7 @@ import org.thornex.musicparty.event.UserCountChangeEvent;
 
 import java.util.UUID;
 
-/** Versioned, loss-detecting JSON object patches. The legacy stream remains available. */
+/** Versioned, loss-detecting JSON object patches. */
 @Service
 public class CompactSyncService implements ApplicationListener<ApplicationEvent> {
     private final MusicPlayerService player;

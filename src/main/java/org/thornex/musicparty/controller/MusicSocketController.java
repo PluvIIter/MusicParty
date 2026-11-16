@@ -32,40 +32,16 @@ public class MusicSocketController {
         this.chatService = chatService;
     }
 
-    @MessageMapping("/player/resync")
-    public void requestResync(@Header("simpSessionId") String sessionId) {
-        musicPlayerService.broadcastFullPlayerState();
-    }
-
     @MessageMapping("/enqueue")
     public void enqueue(EnqueueRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
         musicPlayerService.enqueue(request, sessionId);
     }
 
-    @MessageMapping("/enqueue/playlist")
-    public void enqueuePlaylist(EnqueuePlaylistRequest request, @Header("simpSessionId") String sessionId) {
-        if (isGuest(sessionId)) return;
-        musicPlayerService.enqueuePlaylist(request, sessionId);
-    }
-
-    @MessageMapping("/enqueue/album")
-    public void enqueueAlbum(EnqueueAlbumRequest request, @Header("simpSessionId") String sessionId) {
-        musicPlayerService.enqueueAlbum(request, sessionId).subscribe(result ->
-                messagingTemplate.convertAndSendToUser(sessionId, "/queue/album/import", result,
-                        createSessionHeaders(sessionId)));
-    }
-
     @MessageMapping("/control/next")
     public void nextSong(@Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
         musicPlayerService.skipToNext(sessionId);
-    }
-
-    @MessageMapping("/control/toggle-shuffle")
-    public void cyclePlayMode(@Header("simpSessionId") String sessionId) {
-        if (isGuest(sessionId)) return;
-        musicPlayerService.cyclePlayMode(sessionId);
     }
 
     public record PlayModeRequest(String playMode) {}
@@ -125,21 +101,6 @@ public class MusicSocketController {
                 messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
             });
         }
-    }
-
-    @MessageMapping("/user/bind")
-    public void bindAccount(BindRequest request, @Header("simpSessionId") String sessionId) {
-        userService.bindAccount(sessionId, request.platform(), request.accountId());
-    }
-
-    @SubscribeMapping("/topic/player/state")
-    public PlayerState getInitialPlayerState() {
-        return musicPlayerService.getCurrentPlayerState();
-    }
-
-    @SubscribeMapping("/topic/users/online")
-    public List<UserSummary> getInitialOnlineUsers() {
-        return userService.getOnlineUserSummaries();
     }
 
     @SubscribeMapping("/user/me")

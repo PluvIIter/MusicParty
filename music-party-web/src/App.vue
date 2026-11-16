@@ -1,7 +1,7 @@
 <!-- src/App.vue -->
 <template>
     <!-- 全局 Toast 挂载点 -->
-    <ToastNotification ref="toastInstance" />
+    <ToastNotification />
 
     <div class="h-screen w-screen overflow-hidden font-sans">
         <AudioEngine />
@@ -25,7 +25,7 @@
         </div>
 
         <!-- 3. 主界面 (当 hasStarted 为 true 时显示) -->
-        <MainLayout v-if="hasStarted" @search="handleSearchClick">
+        <MainLayout v-if="hasStarted" @search="handleSearchClick" @help="tutorialRef?.openGuide()">
             <!-- 中间插槽: 视觉控制台 -->
             <CenterConsole />
 
@@ -43,14 +43,14 @@
         <SearchModal :isOpen="showSearch" @close="showSearch = false" />
         <NamePromptModal />
         <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode" />
-        <TutorialOverlay v-if="hasStarted && !uiStore.isLiteMode" />
+        <TutorialOverlay v-if="hasStarted" ref="tutorialRef" />
         <AdminAuthModal />
         <AdminDashboard />
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import { usePlayerStore } from './stores/player';
 import { useUserStore } from './stores/user';
@@ -79,8 +79,8 @@ const uiStore = useUiStore();
 const adminStore = useAdminStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
-const toastInstance = ref(null);
-const { register, info } = useToast();
+const tutorialRef = ref(null);
+const { info } = useToast();
 
 const startGame = () => {
     hasStarted.value = true;
@@ -118,8 +118,4 @@ const handleSearchClick = () => {
         showSearch.value = true;
     }
 };
-
-onMounted(() => {
-    if (toastInstance.value) register(toastInstance.value);
-});
 </script>

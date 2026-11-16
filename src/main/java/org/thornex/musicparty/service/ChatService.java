@@ -163,8 +163,9 @@ public class ChatService {
     @EventListener
     public void onSystemEvent(SystemMessageEvent event) {
         // 忽略错误提示，只记录操作成功的事件（根据需求调整）
-        // 这里我们记录所有 INFO, WARN, SUCCESS 级别的事件，忽略 ERROR (通常 ERROR 只弹 Toast)
-        if (event.getLevel() == SystemMessageEvent.Level.ERROR) return;
+        // 记录所有 INFO, WARN, SUCCESS 级别的事件；ERROR 通常只弹 Toast，
+        // 但「加载失败」需要留在历史里（排查失败歌曲），所以单独放行。
+        if (event.getLevel() == SystemMessageEvent.Level.ERROR && event.getAction() != PlayerAction.ERROR_LOAD) return;
 
         // 如果是 RESET 事件，清空历史
         if (event.getAction() == PlayerAction.RESET) {

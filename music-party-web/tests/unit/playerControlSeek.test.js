@@ -7,7 +7,7 @@ const script = source.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^i
 const setupControl = new Function(
     'dependencies',
     `
-    const { ref, computed, watch, onUnmounted, usePlayerStore, useUiStore, useUserStore, useToast, formatDuration, voteRules } = dependencies;
+    const { ref, computed, watch, onUnmounted, usePlayerStore, useSourcesStore, useUiStore, useUserStore, useToast, formatDuration, voteRules } = dependencies;
     ${script}
     return { barRef, dragging, onSeekPointerDown, onSeekPointerUp, onSeekPointerCancel, onSeekKeydown };
 `
@@ -35,6 +35,7 @@ describe('playback-bound seek gestures', () => {
                     watch,
                     onUnmounted,
                     usePlayerStore: () => player,
+                    useSourcesStore: () => ({ supports: () => false }),
                     useUiStore: () => ({}),
                     useUserStore: () => ({}),
                     useToast: () => ({}),

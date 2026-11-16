@@ -38,7 +38,10 @@ build/
 /scripts/publish-image.ps1
 /data/queue-data.json
 
-/docs/
+/docs/*
+!/docs/source-architecture.md
+!/docs/qqmusic-gateway-contract.md
+!/docs/新手教程全部文案.txt
 /secrets/
 /.frontend-audit/
 /.superpowers/
@@ -65,3 +68,8 @@ build/
 /.snow/
 # git worktree 工作区
 /.worktrees/
+/data/*.bak
+/data/*.legacy-*
+/data/*.unreadable-*
+/data/
+/scripts/__pycache__/

@@ -112,6 +112,7 @@
                 <button
                     id="tutorial-download-mobile"
                     @click="downloadCurrentMusic"
+                    :disabled="!canDownload"
                     class="p-2 bg-surface border border-line rounded-sm text-ink-muted active:bg-line"
                 >
                     <Download class="w-4 h-4" />
@@ -160,6 +161,7 @@
                 <button
                     id="tutorial-download"
                     @click="downloadCurrentMusic"
+                    :disabled="!canDownload"
                     class="text-ink-subtle hover:text-accent transition-colors"
                     title="Download"
                 >
@@ -211,7 +213,7 @@
             </div>
 
             <!-- 音量控制 -->
-            <div class="flex items-center gap-2 group">
+            <div id="tutorial-volume" class="flex items-center gap-2 group">
                 <button @click="toggleMute" class="text-ink-muted hover:text-ink transition-colors">
                     <VolumeX v-if="ui.volume === 0" class="w-5 h-5" />
                     <Volume1 v-else-if="ui.volume < 0.5" class="w-5 h-5" />
@@ -250,6 +252,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
+import { useSourcesStore } from '../stores/sources';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
 import { formatDuration } from '../domain/time';
@@ -269,8 +272,12 @@ import {
 import CoverImage from './CoverImage.vue';
 import PlayModePicker from './PlayModePicker.vue';
 import { useToast } from '../composables/useToast';
+import { openExternal, safeExternalUrl } from '../domain/sources';
+import { mediaExtension, downloadName } from '../services/musicDownload';
 
 const player = usePlayerStore();
+const sources = useSourcesStore();
+const canDownload = computed(() => sources.supports(player.nowPlaying?.music?.platform, 'download'));
 const ui = useUiStore();
 const userStore = useUserStore();
 const volumeTrackRef = ref(null);
@@ -475,23 +482,24 @@ const handleVolumeMouseUp = () => {
 
 // --- 下载逻辑 ---
 const downloadCurrentMusic = async () => {
-    if (!nowPlaying.value) return;
+    if (!nowPlaying.value || !canDownload.value) return;
     const music = nowPlaying.value.music;
     info(`Starting download: ${music.name}...`);
     try {
         const response = await fetch(music.url);
         if (!response.ok) throw new Error('Network error');
+        const extension = mediaExtension(response.headers.get('content-type'), music.url);
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.download = `${music.name} - ${music.artists[0]}.mp3`;
+        link.download = downloadName(music, extension);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         window.URL.revokeObjectURL(blobUrl);
     } catch (e) {
-        window.open(music.url, '_blank');
+        openExternal(safeExternalUrl(music.url) || new URL(music.url, window.location.origin).href);
         error('Blob download failed, opening new tab.');
     }
 };
@@ -499,9 +507,7 @@ const downloadCurrentMusic = async () => {
 // 跳转源页面
 const openSourcePage = () => {
     if (!nowPlaying.value) return;
-    const { platform, id } = nowPlaying.value.music;
-    let url = platform === 'netease' ? `https://music.163.com/#/song?id=${id}` : `https://www.bilibili.com/video/${id}`;
-    if (url) window.open(url, '_blank');
+    openExternal(nowPlaying.value.music.externalUrl);
 };
 
 onUnmounted(() => {

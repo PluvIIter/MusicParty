@@ -28,3 +28,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## 2. QQMusicApi (qqmusic-api-python)
+- **Source**: [https://github.com/l-1124/QQMusicApi](https://github.com/l-1124/QQMusicApi)
+- **Revision**: `c046788dd1f11daacc74da487cbbf1bcd8ac6f33`
+- **License**: GNU General Public License version 3 or later (GPL-3.0-or-later)
+- **Copyright**: Copyright (c) Luren and upstream contributors
+
+The Windows launcher keeps the complete upstream source archive, `LICENSE`, commit id and a SHA-256 source inventory under `bin/qqmusic/upstream/`, together with CPython's LICENSE/SBOM and the installed dependency metadata. The packaged service runs the unmodified upstream `web/run.py`. Redistributing the launcher requires offering the corresponding source and retaining these notices; the GPL text is available at <https://www.gnu.org/licenses/gpl-3.0.html>.

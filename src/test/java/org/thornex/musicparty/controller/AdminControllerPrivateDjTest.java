@@ -24,6 +24,7 @@ class AdminControllerPrivateDjTest {
     private NeteaseMusicApiService api;
     private PrivateDjService djService;
     private AdminController controller;
+    private org.thornex.musicparty.source.SourceCredentialRegistry credentials;
     private org.thornex.musicparty.service.QueuePersistenceService persistence;
 
     @BeforeEach
@@ -34,9 +35,10 @@ class AdminControllerPrivateDjTest {
         api = mock(NeteaseMusicApiService.class);
         djService = mock(PrivateDjService.class);
         persistence = mock(org.thornex.musicparty.service.QueuePersistenceService.class);
+        credentials = mock(org.thornex.musicparty.source.SourceCredentialRegistry.class);
         controller = new AdminController(player,
                 mock(ChatService.class), props, mock(AuthController.class),
-                api, mock(BilibiliMusicApiService.class), mock(LiveStreamService.class), djService, persistence);
+                credentials, mock(LiveStreamService.class), djService, persistence);
     }
 
     @Test
@@ -52,17 +54,17 @@ class AdminControllerPrivateDjTest {
     }
 
     @Test
-    void enableRejectedWithoutCookie() {
+    void enableRejectedWithoutPublicRecommendationProvider() {
         when(api.isCookieConfigured()).thenReturn(false);
         ResponseEntity<?> resp = controller.updatePrivateDj("pw",
                 new AdminPrivateDjUpdateRequest("FM", null, null, null));
         assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
-        assertEquals("OFF", props.getPrivateDj().getMode()); // 未配置 Cookie 时开启被拒，保持关闭
+        assertEquals("OFF", props.getPrivateDj().getMode()); // 无公开推荐提供器时保持关闭
     }
 
     @Test
-    void enableAcceptedWithCookie() {
-        when(api.isCookieConfigured()).thenReturn(true);
+    void enableAcceptedWithPublicProviderWithoutCookie() {
+        when(djService.supportsMode("DJ")).thenReturn(true);
         ResponseEntity<?> resp = controller.updatePrivateDj("pw",
                 new AdminPrivateDjUpdateRequest("DJ", true, false, false));
         assertEquals(HttpStatus.OK, resp.getStatusCode());
@@ -70,6 +72,20 @@ class AdminControllerPrivateDjTest {
         assertTrue(props.getPrivateDj().isFillBlankEnabled());
         verify(djService).invalidate();
         verify(player).broadcastFullPlayerState();
+    }
+
+    @Test
+    void fmOnlyProviderRejectsDjBeforeMutatingConfig() {
+        when(djService.supportsMode("FM")).thenReturn(true);
+        when(djService.supportsMode("DJ")).thenReturn(false);
+        assertEquals(HttpStatus.OK, controller.updatePrivateDj("pw",
+                new AdminPrivateDjUpdateRequest("FM", null, null, null)).getStatusCode());
+        var rejected = controller.updatePrivateDj("pw",
+                new AdminPrivateDjUpdateRequest("DJ", true, true, true));
+        assertEquals(HttpStatus.BAD_REQUEST, rejected.getStatusCode());
+        assertEquals("FM", props.getPrivateDj().getMode());
+        assertFalse(props.getPrivateDj().isFillBlankEnabled());
+        assertFalse(props.getPrivateDj().isCustodyEnabled());
     }
 
     @Test
@@ -94,7 +110,7 @@ class AdminControllerPrivateDjTest {
     void setNeteaseCookieBroadcastsPlayerState() {
         ResponseEntity<?> resp = controller.setCookie("pw", new AdminCookieRequest("netease", "MUSIC_U=abc"));
         assertEquals(HttpStatus.OK, resp.getStatusCode());
-        verify(api).updateCookie("MUSIC_U=abc");
+        verify(credentials).update("netease", "MUSIC_U=abc");
         verify(player).broadcastFullPlayerState(); // 刷新控制面板开启门禁
     }
 }

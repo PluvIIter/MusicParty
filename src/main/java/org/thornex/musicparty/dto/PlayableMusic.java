@@ -10,6 +10,7 @@ public record PlayableMusic(
         String platform,
         String url, // The actual playable URL for the audio
         String coverUrl,
-        boolean needsProxy
+        String kind,
+        String externalUrl
 ) {}
 

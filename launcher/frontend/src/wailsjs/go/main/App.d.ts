@@ -9,3 +9,16 @@ export function SaveConfig(arg1:config.AppConfig):Promise<void>;
 export function StartServices():Promise<void>;
 
 export function StopServices():Promise<void>;
+
+export function GetServiceStatuses():Promise<Record<string, boolean>>;
+
+export function GetTunnelStatus():Promise<{
+  enabled: boolean;
+  state: 'off' | 'starting' | 'ready' | 'failed' | 'stopped';
+  url: string;
+  error: string;
+}>;
+
+export function GetSourceDescriptors():Promise<config.SourceDescriptor[]>;
+
+export function OpenBrowser(arg1:string):Promise<void>;

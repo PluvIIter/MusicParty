@@ -95,6 +95,9 @@ class MainActivity : AppCompatActivity() {
         MediaSessionManager.onControl = { action ->
             runOnUiThread { controlWeb(action) }
         }
+        // 登记 WebView：划掉任务/退出时由 MusicBridge 卸载页面并销毁，真正停止播放
+        MusicBridge.attach(webView)
+
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
             fun updateMedia(json: String) { MediaSessionManager.update(json) }
@@ -193,6 +196,12 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         MediaSessionManager.onControl = null
         MediaSessionManager.destroy()
+        // 返回键/主动退出：停掉 WebView 里的音频并结束前台服务。
+        // 划掉最近任务走 MediaPlaybackService.onTaskRemoved；后台播放（非 finishing）不受影响。
+        if (isFinishing) {
+            MusicBridge.release()
+            stopService(serviceIntent)
+        }
         super.onDestroy()
     }
 }

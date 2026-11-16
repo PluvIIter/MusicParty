@@ -8,6 +8,7 @@ public record Music(
         List<String> artists,
         long duration, // in milliseconds
         String platform,
-        String coverUrl
+        String coverUrl,
+        String externalUrl
 ) {}
 

@@ -29,10 +29,10 @@ class CompactSyncServiceTest {
     private PlayerState state(long position) throws Exception {
         return mapper.readValue("""
                 {"nowPlaying":{"music":{"id":"101","name":"Fixture","artists":["Artist"],"duration":180000,
-                  "platform":"netease","url":"https://audio.example.invalid/fixture.wav","coverUrl":"","needsProxy":false},
+                  "platform":"netease","url":"https://audio.example.invalid/fixture.wav","coverUrl":"","kind":"SONG"},
                   "currentPosition":%d,"likeMarkers":[],"likedUserIds":[]},
                   "queue":[],"onlineUsers":[],"playMode":"SEQUENTIAL","isPaused":true,
-                  "config":{"maxUserSongs":100,"neteaseEnabled":true}}
+                  "config":{"maxUserSongs":100,"sources":{"netease":{"enabled":true,"deliveryMode":"DIRECT_URL"}}}}
                 """.formatted(position), PlayerState.class);
     }
 

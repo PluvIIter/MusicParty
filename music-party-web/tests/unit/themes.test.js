@@ -68,9 +68,8 @@ describe('theme catalogue', () => {
         expect(mode).toMatch(/^(light|dark)$/);
     });
 
-    it('migrates old preferences and falls back safely for unknown values', () => {
-        expect(resolveThemeId('light', true)).toBe('light-original');
-        expect(resolveThemeId('dark')).toBe('dark-platinum');
+    it('uses current palette IDs and system preference for unknown values', () => {
+        expect(resolveThemeId('invalid', true)).toBe('dark-platinum');
         expect(resolveThemeId('dark-jade')).toBe('dark-jade');
         expect(resolveThemeId('invalid', true)).toBe('dark-platinum');
         expect(resolveThemeId(null)).toBe('light-original');
@@ -87,7 +86,7 @@ describe('theme catalogue', () => {
 
 describe('theme application and store', () => {
     it('uses the same early and mounted selection, then persists the palette ID', () => {
-        localStorage.setItem('mp_theme', 'dark');
+        localStorage.setItem('mp_theme', 'dark-platinum');
         applyTheme(readThemePreference());
         const initial = document.documentElement.style.cssText;
         const ui = useUiStore();

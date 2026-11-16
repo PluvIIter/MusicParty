@@ -14,16 +14,25 @@ class PlaylistClaimControllerTest {
     @Test void repliesOnlyToActualSessionAndPublishesUpdatedIdentity() throws Exception {
         var service=mock(PlaylistClaimService.class);var player=mock(MusicPlayerService.class);var messages=mock(SimpMessagingTemplate.class);
         var member=new UserSummary("current-token","actual-session","Recovered",false);
-        when(service.claim("actual-session","old-token")).thenReturn(new PlaylistClaimService.Claimed(4,member));
-        new PlaylistClaimController(service,player,messages).claim(new PlaylistClaimController.ClaimRequest("request","old-token"),"actual-session");
+        when(service.claim("actual-session","old-token",true)).thenReturn(new PlaylistClaimService.Claimed(4,member));
+        new PlaylistClaimController(service,player,messages).claim(new PlaylistClaimController.ClaimRequest("request","old-token",true),"actual-session");
         verify(messages).convertAndSendToUser(eq("actual-session"),eq("/queue/me"),eq(member),argThat((MessageHeaders h)->"actual-session".equals(SimpMessageHeaderAccessor.getSessionId(h))));
         verify(messages).convertAndSendToUser(eq("actual-session"),eq("/queue/playlist/claim"),argThat((Object o)->o instanceof PlaylistClaimController.ClaimResult result&&!result.error()&&result.claimed()==4&&result.member().equals(member)),any(MessageHeaders.class));
         verify(player).broadcastQueueUpdate();verify(player).broadcastFullPlayerState();
     }
     @Test void rejectionSendsPrivateErrorWithoutBroadcast() throws Exception {
         var service=mock(PlaylistClaimService.class);var player=mock(MusicPlayerService.class);var messages=mock(SimpMessagingTemplate.class);
-        when(service.claim(anyString(),anyString())).thenThrow(new IllegalArgumentException("管理员已关闭歌单认领"));
-        new PlaylistClaimController(service,player,messages).claim(new PlaylistClaimController.ClaimRequest("request","old"),"session");
+        when(service.claim(anyString(),anyString(),anyBoolean())).thenThrow(new IllegalArgumentException("管理员已关闭歌单认领"));
+        new PlaylistClaimController(service,player,messages).claim(new PlaylistClaimController.ClaimRequest("request","old",true),"session");
         verify(messages).convertAndSendToUser(eq("session"),eq("/queue/playlist/claim"),argThat((Object o)->o instanceof PlaylistClaimController.ClaimResult result&&result.error()&&result.claimed()==0),any(MessageHeaders.class));verifyNoInteractions(player);
+    }
+    @Test void claimingWithoutInheritingReportsThatTheNameIsKept() throws Exception {
+        var service=mock(PlaylistClaimService.class);var player=mock(MusicPlayerService.class);var messages=mock(SimpMessagingTemplate.class);
+        var member=new UserSummary("current-token","session","Me",false);
+        when(service.claim("session","old",false)).thenReturn(new PlaylistClaimService.Claimed(1,member));
+        new PlaylistClaimController(service,player,messages).claim(new PlaylistClaimController.ClaimRequest("request","old",false),"session");
+        verify(messages).convertAndSendToUser(eq("session"),eq("/queue/playlist/claim"),
+                argThat((Object o)->o instanceof PlaylistClaimController.ClaimResult result&&!result.error()&&result.message().contains("昵称保持不变")),
+                any(MessageHeaders.class));
     }
 }

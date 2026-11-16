@@ -10,18 +10,20 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import org.springframework.web.util.UriComponentsBuilder;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.Music;
-import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
-import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
-import org.thornex.musicparty.service.LocalCacheService;
 import org.thornex.musicparty.util.BilibiliApiUtils;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
 import reactor.util.retry.Retry;
 
 import java.util.*;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicLong;
+import org.thornex.musicparty.media.*;
+import org.thornex.musicparty.source.*;
 
 @Service
 @Slf4j
@@ -31,8 +33,26 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     private final WebClient webClient;
     private final String baseUrl;
-    private final LocalCacheService localCacheService;
     private static final String PLATFORM = "bilibili";
+    private final AtomicLong credentialRevision = new AtomicLong();
+    private final java.util.Map<String, CachedVideoInfo> videoInfoCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Object videoInfoLock = new Object();
+
+    /**
+     * 同一 bvid 在同一个凭据版本下的 view 请求：既保存 60 秒结果，也保存尚未完成的在途请求，
+     * 让入队（getMusic）与预取（resolveMedia）共享同一次上游调用。
+     */
+    private static final class CachedVideoInfo {
+        private Mono<BilibiliApiUtils.BilibiliVideoInfo> result;
+        private volatile java.time.Instant expiresAt;
+
+        boolean isUsable() {
+            java.time.Instant expiry = expiresAt;
+            // 尚未完成（expiry==null）时同样复用，避免并发订阅各发一次请求。
+            return expiry == null || expiry.isAfter(java.time.Instant.now());
+        }
+    }
+
     private final BilibiliWbiService wbiService;
     private final BilibiliCookieService cookieService;
 
@@ -47,23 +67,17 @@ public class BilibiliMusicApiService implements IMusicApiService {
         public WbiSignatureException(String message) { super(message); }
     }
 
-    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, LocalCacheService localCacheService, BilibiliWbiService wbiService, BilibiliCookieService cookieService) {
+    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, BilibiliWbiService wbiService, BilibiliCookieService cookieService) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getBilibili().getBaseUrl();
-        this.localCacheService = localCacheService;
         this.wbiService = wbiService;
         this.cookieService = cookieService;
     }
 
-    private void ensureConfigured() {
-        if (!cookieService.hasCookie()) {
-            // 与网易云一致：Cookie 为可选，缺失仅导致 B站源不可用，不影响其他音乐源
-            throw new ApiRequestException("尚未配置 Bilibili Cookie，B站源不可用（不影响其他音乐源）");
-        }
-    }
-
     public void updateCookie(String newCookie) {
+        videoInfoCache.clear();
         cookieService.updateCookie(newCookie);
+        credentialRevision.incrementAndGet();
         this.wbiService.invalidateCache(); // Cookie 变化后 WBI key 可能也需要刷新
         log.info("Bilibili API Service cookie updated.");
     }
@@ -82,35 +96,66 @@ public class BilibiliMusicApiService implements IMusicApiService {
                         .header("Referer", "https://www.bilibili.com/"));
     }
 
-    private Mono<Music> getVideoDetailsWithCookie(String bvid) {
-        return cookieService.getCookieHeader()
-                .flatMap(cookie -> BilibiliApiUtils.getVideoDetails(bvid, webClient, baseUrl, cookie));
-    }
-
     private Mono<String> getVideoCidWithCookie(String bvid) {
-        return cookieService.getCookieHeader()
-                .flatMap(cookie -> BilibiliApiUtils.getVideoCid(bvid, webClient, baseUrl, cookie));
+        return getVideoInfo(bvid).map(BilibiliApiUtils.BilibiliVideoInfo::cid);
     }
 
-    /** 一次 /view 调用同时取 CID 与视频元数据。 */
-    private Mono<BilibiliApiUtils.BilibiliVideoInfo> getVideoInfoWithCookie(String bvid) {
-        return cookieService.getCookieHeader()
-                .flatMap(cookie -> BilibiliApiUtils.getVideoInfo(bvid, webClient, baseUrl, cookie));
+    /**
+     * /x/web-interface/view 结果短缓存：入队（getMusic）与预取（resolveMedia）会各请求一次，
+     * 缓存 60 秒可把同一首的 view 请求从 2 次降到 1 次；并发时合并同一个在途请求，
+     * 避免两次同时打到上游、提高触发风控的概率。失败或空结果不留在缓存里，允许下次重试。
+     */
+    private Mono<BilibiliApiUtils.BilibiliVideoInfo> getVideoInfo(String bvid) {
+        return Mono.defer(() -> {
+            long revision = credentialRevision.get();
+            String cacheKey = revision + ":" + bvid;
+            synchronized (videoInfoLock) {
+                CachedVideoInfo cached = videoInfoCache.get(cacheKey);
+                if (cached != null && cached.isUsable()) return cached.result;
+                if (videoInfoCache.size() >= 512) videoInfoCache.clear();
+                CachedVideoInfo entry = new CachedVideoInfo();
+                entry.result = cookieService.getCookieHeader()
+                        .flatMap(cookie -> BilibiliApiUtils.getVideoInfo(bvid, webClient, baseUrl, cookie))
+                        .timeout(java.time.Duration.ofSeconds(15))
+                        .doOnNext(info -> {
+                            synchronized (videoInfoLock) {
+                                // 迟到结果不能写进新凭据版本的缓存。
+                                if (revision != credentialRevision.get()) videoInfoCache.remove(cacheKey, entry);
+                                else entry.expiresAt = java.time.Instant.now().plusSeconds(60);
+                            }
+                        })
+                        .doOnError(error -> {
+                            synchronized (videoInfoLock) { videoInfoCache.remove(cacheKey, entry); }
+                        })
+                        .doOnSuccess(info -> {
+                            if (info == null) synchronized (videoInfoLock) { videoInfoCache.remove(cacheKey, entry); }
+                        })
+                        .cache();
+                videoInfoCache.put(cacheKey, entry);
+                return entry.result;
+            }
+        });
     }
 
     @Override
     public Mono<List<Music>> searchMusic(String keyword) {
-        ensureConfigured();
+        return searchMusic(keyword, null).map(SourcePage::items);
+    }
+
+    /** 一次只取一页（20 条），更多结果由前端滚动到底再带 cursor 请求。 */
+    @Override
+    public Mono<SourcePage<Music>> searchMusic(String keyword, Integer cursor) {
+        int page = cursor == null || cursor < 1 ? 1 : cursor;
         // 1. 准备请求参数（严格按照文档要求的 type 搜索）
         Map<String, String> params = new HashMap<>();
         params.put("search_type", "video");
         params.put("keyword", keyword);
-        params.put("page", "1");      // 默认第一页
+        params.put("page", String.valueOf(page));
         params.put("page_size", "20"); // 文档默认 20
 
         // 2. 先取完整 Cookie（buvid3 是搜索接口硬性要求，缺失会 -412），再做 WBI 签名
-        Mono<List<Music>> requestMono = cookieService.getCookieHeader()
-                .flatMap(cookie -> wbiService.signParams(params)
+        Mono<SourcePage<Music>> requestMono = cookieService.getCookieHeader()
+                .flatMap(cookie -> wbiService.signParams(params, cookie)
                         .flatMap(signedParams -> {
                             UriComponentsBuilder builder = UriComponentsBuilder
                                     .fromHttpUrl(baseUrl + "/x/web-interface/wbi/search/type");
@@ -126,6 +171,11 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                     .bodyToMono(JsonNode.class)
                                     .handle((json, sink) -> {
                                         int code = json.path("code").asInt();
+                                        // -101 = 账号未登录：配置的 Cookie 已经失效。
+                                        if (code == -101) {
+                                            sink.error(SourceAuth.invalid("Bilibili"));
+                                            return;
+                                        }
                                         // 🟢 关键点 1: 检测 WBI 潜在的错误码
                                         // -403: 访问权限不足 (可能是签名挂了)
                                         // -400: 请求错误 (可能是参数/签名校验不过)
@@ -142,7 +192,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                         // 其他常规错误，不重试，直接记录日志返回空列表
                                         if (code != 0) {
                                             log.error("Bilibili search failed: {}", json.path("message").asText());
-                                            sink.next(new ArrayList<>());
+                                            sink.error(new ApiRequestException("B站搜索暂不可用"));
                                             return;
                                         }
 
@@ -169,10 +219,15 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                                         List.of(video.path("author").asText()),
                                                         durationMs,
                                                         PLATFORM,
-                                                        picUrl));
+                                                        picUrl, externalUrl(video.path("bvid").asText())));
                                             });
                                         }
-                                        sink.next(musicList);
+                                        JsonNode meta = json.path("data");
+                                        int numPages = meta.path("numPages").asInt(0);
+                                        int numResults = meta.path("numResults").asInt(0);
+                                        sink.next(new SourcePage<>(musicList,
+                                                page < numPages ? page + 1 : null,
+                                                numResults > 0 ? (long) numResults : null));
                                     });
                         }));
 
@@ -186,7 +241,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                 // 如果重试后还是失败，降级为空列表
                 .onErrorResume(WbiSignatureException.class, e -> {
                     log.error("Bilibili search failed after retry: {}", e.getMessage());
-                    return Mono.just(new ArrayList<>());
+                    return Mono.error(new ApiRequestException("B站搜索签名失败，请稍后重试"));
                 })
                 // HTTP 级风控挑战（HTTP 412/403 + HTML 挑战页、或 200 但正文非 JSON → DecodingException）
                 // 会逃过上方 JSON body 的 code:-412 判断，漏到通用 500；这里捕获转成友好 502
@@ -197,75 +252,56 @@ public class BilibiliMusicApiService implements IMusicApiService {
     }
 
     @Override
-    public void prefetchMusic(String bvid) {
-        ensureConfigured();
-        // 检查缓存状态，如果已经下载或正在下载，直接返回
-        CacheStatus status = localCacheService.getStatus(bvid);
-        if (status == CacheStatus.COMPLETED || status == CacheStatus.DOWNLOADING) {
-            return;
-        }
-
-        log.info("Prefetching Bilibili music: {}", bvid);
-
-        // 下载目标：DASH 音频优先；若 wbi/playurl 被 B站挑战拦截(HTTP 412)，退化为 html5 MP4
-        Mono<LocalCacheService.DownloadSource> source = resolveDownloadTarget(bvid);
-
-        // 准备请求头 (防盗链)：CDN 下载只需 Referer + UA，无需 Cookie。
-        // 保持同步提交，避免异步 subscribe 造成同一 bvid 的 TOCTOU 双下载。
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Referer", "https://www.bilibili.com/video/" + bvid);
-        headers.put("User-Agent", USER_AGENT);
-
-        localCacheService.submitDownload(bvid, source, headers);
+    public SourceDescriptor descriptor() {
+        return new SourceDescriptor(PLATFORM, "哔哩哔哩", "BILIBILI", "video",
+                new SourceCapabilities(true, false, false, true, true, false, true, true),
+                Set.of(DeliveryMode.DIRECT_URL, DeliveryMode.SERVER_DOWNLOAD),
+                List.of(new CollectionCategory("favorites", "收藏夹", "favorites", "CONTAINER")));
     }
 
     @Override
-    public Mono<PlayableMusic> getPlayableMusic(String bvid) {
-        ensureConfigured();
-        // 1. 检查本地缓存
-        String localUrl = localCacheService.getLocalUrl(bvid);
+    public DeliveryMode defaultDeliveryMode() { return DeliveryMode.SERVER_DOWNLOAD; }
 
-        if (localUrl != null) {
-            // 2. 如果本地存在，直接返回静态资源路径
-            // 此时 needsProxy = false，因为对于前端来说，这就是一个普通的 http 链接
-            return getVideoDetailsWithCookie(bvid)
-                    .map(music -> new PlayableMusic(
-                            music.id(), music.name(), music.artists(), music.duration(),
-                            PLATFORM, localUrl, music.coverUrl(), false // needsProxy = false
-                    ));
-        } else {
-            // 3. 本地没有缓存（可能是下载失败，或者还没下载完就被强制切歌）
-            CacheStatus status = localCacheService.getStatus(bvid);
+    @Override
+    public long credentialRevision() { return credentialRevision.get(); }
 
-            // 🟢 兜底：下载已失败时，改走 html5 直连 MP4（无 referer 鉴权，前端 <audio> 可直接播放）。
-            //    同时后台重试一次下载，以便修复本地缓存。
-            if (status == CacheStatus.FAILED) {
-                log.warn("Bilibili download failed for {}, falling back to html5 direct MP4.", bvid);
-                prefetchMusic(bvid); // 后台重试修复缓存，不阻塞播放
-                // 一次 /view 同时取 cid + 元数据，再解析 html5 直链；兜底失败抛错让播放器跳过该曲
-                return getVideoInfoWithCookie(bvid)
-                        .flatMap(info -> resolveHtml5Mp4Url(bvid, info.cid())
-                                .map(url -> new PlayableMusic(
-                                        info.music().id(), info.music().name(), info.music().artists(),
-                                        info.music().duration(), PLATFORM, url, info.music().coverUrl(), false
-                                ))
-                                .onErrorResume(e -> {
-                                    log.error("Bilibili html5 fallback failed for {}: {}", bvid, e.getMessage());
-                                    return Mono.error(new ApiRequestException("B站资源获取失败，无法播放：" + bvid));
-                                }));
+    @Override
+    public String externalUrl(String id) {
+        return "https://www.bilibili.com/video/" + java.net.URLEncoder.encode(id, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    @Override
+    public Mono<Music> getMusic(String bvid) {
+        return getVideoInfo(bvid).map(BilibiliApiUtils.BilibiliVideoInfo::music)
+                .map(music -> new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl(), externalUrl(bvid)));
+    }
+
+    @Override
+    public Mono<ResolvedMedia> resolveMedia(String bvid, MediaConsumer consumer) {
+        return Mono.defer(() -> getVideoCidWithCookie(bvid).flatMap(cid -> {
+            if (consumer == MediaConsumer.BROWSER) {
+                return resolveHtml5Mp4Url(bvid, cid).map(source -> new ResolvedMedia(
+                        new ResourceKey(PLATFORM, bvid), "html5", BilibiliApiUtils.normalizeCoverUrl(source.url()), "video/mp4", ".mp4",
+                        Instant.now().plusSeconds(600), Map.of(), true, source.timeline()));
             }
+            return resolveDownloadTarget(bvid, cid).map(source -> new ResolvedMedia(
+                    new ResourceKey(PLATFORM, bvid), source.extension().equals(".mp4") ? "html5" : "dash",
+                    source.url(), source.extension().equals(".mp4") ? "video/mp4" : "audio/mp4", source.extension(),
+                    Instant.now().plusSeconds(600), Map.of("Referer", "https://www.bilibili.com/", "User-Agent", USER_AGENT), false, source.timeline()));
+        }));
+    }
 
-            // 4. 未下载/下载中：触发一次预加载（如果任务不存在的话）
-            prefetchMusic(bvid);
-
-            // 即使在下载中，也返回元数据，但 URL 设为特殊值
-            // 这样 MusicPlayerService.enqueue 就能拿到名字、封面等信息成功入队
-            return getVideoDetailsWithCookie(bvid)
-                    .map(music -> new PlayableMusic(
-                            music.id(), music.name(), music.artists(), music.duration(),
-                            PLATFORM, "PENDING_DOWNLOAD", music.coverUrl(), false
-                    ));
-        }
+    /**
+     * 下载降级表示：主表示（DASH 或解析兜底的 html5 MP4）下载失败时，改用
+     * {@code platform=html5} 的直连 MP4 再次由服务端下载。该 URL 无 referer 鉴权，
+     * 因此请求头留空；依旧走本地缓存与票据，不向浏览器暴露上游地址。
+     */
+    @Override
+    public Mono<ResolvedMedia> resolveFallbackMedia(String bvid) {
+        return getVideoCidWithCookie(bvid).flatMap(cid -> resolveHtml5Mp4Url(bvid, cid)
+                .map(source -> new ResolvedMedia(new ResourceKey(PLATFORM, bvid),
+                        "html5:" + source.timeline(), source.url(), "video/mp4", ".mp4",
+                        Instant.now().plusSeconds(600), Map.of(), true, source.timeline())));
     }
 
     /**
@@ -275,7 +311,14 @@ public class BilibiliMusicApiService implements IMusicApiService {
      * 前端 {@code <audio>} 元素可直接播放，无需服务器中转下载；且旧端点无需 WBI 签名。
      * {@code try_look=1} 可免登录取到 480P/720P 档位。</p>
      */
-    private Mono<String> resolveHtml5Mp4Url(String bvid, String cid) {
+    private record MediaUrl(String url, String extension, String timeline) {}
+
+    private String timeline(String cid, JsonNode data) {
+        return "cid:" + cid + ":duration:" + data.path("timelength").asText("")
+                + ":preview:" + data.path("is_preview").asBoolean(false);
+    }
+
+    private Mono<MediaUrl> resolveHtml5Mp4Url(String bvid, String cid) {
         return cookieService.getCookieHeader()
                 .flatMap(cookie -> {
                     String uri = UriComponentsBuilder
@@ -310,7 +353,13 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                 if (!StringUtils.hasText(url)) {
                                     return Mono.error(new ApiRequestException("Empty MP4 url"));
                                 }
-                                return Mono.just(url);
+                                List<String> candidates = new ArrayList<>();
+                                candidates.add(url);
+                                for (String field : List.of("backup_url", "backupUrl")) {
+                                    durl.get(0).path(field).forEach(node -> candidates.add(node.asText()));
+                                }
+                                return firstReachable(candidates, Map.of())
+                                        .map(chosen -> new MediaUrl(chosen, ".mp4", timeline(cid, json.path("data"))));
                             });
                 });
     }
@@ -321,7 +370,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
      * 后者对自动化/爬虫 IP 有 HTTP 412 反爬挑战（返回 HTML），纯 HTTP 客户端无法通过；
      * 旧端点不受该挑战，且 {@code fnval=16} 即可返回完整 DASH 音频流（普通账号含 30280 192K，大会员账号含 30250/30251）。</p>
      */
-    private Mono<String> resolveDashAudioUrl(String bvid, String cid) {
+    private Mono<MediaUrl> resolveDashAudioUrl(String bvid, String cid) {
         return cookieService.getCookieHeader()
                 .flatMap(cookie -> {
                     String uri = UriComponentsBuilder
@@ -348,11 +397,15 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                 if (audioStreams.isMissingNode() || audioStreams.isEmpty()) {
                                     return Mono.error(new ApiRequestException("No DASH audio found"));
                                 }
-                                String url = pickBestAudioUrl(audioStreams);
-                                if (url == null) {
+                                List<String> candidates = pickAudioCandidates(audioStreams);
+                                if (candidates.isEmpty()) {
                                     return Mono.error(new ApiRequestException("No audio url found in json"));
                                 }
-                                return Mono.just(url);
+                                Map<String, String> headers = Map.of(
+                                        "Referer", "https://www.bilibili.com/",
+                                        "User-Agent", USER_AGENT);
+                                return firstReachable(candidates, headers)
+                                        .map(chosen -> new MediaUrl(chosen, ".m4a", timeline(cid, jsonNode.path("data"))));
                             });
                 });
     }
@@ -362,43 +415,76 @@ public class BilibiliMusicApiService implements IMusicApiService {
      * <p>当 {@code /x/player/wbi/playurl} 被 B站风控以 HTTP 412 挑战拦截（返回 HTML 而非 JSON）时，
      * 退化为 html5 MP4（免 WBI、无 referer 鉴权，稳定可取），保证本地缓存仍能填满。</p>
      */
-    private Mono<LocalCacheService.DownloadSource> resolveDownloadTarget(String bvid) {
-        return getVideoCidWithCookie(bvid)
-                .flatMap(cid -> resolveDashAudioUrl(bvid, cid)
-                        .map(url -> new LocalCacheService.DownloadSource(url, ".m4a"))
-                        .onErrorResume(e -> {
-                            log.warn("DASH audio resolution failed for {}, falling back to html5 MP4 download: {}", bvid, e.getMessage());
-                            return resolveHtml5Mp4Url(bvid, cid)
-                                    .map(url -> new LocalCacheService.DownloadSource(url, ".mp4"));
-                        }));
+    private Mono<MediaUrl> resolveDownloadTarget(String bvid, String cid) {
+        return resolveDashAudioUrl(bvid, cid).onErrorResume(error -> {
+            log.warn("DASH audio unavailable; resolving html5 MP4 for server download");
+            return resolveHtml5Mp4Url(bvid, cid);
+        });
     }
 
     /**
      * 选择最稳的音频流：优先固定档位 192K/132K/64K，兜底取 id 最大。
      */
-    private static String pickBestAudioUrl(JsonNode audioStreams) {
+    static List<String> pickAudioCandidates(JsonNode audioStreams) {
+        JsonNode chosen = null;
         for (int prefId : PREFERRED_AUDIO_IDS) {
             for (JsonNode a : audioStreams) {
-                if (a.path("id").asInt() == prefId) {
-                    return a.path("baseUrl").asText();
-                }
+                if (a.path("id").asInt() == prefId) { chosen = a; break; }
+            }
+            if (chosen != null) break;
+        }
+        if (chosen == null) {
+            int bestId = -1;
+            for (JsonNode a : audioStreams) {
+                int id = a.path("id").asInt();
+                if (id > bestId) { bestId = id; chosen = a; }
             }
         }
-        JsonNode best = null;
-        int bestId = -1;
-        for (JsonNode a : audioStreams) {
-            int id = a.path("id").asInt();
-            if (id > bestId) {
-                bestId = id;
-                best = a;
-            }
+        if (chosen == null) return List.of();
+        // 同一档位通常带多个镜像（backupUrl/backup_url）：主地址失败时还能换一个。
+        LinkedHashSet<String> urls = new LinkedHashSet<>();
+        for (String field : List.of("baseUrl", "base_url")) {
+            String value = chosen.path(field).asText("");
+            if (StringUtils.hasText(value)) urls.add(value);
         }
-        return best != null ? best.path("baseUrl").asText() : null;
+        for (String field : List.of("backupUrl", "backup_url")) {
+            chosen.path(field).forEach(node -> {
+                String value = node.asText("");
+                if (StringUtils.hasText(value)) urls.add(value);
+            });
+        }
+        return List.copyOf(urls);
+    }
+
+    /**
+     * 并发探测候选镜像，返回第一个能拿到数据的地址；全部失败时仍回退到主地址，
+     * 让下载器去暴露真实错误（例如签名过期），而不是在解析阶段就放弃。
+     */
+    Mono<String> firstReachable(List<String> candidates, Map<String, String> headers) {
+        if (candidates.size() <= 1) return Mono.just(candidates.get(0));
+        // 只探测前三个：多打上游容易被 B 站限流，收益也很小。
+        List<String> targets = candidates.size() > 3 ? candidates.subList(0, 3) : candidates;
+        return Flux.fromIterable(targets)
+                .flatMap(url -> probeMedia(url, headers).map(reachable -> url), targets.size())
+                .next()
+                .defaultIfEmpty(candidates.get(0));
+    }
+
+    private Mono<Boolean> probeMedia(String url, Map<String, String> headers) {
+        return webClient.get().uri(url)
+                .headers(http -> headers.forEach(http::set))
+                .header("Range", "bytes=0-0")
+                .exchangeToMono(response -> response.releaseBody()
+                        .thenReturn(response.statusCode().is2xxSuccessful() || response.statusCode().value() == 206))
+                .timeout(java.time.Duration.ofSeconds(2))
+                .onErrorReturn(false)
+                .flatMap(reachable -> reachable ? Mono.just(true) : Mono.empty());
     }
 
     @Override
-    public Mono<List<Playlist>> getUserPlaylists(String userId) {
-        ensureConfigured();
+    public Mono<SourcePage<Playlist>> publicCollections(String userId, String category, int offset, int limit) {
+        if (!"favorites".equals(category)) return Mono.error(new ApiRequestException("CAPABILITY_UNAVAILABLE: 收藏类别不存在"));
+        if (offset < 0 || limit < 1) return Mono.error(new ApiRequestException("INVALID_CURSOR: 无效分页参数"));
         // API: /x/v3/fav/folder/created/list-all
         // 参数: up_mid (目标用户ID)
         String favListApi = baseUrl + "/x/v3/fav/folder/created/list-all";
@@ -413,9 +499,8 @@ public class BilibiliMusicApiService implements IMusicApiService {
                 .flatMap(spec -> spec.retrieve().bodyToMono(JsonNode.class))
                 .map(jsonNode -> {
                     if (jsonNode.path("code").asInt() != 0) {
-                        // 如果用户隐私设置导致无法获取，或者用户不存在，返回空列表而非报错
                         log.warn("Failed to get Bilibili favorites for user {}: {}", userId, jsonNode.path("message").asText());
-                        return new ArrayList<>();
+                        throw new ApiRequestException("收藏夹不可读取");
                     }
 
                     List<Playlist> playlists = new ArrayList<>();
@@ -437,23 +522,43 @@ public class BilibiliMusicApiService implements IMusicApiService {
                             }
                         });
                     }
-                    return playlists;
+                    int start = Math.min(offset, playlists.size());
+                    int end = Math.min(start + limit, playlists.size());
+                    return new SourcePage<>(playlists.subList(start, end), end < playlists.size() ? end : null, (long) playlists.size());
                 });
     }
 
     @Override
-    public Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit) {
-        ensureConfigured();
-        int safeLimit = Math.min(limit, 20);
+    public Mono<Playlist> containerDetail(String type, String id) {
+        if (!"favorites".equals(type)) return IMusicApiService.super.containerDetail(type, id);
+        String uri = UriComponentsBuilder.fromHttpUrl(baseUrl + "/x/v3/fav/resource/list")
+                .queryParam("media_id", id).queryParam("ps", 1).queryParam("pn", 1).toUriString();
+        return buildBilibiliRequest(uri).flatMap(spec -> spec.retrieve().bodyToMono(JsonNode.class)).map(json -> {
+            if (json.path("code").asInt() != 0 || !json.path("data").path("info").isObject()) {
+                throw new ApiRequestException("COLLECTION_NOT_PUBLIC: 收藏夹不可读取");
+            }
+            JsonNode info = json.path("data").path("info");
+            return new Playlist(info.path("id").asText(id), info.path("title").asText(),
+                    BilibiliApiUtils.normalizeCoverUrl(info.path("cover").asText()),
+                    info.path("media_count").asInt(), PLATFORM);
+        });
+    }
 
-        int pageNumber = (offset / safeLimit) + 1;
+    @Override
+    public Mono<SourcePage<Music>> containerPage(String type, String id, int offset, int limit) {
+        if (!"favorites".equals(type)) return IMusicApiService.super.containerPage(type, id, offset, limit);
+        int pageSize = Math.min(limit, 20);
+        if (pageSize < 1 || offset < 0 || offset % pageSize != 0) {
+            return Mono.error(new ApiRequestException("INVALID_CURSOR: 无效的收藏夹分页位置"));
+        }
+        int pageNumber = offset / pageSize + 1;
 
         // API: /x/v3/fav/resource/list
         String favDetailApi = baseUrl + "/x/v3/fav/resource/list";
 
         String uri = UriComponentsBuilder.fromHttpUrl(favDetailApi)
-                .queryParam("media_id", playlistId)
-                .queryParam("ps", safeLimit)
+                .queryParam("media_id", id)
+                .queryParam("ps", pageSize)
                 .queryParam("pn", pageNumber)
                 .build()
                 .toUriString();
@@ -465,10 +570,9 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
                     int code = jsonNode.path("code").asInt();
                     if (code != 0) {
-                        // -404 通常表示空页或没有权限，视为正常结束
-                        if (code == -404) return musicList;
+                        if (code == -404) throw new ApiRequestException("收藏夹不可读取");
                         log.error("Failed to get Bilibili favorite details: {}", jsonNode.path("message").asText());
-                        return musicList;
+                        throw new ApiRequestException("收藏夹不可读取");
                     }
 
                     JsonNode medias = jsonNode.path("data").path("medias");
@@ -477,17 +581,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                         medias.forEach(media -> {
                             String title = media.path("title").asText();
                             // 过滤失效视频
-                            if ("已失效视频".equals(title)) {
-                                musicList.add(new Music(
-                                        "INVALID_SKIP", // 特殊 ID
-                                        "已失效视频",
-                                        List.of("Unknown"),
-                                        0,
-                                        PLATFORM,
-                                        ""
-                                ));
-                                return; // 结束当前循环，继续下一个
-                            }
+                            if ("已失效视频".equals(title)) return;
 
                             // 构造 Music 对象
                             musicList.add(new Music(
@@ -496,17 +590,21 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                     List.of(media.path("upper").path("name").asText()),
                                     media.path("duration").asLong() * 1000,
                                     PLATFORM,
-                                    BilibiliApiUtils.normalizeCoverUrl(media.path("cover").asText())
-                            ));
+                                    BilibiliApiUtils.normalizeCoverUrl(media.path("cover").asText()),
+                                    externalUrl(media.path("bvid").asText())));
                         });
                     }
-                    return musicList;
+                    int received = medias.isArray() ? medias.size() : 0;
+                    boolean hasMore = jsonNode.path("data").has("has_more")
+                            ? jsonNode.path("data").path("has_more").asBoolean() : received == pageSize;
+                    // pn/ps 要求游标按整页前进，不能由返回或过滤后的条目数推导。
+                    Integer nextOffset = hasMore && received > 0 ? offset + pageSize : null;
+                    return new SourcePage<>(musicList, nextOffset, null);
                 });
     }
 
     @Override
     public Mono<List<UserSearchResult>> searchUsers(String keyword) {
-        ensureConfigured();
         // 1. 准备 WBI 搜索参数
         Map<String, String> params = new HashMap<>();
         params.put("search_type", "bili_user"); // 搜索用户类型
@@ -515,7 +613,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
         // 2. 先取完整 Cookie（buvid3 硬性要求），再做 WBI 签名
         return cookieService.getCookieHeader()
-                .flatMap(cookie -> wbiService.signParams(params)
+                .flatMap(cookie -> wbiService.signParams(params, cookie)
                         .flatMap(signedParams -> {
                             // 3. 构建 URL: /x/web-interface/wbi/search/type
                             UriComponentsBuilder builder = UriComponentsBuilder
@@ -540,7 +638,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
                                         }
                                         if (code != 0) {
                                             log.error("Bilibili user search failed: {}", jsonNode.path("message").asText());
-                                            return users;
+                                            throw new ApiRequestException("B站用户搜索暂不可用");
                                         }
 
                                         JsonNode results = jsonNode.path("data").path("result");
@@ -587,7 +685,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     /** 风控挑战统一转成友好 502（与 JSON code:-412 文案一致），并保留真实异常日志供排查。 */
     static <T> Mono<T> riskControlFallback(Throwable e) {
-        log.error("Bilibili request blocked by B站 risk control (HTTP challenge): {}", e.getMessage());
+        log.warn("Bilibili request blocked by risk control");
         return Mono.error(new ApiRequestException("请求被B站风控拦截(IP受限或凭据不足)，请稍后重试"));
     }
 
@@ -598,7 +696,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     /** 网络层失败统一转成友好 502（提示检查网络/DNS），并保留真实异常日志供排查。 */
     static <T> Mono<T> networkFailureFallback(Throwable e) {
-        log.error("Bilibili network request failed (DNS/connect): {}", e.getMessage());
+        log.warn("Bilibili network request failed");
         return Mono.error(new ApiRequestException("无法连接B站服务器，请检查网络/DNS配置后重试"));
     }
 }

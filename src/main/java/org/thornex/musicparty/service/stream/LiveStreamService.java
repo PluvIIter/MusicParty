@@ -13,7 +13,10 @@ import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.event.PlayerStateEvent;
 import org.thornex.musicparty.event.StreamStatusEvent;
-import org.thornex.musicparty.service.LocalCacheService;
+import org.thornex.musicparty.media.MediaDeliveryService;
+import org.thornex.musicparty.media.ServerInput;
+import org.thornex.musicparty.source.ResourceKey;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -64,7 +67,12 @@ public class LiveStreamService {
     /** 看门狗：转码器运行中超过该时长无任何输出 → 判定停滞（网络源卡住），重启 */
     private static final long TRANSCODER_STALL_TIMEOUT_MS = 10000;
 
-    private final LocalCacheService localCacheService;
+    private final MediaDeliveryService delivery;
+    private volatile TranscodeTarget preparedTarget;
+    private volatile String preparedResource;
+    private volatile String resolvingResource;
+    private long inputGeneration;
+    private AutoCloseable inputPin;
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
 
@@ -99,15 +107,17 @@ public class LiveStreamService {
 
     // 转码会话状态（用于"仅在必要时重启"的判断）
     private volatile String runningSourceKey;
+    private String runningInputIdentity;
     private volatile long runningStartPosMs;
     private volatile long runningStartTimeMs;
     private volatile boolean hasProducedFirstByte;
     private volatile long launchStartPosMs;
     private volatile long lastSeekRestartTimeMs;
     private volatile long lastCrashRestartTimeMs;
+    private boolean recoveryLaunchPending;
 
-    public LiveStreamService(LocalCacheService localCacheService, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
-        this.localCacheService = localCacheService;
+    public LiveStreamService(MediaDeliveryService delivery, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
+        this.delivery = delivery;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
     }
@@ -316,10 +326,23 @@ public class LiveStreamService {
         return currentPosition + (System.currentTimeMillis() - lastPlayerEventTimeMs);
     }
 
-    private synchronized void checkState() {
+    private void checkState() {
+        synchronized (this) {
+            if (!isEnabled.get() || currentMusic == null || isPaused || !delivery.sourceAvailable(currentMusic.platform())) {
+                inputGeneration++;
+                resolvingResource = null;
+                recoveryLaunchPending = false;
+            }
+        }
+        requestInput(false);
+        synchronized (this) { checkPreparedState(); }
+    }
+
+    private void checkPreparedState() {
         // 转码器不随连接数启停：只要开关开启且有歌在播就持续转码（"常驻热转码"）。
         // 否则新连接会先吃到几秒静音（转码器冷启动），VRC 等不到真实音频就判定失败重试。
-        boolean shouldRun = isEnabled.get() && currentMusic != null && !isPaused && resolveTarget() != null;
+        boolean shouldRun = isEnabled.get() && currentMusic != null && !isPaused
+                && delivery.sourceAvailable(currentMusic.platform()) && resolveTarget() != null;
         if (shouldRun) {
             startTranscodingIfNeeded();
         } else {
@@ -346,14 +369,15 @@ public class LiveStreamService {
         if (!alive) {
             // 同一源近期崩溃过则进入冷却，避免每次事件都重新拉起死源（绕过 handleTranscoderExit 的冷却）
             long now = System.currentTimeMillis();
-            if (target.key().equals(runningSourceKey) && now - lastCrashRestartTimeMs < CRASH_RESTART_BACKOFF_MS) {
+            if (!recoveryLaunchPending && target.key().equals(runningSourceKey) && now - lastCrashRestartTimeMs < CRASH_RESTART_BACKOFF_MS) {
                 log.warn("Stream: source recently crashed, skipping restart (backoff)");
                 return;
             }
+            recoveryLaunchPending = false;
             startTranscoding(target);
             return;
         }
-        if (!target.key().equals(runningSourceKey)) {
+        if (!target.key().equals(runningSourceKey) || !java.util.Objects.equals(preparedResource, runningInputIdentity)) {
             log.info("Stream: source changed -> restarting for {}", currentMusic.name());
             doRestart();
             return;
@@ -390,9 +414,12 @@ public class LiveStreamService {
 
     private synchronized void startTranscoding(TranscodeTarget target) {
         stopTranscoding();
+        try { inputPin = delivery.pinInput(new ServerInput(target.input(), target.headers(), target.key())); }
+        catch (RuntimeException error) { preparedTarget = null; requestInput(true); return; }
 
         long launchPos = estimatePlayerPosition();
         runningSourceKey = target.key();
+        runningInputIdentity = preparedResource;
         launchStartPosMs = launchPos;
         runningStartPosMs = launchPos;
         runningStartTimeMs = 0; // 锚点置无效：新进程产出首字节时才会重新锚定
@@ -462,7 +489,7 @@ public class LiveStreamService {
                 if (Thread.currentThread().isInterrupted()) {
                     break;
                 }
-                log.warn("Stream ffmpeg: {}", line);
+                log.warn("Stream: ffmpeg reported an input/transcoding error");
             }
         } catch (IOException e) {
             // 进程被杀或管道关闭，忽略
@@ -474,6 +501,10 @@ public class LiveStreamService {
         broadcaster.flushAll();
         // 交还静音基底：此后由静音填充线程维持连接数据流
         songActive.set(false);
+        if (inputPin != null) {
+            try { inputPin.close(); } catch (Exception ignored) { }
+            inputPin = null;
+        }
         if (transcoderProcess != null) {
             if (transcoderProcess.isAlive()) {
                 transcoderProcess.destroy();
@@ -535,7 +566,7 @@ public class LiveStreamService {
         if (process == null || process.isAlive()) {
             return;
         }
-        transcoderProcess = null;
+        stopTranscoding();
 
         // 退出码 0：只在"确实产出过音频 且 位置接近歌曲末尾"时才视为自然播完；
         // 否则（未产出首字节 / 远未到末尾就退出）是异常，需要重启恢复
@@ -553,7 +584,8 @@ public class LiveStreamService {
                     currentMusic != null ? currentMusic.duration() : -1);
         }
 
-        boolean shouldRun = isEnabled.get() && currentMusic != null && !isPaused && resolveTarget() != null;
+        boolean shouldRun = isEnabled.get() && currentMusic != null && !isPaused
+                && delivery.sourceAvailable(currentMusic.platform()) && resolveTarget() != null;
         if (shouldRun) {
             long now = System.currentTimeMillis();
             if (now - lastCrashRestartTimeMs < CRASH_RESTART_BACKOFF_MS) {
@@ -562,8 +594,10 @@ public class LiveStreamService {
                 return;
             }
             lastCrashRestartTimeMs = now;
+            recoveryLaunchPending = true;
             log.warn("Stream: transcoder died unexpectedly, restarting");
-            doRestart(); // doRestart -> stopTranscoding 会置 songActive=false，空窗由静音基底覆盖
+            preparedTarget = null;
+            requestInput(true);
         } else {
             songActive.set(false);
         }
@@ -575,9 +609,15 @@ public class LiveStreamService {
      */
     @Scheduled(fixedRate = 5000)
     public void transcodeWatchdog() {
+        if (currentMusic != null && (resolveTarget() == null)) {
+            stopTranscoding();
+            checkState();
+            return;
+        }
         Process process = transcoderProcess;
         if (process == null || !process.isAlive()) {
-            return; // 未运行或已退出（退出由 handleTranscoderExit 处理）
+            checkState();
+            return;
         }
         long now = System.currentTimeMillis();
         if (!hasProducedFirstByte && now - transcoderStartTimeMs > TRANSCODER_STARTUP_TIMEOUT_MS) {
@@ -597,7 +637,10 @@ public class LiveStreamService {
             return;
         }
         lastCrashRestartTimeMs = now;
-        doRestart();
+        recoveryLaunchPending = true;
+        stopTranscoding();
+        preparedTarget = null;
+        requestInput(true);
     }
 
     /**
@@ -605,45 +648,55 @@ public class LiveStreamService {
      *
      * @return 转码目标；源未就绪（PENDING_DOWNLOAD / 空 URL）时返回 null
      */
+    private void requestInput(boolean refresh) {
+        PlayableMusic music = currentMusic;
+        if (!isEnabled.get() || music == null || isPaused || !delivery.sourceAvailable(music.platform())) return;
+        String resource = inputIdentity(music);
+        if (resource == null) return;
+        long generation;
+        synchronized (this) {
+            if (resource.equals(resolvingResource) || (!refresh && resource.equals(preparedResource) && preparedTarget != null)) return;
+            resolvingResource = resource;
+            generation = ++inputGeneration;
+        }
+        delivery.serverInput(music).subscribeOn(Schedulers.boundedElastic()).subscribe(input -> {
+            synchronized (this) {
+                if (generation != inputGeneration) return;
+                resolvingResource = null;
+                if (!isEnabled.get() || isPaused || currentMusic == null || !delivery.sourceAvailable(currentMusic.platform())
+                        || !resource.equals(inputIdentity(currentMusic))) return;
+                preparedResource = resource;
+                preparedTarget = new TranscodeTarget(input.location(), input.headers(), input.key());
+                checkPreparedState();
+            }
+        }, error -> {
+            synchronized (this) {
+                if (generation == inputGeneration) {
+                    resolvingResource = null;
+                    preparedTarget = null;
+                    preparedResource = null;
+                }
+            }
+            log.warn("Stream: media input unavailable");
+        }, () -> {
+            synchronized (this) {
+                if (generation == inputGeneration) resolvingResource = null;
+            }
+        });
+    }
+
+    private String inputIdentity(PlayableMusic music) {
+        try {
+            return ResourceKey.encode(music.platform(), music.id()) + ":auth:" + delivery.authorizationScope(music.platform())
+                    + ":timeline:" + delivery.timelineIdentity(music);
+        } catch (RuntimeException error) { return null; }
+    }
+
     private TranscodeTarget resolveTarget() {
-        LocalCacheService.CacheEntry entry = localCacheService.getCacheEntry(currentMusic.id());
-        if (entry != null && entry.getStatus() == CacheStatus.COMPLETED) {
-            Path filePath = Paths.get(LocalResourceConfig.CACHE_DIR, entry.getFileName());
-            if (Files.exists(filePath)) {
-                return new TranscodeTarget(
-                        filePath.toAbsolutePath().toString(),
-                        Map.of(),
-                        "file:" + entry.getFileName() + "#" + currentMusic.id());
-            }
-        }
-
-        String url = currentMusic.url();
-        if (url == null || url.isEmpty() || "PENDING_DOWNLOAD".equals(url)) {
-            log.warn("Stream: music source not ready for {}", currentMusic.name());
-            return null;
-        }
-
-        Map<String, String> headers = new HashMap<>();
-        if ("netease".equals(currentMusic.platform())) {
-            // 根因：NeteaseMusicApiService.upgradeToHttps 会把 CDN 直链强制转成 https（供浏览器在
-            // https 页面上直连，避免混合内容拦截）。但实测（2026-08-02，服务器 ffmpeg 8.0.1）网易云
-            // CDN 从服务器走 HTTPS 的 TLS 极不稳定：随机 [tls] Unknown error / 握手挂起 → 转码器
-            // 零产出 → 看门狗反复重启 → 切歌卡顿。转码器是服务器侧拉流，改走 http 输入稳定可用；
-            // 浏览器侧仍用 https 的 currentMusic.url()，不受影响。
-            if (url.startsWith("https://")) {
-                url = "http://" + url.substring("https://".length());
-            }
-            // 网易云 CDN 对非浏览器请求（ffmpeg 默认 UA、无 Referer）有限流/丢弃行为，
-            // 实测会导致 ffmpeg TLS 连接被切断（IO error: End of file）→ 转码器无输出 → 断断续续。
-            // 带上浏览器 UA + Referer 后请求特征接近真实浏览器，显著降低被切断概率。
-            headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            headers.put("Referer", "https://music.163.com/");
-        } else if ("bilibili".equals(currentMusic.platform())) {
-            headers.put("Referer", "https://www.bilibili.com/");
-            headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        }
-        // key 必须含 music id：两首歌可能共用同一 URL
-        return new TranscodeTarget(url, headers, "net:" + currentMusic.platform() + ":" + url + "#" + currentMusic.id());
+        if (currentMusic == null || !delivery.sourceAvailable(currentMusic.platform())
+                || ("VOICE".equals(currentMusic.kind()) && !delivery.inputAvailable(currentMusic))
+                || inputIdentity(currentMusic) == null || !inputIdentity(currentMusic).equals(preparedResource)) return null;
+        return preparedTarget;
     }
 
     private record TranscodeTarget(String input, Map<String, String> headers, String key) {

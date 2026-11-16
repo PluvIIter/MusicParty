@@ -27,16 +27,9 @@ class SocketService {
         // 避免重复连接
         if (this.client && this.client.active) return;
         this.callbacks = callbacks;
-        const legacyTopics = [WS_DEST.TOPIC_STATE, WS_DEST.USER_STATE, WS_DEST.TOPIC_QUEUE, WS_DEST.TOPIC_USERS];
         this.compact = createCompactReceiver({
-            apply: (state) => subscriptions[WS_DEST.TOPIC_STATE]?.(state),
+            apply: callbacks.onState,
             requestSnapshot: () => this.send(WS_DEST.COMPACT_RESYNC),
-            activated: () => {
-                for (const topic of legacyTopics) {
-                    this.subscriptionHandles.get(topic)?.unsubscribe();
-                    this.subscriptionHandles.delete(topic);
-                }
-            },
         });
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -58,7 +51,6 @@ class SocketService {
                 this.compact.reset();
                 this.subscriptionHandles.clear();
 
-                // 1. 注册所有订阅（compact 通道优先；其激活后忽略对应的 legacy 主题）
                 const compactHandler = (frame) => this.compact.receive(frame);
                 const allSubscriptions = {
                     [WS_DEST.TOPIC_COMPACT]: compactHandler,
@@ -71,7 +63,6 @@ class SocketService {
                         // 心跳/半开连接检测：任何入站消息都算作链路活动的证据
                         this.lastMessageAt = Date.now();
                         const body = JSON.parse(message.body);
-                        if (this.compact.isActive() && legacyTopics.includes(topic)) return;
                         handler(body);
                     });
                     this.subscriptionHandles.set(topic, subscription);
@@ -112,15 +103,10 @@ class SocketService {
      */
     send(destination, body = {}) {
         if (this.client && this.connected) {
-            if (destination === WS_DEST.RESYNC && this.hasCompactSync()) destination = WS_DEST.COMPACT_RESYNC;
             this.client.publish({ destination, body: JSON.stringify(body) });
         } else {
             console.warn('Socket not connected, cannot send:', destination);
         }
-    }
-
-    hasCompactSync() {
-        return this.compact?.isActive() === true;
     }
 
     /**

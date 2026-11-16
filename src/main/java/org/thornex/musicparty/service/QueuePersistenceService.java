@@ -58,6 +58,7 @@ public class QueuePersistenceService {
     public synchronized void saveNow() throws IOException {
         File file = getPersistenceFile();
         PersistentData data = new PersistentData();
+        data.setSchemaVersion(1);
         synchronized (musicQueueManager) {
             data.setQueue(musicQueueManager.getQueueSnapshot());
             data.setPlayedQueueIds(musicQueueManager.getPlayedQueueIds());
@@ -66,7 +67,6 @@ public class QueuePersistenceService {
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
         data.setSettings(buildSettingsSnapshot());
-        data.setPlaybackModeVersion(2);
         objectMapper.writeValue(file, data);
         log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
     }
@@ -83,6 +83,7 @@ public class QueuePersistenceService {
     public synchronized void saveQueueSnapshot(List<MusicQueueItem> entries) throws IOException {
         Path file = getPersistenceFile().toPath().toAbsolutePath().normalize();
         PersistentData data = new PersistentData();
+        data.setSchemaVersion(1);
         synchronized (musicQueueManager) {
             data.setQueue(List.copyOf(entries));
             Set<String> playedQueueIds = new HashSet<>(musicQueueManager.getPlayedQueueIds());
@@ -99,7 +100,6 @@ public class QueuePersistenceService {
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
         data.setSettings(buildSettingsSnapshot());
-        data.setPlaybackModeVersion(2);
         Path temporary = Files.createTempFile(file.getParent(), "queue-snapshot-", ".tmp");
         try {
             objectMapper.writeValue(temporary.toFile(), data);
@@ -117,7 +117,16 @@ public class QueuePersistenceService {
 
         try {
             PersistentData data = objectMapper.readValue(file, new TypeReference<PersistentData>() {});
-            
+
+            // 旧版存档（无 schemaVersion 或版本不符）不再拒绝：尽量导入，随后立即按新格式覆写。
+            boolean migrated = !Integer.valueOf(1).equals(data.getSchemaVersion());
+            if (migrated) {
+                Path backup = backupOf(file, "legacy");
+                log.warn("Legacy persistence snapshot (schemaVersion={}) at {}; backup kept at {} then content imported",
+                        data.getSchemaVersion(), file.getAbsolutePath(), backup);
+                data.setSchemaVersion(1);
+            }
+
             musicQueueManager.restore(
                 data.getQueue() != null ? data.getQueue() : Collections.emptyList(),
                 data.getHistory() != null ? data.getHistory() : Collections.emptyList()
@@ -125,28 +134,43 @@ public class QueuePersistenceService {
 
             musicQueueManager.restorePlayedQueueIds(data.getPlayedQueueIds());
             musicQueueManager.restoreMemberShufflePreferences(data.getMemberShufflePreferences());
-            if (data.getPlaybackModeVersion() == null && data.getSettings() != null && data.getSettings().player() != null) {
-                SettingsSnapshot old = data.getSettings();
-                SettingsSnapshot.PlayerSettings p = old.player();
-                if ("SHUFFLE".equals(p.playMode()) && !Boolean.FALSE.equals(p.fairShuffle())) {
-                    data.setSettings(new SettingsSnapshot(new SettingsSnapshot.PlayerSettings("ROUND_ROBIN", true,
-                            p.allowOfflineShuffle(), p.voteSkipEnabled(), p.voteSkipThreshold(), p.voteSkipWaitTime(),
-                            p.pauseLocked(), p.skipLocked(), p.playModeLocked()), old.roomPassword(), old.streamEnabled(),
-                            old.privateDj(), old.systemConfig()));
-                }
-            }
-
             chatService.restore(data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
 
             applySettings(data.getSettings());
+            musicPlayerService.prepareRestoredQueue();
 
             log.info("Restored {} queue items, {} music history items and {} chat messages from {}",
-                data.getQueue() != null ? data.getQueue().size() : 0, 
-                data.getHistory() != null ? data.getHistory().size() : 0, 
+                data.getQueue() != null ? data.getQueue().size() : 0,
+                data.getHistory() != null ? data.getHistory().size() : 0,
                 data.getChatHistory() != null ? data.getChatHistory().size() : 0,
                 file.getAbsolutePath());
+
+            if (migrated) {
+                try {
+                    saveNow();
+                    log.info("Persistence snapshot rewritten as schemaVersion=1 at {}", file.getAbsolutePath());
+                } catch (IOException e) {
+                    log.warn("Failed to rewrite migrated persistence snapshot at {}; it will be rewritten on the next save",
+                            file.getAbsolutePath(), e);
+                }
+            }
         } catch (Exception e) {
-            log.error("Failed to load persistence data from {}", file.getAbsolutePath(), e);
+            Path backup = backupOf(file, "unreadable");
+            log.error("Failed to load persistence data from {}; original kept at {}, starting fresh and overwriting on the next save",
+                    file.getAbsolutePath(), backup, e);
+        }
+    }
+
+    /** 尽量保留一份旧文件副本（不阻止后续覆写），便于回滚或排查。 */
+    private Path backupOf(File file, String reason) {
+        try {
+            Path source = file.toPath().toAbsolutePath().normalize();
+            Path backup = source.resolveSibling(source.getFileName() + "." + reason + "-" + System.currentTimeMillis() + ".bak");
+            Files.copy(source, backup, StandardCopyOption.REPLACE_EXISTING);
+            return backup;
+        } catch (IOException e) {
+            log.warn("Failed to back up persistence file {}", file.getAbsolutePath(), e);
+            return file.toPath();
         }
     }
 
@@ -178,11 +202,15 @@ public class QueuePersistenceService {
             if (cfg.maxChatHistorySize() != null) appProperties.getChat().setMaxHistorySize(cfg.maxChatHistorySize());
             if (cfg.minChatIntervalMs() != null) appProperties.getChat().setMinIntervalMs(cfg.minChatIntervalMs());
             if (cfg.maxChatMessageLength() != null) appProperties.getChat().setMaxMessageLength(cfg.maxChatMessageLength());
-            if (cfg.neteaseEnabled() != null) appProperties.getNetease().setEnabled(cfg.neteaseEnabled());
-            if (cfg.bilibiliEnabled() != null) appProperties.getBilibili().setEnabled(cfg.bilibiliEnabled());
             if (cfg.allowPlaylistClaim() != null) appProperties.getQueue().setAllowPlaylistClaim(cfg.allowPlaylistClaim());
             if (cfg.allowSeek() != null) appProperties.getPlayer().setAllowSeek(cfg.allowSeek());
             if (cfg.bilibiliMaxDurationMinutes() != null) appProperties.getBilibili().setMaxDurationMinutes(cfg.bilibiliMaxDurationMinutes());
+        }
+
+        if (s.sourceEnabled() != null) {
+            s.sourceEnabled().forEach((id, enabled) -> {
+                if (enabled != null) musicPlayerService.restoreSourceEnabled(id, enabled);
+            });
         }
 
         if (s.roomPassword() != null) authController.forceSetPassword(s.roomPassword());
@@ -208,13 +236,14 @@ public class QueuePersistenceService {
                         appProperties.getPlayer().getMaxPlaylistImportSize(),
                         appProperties.getChat().getMaxHistorySize(),
                         appProperties.getChat().getMinIntervalMs(),
-                        appProperties.getNetease().isEnabled(),
-                        appProperties.getBilibili().isEnabled(),
                         appProperties.getBilibili().getMaxDurationMinutes(),
                         appProperties.getChat().getMaxMessageLength(),
                         appProperties.getQueue().isRetainPlaylist(),
                         appProperties.getQueue().isAllowPlaylistClaim(),
-                        appProperties.getPlayer().isAllowSeek()));
+                        appProperties.getPlayer().isAllowSeek()),
+                appProperties.getSources().entrySet().stream()
+                        .filter(entry -> entry.getValue().getEnabled() != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getEnabled())));
     }
 
     private File getPersistenceFile() {
@@ -233,7 +262,7 @@ public class QueuePersistenceService {
         private List<Music> history;
         private List<org.thornex.musicparty.dto.ChatMessage> chatHistory;
         private SettingsSnapshot settings;
-        private Integer playbackModeVersion;
+        private Integer schemaVersion;
         private Map<String, Boolean> memberShufflePreferences;
     }
 }

@@ -192,13 +192,6 @@ public class UserService {
         return usersByToken.values().stream().anyMatch(u -> u.getName().equalsIgnoreCase(name));
     }
 
-    public boolean bindAccount(String sessionId, String platform, String accountId) {
-        return getUserBySession(sessionId).map(user -> {
-            user.getBindings().put(platform, accountId);
-            return true;
-        }).orElse(false);
-    }
-
     public List<UserSummary> getOnlineUserSummaries() {
         return usersByToken.values().stream()
                 // 只返回在线用户 (sessionId != null)
@@ -242,7 +235,7 @@ public class UserService {
     }
 
     /** Caller holds this monitor through durable queue commit and completePlaylistClaim. */
-    UserSummary preparePlaylistClaim(String sessionId, String sourceToken, String name) {
+    UserSummary preparePlaylistClaim(String sessionId, String sourceToken, String name, boolean inheritName) {
         User target = getUser(sessionId).filter(u -> sessionId.equals(u.getSessionId()))
                 .orElseThrow(() -> new IllegalArgumentException("连接已失效，请重新连接房间"));
         if (sourceToken.equals(target.getToken())) throw new IllegalArgumentException("这已经是你的歌单");
@@ -251,10 +244,11 @@ public class UserService {
                 || System.currentTimeMillis() - source.getLastActiveTime() < 10_000L
                 || getRecentlyActiveUserTokens().contains(sourceToken)))
             throw new IllegalArgumentException("原主人在线或刚刚断线，请稍后再认领");
-        if (usersByToken.values().stream().anyMatch(u -> !sourceToken.equals(u.getToken())
+        // 只有继承昵称时才需要占用原名称；不继承时沿用自己当前的昵称。
+        if (inheritName && usersByToken.values().stream().anyMatch(u -> !sourceToken.equals(u.getToken())
                 && !target.getToken().equals(u.getToken()) && name.equalsIgnoreCase(u.getName())))
             throw new IllegalArgumentException("原歌单名称已被其他成员使用，暂时无法认领");
-        return new UserSummary(target.getToken(), sessionId, name, false);
+        return new UserSummary(target.getToken(), sessionId, inheritName ? name : target.getName(), false);
     }
 
     void completePlaylistClaim(String sourceToken, UserSummary member) {

@@ -7,8 +7,6 @@ import org.springframework.stereotype.Component;
 import org.thornex.musicparty.dto.PlayerEvent;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.enums.PlayerAction;
-import org.thornex.musicparty.event.PlayerStateEvent;
-import org.thornex.musicparty.event.QueueUpdateEvent;
 import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.service.UserService;
 import org.thornex.musicparty.util.MessageFormatter;
@@ -19,22 +17,6 @@ public class WebSocketBroadcaster {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final UserService userService;
-
-    /**
-     * 监听播放器完整状态变更事件
-     */
-    @EventListener
-    public void onPlayerStateChanged(PlayerStateEvent event) {
-        messagingTemplate.convertAndSend("/topic/player/state", event.getState());
-    }
-
-    /**
-     * 监听队列更新事件
-     */
-    @EventListener
-    public void onQueueChanged(QueueUpdateEvent event) {
-        messagingTemplate.convertAndSend("/topic/player/queue", event.getQueue());
-    }
 
     /**
      * 监听系统消息事件（用于 Toast 通知等）

@@ -23,4 +23,15 @@ class MediaPlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /**
+     * 划掉最近任务：进程会被前台服务保活，WebView 里的音频也不会自己停，
+     * 所以这里显式释放播放器并结束服务（stopSelf 之后 START_STICKY 不会把它拉回来）。
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        MusicBridge.release()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
 }

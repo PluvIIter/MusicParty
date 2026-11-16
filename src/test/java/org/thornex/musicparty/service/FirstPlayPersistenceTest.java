@@ -1,5 +1,7 @@
 package org.thornex.musicparty.service;
 
+import org.thornex.musicparty.source.ResourceKey;
+
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -18,7 +20,7 @@ class FirstPlayPersistenceTest {
     @TempDir Path temp;
     private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
     private MusicQueueItem add(MusicQueueManager q, String id) {
-        return q.add(new Music(id, id, List.of("Test"), 1000, "netease", ""), new UserSummary("A", "A", "A", false), QueueItemStatus.READY);
+        return q.add(new Music(id, id, List.of("Test"), 1000, "netease", "", null), new UserSummary("A", "A", "A", false), QueueItemStatus.READY);
     }
     private QueuePersistenceService persistence(MusicQueueManager q, AppProperties props) {
         ChatService chat = mock(ChatService.class);
@@ -39,20 +41,20 @@ class FirstPlayPersistenceTest {
         MusicQueueManager restored = new MusicQueueManager(props);
         persistence(restored, props).loadData();
         assertEquals(Set.of(old.queueId()), restored.getPlayedQueueIds());
-        assertEquals(fresh.queueId(), restored.pollNext(PlayMode.ROUND_ROBIN, true, false,
-                Map.of("old", QueueItemStatus.READY, "new", QueueItemStatus.READY), Set.of("A")).queueId());
+        assertEquals(fresh.queueId(), restored.pollNext(PlayMode.ROUND_ROBIN, false,
+                Map.of(ResourceKey.encode("netease", "old"), QueueItemStatus.READY, ResourceKey.encode("netease", "new"), QueueItemStatus.READY), Set.of("A")).queueId());
     }
-    @Test void oldSnapshotMigratesOnlyKnownHistoryAndEmptyLedgerIsAuthoritative() throws Exception {
+    @Test void currentEmptyLedgerNeverInfersPlayedEntriesFromHistory() throws Exception {
         AppProperties props = new AppProperties();
         props.getQueue().setRetainPlaylist(true);
         Path file = temp.resolve("old.json"); props.getQueue().setPersistenceFile(file.toString());
         MusicQueueManager q = new MusicQueueManager(props);
         MusicQueueItem old = add(q, "old"); add(q, "new");
-        mapper.writeValue(file.toFile(), Map.of("queue", q.getQueueSnapshot(), "history", List.of(old.music())));
+        mapper.writeValue(file.toFile(), Map.of("schemaVersion", 1, "queue", q.getQueueSnapshot(), "history", List.of(old.music())));
         MusicQueueManager restored = new MusicQueueManager(props);
         persistence(restored, props).loadData();
-        assertEquals(Set.of(old.queueId()), restored.getPlayedQueueIds());
-        mapper.writeValue(file.toFile(), Map.of("queue", q.getQueueSnapshot(), "history", List.of(old.music()), "playedQueueIds", List.of()));
+        assertTrue(restored.getPlayedQueueIds().isEmpty());
+        mapper.writeValue(file.toFile(), Map.of("schemaVersion", 1, "queue", q.getQueueSnapshot(), "history", List.of(old.music()), "playedQueueIds", List.of()));
         persistence(restored, props).loadData();
         assertTrue(restored.getPlayedQueueIds().isEmpty());
     }

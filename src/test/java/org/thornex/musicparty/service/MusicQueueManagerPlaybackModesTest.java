@@ -1,5 +1,7 @@
 package org.thornex.musicparty.service;
 
+import org.thornex.musicparty.source.ResourceKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,7 +35,7 @@ class MusicQueueManagerPlaybackModesTest {
     }
 
     private MusicQueueItem add(String id, String owner) {
-        MusicQueueItem item = queue.add(new Music(id, id, List.of("Artist"), 1000, "netease", null),
+        MusicQueueItem item = queue.add(new Music(id, id, List.of("Artist"), 1000, "netease", null, null),
                 new UserSummary(owner, owner, owner, false), QueueItemStatus.READY);
         assertNotNull(item);
         return item;
@@ -41,12 +43,12 @@ class MusicQueueManagerPlaybackModesTest {
 
     private Map<String, QueueItemStatus> ready() {
         Map<String, QueueItemStatus> statuses = new HashMap<>();
-        queue.getQueueSnapshot().forEach(item -> statuses.put(item.music().id(), QueueItemStatus.READY));
+        queue.getQueueSnapshot().forEach(item -> statuses.put(ResourceKey.encode(item.music().platform(), item.music().id()), QueueItemStatus.READY));
         return statuses;
     }
 
     private MusicQueueItem pick(PlayMode mode, boolean fair) {
-        MusicQueueItem item = queue.pollNext(mode, fair, true, ready(), Set.of());
+        MusicQueueItem item = queue.pollNext(mode, true, ready(), Set.of());
         assertNotNull(item);
         queue.clearPlaybackFailure(item);
         return item;
@@ -136,7 +138,7 @@ class MusicQueueManagerPlaybackModesTest {
         MusicQueueItem first = add("a1", "A");
         MusicQueueItem pinned = add("a2", "A");
         MusicQueueItem reordered = add("a3", "A");
-        assertTrue(queue.reorder(reordered.queueId(), first.queueId(), "A"));
+        assertTrue(queue.reorder(reordered.queueId(), first.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         assertEquals(TopResult.PERSONAL, queue.top(pinned.queueId(), PlayMode.ROUND_ROBIN));
         assertEquals(pinned.queueId(), pick(PlayMode.ROUND_ROBIN, false).queueId());
         assertEquals(Priority.REGULAR, queue.getItem(pinned.queueId()).orElseThrow().priority());
@@ -152,7 +154,7 @@ class MusicQueueManagerPlaybackModesTest {
         queue.clearPlaybackFailure(heard);
         queue.setMemberShuffle("A", false);
         assertEquals(heard.queueId(), pick(PlayMode.ROUND_ROBIN, true).queueId());
-        assertTrue(queue.reorder(heard.queueId(), fresh.queueId(), "A"));
+        assertTrue(queue.reorder(heard.queueId(), fresh.queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         queue.setMemberShuffle("A", true);
         assertEquals(Set.of(heard.queueId()), queue.getPlayedQueueIds());
         assertEquals(fresh.queueId(), pick(PlayMode.ROUND_ROBIN, false).queueId());
@@ -192,7 +194,7 @@ class MusicQueueManagerPlaybackModesTest {
         for (int i = 0; i < 4; i++) add("old" + i, "A");
         for (int i = 0; i < 4; i++) pick(mode, true);
         MusicQueueItem roundFirst = pick(mode, false);
-        assertTrue(queue.reorder(roundFirst.queueId(), queue.getQueueSnapshot().getFirst().queueId(), "A"));
+        assertTrue(queue.reorder(roundFirst.queueId(), queue.getQueueSnapshot().getFirst().queueId(), "A", org.thornex.musicparty.enums.PlayMode.ROUND_ROBIN));
         Set<String> round = new HashSet<>(Set.of(roundFirst.queueId()));
         for (int i = 0; i < 3; i++) assertTrue(round.add(pick(mode, true).queueId()));
         List<MusicQueueItem> newSongs = List.of(add("new1", "A"), add("new2", "A"));
@@ -206,15 +208,15 @@ class MusicQueueManagerPlaybackModesTest {
     void randomModesSupportFmOnlineFilteringAndOfflineFallback(PlayMode mode) {
         add("offline", "offline");
         queue.ensureFmMarker();
-        MusicQueueItem marker = queue.pollNext(mode, true, false, ready(), Set.of("online"));
+        MusicQueueItem marker = queue.pollNext(mode, false, ready(), Set.of("online"));
         assertNotNull(marker);
         assertEquals(MusicQueueManager.FM_MARKER_ID, marker.music().platform());
-        MusicQueueItem fallback = queue.pollNext(mode, false, false, ready(), Set.of("online"));
+        MusicQueueItem fallback = queue.pollNext(mode, false, ready(), Set.of("online"));
         assertNotNull(fallback);
         assertEquals("offline", fallback.music().id());
         add("offline2", "offline");
         add("online", "online");
-        assertEquals("online", queue.pollNext(mode, true, false, ready(), Set.of("online")).music().id());
+        assertEquals("online", queue.pollNext(mode, false, ready(), Set.of("online")).music().id());
     }
 
     @ParameterizedTest
@@ -224,7 +226,7 @@ class MusicQueueManagerPlaybackModesTest {
         MusicQueueItem heard = add("heard", "A");
         MusicQueueItem fresh = add("fresh", "A");
         queue.clearPlaybackFailure(heard);
-        MusicQueueItem attempt = queue.pollNext(mode, true, true, ready(), Set.of());
+        MusicQueueItem attempt = queue.pollNext(mode, true, ready(), Set.of());
         assertEquals(fresh.queueId(), attempt.queueId());
         queue.markPlaybackFailed(attempt);
         assertEquals(Set.of(heard.queueId()), queue.getPlayedQueueIds());
@@ -270,12 +272,12 @@ class MusicQueueManagerPlaybackModesTest {
         int fmPicked = 0;
         for (int run = 0; run < 60; run++) {
             MusicQueueManager manager = new MusicQueueManager(properties);
-            manager.add(new Music("s1", "s1", List.of("Artist"), 1000, "netease", null),
+            manager.add(new Music("s1", "s1", List.of("Artist"), 1000, "netease", null, null),
                     new UserSummary("A", "A", "A", false), QueueItemStatus.READY);
             manager.ensureFmMarker();
             Map<String, QueueItemStatus> statuses = new HashMap<>();
-            manager.getQueueSnapshot().forEach(item -> statuses.put(item.music().id(), QueueItemStatus.READY));
-            MusicQueueItem picked = manager.pollNext(PlayMode.SHUFFLE, false, true, statuses, Set.of());
+            manager.getQueueSnapshot().forEach(item -> statuses.put(ResourceKey.encode(item.music().platform(), item.music().id()), QueueItemStatus.READY));
+            MusicQueueItem picked = manager.pollNext(PlayMode.SHUFFLE, true, statuses, Set.of());
             if (MusicQueueManager.FM_MARKER_ID.equals(picked.music().platform())) fmPicked++;
         }
         assertTrue(fmPicked > 0, "保留关闭时 FM 也应参与随机选曲");

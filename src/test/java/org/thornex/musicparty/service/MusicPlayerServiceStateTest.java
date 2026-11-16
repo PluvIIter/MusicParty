@@ -21,21 +21,19 @@ class MusicPlayerServiceStateTest {
     }
 
     private MusicPlayerService build(AppProperties props, NeteaseMusicApiService api, ApplicationEventPublisher publisher) {
-        return new MusicPlayerService(
+        return PlayerTestFactory.create(
                 List.of(),
                 mock(org.thornex.musicparty.service.UserService.class),
-                mock(org.thornex.musicparty.service.LocalCacheService.class),
                 mock(org.thornex.musicparty.service.stream.LiveStreamService.class),
                 mock(MusicQueueManager.class),
                 publisher,
                 props,
-                api,
                 mock(PrivateDjService.class)
         );
     }
 
     @Test
-    void configSummaryExposesPrivateDjAndCookieState() {
+    void configSummaryUsesSourceCapabilitiesWithoutCookieIdentity() {
         AppProperties props = new AppProperties();
         props.getPrivateDj().setMode("DJ");
         props.getPrivateDj().setCustodyEnabled(true);
@@ -44,7 +42,7 @@ class MusicPlayerServiceStateTest {
 
         PlayerState state = build(props, api).getCurrentPlayerState();
 
-        assertTrue(state.config().neteaseCookieConfigured());
+        assertFalse(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(state.config()).has("neteaseCookieConfigured"));
         assertEquals("DJ", state.config().privateDj().mode());
         assertTrue(state.config().privateDj().custodyEnabled());
     }
@@ -57,7 +55,7 @@ class MusicPlayerServiceStateTest {
 
         // 模拟一首正在播放的歌曲
         service.applyFmDjSegmentForTest(
-                new PlayableMusic("1", "Song", List.of("Artist"), 180_000L, "netease", "http://x/1.mp3", "http://x/1.jpg", false),
+                new PlayableMusic("1", "Song", List.of("Artist"), 180_000L, "netease", "http://x/1.mp3", "http://x/1.jpg", "SONG", null),
                 new PrivateDjSegment.Song("1", "Song", List.of("Artist"), 180_000L, "http://x/1.jpg"));
 
         clearInvocations(publisher);

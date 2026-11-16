@@ -17,7 +17,7 @@
                             {{ album?.name || '读取专辑' }}
                         </h3>
                         <p v-if="album" class="text-xs text-ink-muted mt-1 break-words">
-                            {{ album.artists.join(' / ') }} · {{ album.trackCount }} 首
+                            {{ (album.artists || []).join(' / ') }} · {{ album.trackCount }} 首
                         </p>
                     </div>
                 </div>
@@ -47,7 +47,7 @@
                 <ol v-else-if="album" class="space-y-1" aria-label="专辑曲目">
                     <li
                         v-for="(song, index) in album.songs"
-                        :key="song.id"
+                        :key="resourceKey(song)"
                         class="flex gap-3 items-center p-3 bg-surface-raised border border-line"
                     >
                         <span class="w-5 flex-shrink-0 text-xs text-ink-subtle font-mono">{{ index + 1 }}</span>
@@ -55,30 +55,29 @@
                             <div class="text-sm font-bold break-words">{{ song.name }}</div>
                             <div class="text-xs text-ink-muted truncate">{{ song.artists.join(' / ') }}</div>
                         </div>
-                        <span v-if="inQueue(song.id)" class="flex-shrink-0 text-xs text-success">已在队列</span>
+                        <span v-if="inQueue(song)" class="flex-shrink-0 text-xs text-success">已在队列</span>
                         <button
                             type="button"
                             @click="addSong(song)"
-                            :aria-label="(inQueue(song.id) ? '已在队列：' : '添加单曲：') + song.name"
+                            :aria-label="(inQueue(song) ? '已在队列：' : '添加单曲：') + song.name"
                             :title="
-                                inQueue(song.id)
-                                    ? '已在队列'
-                                    : userStore.isGuest
-                                      ? '请先设置昵称并加入房间'
-                                      : '添加这首歌'
+                                inQueue(song) ? '已在队列' : userStore.isGuest ? '请先设置昵称并加入房间' : '添加这首歌'
                             "
                             :disabled="
                                 importing ||
-                                pendingIds.has(song.id) ||
-                                inQueue(song.id) ||
+                                pendingIds.has(resourceKey(song)) ||
+                                inQueue(song) ||
                                 !playerStore.connected ||
                                 userStore.isGuest ||
-                                playerStore.config.neteaseEnabled === false
+                                !sources.isEnabled(props.sourceId)
                             "
                             class="p-2 flex-shrink-0 text-ink-muted hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <Check v-if="inQueue(song.id)" class="w-5 h-5 text-success" />
-                            <Loader2 v-else-if="pendingIds.has(song.id)" class="w-5 h-5 animate-spin text-accent" />
+                            <Check v-if="inQueue(song)" class="w-5 h-5 text-success" />
+                            <Loader2
+                                v-else-if="pendingIds.has(resourceKey(song))"
+                                class="w-5 h-5 animate-spin text-accent"
+                            />
                             <PlusCircle v-else class="w-5 h-5" />
                         </button>
                     </li>
@@ -115,17 +114,25 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { X, ListPlus, Loader2, PlusCircle, Check } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { musicApi } from '../api/music';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
+import { useSourcesStore } from '../stores/sources';
+import { resourceKey, createRequestScope, isCanceled } from '../domain/sources';
 
-const props = defineProps({ songId: { type: String, default: '' }, albumId: { type: String, default: '' } });
+const props = defineProps({
+    sourceId: { type: String, required: true },
+    songId: { type: String, default: '' },
+    albumId: { type: String, default: '' },
+});
 const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
+const sources = useSourcesStore();
+const requests = createRequestScope();
 const pendingIds = ref(new Set());
 const pendingTimers = new Set();
 const album = ref(null),
@@ -135,41 +142,67 @@ const importing = ref(false),
     feedback = ref(''),
     importError = ref(false);
 let active = true;
-const inQueue = (id) => playerStore.queue.some((item) => item.music.platform === 'netease' && item.music.id === id);
-const allInQueue = computed(() => album.value?.songs.length > 0 && album.value.songs.every((song) => inQueue(song.id)));
+const inQueue = (song) => playerStore.queue.some((item) => resourceKey(item.music) === resourceKey(song));
+const allInQueue = computed(() => album.value?.songs.length > 0 && album.value.songs.every((song) => inQueue(song)));
 const loadAlbum = async () => {
+    const request = requests.start();
+    const sourceId = props.sourceId;
+    const songId = props.songId;
+    const albumId = props.albumId;
     loading.value = true;
     loadError.value = '';
+    album.value = null;
     try {
-        const result = await (props.albumId ? musicApi.getAlbum(props.albumId) : musicApi.getSongAlbum(props.songId));
-        if (active) album.value = result;
+        const result = await (albumId
+            ? musicApi.getContainer(sourceId, 'album', albumId, request.signal)
+            : musicApi.getSongAlbum(sourceId, songId, request.signal));
+        if (!request.current()) return;
+        const songs = [];
+        const cursors = new Set();
+        let cursor = null;
+        do {
+            const page = await musicApi.getContainerTracks(
+                sourceId,
+                result.collectionType,
+                result.id,
+                cursor,
+                request.signal
+            );
+            if (!request.current()) return;
+            songs.push(...page.items);
+            cursor = page.nextCursor;
+            if (cursor != null && cursors.has(cursor)) throw new Error('分页游标重复');
+            cursors.add(cursor);
+        } while (cursor != null);
+        if (request.current()) album.value = { ...result, songs };
     } catch (error) {
-        if (active) loadError.value = error.response?.data?.message || error.message || '专辑读取失败，请稍后重试';
+        if (request.current() && !isCanceled(error))
+            loadError.value = error.response?.data?.message || error.message || '专辑读取失败，请稍后重试';
     } finally {
-        if (active) loading.value = false;
+        if (request.current()) loading.value = false;
     }
 };
 const addSong = (song) => {
     if (
         importing.value ||
-        pendingIds.value.has(song.id) ||
-        inQueue(song.id) ||
+        pendingIds.value.has(resourceKey(song)) ||
+        inQueue(song) ||
         !playerStore.connected ||
         userStore.isGuest ||
-        playerStore.config.neteaseEnabled === false
+        !sources.isEnabled(props.sourceId)
     )
         return;
-    pendingIds.value.add(song.id);
+    pendingIds.value.add(resourceKey(song));
     try {
         // Use the existing single-song command; queue broadcasts confirm the result.
-        playerStore.enqueue('netease', song.id);
+        playerStore.enqueue(song.platform, song.id);
         const timer = setTimeout(() => {
             pendingTimers.delete(timer);
-            pendingIds.value.delete(song.id);
+            pendingIds.value.delete(resourceKey(song));
         }, 2000);
         pendingTimers.add(timer);
     } catch (error) {
-        pendingIds.value.delete(song.id);
+        pendingIds.value.delete(resourceKey(song));
         importError.value = true;
         feedback.value = error.message || '单曲添加失败，请重试';
     }
@@ -180,7 +213,7 @@ const importAlbum = async () => {
     importError.value = false;
     feedback.value = '';
     try {
-        const result = await playerStore.enqueueAlbum(album.value.id);
+        const result = await playerStore.enqueueContainer(props.sourceId, album.value.collectionType, album.value.id);
         if (active) feedback.value = result.message;
     } catch (error) {
         if (active) {
@@ -191,9 +224,10 @@ const importAlbum = async () => {
         if (active) importing.value = false;
     }
 };
-onMounted(loadAlbum);
+watch(() => [props.sourceId, props.songId, props.albumId], loadAlbum, { immediate: true });
 onUnmounted(() => {
     active = false;
+    requests.cancel();
     pendingTimers.forEach(clearTimeout);
     pendingTimers.clear();
 });
