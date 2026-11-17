@@ -279,8 +279,8 @@ import {
 import CoverImage from './CoverImage.vue';
 import PlayModePicker from './PlayModePicker.vue';
 import { useToast } from '../composables/useToast';
-import { openExternal, safeExternalUrl } from '../domain/sources';
-import { mediaExtension, downloadName } from '../services/musicDownload';
+import { openExternal } from '../domain/sources';
+import { downloadTaggedAudio } from '../services/taggedDownload';
 
 const player = usePlayerStore();
 const sources = useSourcesStore();
@@ -288,7 +288,7 @@ const canDownload = computed(() => sources.supports(player.nowPlaying?.music?.pl
 const ui = useUiStore();
 const userStore = useUserStore();
 const volumeTrackRef = ref(null);
-const { info, error } = useToast();
+const { info, error, warning } = useToast();
 
 const nowPlaying = computed(() => player.nowPlaying);
 const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
@@ -493,21 +493,24 @@ const downloadCurrentMusic = async () => {
     const music = nowPlaying.value.music;
     info(`Starting download: ${music.name}...`);
     try {
-        const response = await fetch(music.url);
-        if (!response.ok) throw new Error('Network error');
-        const extension = mediaExtension(response.headers.get('content-type'), music.url);
-        const blob = await response.blob();
-        const blobUrl = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = downloadName(music, extension);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(blobUrl);
-    } catch (e) {
-        openExternal(safeExternalUrl(music.url) || new URL(music.url, window.location.origin).href);
-        error('Blob download failed, opening new tab.');
+        const result = await downloadTaggedAudio(music);
+        if (result.status === 'server-audio-blocked') {
+            error('当前播放地址来自 MusicParty 服务器，为避免消耗服务器流量已阻止下载。');
+        } else if (result.status === 'unsupported-source' || result.status === 'invalid-url') {
+            error('此音源不支持浏览器端标签下载。');
+        } else if (result.status === 'original-direct') {
+            warning('音源不允许浏览器读取，已打开原始音源文件，未写入标签。');
+        } else if (result.status === 'original-too-large') {
+            warning('音频超过浏览器标签处理上限，已下载原文件。');
+        } else if (result.status === 'original-untagged') {
+            warning('标签写入失败，已下载原文件。');
+        } else if (result.status === 'tagged-cover-missing') {
+            warning('已写入歌手和专辑名，但封面读取失败，未嵌入封面。');
+        } else {
+            info('已写入歌手、专辑名和专辑封面。');
+        }
+    } catch {
+        error('下载失败，请检查音源直链是否可访问。');
     }
 };
 

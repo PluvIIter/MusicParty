@@ -4,6 +4,9 @@ import vue from '@vitejs/plugin-vue';
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [vue()],
+    worker: {
+        format: 'es',
+    },
     server: {
 		host: '0.0.0.0',
         // 完全放开 host 校验，允许通过 Cloudflare 隧道等任意域名访问（本地测试用）
