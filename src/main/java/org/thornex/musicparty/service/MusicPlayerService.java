@@ -158,6 +158,7 @@ public class MusicPlayerService {
                             music.id(),
                             music.name(),
                             music.artists(),
+                            music.albumName(),
                             music.duration(),
                             music.platform(),
                             music.coverUrl(),
@@ -470,7 +471,7 @@ public class MusicPlayerService {
         skipVotes.clear();
         boolean voice = segment instanceof PrivateDjSegment.Voice;
         String kind = voice ? "VOICE" : "SONG";
-        currentMusic.set(kind.equals(music.kind()) ? music : new PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), music.platform(),
+        currentMusic.set(kind.equals(music.kind()) ? music : new PlayableMusic(music.id(), music.name(), music.artists(), music.albumName(), music.duration(), music.platform(),
                 music.url(), music.coverUrl(), kind, music.externalUrl()));
         playbackId = UUID.randomUUID().toString();
         currentIsVoice.set(voice);
@@ -485,7 +486,7 @@ public class MusicPlayerService {
         fmDjRetryAt.set(0);
 
         if (segment instanceof PrivateDjSegment.Song s) {
-            queueManager.addToHistory(new Music(s.songId(), s.name(), s.artists(),
+            queueManager.addToHistory(new Music(s.songId(), s.name(), s.artists(), music.albumName(),
                     s.durationMs(), music.platform(), s.coverUrl(), music.externalUrl()));
         }
 

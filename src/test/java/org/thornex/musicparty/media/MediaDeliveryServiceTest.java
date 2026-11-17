@@ -25,7 +25,7 @@ class MediaDeliveryServiceTest {
     LocalCacheService cache;
     IMusicApiService adapter;
     MediaDeliveryService service;
-    Music music = new Music("same/id", "Track", List.of(), 120000, "stub", "", null);
+    Music music = new Music("same/id", "Track", List.of(), "Album", 120000, "stub", "", null);
 
     @BeforeEach void setup() {
         registry = mock(SourceRegistry.class); cache = mock(LocalCacheService.class); adapter = mock(IMusicApiService.class);
@@ -51,6 +51,7 @@ class MediaDeliveryServiceTest {
     @Test void stubDirectModeUsesBrowserConsumerAndNoSourceBranches() {
         var playable = service.getPlayableMusic("stub", "same/id").block();
         assertEquals("https://93.184.216.34/audio", playable.url()); assertEquals("stub", playable.platform());
+        assertEquals("Album", playable.albumName());
         assertEquals(QueueItemStatus.READY, service.status(music));
         verify(adapter).resolveMedia("same/id", MediaConsumer.BROWSER); verifyNoInteractions(cache);
     }
@@ -222,6 +223,7 @@ class MediaDeliveryServiceTest {
         var entry = new LocalCacheService.CacheEntry(); entry.setRepresentationKey("mp3:full");
         when(cache.getCacheEntry(anyString())).thenReturn(entry);
         var current = service.getPlayableMusic("stub", "same/id").block();
+        assertEquals("Album", current.albumName());
         when(adapter.credentialRevision()).thenReturn(1L);
         entry.setRepresentationKey("trial:30000");
         when(adapter.resolveMedia(anyString(), any())).thenReturn(Mono.just(new ResolvedMedia(new ResourceKey("stub", "same/id"), "trial:30000", "https://93.184.216.34/trial", "audio/mpeg", ".mp3", Instant.now().plusSeconds(100), Map.of(), true, "trial:30000")));

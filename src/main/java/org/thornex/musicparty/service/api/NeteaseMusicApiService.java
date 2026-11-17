@@ -187,6 +187,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                                     song.path("id").asText(),
                                     song.path("name").asText(),
                                     artists,
+                                    albumName(song),
                                     song.path("dt").asLong(),
                                     PLATFORM,
                                     upgradeToHttps(song.path("al").path("picUrl").asText()),
@@ -233,6 +234,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                             song.path("id").asText(),
                             song.path("name").asText(),
                             artists,
+                            albumName(song),
                             song.path("dt").asLong(),
                             PLATFORM,
                             upgradeToHttps(song.path("al").path("picUrl").asText()),
@@ -361,6 +363,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                                 song.path("id").asText(),
                                 song.path("name").asText(),
                                 artists,
+                                albumName(song),
                                 song.path("dt").asLong(),
                                 PLATFORM,
                                 upgradeToHttps(song.path("al").path("picUrl").asText()),
@@ -454,7 +457,8 @@ public class NeteaseMusicApiService implements IMusicApiService {
                     if (id.isBlank() || "0".equals(id)) continue;
                     JsonNode al = song.has("al") ? song.path("al") : song.path("album");
                     songs.putIfAbsent(id, new Music(id, song.path("name").asText("未知歌曲"),
-                            albumArtists(song), song.path("dt").asLong(song.path("duration").asLong(0)),
+                            albumArtists(song), al.path("name").asText(album.path("name").asText(null)),
+                            song.path("dt").asLong(song.path("duration").asLong(0)),
                             PLATFORM, upgradeToHttps(al.path("picUrl").asText(album.path("picUrl").asText(""))), externalUrl(id)));
                 }
                 if (songs.isEmpty()) throw new ApiRequestException("专辑中没有可添加的曲目");
@@ -463,6 +467,12 @@ public class NeteaseMusicApiService implements IMusicApiService {
                         upgradeToHttps(album.path("picUrl").asText("")), songs.size(), List.copyOf(songs.values()));
             });
         });
+    }
+
+    private String albumName(JsonNode song) {
+        String name = song.path("al").path("name").asText("");
+        if (name.isBlank()) name = song.path("album").path("name").asText("");
+        return name.isBlank() ? null : name.strip();
     }
 
     private List<String> albumArtists(JsonNode value) {

@@ -88,6 +88,15 @@ class CompactSyncServiceTest {
         assertTrue(lastPatch().path("state").isEmpty());
     }
 
+    @Test void albumNameSurvivesSnapshotsAndMetadataUpdates() throws Exception {
+        ObjectNode updated = mapper.valueToTree(state(10000));
+        ((ObjectNode) updated.at("/nowPlaying/music")).put("albumName", "Album");
+        sync.onApplicationEvent(new PlayerStateEvent(this, mapper.treeToValue(updated, PlayerState.class)));
+        assertEquals("Album", lastPatch().at("/state/nowPlaying/music/albumName").asText());
+        assertEquals("Album", sync.snapshot().at("/state/nowPlaying/music/albumName").asText());
+        assertNull(state(10000).nowPlaying().music().albumName());
+    }
+
     @Test void snapshotsAreDetachedAndHaveStableServerEpoch() {
         ObjectNode first = sync.snapshot();
         first.withObject("/state").put("isPaused", false);
