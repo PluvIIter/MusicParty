@@ -192,7 +192,7 @@ public class ResourceService {
 
     public Music withExternalUrl(Music music) {
         String external = registry.getRequired(music.platform()).externalUrl(music.id());
-        return new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl(), external);
+        return new Music(music.id(), music.name(), music.artists(), music.albumName(), music.duration(), music.platform(), music.coverUrl(), external);
     }
 
     public static void validateId(String id) {

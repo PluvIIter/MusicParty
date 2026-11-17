@@ -36,7 +36,7 @@ class PlaybackRecoveryControllerTest {
         registry = mock(SourceRegistry.class); adapter = mock(IMusicApiService.class);
         when(registry.getRequired("stub")).thenReturn(adapter); when(registry.isEnabled("stub")).thenReturn(true);
         state = mock(PlayerState.class); now = mock(NowPlayingInfo.class);
-        track = new PlayableMusic("1", "Track", List.of("Artist"), 180000, "stub", "https://audio.test/expired", "", "SONG", null);
+        track = new PlayableMusic("1", "Track", List.of("Artist"), "Album", 180000, "stub", "https://audio.test/expired", "", "SONG", null);
         when(player.getCurrentPlayerState()).thenReturn(state); when(state.nowPlaying()).thenReturn(now);
         when(state.playbackId()).thenReturn("playback-1"); when(now.music()).thenReturn(track);
         when(delivery.refreshSongUrl(track)).thenReturn(Mono.just("https://audio.test/fresh"));
@@ -56,6 +56,7 @@ class PlaybackRecoveryControllerTest {
         assertEquals("no-store", first.getHeaders().getCacheControl());
         assertEquals("https://audio.test/fresh", first.getBody().url());
         assertEquals(track.id(), first.getBody().id()); assertEquals(track.duration(), first.getBody().duration());
+        assertEquals("Album", first.getBody().albumName());
         assertEquals(first.getBody(), second.getBody());
         verify(delivery, times(1)).refreshSongUrl(track);
         assertTrue(mockingDetails(player).getInvocations().stream().allMatch(i -> i.getMethod().getName().equals("getCurrentPlayerState")));

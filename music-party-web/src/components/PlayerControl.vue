@@ -51,6 +51,13 @@
                                   : 'SYSTEM STANDBY'
                         }}
                     </p>
+                    <p
+                        v-if="nowPlaying?.music?.albumName?.trim() && nowPlaying.music.kind !== 'VOICE'"
+                        class="text-[10px] leading-3 text-ink-muted truncate"
+                        :title="nowPlaying.music.albumName"
+                    >
+                        {{ nowPlaying.music.albumName }}
+                    </p>
                 </div>
 
                 <!-- 时间显示 -->
