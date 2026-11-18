@@ -31,20 +31,33 @@ final class LyricTranslations {
 
         List<String> output = new ArrayList<>();
         boolean[] used = new boolean[translated.size()];
+        List<Line> pending = new ArrayList<>();
         for (String raw : lyric.split("\\R")) {
+            List<Long> sourceTimes = timestamps(raw);
+            if (!sourceTimes.isEmpty()) flushBefore(output, pending, sourceTimes.get(0));
             output.add(raw);
-            Long time = timestamp(raw);
-            if (time == null) continue;
             String original = text(raw);
             if (original.isEmpty()) continue;
-            int match = nearest(translated, used, time);
-            if (match < 0) continue;
-            used[match] = true;
-            String translatedText = translated.get(match).text();
-            if (translatedText.equals(original)) continue;
-            output.add(format(time) + translatedText);
+            for (long time : sourceTimes) {
+                int match = nearest(translated, used, time);
+                if (match < 0) continue;
+                used[match] = true;
+                String translatedText = translated.get(match).text();
+                if (translatedText.equals(original)) continue;
+                pending.add(new Line(time, translatedText));
+            }
+            if (!sourceTimes.isEmpty()) flushBefore(output, pending, sourceTimes.get(0));
         }
+        flushBefore(output, pending, Long.MAX_VALUE);
         return String.join("\n", output);
+    }
+
+    private static void flushBefore(List<String> output, List<Line> pending, long nextTime) {
+        pending.sort(java.util.Comparator.comparingLong(Line::time));
+        while (!pending.isEmpty() && pending.get(0).time() <= nextTime) {
+            Line line = pending.remove(0);
+            output.add(format(line.time()) + line.text());
+        }
     }
 
     /** 找到与原文时间最接近、且尚未被使用的译文；超出漂移上限视为没有译文。 */
@@ -65,10 +78,8 @@ final class LyricTranslations {
     private static List<Line> parse(String lrc) {
         List<Line> lines = new ArrayList<>();
         for (String raw : lrc.split("\\R")) {
-            Long time = timestamp(raw);
-            if (time == null) continue;
             String text = text(raw);
-            if (!text.isEmpty()) lines.add(new Line(time, text));
+            if (!text.isEmpty()) for (long time : timestamps(raw)) lines.add(new Line(time, text));
         }
         return lines;
     }
@@ -81,20 +92,23 @@ final class LyricTranslations {
         return String.format(Locale.ROOT, "[%02d:%02d.%03d]", millis / 60_000, millis % 60_000 / 1_000, millis % 1_000);
     }
 
-    private static Long timestamp(String line) {
+    private static List<Long> timestamps(String line) {
         Matcher matcher = TIME.matcher(line == null ? "" : line);
-        if (!matcher.find()) return null;
-        long minutes = Long.parseLong(matcher.group(1));
-        long seconds = Long.parseLong(matcher.group(2));
-        String fraction = matcher.group(3);
-        long millis = 0;
-        if (fraction != null && !fraction.isEmpty()) {
-            millis = switch (fraction.length()) {
-                case 1 -> Long.parseLong(fraction) * 100;
-                case 2 -> Long.parseLong(fraction) * 10;
-                default -> Long.parseLong(fraction.substring(0, 3));
-            };
+        List<Long> times = new ArrayList<>();
+        while (matcher.find()) {
+            long minutes = Long.parseLong(matcher.group(1));
+            long seconds = Long.parseLong(matcher.group(2));
+            String fraction = matcher.group(3);
+            long millis = 0;
+            if (fraction != null && !fraction.isEmpty()) {
+                millis = switch (fraction.length()) {
+                    case 1 -> Long.parseLong(fraction) * 100;
+                    case 2 -> Long.parseLong(fraction) * 10;
+                    default -> Long.parseLong(fraction.substring(0, 3));
+                };
+            }
+            times.add(minutes * 60_000L + seconds * 1_000L + millis);
         }
-        return minutes * 60_000L + seconds * 1_000L + millis;
+        return times;
     }
 }
