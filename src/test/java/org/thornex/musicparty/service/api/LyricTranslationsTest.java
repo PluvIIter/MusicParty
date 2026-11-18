@@ -37,6 +37,21 @@ class LyricTranslationsTest {
     }
 
     @Test
+    void repeatedSourceTimestampsKeepTheirIndependentTranslationMatches() {
+        String merged = LyricTranslations.merge(
+                "[00:01.00][00:02.00]Hello",
+                "[00:01.00]Hello\n[00:02.00]你好");
+        assertEquals("[00:01.00][00:02.00]Hello\n[00:02.000]你好", merged);
+    }
+
+    @Test
+    void laterRepeatedTimestampDoesNotDelayIntermediateLyrics() {
+        assertEquals("[00:01.00][00:20.00]Hello\n[00:01.000]你好\n[00:02.00]World\n[00:02.000]世界\n[00:20.000]你好",
+                LyricTranslations.merge("[00:01.00][00:20.00]Hello\n[00:02.00]World",
+                        "[00:01.00][00:20.00]你好\n[00:02.00]世界"));
+    }
+
+    @Test
     void identicalTextIsNotDuplicated() {
         String lyric = "[00:01.00]Hello";
         assertEquals(lyric, LyricTranslations.merge(lyric, "[00:01.00]Hello"));
