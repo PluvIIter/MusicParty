@@ -136,10 +136,15 @@ public class MusicPlayerService {
 
     @Scheduled(fixedRate = 1000)
     public synchronized void playerLoop() {
-        if (idleWakeRequested.getAndSet(false) && currentMusic.get() == null
-                && !userService.getOnlineUserSummaries().isEmpty()) {
+        if (idleWakeRequested.getAndSet(false) && !userService.getOnlineUserSummaries().isEmpty()) {
             if (isLoading.get()) {
                 idleWakeRequested.set(true);
+            } else if (currentMusic.get() != null) {
+                if (isPaused.get()) {
+                    timestampAnchor.set(System.currentTimeMillis());
+                    isPaused.set(false);
+                    broadcastFullPlayerState();
+                }
             } else {
                 syncFmMarker();
                 if (shouldPlayPrivateFmDj() || !queueManager.getQueueSnapshot().isEmpty()) {

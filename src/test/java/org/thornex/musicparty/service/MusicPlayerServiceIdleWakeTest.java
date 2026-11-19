@@ -225,19 +225,30 @@ class MusicPlayerServiceIdleWakeTest {
     }
 
     @Test
-    void retainedManualPauseSurvivesFirstArrivalAndQuickReconnect() {
-        queue.add(SONG, MEMBER, QueueItemStatus.READY);
+    void retainedManualPauseResumesAtSavedPositionOnFirstArrivalAndReconnect() {
         player.applyFmDjSegmentForTest(PLAYABLE, new PrivateDjSegment.Song("song", "Song", List.of(), 180_000, null));
         player.setPausedForTest(true);
         player.setPositionForTest(42_000);
-        arrive(MEMBER);
-        player.playerLoop();
-        player.onUserCountChanged(new UserCountChangeEvent(this, 0));
+        var timestamp = (AtomicLong) ReflectionTestUtils.getField(player, "timestampAnchor");
+        timestamp.set(System.currentTimeMillis() - Duration.ofMinutes(20).toMillis());
+        String playbackId = player.getCurrentPlayerState().playbackId();
         arrive(MEMBER);
         player.playerLoop();
 
+        assertFalse(player.getCurrentPlayerState().isPaused());
+        assertEquals(42_000, ((AtomicLong) ReflectionTestUtils.getField(player, "positionAnchor")).get());
+        assertTrue(player.getCurrentPlayerState().nowPlaying().currentPosition() >= 42_000);
+        assertTrue(player.getCurrentPlayerState().nowPlaying().currentPosition() < 45_000);
+        assertEquals(playbackId, player.getCurrentPlayerState().playbackId());
+        player.onUserCountChanged(new UserCountChangeEvent(this, 0));
         assertTrue(player.getCurrentPlayerState().isPaused());
-        assertEquals(42_000, player.getCurrentPlayerState().nowPlaying().currentPosition());
+        long savedPosition = player.getCurrentPlayerState().nowPlaying().currentPosition();
+        arrive(MEMBER);
+        player.playerLoop();
+
+        assertFalse(player.getCurrentPlayerState().isPaused());
+        assertEquals(savedPosition, ((AtomicLong) ReflectionTestUtils.getField(player, "positionAnchor")).get());
+        assertSame(PLAYABLE, player.getCurrentPlayerState().nowPlaying().music());
         verify(PlayerTestFactory.media(player), never()).getPlayableMusic(anyString(), anyString());
     }
 
@@ -248,6 +259,7 @@ class MusicPlayerServiceIdleWakeTest {
         player.setPausedForTest(true);
         arrive(MEMBER);
         player.playerLoop();
+        player.setPausedForTest(true);
         when(users.getOnlineUserSummaries()).thenReturn(List.of());
         ((AtomicLong) ReflectionTestUtils.getField(player, "timestampAnchor"))
                 .set(System.currentTimeMillis() - Duration.ofMinutes(35).toMillis());
@@ -273,6 +285,54 @@ class MusicPlayerServiceIdleWakeTest {
 
         assertTrue(player.getCurrentPlayerState().isPaused());
         verify(PlayerTestFactory.media(player), never()).getPlayableMusic(anyString(), anyString());
+    }
+
+    @Test
+    void additionalMemberKeepsRetainedSongManuallyPaused() {
+        arrive(MEMBER);
+        player.playerLoop();
+        player.applyFmDjSegmentForTest(PLAYABLE, new PrivateDjSegment.Song("song", "Song", List.of(), 180_000, null));
+        player.setPausedForTest(true);
+        player.setPositionForTest(42_000);
+        player.onUserCountChanged(new UserCountChangeEvent(this, 2));
+
+        player.playerLoop();
+
+        assertTrue(player.getCurrentPlayerState().isPaused());
+        assertEquals(42_000, player.getCurrentPlayerState().nowPlaying().currentPosition());
+        verify(PlayerTestFactory.media(player), never()).getPlayableMusic(anyString(), anyString());
+    }
+
+    @Test
+    void firstArrivalDoesNotResetAnAlreadyPlayingSong() {
+        player.applyFmDjSegmentForTest(PLAYABLE, new PrivateDjSegment.Song("song", "Song", List.of(), 180_000, null));
+        player.setPositionForTest(42_000);
+        var timestamp = (AtomicLong) ReflectionTestUtils.getField(player, "timestampAnchor");
+        long startedAt = System.currentTimeMillis() - 10_000;
+        timestamp.set(startedAt);
+        String playbackId = player.getCurrentPlayerState().playbackId();
+        arrive(MEMBER);
+
+        player.playerLoop();
+
+        assertFalse(player.getCurrentPlayerState().isPaused());
+        assertEquals(startedAt, timestamp.get());
+        assertEquals(playbackId, player.getCurrentPlayerState().playbackId());
+        verify(PlayerTestFactory.media(player), never()).getPlayableMusic(anyString(), anyString());
+    }
+
+    @Test
+    void departedArrivalDoesNotResumeRetainedPause() {
+        player.applyFmDjSegmentForTest(PLAYABLE, new PrivateDjSegment.Song("song", "Song", List.of(), 180_000, null));
+        player.setPausedForTest(true);
+        player.setPositionForTest(42_000);
+        player.onUserCountChanged(new UserCountChangeEvent(this, 1));
+        player.onUserCountChanged(new UserCountChangeEvent(this, 0));
+
+        player.playerLoop();
+
+        assertTrue(player.getCurrentPlayerState().isPaused());
+        assertEquals(42_000, player.getCurrentPlayerState().nowPlaying().currentPosition());
     }
 
     @Test
