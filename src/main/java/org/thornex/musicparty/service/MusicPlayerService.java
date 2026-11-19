@@ -72,6 +72,8 @@ public class MusicPlayerService {
     private final AtomicBoolean isPlayModeLocked = new AtomicBoolean(false);
     private final AtomicBoolean isLoading = new AtomicBoolean(false);
     private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
+    private final AtomicInteger onlineUserCount = new AtomicInteger(0);
+    private final AtomicBoolean idleWakeRequested = new AtomicBoolean(false);
 
     // 投票切歌状态
     private final AtomicBoolean isVoteSkipEnabled = new AtomicBoolean(false);
@@ -134,6 +136,22 @@ public class MusicPlayerService {
 
     @Scheduled(fixedRate = 1000)
     public synchronized void playerLoop() {
+        if (idleWakeRequested.getAndSet(false) && !userService.getOnlineUserSummaries().isEmpty()) {
+            if (isLoading.get()) {
+                idleWakeRequested.set(true);
+            } else if (currentMusic.get() != null) {
+                if (isPaused.get()) {
+                    timestampAnchor.set(System.currentTimeMillis());
+                    isPaused.set(false);
+                    broadcastFullPlayerState();
+                }
+            } else {
+                syncFmMarker();
+                if (shouldPlayPrivateFmDj() || !queueManager.getQueueSnapshot().isEmpty()) {
+                    isPaused.set(false);
+                }
+            }
+        }
         if (isPaused.get()) {
             return;
         }
@@ -1183,7 +1201,12 @@ public class MusicPlayerService {
      */
     @EventListener
     public void onUserCountChanged(UserCountChangeEvent event) {
-        if (event.getOnlineUserCount() == 0 && !isStreamActive.get()) {
+        int count = event.getOnlineUserCount();
+        if (onlineUserCount.getAndSet(count) == 0 && count > 0) {
+            // UserService publishes while locked; playback must wake on the scheduler instead.
+            idleWakeRequested.set(true);
+        }
+        if (count == 0 && !isStreamActive.get()) {
             enterIdleMode();
         }
         
