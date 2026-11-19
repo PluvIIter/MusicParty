@@ -164,6 +164,16 @@ func TestLocalSidecarRequiresEnabledAdapter(t *testing.T) {
 	}
 }
 
+func TestSourceDescriptorsFollowDisplayOrder(t *testing.T) {
+	var ids []string
+	for _, descriptor := range SourceDescriptors() {
+		ids = append(ids, descriptor.ID)
+	}
+	if want := []string{"netease", "qqmusic", "bilibili"}; !reflect.DeepEqual(ids, want) {
+		t.Fatalf("source display order = %v, want %v", ids, want)
+	}
+}
+
 func TestDescriptorManifestDeclaresDefaultsAndFieldsOnly(t *testing.T) {
 	encoded, err := json.Marshal(SourceDescriptors())
 	if err != nil {

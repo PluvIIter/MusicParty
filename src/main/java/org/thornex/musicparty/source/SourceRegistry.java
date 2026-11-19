@@ -1,6 +1,7 @@
 package org.thornex.musicparty.source;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import org.thornex.musicparty.service.api.IMusicApiService;
 
 @Service
 public class SourceRegistry {
+    private static final List<String> DISPLAY_ORDER = List.of("netease", "qqmusic", "bilibili");
     private final Map<String, IMusicApiService> adapters;
     private final AppProperties properties;
     private final Map<String, Long> authorizationEpochs = new java.util.concurrent.ConcurrentHashMap<>();
@@ -73,7 +75,11 @@ public class SourceRegistry {
     }
 
     public List<SourceDescriptor> descriptors() {
-        return adapters.values().stream().map(IMusicApiService::descriptor).toList();
+        return adapters.values().stream().map(IMusicApiService::descriptor)
+                .sorted(Comparator.comparingInt(descriptor -> {
+                    int index = DISPLAY_ORDER.indexOf(descriptor.id());
+                    return index < 0 ? DISPLAY_ORDER.size() : index;
+                })).toList();
     }
 
     public synchronized void update(String id, Boolean enabled, DeliveryMode mode) {

@@ -45,13 +45,6 @@ func SourceDescriptors() []SourceDescriptor {
 			},
 		},
 		{
-			ID: "bilibili", Label: "Bilibili", DefaultMode: ServerDownload, DefaultEnabled: false,
-			SupportedModes: []string{DirectURL, ServerDownload},
-			ConnectionFields: []ConnectionField{
-				{Key: "biliCookie", Label: "Bilibili 账号 Cookie", Kind: "password"},
-			},
-		},
-		{
 			ID: "qqmusic", Label: "QQ 音乐", DefaultMode: DirectURL, DefaultEnabled: false,
 			SupportedModes: []string{DirectURL, ServerDownload}, LocalService: "QQMUSIC_API",
 			ConnectionFields: []ConnectionField{
@@ -60,6 +53,13 @@ func SourceDescriptors() []SourceDescriptor {
 					{Value: "MP3_128", Label: "MP3 128 kbps"}, {Value: "MP3_320", Label: "MP3 320 kbps"},
 					{Value: "FLAC", Label: "FLAC 无损"},
 				}},
+			},
+		},
+		{
+			ID: "bilibili", Label: "Bilibili", DefaultMode: ServerDownload, DefaultEnabled: false,
+			SupportedModes: []string{DirectURL, ServerDownload},
+			ConnectionFields: []ConnectionField{
+				{Key: "biliCookie", Label: "Bilibili 账号 Cookie", Kind: "password"},
 			},
 		},
 	}

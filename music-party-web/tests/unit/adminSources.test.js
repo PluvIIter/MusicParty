@@ -41,6 +41,15 @@ const open = async () => {
     await flush();
 };
 describe('authenticated source credential directory', () => {
+    it('preserves the source directory order including disabled and dynamic adapters', async () => {
+        const ids = ['netease', 'qqmusic', 'bilibili', 'fixture-z', 'fixture-a'];
+        mocks.get.mockResolvedValue({ sources: ids.map((id) => ({ ...descriptor(), id })) });
+        const state = setup();
+        await open();
+        expect(state.platforms.value.map((source) => source.id)).toEqual(ids);
+        mocks.player.config.sources = { bilibili: { enabled: true }, 'fixture-a': { enabled: true } };
+        expect(state.platforms.value.map((source) => source.id)).toEqual(ids);
+    });
     it('requires confirmation before sending an explicit empty credential', async () => {
         mocks.get.mockResolvedValue({ sources: [descriptor(true)] });
         const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
