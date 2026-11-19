@@ -71,7 +71,9 @@ const { chromium, serve, launchOptions } = require('./support.cjs');
             if (width < 768) {
                 assert.ok(geometry.mobile.y >= geometry.album.bottom, `controls follow metadata at ${width}`);
                 assert.ok(geometry.mobile.bottom <= geometry.progress.y, `controls precede progress at ${width}`);
-                assert.ok(geometry.progress.width > width - 40, `progress spans the player at ${width}`);
+                assert.ok(geometry.progress.x >= geometry.cover.right, `progress stays in the metadata column at ${width}`);
+                assert.ok(geometry.progress.right <= width - 8, `progress stays inside the viewport at ${width}`);
+                assert.ok(geometry.progress.width > width / 2, `progress keeps most of the metadata width at ${width}`);
             }
             for (const albumName of [null, '', '   ', '另一张专辑']) {
                 await page.evaluate((value) => {

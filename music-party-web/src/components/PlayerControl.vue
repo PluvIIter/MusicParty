@@ -1,12 +1,10 @@
 <template>
-    <div
-        class="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 py-3 md:py-0 md:h-24 bg-surface-raised border-t border-line md:flex items-center px-4 md:px-8 relative z-50 shadow-lg shrink-0"
-    >
+    <div class="min-h-24 md:h-24 py-2 md:py-0 bg-surface-raised border-t border-line flex items-center px-4 md:px-8 relative z-50 shadow-lg">
         <!-- 封面 -->
         <div
             id="tutorial-source"
             @click="openSourcePage"
-            class="w-14 h-14 md:w-20 md:h-20 shadow-lg border-2 border-white dark:border-graphic chamfer-br flex-shrink-0 relative z-10 bg-brand cursor-pointer group overflow-hidden"
+            class="w-16 h-16 md:w-20 md:h-20 -mt-6 md:mt-0 shadow-lg border-2 border-white dark:border-graphic chamfer-br flex-shrink-0 relative z-10 bg-brand cursor-pointer group overflow-hidden"
             title="Open Source Page"
         >
             <CoverImage
@@ -23,12 +21,12 @@
         </div>
 
         <!-- 中间：信息与进度 -->
-        <div class="contents md:flex md:flex-1 md:ml-4 md:mr-8 md:flex-col md:justify-center min-w-0">
-            <div class="order-1 min-w-0 flex justify-between items-end md:mb-1">
-                <div class="overflow-hidden w-full min-w-0">
+        <div class="flex-1 ml-4 mr-4 md:mr-8 flex flex-col justify-center min-w-0">
+            <div class="flex justify-between items-end mb-1">
+                <div class="overflow-hidden w-full">
                     <!-- 标题显示逻辑与样式 -->
                     <h2
-                        class="text-base md:text-lg font-bold truncate leading-tight transition-colors duration-300"
+                        class="text-lg font-bold truncate leading-tight transition-colors duration-300"
                         :class="!player.connected ? 'text-warning animate-pulse' : 'text-ink'"
                     >
                         {{
@@ -77,54 +75,54 @@
             </div>
 
             <!-- 移动端简易控制 -->
-            <div class="order-2 col-span-2 flex md:hidden justify-center items-center gap-5">
-                <button
-                    id="tutorial-download-mobile"
-                    @click="downloadCurrentMusic"
-                    :disabled="!canDownload"
-                    class="p-2 bg-surface border border-line rounded-sm text-ink-muted active:bg-line"
-                >
-                    <Download class="w-4 h-4" />
-                </button>
-                <PlayModePicker
-                    id="tutorial-random-mobile"
-                    :model-value="player.playMode"
-                    :disabled="!player.connected || player.isPlayModeLocked || userStore.isGuest"
-                    boxed
-                    @select="player.setPlayMode"
-                />
-                <button
-                    id="tutorial-pause-mobile"
-                    @click="player.togglePause"
-                    :disabled="player.isPauseLocked && !player.isPaused"
-                    class="p-2 bg-surface-sunken rounded-sm disabled:opacity-50"
-                >
-                    <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-ink-subtle" />
-                    <template v-else>
-                        <Play v-if="player.isPaused" class="w-4 h-4" />
-                        <Pause v-else class="w-4 h-4" />
-                    </template>
-                </button>
-                <button
-                    @click="player.playNext"
-                    :disabled="isSkipDisabled"
-                    class="p-2 bg-surface-sunken rounded-sm disabled:opacity-50 relative"
-                >
-                    <SkipForward class="w-4 h-4" />
-                    <!-- Badge -->
-                    <div
-                        v-if="player.isVoteSkipEnabled && canVote && player.currentVotes > 0"
-                        class="absolute -top-1 -right-1 bg-accent text-accent-contrast text-[8px] font-bold px-1 min-w-[12px] h-3 flex items-center justify-center rounded-sm shadow-sm"
+                <div class="flex md:hidden justify-end gap-3 mb-1">
+                    <button
+                        id="tutorial-download-mobile"
+                        @click="downloadCurrentMusic"
+                        :disabled="!canDownload"
+                        class="p-1.5 bg-surface border border-line rounded-sm text-ink-muted active:bg-line"
                     >
-                        {{ player.currentVotes }}
-                    </div>
-                </button>
-            </div>
+                        <Download class="w-4 h-4" />
+                    </button>
+                    <PlayModePicker
+                        id="tutorial-random-mobile"
+                        :model-value="player.playMode"
+                        :disabled="!player.connected || player.isPlayModeLocked || userStore.isGuest"
+                        boxed
+                        @select="player.setPlayMode"
+                    />
+                    <button
+                        id="tutorial-pause-mobile"
+                        @click="player.togglePause"
+                        :disabled="player.isPauseLocked && !player.isPaused"
+                        class="p-1.5 bg-surface-sunken rounded-sm disabled:opacity-50"
+                    >
+                        <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-ink-subtle" />
+                        <template v-else>
+                            <Play v-if="player.isPaused" class="w-4 h-4" />
+                            <Pause v-else class="w-4 h-4" />
+                        </template>
+                    </button>
+                    <button
+                        @click="player.playNext"
+                        :disabled="isSkipDisabled"
+                        class="p-1.5 bg-surface-sunken rounded-sm disabled:opacity-50 relative"
+                    >
+                        <SkipForward class="w-4 h-4" />
+                        <!-- Badge -->
+                        <div
+                            v-if="player.isVoteSkipEnabled && canVote && player.currentVotes > 0"
+                            class="absolute -top-1 -right-1 bg-accent text-accent-contrast text-[8px] font-bold px-1 min-w-[12px] h-3 flex items-center justify-center rounded-sm shadow-sm"
+                        >
+                            {{ player.currentVotes }}
+                        </div>
+                    </button>
+                </div>
 
             <!-- 进度条（管理面板开启 allowSeek 后可拖动，房间内所有人同步跳转） -->
             <div
                 ref="barRef"
-                class="order-3 col-span-2 h-1 bg-line w-full relative touch-none"
+                class="h-1 bg-line w-full relative touch-none"
                 :class="canSeek ? 'cursor-pointer mp-seek' : ''"
                 :role="canSeek ? 'slider' : undefined"
                 :tabindex="canSeek ? 0 : undefined"
@@ -163,6 +161,7 @@
                     ></div>
                 </div>
             </div>
+
         </div>
 
         <!-- PC端：右侧控制区 -->
