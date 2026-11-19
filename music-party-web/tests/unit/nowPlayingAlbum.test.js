@@ -63,7 +63,7 @@ describe.each(layouts)('%s album metadata', (_label, path, binding) => {
         expect(host.querySelector('p[title]')).toBeNull();
         const album = host.querySelector('p:last-child');
         expect(album.textContent.trim()).toBe('');
-        expect(album.classList.contains(binding === 'nowPlaying' ? 'h-3' : 'h-4')).toBe(true);
+        expect(album.classList.contains(binding === 'nowPlaying' ? 'h-3.5' : 'h-4')).toBe(true);
     });
 
     it('keeps the album row empty for DJ voice segments', () => {

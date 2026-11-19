@@ -1,10 +1,10 @@
 <template>
-    <div class="min-h-24 md:h-24 py-2 md:py-0 bg-surface-raised border-t border-line flex items-center px-4 md:px-8 relative z-50 shadow-lg">
+    <div class="h-24 bg-surface-raised border-t border-line flex items-center px-4 md:px-8 relative z-50 shadow-lg">
         <!-- 封面 -->
         <div
             id="tutorial-source"
             @click="openSourcePage"
-            class="w-16 h-16 md:w-20 md:h-20 -mt-6 md:mt-0 shadow-lg border-2 border-white dark:border-graphic chamfer-br flex-shrink-0 relative z-10 bg-brand cursor-pointer group overflow-hidden"
+            class="w-[72px] h-[72px] md:w-20 md:h-20 shadow-lg border-2 border-white dark:border-graphic chamfer-br flex-shrink-0 relative z-10 bg-brand cursor-pointer group overflow-hidden"
             title="Open Source Page"
         >
             <CoverImage
@@ -21,108 +21,109 @@
         </div>
 
         <!-- 中间：信息与进度 -->
-        <div class="flex-1 ml-4 mr-4 md:mr-8 flex flex-col justify-center min-w-0">
-            <div class="flex justify-between items-end mb-1">
-                <div class="overflow-hidden w-full">
-                    <!-- 标题显示逻辑与样式 -->
-                    <h2
-                        class="text-lg font-bold truncate leading-tight transition-colors duration-300"
-                        :class="!player.connected ? 'text-warning animate-pulse' : 'text-ink'"
-                    >
-                        {{
-                            !player.connected
-                                ? '!CONNECTION LOST!'
-                                : nowPlaying
-                                  ? nowPlaying.music.name
-                                  : 'WAITING FOR SIGNAL...'
-                        }}
-                    </h2>
+        <div class="flex-1 ml-4 mr-0 md:mr-8 flex flex-col justify-center h-[72px] md:h-auto min-w-0">
+                <!-- 标题：独占整行，可一直延长到右侧边缘 -->
+                <h2
+                    class="mb-[3px] text-xl md:text-lg font-bold truncate leading-tight transition-colors duration-300"
+                    :class="!player.connected ? 'text-warning animate-pulse' : 'text-ink'"
+                >
+                    {{
+                        !player.connected
+                            ? '!CONNECTION LOST!'
+                            : nowPlaying
+                              ? nowPlaying.music.name
+                              : 'WAITING FOR SIGNAL...'
+                    }}
+                </h2>
 
-                    <!-- 副标题显示逻辑与样式 -->
-                    <p
-                        class="text-xs font-sans truncate transition-colors duration-300"
-                        :class="!player.connected ? 'text-warning animate-pulse' : 'text-ink/60'"
-                    >
-                        {{
-                            !player.connected
-                                ? 'RECONNECT SERVER...'
-                                : nowPlaying
-                                  ? nowPlaying.music.artists.join(' / ')
-                                  : 'SYSTEM STANDBY'
-                        }}
-                    </p>
-                    <p
-                        class="h-3 text-[10px] leading-3 text-ink-muted truncate"
-                        :title="
-                            nowPlaying?.music?.kind !== 'VOICE'
-                                ? nowPlaying?.music?.albumName?.trim() || undefined
-                                : undefined
-                        "
-                    >
-                        {{ nowPlaying?.music?.kind !== 'VOICE' ? nowPlaying?.music?.albumName?.trim() : '' }}
-                    </p>
-                </div>
-
-                <!-- 时间显示 -->
-                <div class="hidden md:block font-mono text-xs text-ink/60 flex-shrink-0 ml-2">
-                    <span v-if="player.isLoading" class="text-accent animate-pulse">SYNCING SERVER...</span>
-                    <span v-if="player.isBuffering" class="animate-pulse text-accent">BUFFERING...</span>
-                    <span v-else
-                        >{{ formatDuration(player.displayProgress) }} /
-                        {{ formatDuration(nowPlaying?.music.duration || 0) }}</span
-                    >
-                </div>
-            </div>
-
-            <!-- 移动端简易控制 -->
-                <div class="flex md:hidden justify-end gap-3 mb-1">
-                    <button
-                        id="tutorial-download-mobile"
-                        @click="downloadCurrentMusic"
-                        :disabled="!canDownload"
-                        class="p-1.5 bg-surface border border-line rounded-sm text-ink-muted active:bg-line"
-                    >
-                        <Download class="w-4 h-4" />
-                    </button>
-                    <PlayModePicker
-                        id="tutorial-random-mobile"
-                        :model-value="player.playMode"
-                        :disabled="!player.connected || player.isPlayModeLocked || userStore.isGuest"
-                        boxed
-                        @select="player.setPlayMode"
-                    />
-                    <button
-                        id="tutorial-pause-mobile"
-                        @click="player.togglePause"
-                        :disabled="player.isPauseLocked && !player.isPaused"
-                        class="p-1.5 bg-surface-sunken rounded-sm disabled:opacity-50"
-                    >
-                        <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-ink-subtle" />
-                        <template v-else>
-                            <Play v-if="player.isPaused" class="w-4 h-4" />
-                            <Pause v-else class="w-4 h-4" />
-                        </template>
-                    </button>
-                    <button
-                        @click="player.playNext"
-                        :disabled="isSkipDisabled"
-                        class="p-1.5 bg-surface-sunken rounded-sm disabled:opacity-50 relative"
-                    >
-                        <SkipForward class="w-4 h-4" />
-                        <!-- Badge -->
-                        <div
-                            v-if="player.isVoteSkipEnabled && canVote && player.currentVotes > 0"
-                            class="absolute -top-1 -right-1 bg-accent text-accent-contrast text-[8px] font-bold px-1 min-w-[12px] h-3 flex items-center justify-center rounded-sm shadow-sm"
+                <div class="flex items-end gap-2 min-w-0">
+                    <div class="flex-1 min-w-0">
+                        <!-- 副标题显示逻辑与样式 -->
+                        <p
+                            class="text-xs font-sans truncate leading-tight transition-colors duration-300"
+                            :class="!player.connected ? 'text-warning animate-pulse' : 'text-ink/60'"
                         >
-                            {{ player.currentVotes }}
-                        </div>
-                    </button>
+                            {{
+                                !player.connected
+                                    ? 'RECONNECT SERVER...'
+                                    : nowPlaying
+                                      ? nowPlaying.music.artists.join(' / ')
+                                      : 'SYSTEM STANDBY'
+                            }}
+                        </p>
+                        <p
+                            class="relative top-[2px] h-3.5 text-[10px] leading-none text-ink-muted truncate"
+                            :title="
+                                nowPlaying?.music?.kind !== 'VOICE'
+                                    ? nowPlaying?.music?.albumName?.trim() || undefined
+                                    : undefined
+                            "
+                        >
+                            {{ nowPlaying?.music?.kind !== 'VOICE' ? nowPlaying?.music?.albumName?.trim() : '' }}
+                        </p>
+                    </div>
+
+                    <!-- 时间显示 -->
+                    <div class="hidden md:block font-mono text-xs text-ink/60 flex-shrink-0 ml-2">
+                        <span v-if="player.isLoading" class="text-accent animate-pulse">SYNCING SERVER...</span>
+                        <span v-if="player.isBuffering" class="animate-pulse text-accent">BUFFERING...</span>
+                        <span v-else
+                            >{{ formatDuration(player.displayProgress) }} /
+                            {{ formatDuration(nowPlaying?.music.duration || 0) }}</span
+                        >
+                    </div>
+
+                    <!-- 移动端简易控制：与专辑名底边对齐 -->
+                    <div class="flex md:hidden items-center gap-1.5 shrink-0">
+                        <button
+                            id="tutorial-download-mobile"
+                            @click="downloadCurrentMusic"
+                            :disabled="!canDownload"
+                            class="w-7 h-7 flex items-center justify-center bg-surface-sunken rounded-sm text-ink-muted active:bg-line"
+                        >
+                            <Download class="w-4 h-4" />
+                        </button>
+                        <PlayModePicker
+                            id="tutorial-random-mobile"
+                            :model-value="player.playMode"
+                            :disabled="!player.connected || player.isPlayModeLocked || userStore.isGuest"
+                            boxed
+                            compact
+                            @select="player.setPlayMode"
+                        />
+                        <button
+                            id="tutorial-pause-mobile"
+                            @click="player.togglePause"
+                            :disabled="player.isPauseLocked && !player.isPaused"
+                            class="w-7 h-7 flex items-center justify-center bg-surface-sunken rounded-sm disabled:opacity-50"
+                        >
+                            <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-ink-subtle" />
+                            <template v-else>
+                                <Play v-if="player.isPaused" class="w-4 h-4" />
+                                <Pause v-else class="w-4 h-4" />
+                            </template>
+                        </button>
+                        <button
+                            @click="player.playNext"
+                            :disabled="isSkipDisabled"
+                            class="w-7 h-7 flex items-center justify-center bg-surface-sunken rounded-sm disabled:opacity-50 relative"
+                        >
+                            <SkipForward class="w-4 h-4" />
+                            <!-- Badge -->
+                            <div
+                                v-if="player.isVoteSkipEnabled && canVote && player.currentVotes > 0"
+                                class="absolute -top-1 -right-1 bg-accent text-accent-contrast text-[8px] font-bold px-1 min-w-[12px] h-3 flex items-center justify-center rounded-sm shadow-sm"
+                            >
+                                {{ player.currentVotes }}
+                            </div>
+                        </button>
+                    </div>
                 </div>
 
             <!-- 进度条（管理面板开启 allowSeek 后可拖动，房间内所有人同步跳转） -->
             <div
                 ref="barRef"
-                class="h-1 bg-line w-full relative touch-none"
+                class="mt-1 h-1 bg-line w-full relative touch-none"
                 :class="canSeek ? 'cursor-pointer mp-seek' : ''"
                 :role="canSeek ? 'slider' : undefined"
                 :tabindex="canSeek ? 0 : undefined"

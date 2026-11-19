@@ -10,11 +10,14 @@
             :aria-controls="menuId"
             :aria-label="`播放模式：${current.label}`"
             :title="disabled ? '离线、游客或播放模式已锁定' : `${current.label}：${current.description}`"
-            class="p-2 text-ink-muted hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            :class="boxed ? 'bg-surface-sunken rounded-sm' : ''"
+            class="text-ink-muted hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            :class="[
+                compact ? 'w-7 h-7 flex items-center justify-center p-0' : 'p-2',
+                boxed ? 'bg-surface-sunken rounded-sm' : '',
+            ]"
             @click="toggle"
         >
-            <component :is="icons[current.value]" class="w-5 h-5" aria-hidden="true" />
+            <component :is="icons[current.value]" :class="compact ? 'w-4 h-4' : 'w-5 h-5'" aria-hidden="true" />
         </button>
         <Transition
             enter-active-class="transition duration-150 ease-out"
@@ -61,6 +64,8 @@ const props = defineProps({
     disabled: { type: Boolean, default: false },
     // 移动端控制条里需要和其它按钮一致的方块背景
     boxed: { type: Boolean, default: false },
+    // 移动端紧凑：保持 p-2 方块，图标缩到 16px，与下载/暂停/下一首同宽
+    compact: { type: Boolean, default: false },
 });
 const emit = defineEmits(['select']);
 const icons = { SEQUENTIAL: ListOrdered, SHUFFLE: Shuffle, ROUND_ROBIN: Repeat, REPEAT_ONE: Repeat1 };

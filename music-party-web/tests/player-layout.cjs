@@ -69,7 +69,11 @@ const { chromium, serve, launchOptions } = require('./support.cjs');
             assert.ok(geometry.scrollWidth <= width, `no horizontal overflow at ${width}`);
             assert.ok(geometry.progress.bottom <= geometry.root.bottom, `progress stays inside player at ${width}`);
             if (width < 768) {
-                assert.ok(geometry.mobile.y >= geometry.album.bottom, `controls follow metadata at ${width}`);
+                assert.ok(
+                    Math.abs(geometry.mobile.bottom - geometry.album.bottom) <= 2.5,
+                    `controls share the album baseline at ${width}`
+                );
+                assert.ok(geometry.mobile.x >= geometry.album.right - 1, `controls sit right of the album at ${width}`);
                 assert.ok(geometry.mobile.bottom <= geometry.progress.y, `controls precede progress at ${width}`);
                 assert.ok(geometry.progress.x >= geometry.cover.right, `progress stays in the metadata column at ${width}`);
                 assert.ok(geometry.progress.right <= width - 8, `progress stays inside the viewport at ${width}`);
