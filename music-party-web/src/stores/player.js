@@ -1,7 +1,7 @@
 // src/stores/player.js
 
 import { defineStore } from 'pinia';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onScopeDispose } from 'vue';
 import { useUserStore } from './user';
 import { socketService } from '../services/socket';
 import { createSocketSubscriptions, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
@@ -38,6 +38,11 @@ export const usePlayerStore = defineStore('player', () => {
     const roomClock = createRoomClock();
     const lastSyncTime = ref(0);
     const localProgress = ref(0);
+    const seekPreview = ref(null);
+    const seekError = ref('');
+    const displayProgress = computed(() => seekPreview.value?.positionMs ?? localProgress.value);
+    let seekTimer = null;
+    let latestSeekNonce = 0;
     const isBuffering = ref(false);
     const isErrorState = ref(false);
 
@@ -78,10 +83,29 @@ export const usePlayerStore = defineStore('player', () => {
     // === 2. Logic ===
     const getCurrentProgress = () => (nowPlaying.value ? roomClock.position() : 0);
     const getSyncStatus = () => roomClock.status();
+    const clearSeek = (message = '') => {
+        clearTimeout(seekTimer);
+        seekPreview.value = null;
+        seekError.value = message;
+    };
+    const confirmSeek = () => {
+        const pending = seekPreview.value;
+        if (pending && pending.nonce !== null && latestSeekNonce >= pending.nonce) {
+            seekPreview.value = { ...pending, positionMs: roomClock.position(), confirmed: true };
+        }
+    };
+    watch(localProgress, (position) => {
+        const pending = seekPreview.value;
+        if (pending?.confirmed && Math.abs(position - roomClock.position()) < 1000) clearSeek();
+    });
+    onScopeDispose(() => clearTimeout(seekTimer));
     watch(
         connected,
         (value) => {
-            if (!value) roomClock.expectReconnect();
+            if (!value) {
+                roomClock.expectReconnect();
+                if (seekPreview.value) clearSeek('连接中断，进度以房间状态为准');
+            }
         },
         { flush: 'sync' }
     );
@@ -107,7 +131,16 @@ export const usePlayerStore = defineStore('player', () => {
     // === 3. Actions ===
 
     const syncState = (state) => {
+        const incomingNonce = Number(state.seekNonce) || 0;
+        if (state.playbackId === playbackId.value && incomingNonce < latestSeekNonce) return;
+        if (state.playbackId !== playbackId.value) {
+            clearSeek();
+            latestSeekNonce = 0;
+        }
+        latestSeekNonce = incomingNonce;
         roomClock.sample(state);
+        if (seekPreview.value && (!state.config?.allowSeek || state.isLoading || !state.nowPlaying)) clearSeek();
+        confirmSeek();
         nowPlaying.value = state.nowPlaying;
         playbackId.value = state.nowPlaying ? state.playbackId || null : null;
         queue.value = state.queue;
@@ -153,6 +186,17 @@ export const usePlayerStore = defineStore('player', () => {
 
         // 使用抽离出的订阅配置
         const subscriptions = createSocketSubscriptions();
+        subscriptions[WS_DEST.USER_SEEK] = (result) => {
+            const pending = seekPreview.value;
+            if (!pending || result.requestId !== pending.requestId || result.playbackId !== pending.playbackId) return;
+            if (!result.accepted) {
+                clearSeek('跳转未生效，请稍后重试');
+                return;
+            }
+            if (!Number.isSafeInteger(result.seekNonce) || result.seekNonce <= pending.baselineNonce) return;
+            seekPreview.value = { ...pending, nonce: result.seekNonce };
+            confirmSeek();
+        };
         subscriptions[WS_DEST.USER_CONTAINER_IMPORT] = (result) => {
             const pending = albumRequests.get(result.requestId);
             if (!pending) return;
@@ -245,10 +289,33 @@ export const usePlayerStore = defineStore('player', () => {
         if (!connected.value || !socketService.connected || !config.value.allowSeek || isLoading.value) return;
         if (!requireAuth()) return;
         if (!checkCooldown()) return;
-        socketService.send(WS_DEST.PLAYER_SEEK, {
-            positionMs: Math.round(positionMs),
+        const duration = nowPlaying.value.music.duration;
+        if (!Number.isFinite(duration) || duration <= 0) return;
+        const target = Math.round(Math.max(0, Math.min(positionMs, Math.max(0, duration - 500))));
+        const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+        clearSeek();
+        seekPreview.value = {
+            requestId,
             playbackId: expectedPlaybackId,
-        });
+            positionMs: target,
+            baselineNonce: latestSeekNonce,
+            nonce: null,
+            confirmed: false,
+        };
+        seekTimer = setTimeout(() => {
+            const confirmed = seekPreview.value?.confirmed;
+            clearSeek(confirmed ? '' : '等待跳转超时，进度以房间状态为准');
+            if (!confirmed) socketService.send(WS_DEST.COMPACT_RESYNC);
+        }, 8000);
+        try {
+            socketService.send(WS_DEST.PLAYER_SEEK, {
+                positionMs: target,
+                playbackId: expectedPlaybackId,
+                requestId,
+            });
+        } catch {
+            clearSeek('跳转发送失败，请重连后重试');
+        }
     };
 
     const enqueue = (platform, musicId) =>
@@ -378,6 +445,9 @@ export const usePlayerStore = defineStore('player', () => {
         isLoading,
         lyricText,
         localProgress,
+        displayProgress,
+        seekPreview,
+        seekError,
         isBuffering,
         isErrorState,
         streamListenerCount,

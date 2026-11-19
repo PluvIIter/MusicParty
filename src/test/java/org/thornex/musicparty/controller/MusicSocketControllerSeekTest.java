@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.thornex.musicparty.dto.SeekRequest;
+import org.thornex.musicparty.dto.SeekResult;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.MusicPlayerService;
@@ -30,6 +31,36 @@ class MusicSocketControllerSeekTest {
         verify(player).seekTo("session", 12000, "old-pass");
         verify(player).seekTo("session", 12000, null);
         verifyNoMoreInteractions(player);
+    }
+
+    @Test
+    void returnsCorrelatedResultOnlyToRequestingSession() {
+        MusicPlayerService player = mock(MusicPlayerService.class);
+        UserService users = mock(UserService.class);
+        when(users.getUser("session")).thenReturn(Optional.of(mock(User.class)));
+        SimpMessagingTemplate messaging = mock(SimpMessagingTemplate.class);
+        MusicSocketController controller = new MusicSocketController(player, users, messaging, mock(ChatService.class));
+        SeekRequest request = new SeekRequest(12000, "pass", "request");
+        SeekResult result = new SeekResult("request", "pass", true, 3);
+        when(player.seekTo("session", request)).thenReturn(result);
+
+        controller.seek(request, "session");
+
+        verify(messaging).convertAndSendToUser(eq("session"), eq("/queue/player/seek"), eq(result), org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>argThat(headers ->
+                "session".equals(headers.get("simpSessionId"))));
+    }
+
+    @Test
+    void returnsExplicitRejectionForGuestRequestsWithoutCallingPlayer() {
+        MusicPlayerService player = mock(MusicPlayerService.class);
+        SimpMessagingTemplate messaging = mock(SimpMessagingTemplate.class);
+        MusicSocketController controller = new MusicSocketController(player, mock(UserService.class), messaging, mock(ChatService.class));
+
+        controller.seek(new SeekRequest(12000, "pass", "request"), "guest");
+
+        verifyNoInteractions(player);
+        verify(messaging).convertAndSendToUser(eq("guest"), eq("/queue/player/seek"),
+                eq(new SeekResult("request", "pass", false, 0)), anyMap());
     }
 
     @Test

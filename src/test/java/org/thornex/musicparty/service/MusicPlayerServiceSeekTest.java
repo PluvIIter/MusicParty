@@ -83,6 +83,23 @@ class MusicPlayerServiceSeekTest {
     }
 
     @Test
+    void correlatedResultReportsAcceptedNonceAndExplicitRejections() {
+        String id = player.getCurrentPlayerState().playbackId();
+        SeekResult accepted = player.seekTo("session", new SeekRequest(20000, id, "first"));
+        assertEquals(new SeekResult("first", id, true, 1), accepted);
+        SeekResult rateLimited = player.seekTo("session", new SeekRequest(30000, id, "second"));
+        assertEquals(new SeekResult("second", id, false, 1), rateLimited);
+        clearCooldown();
+        properties.getPlayer().setAllowSeek(false);
+        assertFalse(player.seekTo("session", new SeekRequest(30000, id, "third")).accepted());
+        start("b");
+        SeekResult stale = player.seekTo("session", new SeekRequest(30000, id, "fourth"));
+        assertFalse(stale.accepted());
+        assertEquals(id, stale.playbackId());
+        assertEquals("fourth", stale.requestId());
+    }
+
+    @Test
     void staleSeekCannotChangeNewSongOrConsumeCooldown() {
         String oldId = player.getCurrentPlayerState().playbackId();
         start("b");

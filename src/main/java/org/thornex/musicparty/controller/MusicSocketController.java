@@ -61,9 +61,18 @@ public class MusicSocketController {
     /** 拖动进度条（房间级 seek，是否允许由管理面板的 allowSeek 决定）。 */
     @MessageMapping("/control/seek")
     public void seek(SeekRequest request, @Header("simpSessionId") String sessionId) {
-        if (isGuest(sessionId)) return;
         if (request == null) return;
-        musicPlayerService.seekTo(sessionId, request.positionMs(), request.playbackId());
+        if (request.requestId() == null) {
+            if (!isGuest(sessionId)) musicPlayerService.seekTo(sessionId, request.positionMs(), request.playbackId());
+            return;
+        }
+        SeekResult result = isGuest(sessionId)
+                ? new SeekResult(request.requestId(), request.playbackId(), false, 0)
+                : musicPlayerService.seekTo(sessionId, request);
+        SimpMessageHeaderAccessor headers = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+        headers.setSessionId(sessionId);
+        headers.setLeaveMutable(true);
+        messagingTemplate.convertAndSendToUser(sessionId, "/queue/player/seek", result, headers.getMessageHeaders());
     }
 
     @MessageMapping("/queue/top")
