@@ -52,7 +52,7 @@
                 class="-mx-2 -mt-2 mb-3 bg-accent/10 border-b border-accent/20 px-3 py-2 flex items-center gap-2 text-accent text-xs font-bold"
             >
                 <Repeat class="w-4 h-4" />
-                <span>轮询播放中</span>
+                <span>轮替播放中</span>
             </div>
 
             <!-- Top Songs (Always at top) -->

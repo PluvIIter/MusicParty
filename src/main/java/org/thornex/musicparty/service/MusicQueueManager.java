@@ -267,7 +267,7 @@ public class MusicQueueManager {
     }
 
     /**
-     * "公平"随机播放算法：严格轮询 (Strict Round-Robin) + 在线优先 + 个人置顶优先
+     * "公平"随机播放算法：严格轮替 (Strict Round-Robin) + 在线优先 + 个人置顶优先
      */
     private MusicQueueItem pollNextFairShuffle(List<MusicQueueItem> availableItems, Set<String> onlineUserTokens, boolean allowOffline) {
         // 1. 按用户分组
@@ -281,11 +281,11 @@ public class MusicQueueManager {
         // 2. 筛选目标用户池
         List<String> targetUserTokens;
         if (allowOffline) {
-            // 允许离线：用户池为所有人，但依然保持“在线优先”的轮询感？
-            // 还是直接平权？通常公平随机下，允许离线意味着轮询不跳过离线人。
+            // 允许离线：用户池为所有人，但依然保持“在线优先”的轮替感？
+            // 还是直接平权？通常公平随机下，允许离线意味着轮替不跳过离线人。
             targetUserTokens = allUserTokens;
         } else {
-            // 不允许离线：只从在线用户中轮询；FM 合成标记（__FM__）视为一个用户无条件放行
+            // 不允许离线：只从在线用户中轮替；FM 合成标记（__FM__）视为一个用户无条件放行
             targetUserTokens = allUserTokens.stream()
                     .filter(t -> onlineUserTokens.contains(t) || FM_MARKER_USER_TOKEN.equals(t))
                     .collect(Collectors.toList());
@@ -301,7 +301,7 @@ public class MusicQueueManager {
             }
         }
 
-        // 3. 严格轮询逻辑
+        // 3. 严格轮替逻辑
         Collections.sort(targetUserTokens);
 
         String lastToken = lastPlayedUserToken.get();

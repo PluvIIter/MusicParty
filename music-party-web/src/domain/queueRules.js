@@ -12,7 +12,7 @@ export const sortGroupItems = (items) =>
     });
 
 /**
- * 轮询模式下的队列视图切分：
+ * 轮替模式下的队列视图切分：
  * - topItems：全局置顶（GLOBAL_TOP）单独置顶展示，不进入分组
  * - userGroups：其余项按点歌者 token 分组，组的顺序按 token 首次出现；
  *   组内应用 USER_TOP 排序

@@ -251,7 +251,7 @@
                                             <div class="flex flex-col">
                                                 <span class="text-[10px] font-bold text-ink">播完保留歌单</span>
                                                 <span class="text-[8px] text-ink-subtle"
-                                                    >循环保留已播歌曲；轮询时每位成员轮完再重复</span
+                                                    >循环保留已播歌曲；轮替时每位成员轮完再重复</span
                                                 >
                                             </div>
                                             <button
@@ -792,7 +792,7 @@ const privateDjSwitches = computed(() => {
     return [
         { field: 'fillBlankEnabled', label: '填充空白', hint: `队列无有效歌曲时播${modes}` },
         ...(privateDj.value.fmSupported === true
-            ? [{ field: 'joinQueueEnabled', label: '加入队列', hint: '随机/轮询模式生效·固定私人FM' }]
+            ? [{ field: 'joinQueueEnabled', label: '加入队列', hint: '随机/轮替模式生效·固定私人FM' }]
             : []),
         { field: 'custodyEnabled', label: '播放托管', hint: `无视队列·仅播${modes}` },
     ];

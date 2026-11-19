@@ -1146,7 +1146,7 @@ public class MusicPlayerService {
         String modeName = switch (next) {
             case SEQUENTIAL -> "顺序播放";
             case SHUFFLE -> "随机播放";
-            case ROUND_ROBIN -> "轮询播放";
+            case ROUND_ROBIN -> "轮替播放";
             case REPEAT_ONE -> "单曲循环";
         };
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
