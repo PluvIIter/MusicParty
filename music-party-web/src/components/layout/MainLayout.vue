@@ -236,14 +236,18 @@ const handleSearchClick = () => {
                                 }}</span>
                             </div>
                             <p
-                                v-if="
-                                    playerStore.nowPlaying?.music?.albumName?.trim() &&
-                                    playerStore.nowPlaying.music.kind !== 'VOICE'
+                                class="mt-1 h-4 text-xs leading-4 text-ink-muted truncate max-w-full"
+                                :title="
+                                    playerStore.nowPlaying?.music?.kind !== 'VOICE'
+                                        ? playerStore.nowPlaying?.music?.albumName?.trim() || undefined
+                                        : undefined
                                 "
-                                class="mt-1 text-xs text-ink-muted truncate max-w-full"
-                                :title="playerStore.nowPlaying.music.albumName"
                             >
-                                {{ playerStore.nowPlaying.music.albumName }}
+                                {{
+                                    playerStore.nowPlaying?.music?.kind !== 'VOICE'
+                                        ? playerStore.nowPlaying?.music?.albumName?.trim()
+                                        : ''
+                                }}
                             </p>
                         </div>
                     </div>
