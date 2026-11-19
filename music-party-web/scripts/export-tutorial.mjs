@@ -9,6 +9,7 @@ export function tutorialText() {
     const lines = ['MusicParty 新手教程｜完整界面文案', '', '一、快速入门', ''];
     for (const [index, step] of TUTORIAL_STEPS.entries()) {
         lines.push(`${index + 1}. ${step.title}`, ...step.body.map((text) => `  ${text}`));
+        if (step.mobileTitle) lines.push(`  手机标题：${step.mobileTitle}`);
         if (step.mobileBody) lines.push('  手机提示：', ...step.mobileBody.map((text) => `  ${text}`));
         lines.push('');
     }

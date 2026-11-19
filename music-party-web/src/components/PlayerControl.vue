@@ -3,6 +3,7 @@
         <!-- 封面 -->
         <div
             id="tutorial-source"
+            :data-tutorial-available="!!safeExternalUrl(nowPlaying?.music.externalUrl)"
             @click="openSourcePage"
             class="w-[72px] h-[72px] md:w-20 md:h-20 shadow-lg border-2 border-white dark:border-graphic chamfer-br flex-shrink-0 relative z-10 bg-brand cursor-pointer group overflow-hidden"
             title="Open Source Page"
@@ -104,6 +105,7 @@
                             </template>
                         </button>
                         <button
+                            id="tutorial-skip-mobile"
                             @click="player.playNext"
                             :disabled="isSkipDisabled"
                             class="w-7 h-7 flex items-center justify-center bg-surface-sunken rounded-sm disabled:opacity-50 relative"
@@ -122,6 +124,8 @@
 
             <!-- 进度条（管理面板开启 allowSeek 后可拖动，房间内所有人同步跳转） -->
             <div
+                id="tutorial-seek"
+                :data-tutorial-available="canSeek"
                 ref="barRef"
                 class="mt-1 h-1 bg-line w-full relative touch-none"
                 :class="canSeek ? 'cursor-pointer mp-seek' : ''"
@@ -201,6 +205,7 @@
                 </button>
 
                 <button
+                    id="tutorial-skip"
                     @click="player.playNext"
                     :disabled="isSkipDisabled"
                     class="text-ink hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative group/skip"
