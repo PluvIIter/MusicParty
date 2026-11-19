@@ -569,16 +569,15 @@ watch(
         categoryMenuOpen.value = false;
     }
 );
-const handleSearchAction = async () => {
+const handleSearchAction = () => {
     if (mode.value === 'likesong' || !sources.supports(platform.value, 'search')) return;
-    await doSearch();
     mobileView.value = 'songs';
+    return doSearch();
 };
-const selectPlatform = async (id) => {
-    if (mode.value === 'search' && platform.value === id) return;
+const selectPlatform = (id) => {
+    if (!sources.isEnabled(id) || (mode.value === 'search' && platform.value === id)) return;
     mode.value = 'search';
     platform.value = id;
-    if (keyword.value.trim()) await handleSearchAction();
 };
 const isUnplayable = (song) => !sources.isEnabled(song.platform);
 const refreshSidebar = () => fetchPlaylists();
@@ -640,13 +639,8 @@ watch(
             selectedAlbumSong.value = null;
             cancelSearch();
         }
-    }
-);
-watch(
-    () => sources.enabled.map((s) => s.id),
-    (ids) => {
-        if (!ids.includes(platform.value)) platform.value = ids[0] || '';
-    }
+    },
+    { flush: 'sync' }
 );
 onMounted(() => sources.load());
 onUnmounted(() => timers.forEach(clearTimeout));
