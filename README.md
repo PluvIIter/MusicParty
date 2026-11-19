@@ -200,6 +200,11 @@ DELIVERY_MODE决定由服务器分发音源链接还是通过服务器下载音�
 
 ---
 
+### 桌面端
+[Cuiside](https://github.com/Cuiside)为本项目开发了Windows下的[桌面应用](https://github.com/Cuiside/MusicPartyDesktop)。
+
+---
+
 ## 房间密码
 <img width="622" height="427" alt="Image_2026-05-21_10-53-45_s10ixfb1 qoj" src="https://github.com/user-attachments/assets/1f5eeb44-4a21-4dc5-8399-753b9f16b88a" />
 
