@@ -60,6 +60,7 @@ describe('source discovery and identity', () => {
             requests.push(request);
             return request.promise;
         });
+        useSourcesStore().sources = ['first', 'future'].map((id) => ({ id, capabilities: { search: true } }));
         const scope = effectScope();
         const state = scope.run(() => useSearchLogic());
         state.platform.value = 'first';
@@ -94,6 +95,7 @@ describe('source discovery and identity', () => {
             requests.push(request);
             return request.promise;
         });
+        useSourcesStore().sources = [{ id: 'netease', capabilities: { search: true } }];
         const scope = effectScope();
         const state = scope.run(() => useSearchLogic());
         state.platform.value = 'netease';

@@ -4,6 +4,7 @@ import { musicApi } from '../api/music';
 
 export const useSourcesStore = defineStore('sources', () => {
     const sources = ref([]);
+    const searchSource = ref('');
     const loading = ref(false);
     const loadError = ref('');
     let request;
@@ -38,5 +39,5 @@ export const useSourcesStore = defineStore('sources', () => {
             });
         return request;
     };
-    return { sources, enabled, loading, loadError, overrides, descriptor, isEnabled, supports, load };
+    return { sources, searchSource, enabled, loading, loadError, overrides, descriptor, isEnabled, supports, load };
 });
