@@ -1032,18 +1032,18 @@ public class MusicPlayerService {
         broadcastFullPlayerState();
     }
 
-    public synchronized void seekTo(String sessionId, long positionMs, String expectedPlaybackId) {
+    public synchronized boolean seekTo(String sessionId, long positionMs, String expectedPlaybackId) {
         PlayableMusic music = currentMusic.get();
-        if (music == null || playbackId == null || !playbackId.equals(expectedPlaybackId)) return;
+        if (music == null || playbackId == null || !playbackId.equals(expectedPlaybackId)) return false;
         boolean system = "SYSTEM".equals(sessionId);
         if (!system && !appProperties.getPlayer().isAllowSeek()) {
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
                     PlayerAction.SYSTEM_MESSAGE, getUserToken(sessionId), "当前不允许拖动进度条"));
-            return;
+            return false;
         }
         // 注意：这里刻意不检查 isSkipLocked。锁定切歌只约束「换歌」，
         // 拖动进度条仍允许（管理员已单独用 allowSeek 授权进度控制）。
-        if (!system && isRateLimited(sessionId)) return;
+        if (!system && isRateLimited(sessionId)) return false;
 
         long duration = music.duration();
         long target = clampSeek(positionMs, duration);
@@ -1053,6 +1053,12 @@ public class MusicPlayerService {
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
                 PlayerAction.SYSTEM_MESSAGE, getUserToken(sessionId), "已跳转到 " + formatSeekTime(target)));
+        return true;
+    }
+
+    public synchronized SeekResult seekTo(String sessionId, SeekRequest request) {
+        boolean accepted = seekTo(sessionId, request.positionMs(), request.playbackId());
+        return new SeekResult(request.requestId(), request.playbackId(), accepted, seekNonce.get());
     }
 
     private static String formatSeekTime(long ms) {

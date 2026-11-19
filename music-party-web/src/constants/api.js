@@ -13,6 +13,7 @@ export const WS_DEST = {
     PLAYER_LIKE: '/app/control/like',
     /** 拖动进度条（房间级 seek，受管理面板 allowSeek 开关约束）。 */
     PLAYER_SEEK: '/app/control/seek',
+    USER_SEEK: '/user/queue/player/seek',
     ENQUEUE: '/app/enqueue',
     ENQUEUE_CONTAINER: '/app/enqueue/container',
     USER_CONTAINER_IMPORT: '/user/queue/container/import',

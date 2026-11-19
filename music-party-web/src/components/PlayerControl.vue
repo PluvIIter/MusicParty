@@ -65,7 +65,7 @@
                     <span v-if="player.isLoading" class="text-accent animate-pulse">SYNCING SERVER...</span>
                     <span v-if="player.isBuffering" class="animate-pulse text-accent">BUFFERING...</span>
                     <span v-else
-                        >{{ formatDuration(player.localProgress) }} /
+                        >{{ formatDuration(player.displayProgress) }} /
                         {{ formatDuration(nowPlaying?.music.duration || 0) }}</span
                     >
                 </div>
@@ -81,7 +81,7 @@
                 :aria-label="canSeek ? '播放进度' : undefined"
                 :aria-valuemin="canSeek ? 0 : undefined"
                 :aria-valuemax="canSeek ? Math.round((nowPlaying?.music?.duration || 0) / 1000) : undefined"
-                :aria-valuenow="canSeek ? Math.round(dragging ? dragPercent : progressPercent) : undefined"
+                :aria-valuenow="canSeek ? seekPositionSeconds : undefined"
                 :title="canSeek ? '拖动可跳转（房间同步）；方向键 ±5 秒，Shift ±15 秒' : ''"
                 @pointerdown="onSeekPointerDown"
                 @pointermove="onSeekPointerMove"
@@ -289,6 +289,9 @@ const ui = useUiStore();
 const userStore = useUserStore();
 const volumeTrackRef = ref(null);
 const { info, error } = useToast();
+watch(() => player.seekError, (message) => {
+    if (message) error(message);
+});
 
 const nowPlaying = computed(() => player.nowPlaying);
 const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
@@ -335,7 +338,7 @@ const skipBtnTitle = computed(() => {
 // 计算进度百分比
 const progressPercent = computed(() => {
     if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
-    return Math.min(100, (player.localProgress / nowPlaying.value.music.duration) * 100);
+    return Math.min(100, (player.displayProgress / nowPlaying.value.music.duration) * 100);
 });
 
 // --- 拖动进度条（房间级 seek） ---
@@ -356,6 +359,9 @@ const canSeek = computed(
 const barRef = ref(null);
 const dragging = ref(false);
 const dragPercent = ref(0);
+const seekPositionSeconds = computed(() => Math.round(
+    (dragging.value ? dragPercent.value * (nowPlaying.value?.music?.duration || 0) / 100 : player.displayProgress) / 1000
+));
 let dragPointerId = null;
 let dragPlaybackId = null;
 let dragDuration = 0;
@@ -428,7 +434,7 @@ watch(
 const seekByStep = (deltaMs) => {
     const duration = nowPlaying.value?.music?.duration || 0;
     if (duration <= 0) return;
-    const base = dragging.value ? (dragPercent.value / 100) * duration : player.localProgress;
+    const base = dragging.value ? (dragPercent.value / 100) * duration : player.displayProgress;
     player.seekTo(Math.max(0, Math.min(duration, base + deltaMs)));
 };
 
