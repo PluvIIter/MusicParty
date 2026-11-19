@@ -260,7 +260,11 @@ public class MusicPlayerService {
                 });
     }
 
-    private synchronized void playNextInQueue() {
+    private void playNextInQueue() {
+        playNextInQueue(null, new HashSet<>());
+    }
+
+    private synchronized void playNextInQueue(String retryMember, Set<String> failedTracks) {
         if (currentMusic.get() != null || isLoading.get()) {
             return;
         }
@@ -268,95 +272,114 @@ public class MusicPlayerService {
         // 加入队列功能：按条件同步 FM 标记（SHUFFLE + 模式非关闭 + 加入队列且非托管 → 在队，否则移除）
         syncFmMarker();
 
-        // 播放源决策：托管 > (队列有有效歌曲则队列) > 填充空白
-        if (shouldPlayPrivateFmDj()) {
-            playFmDjNext();
-            return;
-        }
-
-        Map<String, QueueItemStatus> statusMap = buildStatusMap();
-
-        Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
-
-        MusicQueueItem nextItem = queueManager.pollNext(playMode.get(), allowOfflineShuffle.get(), statusMap, onlineUserTokens);
-
-        if (isFmMarker(nextItem)) {
-            playFmMarkerNext(nextItem);
-            return;
-        }
-        if (nextItem == null) {
-            if (isLoading.get()) {
-                isLoading.set(false);
+        while (true) {
+            if (appProperties.getPrivateDj().isCustodyEnabled() && shouldPlayPrivateFmDj()) {
+                playFmDjNext();
+                return;
             }
-            broadcastFullPlayerState();
-            return;
-        }
 
-        if (statusMap.get(ResourceKey.encode(nextItem.music().platform(), nextItem.music().id())) == QueueItemStatus.FAILED) {
-            queueManager.markPlaybackFailed(nextItem);
-            if (sourceRegistry.isEnabled(nextItem.music().platform())) {
-                Mono.fromRunnable(() -> mediaDeliveryService.prefetch(nextItem.music()))
+            Map<String, QueueItemStatus> statusMap = buildStatusMap();
+            PlayMode mode = playMode.get();
+            MusicQueueItem nextItem = null;
+            if (mode == PlayMode.ROUND_ROBIN && retryMember != null) {
+                Set<String> enabledSources = queueManager.getQueueSnapshot().stream()
+                        .map(item -> item.music().platform()).distinct().filter(sourceRegistry::isEnabled)
+                        .collect(Collectors.toSet());
+                nextItem = queueManager.pollRoundRobinRetry(retryMember, failedTracks, statusMap, enabledSources);
+            }
+            if (nextItem == null) {
+                if (shouldPlayPrivateFmDj()) {
+                    playFmDjNext();
+                    return;
+                }
+                Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
+                nextItem = mode == PlayMode.ROUND_ROBIN && !failedTracks.isEmpty()
+                        ? queueManager.pollNext(mode, allowOfflineShuffle.get(), statusMap, onlineUserTokens, failedTracks)
+                        : queueManager.pollNext(mode, allowOfflineShuffle.get(), statusMap, onlineUserTokens);
+            }
+
+            if (isFmMarker(nextItem)) {
+                playFmMarkerNext(nextItem);
+                return;
+            }
+            if (nextItem == null) {
+                broadcastFullPlayerState();
+                return;
+            }
+
+            Music music = nextItem.music();
+            if (statusMap.get(ResourceKey.encode(music.platform(), music.id())) != QueueItemStatus.FAILED) {
+                prepareQueuedSong(nextItem, failedTracks);
+                return;
+            }
+
+            retryMember = markQueuedSongFailed(nextItem, failedTracks);
+            if (sourceRegistry.isEnabled(music.platform())) {
+                Mono.fromRunnable(() -> mediaDeliveryService.prefetch(music))
                         .subscribeOn(Schedulers.boundedElastic())
                         .subscribe(null, error -> log.warn("Media preparation retry failed: {}", error.getMessage()));
             }
-            log.warn("Skipping failed song: {}", nextItem.music().name());
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
-            playNextInQueue();
-            return;
+            log.warn("Skipping failed song: {}", music.name());
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", music.name()));
         }
+    }
 
-        // 增加版本号，这表示"开始一次新的播放尝试"
-        long currentVersion = playHeadVersion.incrementAndGet();
+    private record PreparedSong(String authorization, PlayableMusic music) {}
+
+    private void prepareQueuedSong(MusicQueueItem item, Set<String> failedTracks) {
+        long version = playHeadVersion.incrementAndGet();
         isLoading.set(true);
         broadcastFullPlayerState();
         isPaused.set(false);
 
-        log.info("Playing next: {}", nextItem.music().name());
-
-        try {
-            String authorization = mediaDeliveryService.authorizationScope(nextItem.music().platform());
-            Mono.defer(() -> mediaDeliveryService.getPlayableMusic(nextItem.music().platform(), nextItem.music().id()))
-                    .subscribeOn(Schedulers.boundedElastic())
-                    .timeout(Duration.ofSeconds(10))
-                    .subscribe(
-                            playableMusic -> {
-                                // 检查版本号是否匹配
-                                // 如果在请求期间执行了 skip/stop，版本号会变，这里就应该丢弃结果
-                                synchronized (this) {
-                                    if (playHeadVersion.get() == currentVersion) {
-                                        if (!hasAuthorization(playableMusic.platform(), authorization)) {
-                                            queueManager.markPlaybackFailed(nextItem);
-                                            isLoading.set(false);
-                                            playNextInQueue();
-                                            return;
-                                        }
-                                        queueManager.clearPlaybackFailure(nextItem);
-                                        applyNewSong(playableMusic, nextItem);
-                                    } else {
-                                        log.info("Discarded stale play result for {}", nextItem.music().name());
-                                    }
-                                }
-                            },
-                            error -> {
-                        synchronized (this) {
-                            if (playHeadVersion.get() != currentVersion) return;
-                            queueManager.markPlaybackFailed(nextItem);
-                            log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
-                            // 失败原因写进那条「加载失败」消息里：它会进聊天历史，便于事后排查。
-                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
-                                    PlayerAction.ERROR_LOAD, "SYSTEM", describePlaybackFailure(nextItem.music(), error)));
-                            publishCredentialHint(nextItem.music().platform(), error);
-                            isLoading.set(false);
-                            broadcastFullPlayerState();
-                            playNextInQueue();
+        Music music = item.music();
+        log.info("Playing next: {}", music.name());
+        Mono.defer(() -> {
+                    String authorization = mediaDeliveryService.authorizationScope(music.platform());
+                    return mediaDeliveryService.getPlayableMusic(music.platform(), music.id())
+                            .map(playable -> new PreparedSong(authorization, playable));
+                })
+                .switchIfEmpty(Mono.error(new ApiRequestException("MEDIA_UNAVAILABLE")))
+                .subscribeOn(Schedulers.boundedElastic())
+                .timeout(Duration.ofSeconds(10))
+                .subscribe(result -> {
+                    synchronized (this) {
+                        if (playHeadVersion.get() != version) {
+                            log.info("Discarded stale play result for {}", music.name());
+                            return;
                         }
-                    });
-        } catch (Exception e) {
-            queueManager.markPlaybackFailed(nextItem);
-            log.error("Unexpected error in playNextInQueue", e);
-            isLoading.set(false);
-            broadcastFullPlayerState();
-        }
+                        PlayableMusic playable = result.music();
+                        if (!hasAuthorization(playable.platform(), result.authorization())) {
+                            handleQueuedSongFailure(version, item, failedTracks, new ApiRequestException("媒体授权已变更"));
+                            return;
+                        }
+                        queueManager.clearPlaybackFailure(item);
+                        applyNewSong(playable, item);
+                    }
+                }, error -> handleQueuedSongFailure(version, item, failedTracks, error));
+    }
+
+    private synchronized void handleQueuedSongFailure(long version, MusicQueueItem item, Set<String> failedTracks, Throwable error) {
+        if (playHeadVersion.get() != version) return;
+        String retryMember = markQueuedSongFailed(item, failedTracks);
+        Music music = item.music();
+        log.error("Play failed for {}: {}", music.name(), error.getMessage());
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
+                PlayerAction.ERROR_LOAD, "SYSTEM", describePlaybackFailure(music, error)));
+        publishCredentialHint(music.platform(), error);
+        isLoading.set(false);
+        broadcastFullPlayerState();
+        playNextInQueue(retryMember, failedTracks);
+    }
+
+    private String markQueuedSongFailed(MusicQueueItem item, Set<String> failedTracks) {
+        queueManager.markPlaybackFailed(item);
+        if (playMode.get() != PlayMode.ROUND_ROBIN) return null;
+        failedTracks.add(ResourceKey.encode(item.music().platform(), item.music().id()));
+        return queueManager.getItem(item.queueId()).map(MusicQueueItem::enqueuedBy)
+                .orElseGet(() -> claimedPlaybackVersion == playHeadVersion.get()
+                        ? claimedPlaybackOwners.getOrDefault(item.enqueuedBy().token(), item.enqueuedBy())
+                        : item.enqueuedBy()).token();
     }
 
     /** 播放失败的持久化描述：歌名 + 音源 + 原因，写进聊天历史便于排查。 */

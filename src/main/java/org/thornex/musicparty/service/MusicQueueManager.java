@@ -162,13 +162,20 @@ public class MusicQueueManager {
      * @return 下一首歌曲，如果队列为空则返回 null
      */
     public synchronized MusicQueueItem pollNext(PlayMode playMode, boolean allowOfflineShuffle, Map<String, QueueItemStatus> statusMap, Set<String> onlineUserTokens) {
+        return pollNext(playMode, allowOfflineShuffle, statusMap, onlineUserTokens, Set.of());
+    }
+
+    synchronized MusicQueueItem pollNext(PlayMode playMode, boolean allowOfflineShuffle, Map<String, QueueItemStatus> statusMap,
+                                         Set<String> onlineUserTokens, Set<String> failedTracks) {
         playbackRetryAt.entrySet().removeIf(entry -> entry.getValue() <= System.currentTimeMillis());
         if (!appProperties.getQueue().isRetainPlaylist()) shuffleCycle.clear();
         if (queue.isEmpty()) {
-            return pollFromHistory(); // 队列为空时，尝试从历史记录播放
+            return pollFromHistory(failedTracks); // 队列为空时，尝试从历史记录播放
         }
 
-        List<MusicQueueItem> candidates = new ArrayList<>(queue);
+        List<MusicQueueItem> candidates = queue.stream()
+                .filter(item -> !failedTracks.contains(musicKey(item.music())))
+                .toList();
 
         // 1. 优先处理全局置顶项 (GLOBAL_TOP)
         Optional<MusicQueueItem> topItem = candidates.stream()
@@ -203,6 +210,23 @@ public class MusicQueueManager {
         }
 
         return select(chosenItem);
+    }
+
+    synchronized MusicQueueItem pollRoundRobinRetry(String memberToken, Set<String> failedTracks,
+                                                    Map<String, QueueItemStatus> statusMap, Set<String> enabledSources) {
+        if (!isMemberToken(memberToken)) return null;
+        if (!appProperties.getQueue().isRetainPlaylist()) shuffleCycle.clear();
+        List<MusicQueueItem> songs = queue.stream()
+                .filter(item -> memberToken.equals(item.enqueuedBy().token()))
+                .filter(item -> !failedTracks.contains(musicKey(item.music())))
+                .filter(item -> enabledSources.contains(item.music().platform()) && retryAllowed(item.music()))
+                .toList();
+        if (songs.isEmpty()) return null;
+
+        List<MusicQueueItem> ready = songs.stream().filter(item -> isReadyOrFailed(statusMap, item)).toList();
+        List<MusicQueueItem> candidates = ready.isEmpty() ? songs : ready;
+        return select(candidates.stream().filter(item -> item.priority() == Priority.GLOBAL_TOP)
+                .findFirst().orElseGet(() -> chooseMemberSong(memberToken, candidates)));
     }
 
     private MusicQueueItem select(MusicQueueItem item) {
@@ -322,8 +346,10 @@ public class MusicQueueManager {
         }
 
         String selectedUserToken = targetUserTokens.get(nextIndex);
-        List<MusicQueueItem> userSongs = userSongsMap.get(selectedUserToken);
+        return chooseMemberSong(selectedUserToken, userSongsMap.get(selectedUserToken));
+    }
 
+    private MusicQueueItem chooseMemberSong(String selectedUserToken, List<MusicQueueItem> userSongs) {
         // 4. 检查是否有个人置顶
         Optional<MusicQueueItem> userTop = userSongs.stream()
                 .filter(i -> i.priority() == Priority.USER_TOP)
@@ -534,13 +560,14 @@ public class MusicQueueManager {
     /**
      * 当队列为空时，从历史记录随机取一首作为 AutoDJ
      */
-    private MusicQueueItem pollFromHistory() {
+    private MusicQueueItem pollFromHistory(Set<String> failedTracks) {
         if (playHistory.isEmpty()) {
             return null;
         }
         List<Music> available;
         synchronized (playHistory) {
-            available = playHistory.stream().filter(this::retryAllowed).toList();
+            available = playHistory.stream().filter(this::retryAllowed)
+                    .filter(music -> !failedTracks.contains(musicKey(music))).toList();
         }
         if (available.isEmpty()) return null;
         Music randomSong = available.get(new Random().nextInt(available.size()));
