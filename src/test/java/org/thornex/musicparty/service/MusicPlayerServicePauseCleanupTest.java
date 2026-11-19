@@ -130,7 +130,7 @@ class MusicPlayerServicePauseCleanupTest {
     }
 
     @Test
-    void returningMemberDoesNotAutomaticallyStartQueueAfterCleanup() {
+    void cleanupDoesNotStartQueueWithoutAnArrivalEvent() {
         player.cleanupIdlePlayer();
         clearInvocations(events);
         when(users.getOnlineUserSummaries()).thenReturn(List.of(MEMBER));
