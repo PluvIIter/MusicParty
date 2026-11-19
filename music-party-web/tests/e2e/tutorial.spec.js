@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { compactFrames } from './compact-fixture';
 import { TUTORIAL_UI, TUTORIAL_STEPS, TUTORIAL_TOPICS } from '../../src/constants/tutorial';
 
-async function fixture(page, { done = true, denyStorage = false } = {}) {
+async function fixture(page, { done = true, denyStorage = false, sources = [], state = {} } = {}) {
     const sent = [];
     await page.addInitScript(
         ({ done, denyStorage }) => {
@@ -35,7 +35,7 @@ async function fixture(page, { done = true, denyStorage = false } = {}) {
                 : path === '/api/config'
                   ? { authorName: 'Fixture', backWords: 'MUSIC PARTY' }
                   : path === '/api/v2/sources'
-                    ? { schemaVersion: 2, sources: [] }
+                    ? { schemaVersion: 2, sources }
                     : {};
         return route.fulfill({ json: response });
     });
@@ -86,6 +86,7 @@ async function fixture(page, { done = true, denyStorage = false } = {}) {
                                 isPaused: true,
                                 playMode: 'SEQUENTIAL',
                                 config: {},
+                                ...state,
                             })
                         );
                 }
@@ -108,26 +109,133 @@ async function expectInsideViewport(page) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
 
-test('first visit walks all eight steps even if highlights are unavailable, without controlling the room', async ({
-    page,
-}) => {
+test('first visit skips unavailable targets without controlling the room', async ({ page }) => {
     const sent = await fixture(page, { done: false });
     await page.addStyleTag({
         content: '[id^="tutorial-"]:not(#tutorial-title):not(#tutorial-subtitle) { visibility: hidden !important; }',
     });
     const dialog = guide(page);
     await expect(dialog).toBeVisible();
-    for (const [index, step] of TUTORIAL_STEPS.entries()) {
-        await expect(dialog.getByRole('heading', { name: step.title, exact: true })).toBeVisible();
-        await expect(dialog.getByText(`${TUTORIAL_UI.stepLabel} ${index + 1} / 8`, { exact: true })).toBeVisible();
-        await expectInsideViewport(page);
-        await dialog
-            .getByRole('button', { name: index === 7 ? TUTORIAL_UI.finish : TUTORIAL_UI.next, exact: true })
-            .click();
-    }
+    await expect(dialog.getByRole('heading', { name: TUTORIAL_STEPS[0].title, exact: true })).toBeVisible();
+    await expect(dialog.getByText(`${TUTORIAL_UI.stepLabel} 1 / 1`, { exact: true })).toBeVisible();
+    await expectInsideViewport(page);
+    await expect(dialog.getByRole('button', { name: TUTORIAL_UI.previous, exact: true })).toBeDisabled();
+    await dialog.getByRole('button', { name: TUTORIAL_UI.finish, exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem('mp_tutorial_done_v1'))).toBe('true');
     expect(sent.some(({ destination }) => /\/app\/(control|queue|user\/rename)/.test(destination))).toBe(false);
+});
+
+for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 375, height: 812 },
+])
+    test(`each step highlights one available target and navigates both ways at ${viewport.width}px`, async ({
+        page,
+    }) => {
+        await page.setViewportSize(viewport);
+        const sent = await fixture(page, {
+            sources: [{ id: 'test', label: 'Test', capabilities: { search: true, download: true } }],
+            state: {
+                config: { allowSeek: true },
+                playbackId: 'tutorial-playback',
+                nowPlaying: {
+                    music: {
+                        id: 'track',
+                        platform: 'test',
+                        name: 'Track',
+                        artists: [],
+                        duration: 180000,
+                        url: '/fixture.mp3',
+                        externalUrl: 'https://example.com/track',
+                    },
+                    currentPosition: 0,
+                },
+            },
+        });
+        await page.getByRole('button', { name: TUTORIAL_UI.helpButton, exact: true }).click();
+        await guide(page).getByRole('button', { name: TUTORIAL_UI.startTour, exact: true }).click();
+        const visited = [];
+        for (let count = 0; count < TUTORIAL_STEPS.length; count++) {
+            const id = await page.locator('.tutorial-layer').getAttribute('data-tutorial-step');
+            visited.push(id);
+            const step = TUTORIAL_STEPS.find((item) => item.id === id);
+            const title = viewport.width < 768 && step.mobileTitle ? step.mobileTitle : step.title;
+            await expect(guide(page).getByRole('heading', { name: title, exact: true })).toBeVisible();
+            await expectInsideViewport(page);
+            if (step.targetId) {
+                const targetId = viewport.width < 768 && step.mobileTargetId ? step.mobileTargetId : step.targetId;
+                const highlight = page.locator('.tutorial-layer .border-accent.rounded-sm');
+                await expect(highlight).toHaveCount(1);
+                await expect
+                    .poll(async () => {
+                        const rect = await highlight.boundingBox();
+                        const target = await page.locator(`[id="${targetId}"]:visible`).boundingBox();
+                        return Math.max(Math.abs(rect.x - target.x), Math.abs(rect.width - target.width));
+                    })
+                    .toBeLessThan(2);
+                await expect
+                    .poll(async () => {
+                        const panel = await guide(page).boundingBox();
+                        const target = await highlight.boundingBox();
+                        return (
+                            Math.max(
+                                0,
+                                Math.min(panel.x + panel.width, target.x + target.width) - Math.max(panel.x, target.x)
+                            ) *
+                            Math.max(
+                                0,
+                                Math.min(panel.y + panel.height, target.y + target.height) - Math.max(panel.y, target.y)
+                            )
+                        );
+                    })
+                    .toBe(0);
+            }
+            if (visited.length > 1) {
+                await guide(page).getByRole('button', { name: TUTORIAL_UI.previous, exact: true }).click();
+                await expect(page.locator('.tutorial-layer')).toHaveAttribute('data-tutorial-step', visited.at(-2));
+                await guide(page).getByRole('button', { name: TUTORIAL_UI.next, exact: true }).click();
+                await expect(page.locator('.tutorial-layer')).toHaveAttribute('data-tutorial-step', id);
+            }
+            const finish = guide(page).getByRole('button', { name: TUTORIAL_UI.finish, exact: true });
+            if (await finish.count()) {
+                await finish.click();
+                break;
+            }
+            await guide(page).getByRole('button', { name: TUTORIAL_UI.next, exact: true }).click();
+        }
+        expect(visited).toEqual(
+            TUTORIAL_STEPS.filter((step) => step.id !== 'sound' && (viewport.width >= 768 || step.id !== 'volume')).map(
+                (step) => step.id
+            )
+        );
+        expect(sent.some(({ destination }) => /\/app\/(control|queue|user\/rename)/.test(destination))).toBe(false);
+    });
+
+test('target disappearance, capability gaps and viewport changes keep navigation consistent', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await fixture(page);
+    await page.getByRole('button', { name: TUTORIAL_UI.helpButton, exact: true }).click();
+    await guide(page).getByRole('button', { name: TUTORIAL_UI.startTour, exact: true }).click();
+    await guide(page).getByRole('button', { name: TUTORIAL_UI.next, exact: true }).click();
+    await expect(page.locator('.tutorial-layer')).toHaveAttribute('data-tutorial-step', 'identity');
+    await page.locator('#tutorial-rename').evaluate((element) => element.remove());
+    await expect(page.locator('.tutorial-layer')).toHaveAttribute('data-tutorial-step', 'queue');
+    await guide(page).getByRole('button', { name: TUTORIAL_UI.previous, exact: true }).click();
+    await expect(page.locator('.tutorial-layer')).toHaveAttribute('data-tutorial-step', 'welcome');
+    await page.setViewportSize({ width: 375, height: 812 });
+    await guide(page).getByRole('button', { name: TUTORIAL_UI.next, exact: true }).click();
+    await expect(page.locator('.tutorial-layer')).toHaveAttribute('data-tutorial-step', 'identity');
+    await expect
+        .poll(async () => {
+            const highlight = await page.locator('.tutorial-layer .border-accent.rounded-sm').boundingBox();
+            const mobileTarget = await page.locator('#tutorial-rename-mobile').boundingBox();
+            return Math.abs(highlight.x - mobileTarget.x);
+        })
+        .toBeLessThan(2);
+    await guide(page).getByRole('button', { name: TUTORIAL_UI.next, exact: true }).click();
+    await expect(page.locator('.tutorial-layer')).toHaveAttribute('data-tutorial-step', 'queue');
+    await guide(page).getByRole('button', { name: TUTORIAL_UI.skip, exact: true }).click();
 });
 
 test('previous, skip and reopen preserve focus and keep the old completion marker valid', async ({ page }) => {
@@ -204,9 +312,12 @@ for (const viewport of [
         await page.screenshot({ path: test.info().outputPath('tutorial-tour.png') });
         for (let i = 0; i < TUTORIAL_STEPS.length; i++) {
             await expectInsideViewport(page);
-            await dialog
-                .getByRole('button', { name: i === 7 ? TUTORIAL_UI.finish : TUTORIAL_UI.next, exact: true })
-                .click();
+            const finish = dialog.getByRole('button', { name: TUTORIAL_UI.finish, exact: true });
+            if (await finish.count()) {
+                await finish.click();
+                break;
+            }
+            await dialog.getByRole('button', { name: TUTORIAL_UI.next, exact: true }).click();
         }
         await page.getByTitle('精简模式').click();
         const liteHelp = page.getByRole('button', { name: TUTORIAL_UI.helpButton, exact: true });
