@@ -58,14 +58,18 @@ describe.each(layouts)('%s album metadata', (_label, path, binding) => {
         expect(album?.previousElementSibling.textContent.trim()).toBe('Artist');
     });
 
-    it.each([undefined, null, '', '   '])('omits missing or blank album %s without a placeholder', (albumName) => {
+    it.each([undefined, null, '', '   '])('reserves an empty album row for missing or blank album %s', (albumName) => {
         const { host } = mount({ name: 'Song', artists: ['Artist'], kind: 'SONG', albumName });
         expect(host.querySelector('p[title]')).toBeNull();
+        const album = host.querySelector('p:last-child');
+        expect(album.textContent.trim()).toBe('');
+        expect(album.classList.contains(binding === 'nowPlaying' ? 'h-3' : 'h-4')).toBe(true);
     });
 
-    it('does not show album metadata for DJ voice segments', () => {
+    it('keeps the album row empty for DJ voice segments', () => {
         const { host } = mount({ name: 'DJ', artists: ['DJ'], kind: 'VOICE', albumName: 'Not a song album' });
         expect(host.querySelector('p[title]')).toBeNull();
+        expect(host.querySelector('p:last-child').textContent.trim()).toBe('');
     });
 
     it('truncates long names while retaining the full title', () => {
@@ -73,17 +77,22 @@ describe.each(layouts)('%s album metadata', (_label, path, binding) => {
         const { host } = mount({ name: 'Song', artists: ['Artist'], albumName });
         const album = host.querySelector('p[title]');
         expect(album?.classList.contains('truncate')).toBe(true);
-        expect(album?.getAttribute('title')).toBe(albumName);
+        expect(album?.getAttribute('title')).toBe(albumName.trim());
         expect(album?.textContent.trim()).toBe(albumName.trim());
     });
 
-    it('removes the previous album when changing tracks or returning to standby', async () => {
+    it('preserves the same album row when changing tracks or returning to standby', async () => {
         const { host, state } = mount({ name: 'Song', artists: ['Artist'], albumName: 'First album' });
+        const album = host.querySelector('p[title]');
         state.nowPlaying = { music: { name: 'Next', artists: ['Other artist'], albumName: null } };
         await nextTick();
         expect(host.querySelector('p[title]')).toBeNull();
+        expect(host.querySelector('p:last-child')).toBe(album);
+        expect(album.textContent.trim()).toBe('');
         state.nowPlaying = null;
         await nextTick();
         expect(host.querySelector('p[title]')).toBeNull();
+        expect(host.querySelector('p:last-child')).toBe(album);
+        expect(album.textContent.trim()).toBe('');
     });
 });
