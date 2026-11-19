@@ -424,7 +424,8 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
         if (id.isBlank()) id = fallbackId;
         long seconds = Math.max(song.path("interval").asLong(0), 0);
         return new Music(id, text(song.path("name").asText(song.path("title").asText(""))),
-                artists(song.path("singer")), seconds * 1000, SOURCE,
+                artists(song.path("singer")), text(song.path("album").path("name").asText("")),
+                seconds * 1000, SOURCE,
                 cover(song.path("album")), externalUrl(id));
     }
 

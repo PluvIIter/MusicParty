@@ -198,7 +198,7 @@ for (const mobile of [false, true]) {
         const trigger = page.locator(mobile ? '#tutorial-random-mobile' : '#tutorial-random');
         for (const [value, label] of [
             ['SHUFFLE', '随机播放'],
-            ['ROUND_ROBIN', '轮询播放'],
+            ['ROUND_ROBIN', '轮替播放'],
             ['REPEAT_ONE', '单曲循环'],
             ['SEQUENTIAL', '顺序播放'],
         ]) {
@@ -236,7 +236,7 @@ test('picker supports Escape, outside click and keyboard navigation', async ({ p
 
 test('round-robin personal preference defaults random and sends specified boolean', async ({ page }) => {
     const fixture = await room(page, { mode: 'ROUND_ROBIN' });
-    await expect(page.getByText('轮询播放中', { exact: true })).toBeVisible();
+    await expect(page.getByText('轮替播放中', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: '我的选曲：随机', exact: true }).click();
     await expect(page.getByRole('button', { name: '我的选曲：顺序', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '我的选曲：顺序', exact: true }).click();
@@ -371,7 +371,7 @@ test('mode change cancels an active sequential cross-member drag', async ({ page
     await page.mouse.move(target.x + 20, target.y + 8, { steps: 8 });
     await expect(page.locator('[data-queue-id="q1"]')).toHaveClass(/opacity-50/);
     fixture.setMode('ROUND_ROBIN');
-    await expect(page.locator('#tutorial-random')).toHaveAttribute('aria-label', '播放模式：轮询播放');
+    await expect(page.locator('#tutorial-random')).toHaveAttribute('aria-label', '播放模式：轮替播放');
     await page.mouse.up();
     expect(fixture.sent.filter(({ destination }) => destination === '/app/queue/reorder')).toEqual([]);
     expect(fixture.queue().map(({ queueId }) => queueId)).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
@@ -421,7 +421,7 @@ test('admin selects explicit modes without obsolete fair switch', async ({ page 
     const select = page.getByRole('button', { name: '选择播放模式' });
     await select.click();
     const dialog = page.getByRole('dialog', { name: '选择播放模式' });
-    await dialog.getByRole('button', { name: /轮询/ }).click();
+    await dialog.getByRole('button', { name: /轮替/ }).click();
     await expect(dialog).toHaveCount(0);
     expect(fixture.adminActions).toEqual([{ action: 'SET_PLAY_MODE', playMode: 'ROUND_ROBIN' }]);
     await expect(page.getByText('公平模式', { exact: true })).toHaveCount(0);

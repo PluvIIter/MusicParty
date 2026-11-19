@@ -1,11 +1,14 @@
 import { ref, watch, onScopeDispose } from 'vue';
+import { storeToRefs } from 'pinia';
+import { useSourcesStore } from '../stores/sources';
 import { useToast } from './useToast';
 import { musicApi } from '../api/music.js';
 import { createRequestScope, isCanceled } from '../domain/sources';
 
 export function useSearchLogic() {
     const { error } = useToast();
-    const platform = ref('');
+    const sources = useSourcesStore();
+    const { searchSource: platform } = storeToRefs(sources);
     const keyword = ref('');
     const songs = ref([]);
     const loading = ref(false);
@@ -13,6 +16,14 @@ export function useSearchLogic() {
     const nextCursor = ref(null);
     const listMode = ref('search');
     const requests = createRequestScope();
+    let submittedKeyword = '';
+    watch(
+        () => sources.enabled.map((source) => source.id),
+        (ids) => {
+            if (!ids.includes(platform.value)) platform.value = ids[0] || '';
+        },
+        { immediate: true, flush: 'sync' }
+    );
     const cancelSearch = () => {
         requests.cancel();
         loading.value = false;
@@ -24,6 +35,7 @@ export function useSearchLogic() {
             cancelSearch();
             songs.value = [];
             nextCursor.value = null;
+            submittedKeyword = '';
         },
         { flush: 'sync' }
     );
@@ -31,8 +43,9 @@ export function useSearchLogic() {
 
     const doSearch = async () => {
         const val = keyword.value.trim();
-        if (!val || !platform.value) return;
+        if (!val || !sources.supports(platform.value, 'search')) return;
         listMode.value = 'search';
+        submittedKeyword = val;
         const request = requests.start();
         loading.value = true;
         loadingMore.value = false;
@@ -53,8 +66,15 @@ export function useSearchLogic() {
 
     /** 滚动到底时追加下一页；没有游标或正在加载时静默跳过。 */
     const loadMore = async () => {
-        const val = keyword.value.trim();
-        if (!val || !platform.value || !nextCursor.value || loading.value || loadingMore.value) return;
+        const val = submittedKeyword;
+        if (
+            !val ||
+            !sources.supports(platform.value, 'search') ||
+            !nextCursor.value ||
+            loading.value ||
+            loadingMore.value
+        )
+            return;
         if (listMode.value !== 'search') return;
         const cursor = nextCursor.value;
         const request = requests.start();

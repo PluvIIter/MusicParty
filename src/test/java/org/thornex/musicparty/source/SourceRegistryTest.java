@@ -35,6 +35,35 @@ class SourceRegistryTest {
     }
 
     @Test
+    void catalogsShareDisplayOrderAndPreserveDynamicSources() {
+        var props = new AppProperties();
+        var registry = new SourceRegistry(List.of(source("fixture-z"), source("bilibili"), source("qqmusic"),
+                source("fixture-a"), source("netease")), props);
+        var expected = List.of("netease", "qqmusic", "bilibili", "fixture-z", "fixture-a");
+        assertEquals(expected, registry.descriptors().stream().map(SourceDescriptor::id).toList());
+        assertEquals(expected, catalogIds(registry.catalog()));
+        var credentials = new SourceCredentialRegistry(registry, List.of());
+        assertEquals(expected, catalogIds(credentials.catalog()));
+
+        registry.update("qqmusic", false, null);
+        assertEquals(List.of("netease", "bilibili", "fixture-z", "fixture-a"), catalogIds(registry.catalog()));
+        assertEquals(expected, catalogIds(credentials.catalog()));
+        registry.update("qqmusic", true, null);
+        assertEquals(expected, catalogIds(registry.catalog()));
+    }
+
+    @Test
+    void dynamicSourcesKeepTheirRegistrationOrderWithoutBuiltIns() {
+        var registry = new SourceRegistry(List.of(source("fixture-z"), source("fixture-a")), new AppProperties());
+        assertEquals(List.of("fixture-z", "fixture-a"), catalogIds(registry.catalog()));
+    }
+
+    private List<?> catalogIds(java.util.Map<String, Object> catalog) {
+        return ((List<?>) catalog.get("sources")).stream()
+                .map(item -> ((java.util.Map<?, ?>) item).get("id")).toList();
+    }
+
+    @Test
     void rejectsUnknownDuplicateOrIncompatibleConfiguration() {
         assertThrows(IllegalArgumentException.class, () -> new SourceRegistry(List.of(source("x"), source("x")), new AppProperties()));
         var props = new AppProperties();

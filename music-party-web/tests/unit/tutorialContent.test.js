@@ -5,7 +5,12 @@ import { tutorialText } from '../../scripts/export-tutorial.mjs';
 
 const paragraphs = () => [
     ...Object.values(TUTORIAL_UI),
-    ...TUTORIAL_STEPS.flatMap((step) => [step.title, ...step.body, ...(step.mobileBody || [])]),
+    ...TUTORIAL_STEPS.flatMap((step) => [
+        step.title,
+        ...(step.mobileTitle ? [step.mobileTitle] : []),
+        ...step.body,
+        ...(step.mobileBody || []),
+    ]),
     ...TUTORIAL_TOPICS.flatMap((topic) => [
         topic.title,
         topic.summary,
@@ -14,8 +19,11 @@ const paragraphs = () => [
 ];
 
 describe('user tutorial content and exact text export', () => {
-    it('keeps a short eight-step introduction and unique searchable topics', () => {
-        expect(TUTORIAL_STEPS).toHaveLength(8);
+    it('keeps each introduction step focused on one target and action', () => {
+        expect(TUTORIAL_STEPS).toHaveLength(14);
+        expect(TUTORIAL_STEPS.filter((step) => !step.targetId).map((step) => step.id)).toEqual(['welcome']);
+        const targets = TUTORIAL_STEPS.flatMap((step) => [step.targetId, step.mobileTargetId].filter(Boolean));
+        expect(new Set(targets).size).toBe(targets.length);
         expect(new Set(TUTORIAL_STEPS.map((step) => step.id)).size).toBe(TUTORIAL_STEPS.length);
         expect(new Set(TUTORIAL_TOPICS.map((topic) => topic.id)).size).toBe(TUTORIAL_TOPICS.length);
         for (const step of TUTORIAL_STEPS) {

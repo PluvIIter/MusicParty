@@ -78,7 +78,7 @@ public class MediaDeliveryService {
                 .map(music -> {
                     var adapter = registry.getRequired(sourceId);
                     if (!sourceId.equals(music.platform()) || !id.equals(music.id())) throw new ApiRequestException("MEDIA_CONTENT_CHANGED");
-                    return new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl(), adapter.externalUrl(id));
+                    return new Music(music.id(), music.name(), music.artists(), music.albumName(), music.duration(), music.platform(), music.coverUrl(), adapter.externalUrl(id));
                 }))
                 .timeout(Duration.ofSeconds(15));
     }
@@ -538,6 +538,6 @@ public class MediaDeliveryService {
     }
 
     private PlayableMusic playable(Music music, String url) {
-        return new PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), music.platform(), url, music.coverUrl(), "SONG", music.externalUrl());
+        return new PlayableMusic(music.id(), music.name(), music.artists(), music.albumName(), music.duration(), music.platform(), url, music.coverUrl(), "SONG", music.externalUrl());
     }
 }

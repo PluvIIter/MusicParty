@@ -1,6 +1,8 @@
 export function sourceSettingsRows(descriptors, sources) {
   const byId = new Map(descriptors.map(descriptor => [descriptor.id, descriptor]));
-  return Object.keys(sources).sort().map(id => {
+  const ids = descriptors.map(descriptor => descriptor.id).filter(id => Object.hasOwn(sources, id));
+  ids.push(...Object.keys(sources).filter(id => !byId.has(id)).sort());
+  return ids.map(id => {
     const descriptor = byId.get(id);
     return {
       id,

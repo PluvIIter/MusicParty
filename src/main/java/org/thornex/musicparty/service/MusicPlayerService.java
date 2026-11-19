@@ -72,6 +72,8 @@ public class MusicPlayerService {
     private final AtomicBoolean isPlayModeLocked = new AtomicBoolean(false);
     private final AtomicBoolean isLoading = new AtomicBoolean(false);
     private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
+    private final AtomicInteger onlineUserCount = new AtomicInteger(0);
+    private final AtomicBoolean idleWakeRequested = new AtomicBoolean(false);
 
     // 投票切歌状态
     private final AtomicBoolean isVoteSkipEnabled = new AtomicBoolean(false);
@@ -134,6 +136,22 @@ public class MusicPlayerService {
 
     @Scheduled(fixedRate = 1000)
     public synchronized void playerLoop() {
+        if (idleWakeRequested.getAndSet(false) && !userService.getOnlineUserSummaries().isEmpty()) {
+            if (isLoading.get()) {
+                idleWakeRequested.set(true);
+            } else if (currentMusic.get() != null) {
+                if (isPaused.get()) {
+                    timestampAnchor.set(System.currentTimeMillis());
+                    isPaused.set(false);
+                    broadcastFullPlayerState();
+                }
+            } else {
+                syncFmMarker();
+                if (shouldPlayPrivateFmDj() || !queueManager.getQueueSnapshot().isEmpty()) {
+                    isPaused.set(false);
+                }
+            }
+        }
         if (isPaused.get()) {
             return;
         }
@@ -158,6 +176,7 @@ public class MusicPlayerService {
                             music.id(),
                             music.name(),
                             music.artists(),
+                            music.albumName(),
                             music.duration(),
                             music.platform(),
                             music.coverUrl(),
@@ -470,7 +489,7 @@ public class MusicPlayerService {
         skipVotes.clear();
         boolean voice = segment instanceof PrivateDjSegment.Voice;
         String kind = voice ? "VOICE" : "SONG";
-        currentMusic.set(kind.equals(music.kind()) ? music : new PlayableMusic(music.id(), music.name(), music.artists(), music.duration(), music.platform(),
+        currentMusic.set(kind.equals(music.kind()) ? music : new PlayableMusic(music.id(), music.name(), music.artists(), music.albumName(), music.duration(), music.platform(),
                 music.url(), music.coverUrl(), kind, music.externalUrl()));
         playbackId = UUID.randomUUID().toString();
         currentIsVoice.set(voice);
@@ -485,7 +504,7 @@ public class MusicPlayerService {
         fmDjRetryAt.set(0);
 
         if (segment instanceof PrivateDjSegment.Song s) {
-            queueManager.addToHistory(new Music(s.songId(), s.name(), s.artists(),
+            queueManager.addToHistory(new Music(s.songId(), s.name(), s.artists(), music.albumName(),
                     s.durationMs(), music.platform(), s.coverUrl(), music.externalUrl()));
         }
 
@@ -1031,18 +1050,18 @@ public class MusicPlayerService {
         broadcastFullPlayerState();
     }
 
-    public synchronized void seekTo(String sessionId, long positionMs, String expectedPlaybackId) {
+    public synchronized boolean seekTo(String sessionId, long positionMs, String expectedPlaybackId) {
         PlayableMusic music = currentMusic.get();
-        if (music == null || playbackId == null || !playbackId.equals(expectedPlaybackId)) return;
+        if (music == null || playbackId == null || !playbackId.equals(expectedPlaybackId)) return false;
         boolean system = "SYSTEM".equals(sessionId);
         if (!system && !appProperties.getPlayer().isAllowSeek()) {
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
                     PlayerAction.SYSTEM_MESSAGE, getUserToken(sessionId), "当前不允许拖动进度条"));
-            return;
+            return false;
         }
         // 注意：这里刻意不检查 isSkipLocked。锁定切歌只约束「换歌」，
         // 拖动进度条仍允许（管理员已单独用 allowSeek 授权进度控制）。
-        if (!system && isRateLimited(sessionId)) return;
+        if (!system && isRateLimited(sessionId)) return false;
 
         long duration = music.duration();
         long target = clampSeek(positionMs, duration);
@@ -1052,6 +1071,12 @@ public class MusicPlayerService {
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
                 PlayerAction.SYSTEM_MESSAGE, getUserToken(sessionId), "已跳转到 " + formatSeekTime(target)));
+        return true;
+    }
+
+    public synchronized SeekResult seekTo(String sessionId, SeekRequest request) {
+        boolean accepted = seekTo(sessionId, request.positionMs(), request.playbackId());
+        return new SeekResult(request.requestId(), request.playbackId(), accepted, seekNonce.get());
     }
 
     private static String formatSeekTime(long ms) {
@@ -1121,7 +1146,7 @@ public class MusicPlayerService {
         String modeName = switch (next) {
             case SEQUENTIAL -> "顺序播放";
             case SHUFFLE -> "随机播放";
-            case ROUND_ROBIN -> "轮询播放";
+            case ROUND_ROBIN -> "轮替播放";
             case REPEAT_ONE -> "单曲循环";
         };
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
@@ -1176,7 +1201,12 @@ public class MusicPlayerService {
      */
     @EventListener
     public void onUserCountChanged(UserCountChangeEvent event) {
-        if (event.getOnlineUserCount() == 0 && !isStreamActive.get()) {
+        int count = event.getOnlineUserCount();
+        if (onlineUserCount.getAndSet(count) == 0 && count > 0) {
+            // UserService publishes while locked; playback must wake on the scheduler instead.
+            idleWakeRequested.set(true);
+        }
+        if (count == 0 && !isStreamActive.get()) {
             enterIdleMode();
         }
         

@@ -9,7 +9,7 @@ const setupControl = new Function(
     `
     const { ref, computed, watch, onUnmounted, usePlayerStore, useSourcesStore, useUiStore, useUserStore, useToast, formatDuration, voteRules } = dependencies;
     ${script}
-    return { barRef, dragging, onSeekPointerDown, onSeekPointerUp, onSeekPointerCancel, onSeekKeydown };
+    return { barRef, dragging, seekPositionSeconds, onSeekPointerDown, onSeekPointerUp, onSeekPointerCancel, onSeekKeydown };
 `
 );
 
@@ -24,6 +24,7 @@ describe('playback-bound seek gestures', () => {
             isErrorState: false,
             config: { allowSeek: true },
             localProgress: 20000,
+            displayProgress: 90000,
             nowPlaying: { music: { id: 'a', duration: 180000 } },
             seekTo: vi.fn(),
         });
@@ -54,6 +55,14 @@ describe('playback-bound seek gestures', () => {
         };
     });
     afterEach(() => app.unmount());
+
+    it('uses optimistic progress for keyboard steps and seconds for accessible values', () => {
+        expect(controls.seekPositionSeconds.value).toBe(90);
+        controls.onSeekKeydown({ key: 'ArrowRight', preventDefault: vi.fn() });
+        expect(player.seekTo).toHaveBeenCalledWith(95000);
+        controls.onSeekPointerDown(pointer(25));
+        expect(controls.seekPositionSeconds.value).toBe(45);
+    });
 
     it('captures the instance and duration at drag start and sends once on release', () => {
         controls.onSeekPointerDown(pointer(20));

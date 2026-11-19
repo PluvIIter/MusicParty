@@ -1,5 +1,10 @@
 <template>
-    <div v-if="isActive" class="tutorial-layer fixed inset-0 z-[9999]" @pointerdown.self.prevent>
+    <div
+        v-if="isActive"
+        class="tutorial-layer fixed inset-0 z-[9999]"
+        :data-tutorial-step="currentStep?.id"
+        @pointerdown.self.prevent
+    >
         <!-- 引导模式或没有高亮目标：整屏蒙层 -->
         <div
             v-if="view !== 'tour' || !targetRect"
@@ -42,7 +47,7 @@
             aria-describedby="tutorial-subtitle"
             tabindex="-1"
             class="tutorial-dialog fixed flex min-h-0 flex-col bg-surface-raised border border-line shadow-2xl text-ink outline-none"
-            :class="view === 'guide' ? 'tutorial-guide' : 'tutorial-tour'"
+            :class="view === 'guide' ? 'tutorial-guide' : ['tutorial-tour', { 'tutorial-tight': tightPanel }]"
             :style="view === 'tour' ? tourStyle : undefined"
         >
             <header class="flex shrink-0 items-start justify-between gap-3 border-b border-line p-3 sm:p-5">
@@ -73,21 +78,17 @@
                     aria-atomic="true"
                 >
                     <p class="text-xs font-mono text-accent">
-                        {{ TUTORIAL_UI.stepLabel }} {{ currentStepIndex + 1 }} / {{ TUTORIAL_STEPS.length }}
+                        {{ TUTORIAL_UI.stepLabel }} {{ currentStepIndex + 1 }} / {{ availableSteps.length }}
                     </p>
-                    <h3 class="font-bold text-base">{{ currentStep.title }}</h3>
+                    <h3 class="font-bold text-base">
+                        {{ mobile && currentStep.mobileTitle ? currentStep.mobileTitle : currentStep.title }}
+                    </h3>
                     <p
                         v-for="(paragraph, index) in currentBody"
                         :key="index"
                         class="text-sm leading-relaxed text-ink-muted break-words"
                     >
                         {{ paragraph }}
-                    </p>
-                    <p
-                        v-if="view === 'tour' && currentStep.targetId && !targetRect"
-                        class="text-[11px] leading-relaxed text-ink-subtle border-l-2 border-line pl-2"
-                    >
-                        这一步要看的控件当前不在界面上（可能已收起，或该设备不显示），按上面的说明操作即可。
                     </p>
                 </div>
                 <footer class="shrink-0 border-t border-line p-3 sm:p-4 space-y-3">
@@ -117,7 +118,7 @@
                             class="tutorial-button border-accent bg-accent text-accent-contrast hover:bg-accent-hover"
                             @click="nextStep"
                         >
-                            {{ currentStepIndex === TUTORIAL_STEPS.length - 1 ? TUTORIAL_UI.finish : TUTORIAL_UI.next }}
+                            {{ currentStepIndex === availableSteps.length - 1 ? TUTORIAL_UI.finish : TUTORIAL_UI.next }}
                         </button>
                     </div>
                 </footer>
@@ -232,11 +233,15 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { X } from 'lucide-vue-next';
 import { STORAGE_KEYS } from '../constants/storage';
 import { TUTORIAL_UI, TUTORIAL_STEPS, TUTORIAL_TOPICS } from '../constants/tutorial';
+import { availableTutorialSteps, tutorialStepAfterChange, tutorialTarget } from '../domain/tutorialTargets';
 import { unlockPreview } from '../domain/tutorialPreview';
+import { useSourcesStore } from '../stores/sources';
 
 const isActive = ref(false);
 const view = ref('tour');
-const currentStepIndex = ref(0);
+const currentStepId = ref('welcome');
+const availableSteps = ref([TUTORIAL_STEPS[0]]);
+const sources = useSourcesStore();
 const query = ref('');
 const selectedTopic = ref('');
 const dialogRef = ref(null);
@@ -245,13 +250,16 @@ const tourBodyRef = ref(null);
 const targetRect = ref(null);
 const mobile = ref(false);
 const tourStyle = ref({});
+const tightPanel = ref(false);
 let returnFocus = null;
 let startupTimer;
 let positionFrame;
 let disposed = false;
 let openingVersion = 0;
+let targetObserver;
 
-const currentStep = computed(() => TUTORIAL_STEPS[currentStepIndex.value]);
+const currentStepIndex = computed(() => availableSteps.value.findIndex((step) => step.id === currentStepId.value));
+const currentStep = computed(() => availableSteps.value[currentStepIndex.value]);
 const currentBody = computed(() =>
     mobile.value && currentStep.value?.mobileBody ? currentStep.value.mobileBody : currentStep.value?.body || []
 );
@@ -312,20 +320,24 @@ const updatePosition = () => {
     const width = window.innerWidth,
         height = window.innerHeight;
     mobile.value = width < 768;
-    const step = currentStep.value;
-    const element =
-        (mobile.value && step.mobileTargetId && document.getElementById(step.mobileTargetId)) ||
-        (step.targetId && document.getElementById(step.targetId)) ||
-        null;
-    let rect = visibleRect(element);
-    if (!rect && element) {
-        // 目标在视口外：先滚到中间，滚动事件会再次触发定位。
-        element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
-    }
+    const nextSteps = availableTutorialSteps(TUTORIAL_STEPS, mobile.value, (capability) =>
+        sources.enabled.some((source) => sources.supports(source.id, capability))
+    );
+    // 「允许本机播放声音」这一步的按钮平时不显示，教程进入该步时会临时展示，所以固定保留这一步。
+    const soundStep = TUTORIAL_STEPS.find((step) => step.id === 'sound');
+    if (soundStep && !nextSteps.some((step) => step.id === 'sound')) nextSteps.push(soundStep);
+    const nextId = tutorialStepAfterChange(availableSteps.value, nextSteps, currentStepId.value);
+    if (availableSteps.value.map((step) => step.id).join() !== nextSteps.map((step) => step.id).join())
+        availableSteps.value = nextSteps;
+    currentStepId.value = nextId;
+    const element = currentStep.value && tutorialTarget(currentStep.value, mobile.value);
+    const rect = visibleRect(element);
     targetRect.value = rect;
     const panelWidth = Math.min(420, width - 24);
-    const panelHeight = Math.min(dialogRef.value?.offsetHeight || 380, height - 24);
+    let panelHeight = Math.min(380, height - 24);
+    let maxHeight = height - 24;
     const gap = 12;
+    tightPanel.value = false;
     let top = (height - panelHeight) / 2;
     let left = (width - panelWidth) / 2;
     if (rect) {
@@ -342,9 +354,16 @@ const updatePosition = () => {
             // 上下都放不下：改放左右，避免弹窗把高亮目标整个盖住。
             left = spaceRight >= panelWidth + gap * 2 ? rect.right + gap : rect.left - panelWidth - gap;
             top = Math.max(gap, Math.min(height - panelHeight - gap, rect.top));
+        } else {
+            maxHeight = Math.max(spaceAbove, spaceBelow) - gap * 2;
+            panelHeight = Math.min(panelHeight, maxHeight);
+            top = spaceBelow >= spaceAbove ? rect.bottom + gap : rect.top - panelHeight - gap;
+            tightPanel.value = true;
         }
     }
     tourStyle.value = {
+        height: `${panelHeight}px`,
+        maxHeight: `${maxHeight}px`,
         width: `${panelWidth}px`,
         left: `${left}px`,
         top: `${Math.max(gap, Math.min(height - panelHeight - gap, top))}px`,
@@ -367,6 +386,8 @@ const open = (nextView) => {
     view.value = nextView;
     targetRect.value = null;
     isActive.value = true;
+    syncUnlockPreview();
+    updatePosition();
     focusDialog();
 };
 const showGuide = () => {
@@ -379,7 +400,7 @@ const openGuide = () => {
     showGuide();
 };
 const restart = () => {
-    currentStepIndex.value = 0;
+    currentStepId.value = 'welcome';
     open('tour');
 };
 const closeHelp = () => {
@@ -398,11 +419,14 @@ const finishTutorial = () => {
     closeHelp();
 };
 const nextStep = () => {
-    if (currentStepIndex.value < TUTORIAL_STEPS.length - 1) currentStepIndex.value++;
+    updatePosition();
+    if (currentStepIndex.value < availableSteps.value.length - 1)
+        currentStepId.value = availableSteps.value[currentStepIndex.value + 1].id;
     else finishTutorial();
 };
 const previousStep = () => {
-    if (currentStepIndex.value > 0) currentStepIndex.value--;
+    updatePosition();
+    if (currentStepIndex.value > 0) currentStepId.value = availableSteps.value[currentStepIndex.value - 1].id;
 };
 const selectTopic = (id) => {
     selectedTopic.value = id;
@@ -441,25 +465,45 @@ const onFocusin = (event) => {
 };
 /** 最后一步要指「点此开启声音」：该按钮平时不显示，进入这一步时临时展示。 */
 const syncUnlockPreview = () => {
-    unlockPreview.value = isActive.value && view.value === 'tour' && currentStep.value?.id === 'sound';
+    unlockPreview.value = isActive.value && view.value === 'tour' && currentStepId.value === 'sound';
 };
-watch([currentStepIndex, view, isActive], async () => {
+watch([currentStepId, view, isActive], async () => {
     syncUnlockPreview();
     await nextTick();
     if (disposed) return;
     tourBodyRef.value?.scrollTo({ top: 0 });
     schedulePosition();
 });
+watch(() => sources.enabled, schedulePosition, { deep: true });
 watch(query, () => {
     selectedTopic.value = '';
     guideBodyRef.value?.scrollTo({ top: 0 });
 });
 watch(selectedTopic, () => guideBodyRef.value?.scrollTo({ top: 0 }));
 onMounted(() => {
+    targetObserver = new MutationObserver((records) => {
+        if (!isActive.value || view.value !== 'tour') return;
+        if (
+            records.some(({ target, addedNodes, removedNodes }) => {
+                if (target.closest?.('.tutorial-layer')) return false;
+                return [target, ...addedNodes, ...removedNodes].some(
+                    (node) => node.matches?.('[id^="tutorial-"]') || node.querySelector?.('[id^="tutorial-"]')
+                );
+            })
+        )
+            schedulePosition();
+    });
+    targetObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['disabled', 'aria-disabled', 'data-tutorial-available', 'style', 'class'],
+    });
     window.addEventListener('keydown', onKeydown, true);
     window.addEventListener('focusin', onFocusin, true);
     window.addEventListener('resize', schedulePosition);
     window.addEventListener('scroll', schedulePosition, true);
+    window.addEventListener('transitionend', schedulePosition, true);
     let done = false;
     try {
         done = !!localStorage.getItem(STORAGE_KEYS.TUTORIAL_DONE);
@@ -470,12 +514,14 @@ onMounted(() => {
 });
 onUnmounted(() => {
     disposed = true;
+    targetObserver?.disconnect();
     clearTimeout(startupTimer);
     cancelAnimationFrame(positionFrame);
     window.removeEventListener('keydown', onKeydown, true);
     window.removeEventListener('focusin', onFocusin, true);
     window.removeEventListener('resize', schedulePosition);
     window.removeEventListener('scroll', schedulePosition, true);
+    window.removeEventListener('transitionend', schedulePosition, true);
 });
 
 defineExpose({ openGuide, restart });
@@ -484,6 +530,21 @@ defineExpose({ openGuide, restart });
 <style scoped>
 .tutorial-dialog {
     max-height: calc(100dvh - 24px);
+}
+.tutorial-tight header {
+    padding: 0.5rem 0.75rem;
+}
+.tutorial-tight #tutorial-subtitle,
+.tutorial-tight header p,
+.tutorial-tight footer > div:first-child {
+    display: none;
+}
+.tutorial-tight footer {
+    padding: 0.5rem 0.75rem;
+}
+.tutorial-tight .tutorial-button {
+    min-height: 32px;
+    padding: 0.35rem 0.6rem;
 }
 .tutorial-compact-topics {
     display: none;

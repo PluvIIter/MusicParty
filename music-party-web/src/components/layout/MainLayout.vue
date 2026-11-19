@@ -229,10 +229,26 @@ const handleSearchClick = () => {
                             >
                                 {{ playerStore.nowPlaying?.music.name || '系统待机' }}
                             </h2>
-                            <div class="flex items-center gap-2 text-sm font-bold text-ink-muted">
-                                <span class="w-2 h-2 bg-line"></span>
-                                {{ playerStore.nowPlaying?.music.artists.join(' / ') || '无内容' }}
+                            <div class="flex items-center gap-2 text-sm font-bold text-ink-muted max-w-full min-w-0">
+                                <span class="w-2 h-2 bg-line shrink-0"></span>
+                                <span class="truncate">{{
+                                    playerStore.nowPlaying?.music.artists.join(' / ') || '无内容'
+                                }}</span>
                             </div>
+                            <p
+                                class="mt-1 h-4 text-xs leading-4 text-ink-muted truncate max-w-full"
+                                :title="
+                                    playerStore.nowPlaying?.music?.kind !== 'VOICE'
+                                        ? playerStore.nowPlaying?.music?.albumName?.trim() || undefined
+                                        : undefined
+                                "
+                            >
+                                {{
+                                    playerStore.nowPlaying?.music?.kind !== 'VOICE'
+                                        ? playerStore.nowPlaying?.music?.albumName?.trim()
+                                        : ''
+                                }}
+                            </p>
                         </div>
                     </div>
                 </div>

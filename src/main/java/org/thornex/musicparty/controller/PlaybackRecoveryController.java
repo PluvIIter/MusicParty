@@ -78,7 +78,7 @@ public class PlaybackRecoveryController {
         inFlight = delivery.refreshSongUrl(track).timeout(Duration.ofSeconds(20))
                 .map(url -> {
                     if (!Objects.equals(delivery.authorizationScope(track.platform()), authorizationScope)) throw new ApiRequestException("媒体凭据已更新，请重试");
-                    return new PlayableMusic(track.id(), track.name(), track.artists(), track.duration(), track.platform(), url, track.coverUrl(), track.kind(), track.externalUrl());
+                    return new PlayableMusic(track.id(), track.name(), track.artists(), track.albumName(), track.duration(), track.platform(), url, track.coverUrl(), track.kind(), track.externalUrl());
                 }).onErrorMap(error -> {
                     String message = error == null ? null : error.getMessage();
                     if ("MEDIA_CONTENT_CHANGED".equals(message)) return new ApiRequestException("MEDIA_CONTENT_CHANGED");

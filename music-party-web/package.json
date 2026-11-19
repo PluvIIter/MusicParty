@@ -14,7 +14,8 @@
         "test:e2e": "playwright test",
         "test:sync": "node tests/playback-sync.cjs",
         "test:compact": "node tests/compact-sync.cjs",
-        "test:browser": "node tests/browser.cjs"
+        "test:browser": "node tests/browser.cjs",
+        "test:layout": "node tests/player-layout.cjs"
     },
     "dependencies": {
         "@stomp/stompjs": "^7.2.1",
