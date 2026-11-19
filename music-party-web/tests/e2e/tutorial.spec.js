@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { compactFrames } from './compact-fixture';
+import support from '../support.cjs';
 import { TUTORIAL_UI, TUTORIAL_STEPS, TUTORIAL_TOPICS } from '../../src/constants/tutorial';
 
-async function fixture(page, { done = true, denyStorage = false, sources = [], state = {} } = {}) {
+const audio = support.tone();
+
+async function fixture(page, { done = true, denyStorage = false, sources = [], state = {}, hideTargets = false } = {}) {
     const sent = [];
     await page.addInitScript(
         ({ done, denyStorage }) => {
@@ -27,6 +30,21 @@ async function fixture(page, { done = true, denyStorage = false, sources = [], s
         },
         { done, denyStorage }
     );
+    await page.route('**/fixture.wav', (route) => {
+        const range = /bytes=(\d+)-(\d*)/.exec(route.request().headers().range || '');
+        const start = range ? Number(range[1]) : 0;
+        const end = range?.[2] ? Math.min(Number(range[2]), audio.length - 1) : audio.length - 1;
+        return route.fulfill({
+            status: range ? 206 : 200,
+            headers: {
+                'Content-Type': 'audio/wav',
+                'Accept-Ranges': 'bytes',
+                'Content-Length': String(end - start + 1),
+                ...(range ? { 'Content-Range': `bytes ${start}-${end}/${audio.length}` } : {}),
+            },
+            body: audio.subarray(start, end + 1),
+        });
+    });
     await page.route('**/api/**', (route) => {
         const path = new URL(route.request().url()).pathname;
         const response =
@@ -94,6 +112,11 @@ async function fixture(page, { done = true, denyStorage = false, sources = [], s
         });
     });
     await page.goto('/', { waitUntil: 'commit' });
+    if (hideTargets)
+        await page.addStyleTag({
+            content:
+                '[id^="tutorial-"]:not(#tutorial-title):not(#tutorial-subtitle) { visibility: hidden !important; }',
+        });
     await page.getByRole('button', { name: 'CONNECT', exact: true }).click();
     return sent;
 }
@@ -110,10 +133,7 @@ async function expectInsideViewport(page) {
 }
 
 test('first visit skips unavailable targets without controlling the room', async ({ page }) => {
-    const sent = await fixture(page, { done: false });
-    await page.addStyleTag({
-        content: '[id^="tutorial-"]:not(#tutorial-title):not(#tutorial-subtitle) { visibility: hidden !important; }',
-    });
+    const sent = await fixture(page, { done: false, hideTargets: true });
     const dialog = guide(page);
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('heading', { name: TUTORIAL_STEPS[0].title, exact: true })).toBeVisible();
@@ -146,7 +166,7 @@ for (const viewport of [
                         name: 'Track',
                         artists: [],
                         duration: 180000,
-                        url: '/fixture.mp3',
+                        url: '/fixture.wav',
                         externalUrl: 'https://example.com/track',
                     },
                     currentPosition: 0,
