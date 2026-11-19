@@ -35,6 +35,19 @@ describe('source discovery and identity', () => {
         store.overrides = { 'future-source': { enabled: false } };
         expect(store.enabled).toEqual([]);
     });
+    it('preserves catalog display order through availability changes', async () => {
+        const ids = ['netease', 'qqmusic', 'bilibili', 'fixture-z', 'fixture-a'];
+        mocks.catalog.mockResolvedValue({ sources: ids.map((id) => ({ id, capabilities: { search: true } })) });
+        const store = useSourcesStore();
+        await store.load();
+        expect(store.sources.map((source) => source.id)).toEqual(ids);
+        expect(store.enabled.map((source) => source.id)).toEqual(ids);
+        store.overrides = { qqmusic: { enabled: false } };
+        expect(store.enabled.map((source) => source.id)).toEqual(['netease', 'bilibili', 'fixture-z', 'fixture-a']);
+        expect(store.sources.map((source) => source.id)).toEqual(ids);
+        store.overrides = {};
+        expect(store.enabled.map((source) => source.id)).toEqual(ids);
+    });
     it('namespaces equal IDs without delimiter collisions', () => {
         expect(resourceKey({ platform: 'a', id: 'same' })).not.toBe(resourceKey({ platform: 'b', id: 'same' }));
         expect(resourceKey({ platform: 'a:b', id: 'c' })).not.toBe(resourceKey({ platform: 'a', id: 'b:c' }));

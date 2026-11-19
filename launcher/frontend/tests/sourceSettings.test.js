@@ -19,6 +19,30 @@ test('settings render arbitrary source descriptors and preserve disabled sources
   assert.equal(sources['new-source'].enabled, false);
 });
 
+test('settings follow descriptor order instead of config key order', () => {
+  const descriptors = ['netease', 'qqmusic', 'bilibili', 'fixture-z', 'fixture-a', 'absent']
+    .map(id => ({ id, label: id }));
+  const sources = Object.fromEntries(
+    ['unknown-z', 'bilibili', 'fixture-a', 'qqmusic', 'unknown-a', 'netease', 'fixture-z']
+      .map(id => [id, { enabled: false, deliveryMode: 'DIRECT_URL' }]),
+  );
+  const rows = sourceSettingsRows(descriptors, sources);
+  assert.deepEqual(rows.map(row => row.id),
+    ['netease', 'qqmusic', 'bilibili', 'fixture-z', 'fixture-a', 'unknown-a', 'unknown-z']);
+  assert.deepEqual(descriptors.map(descriptor => descriptor.id),
+    ['netease', 'qqmusic', 'bilibili', 'fixture-z', 'fixture-a', 'absent']);
+  assert.equal(Object.values(sources).every(source => source.enabled === false), true);
+});
+
+test('settings retain dynamic descriptor order without built-in sources', () => {
+  const descriptors = [{ id: 'fixture-z' }, { id: 'fixture-a' }];
+  const sources = {
+    'fixture-a': { enabled: true, deliveryMode: 'DIRECT_URL' },
+    'fixture-z': { enabled: false, deliveryMode: 'SERVER_DOWNLOAD' },
+  };
+  assert.deepEqual(sourceSettingsRows(descriptors, sources).map(row => row.id), ['fixture-z', 'fixture-a']);
+});
+
 test('QQ source exposes the same shape as NetEase', () => {
   const connectionFields = [
     { key: 'qqmusicCookie', kind: 'password' },
