@@ -22,6 +22,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -44,7 +45,11 @@ class MainActivity : AppCompatActivity() {
     private val serviceIntent by lazy { Intent(this, MediaPlaybackService::class.java) }
 
     private val requestNotifPerm =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                Toast.makeText(this, "未允许通知权限，锁屏控制可能不可用", Toast.LENGTH_LONG).show()
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -102,9 +107,6 @@ class MainActivity : AppCompatActivity() {
             @android.webkit.JavascriptInterface
             fun updateMedia(json: String) { MediaSessionManager.update(json) }
         }, "AndroidBridge")
-
-        // 前台服务保活（进程不被节流/杀）
-        ContextCompat.startForegroundService(this, serviceIntent)
 
         // 已有保存地址 → 直接进主页；否则停在起始页让用户输入
         getServerUrl()?.takeIf { it.isNotBlank() }?.let { connect(it) }
@@ -172,6 +174,7 @@ class MainActivity : AppCompatActivity() {
         prefs.edit().putString("server_url", url).apply()
         startPage.visibility = View.GONE
         webView.visibility = View.VISIBLE
+        ContextCompat.startForegroundService(this, serviceIntent)
         webView.loadUrl(url)
     }
 
@@ -193,14 +196,18 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() { super.onPause() /* 故意不调 webView.onPause() */ }
     override fun onStop() { super.onStop() /* 故意不调 webView.onPause() */ }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     override fun onDestroy() {
         MediaSessionManager.onControl = null
-        MediaSessionManager.destroy()
-        // 返回键/主动退出：停掉 WebView 里的音频并结束前台服务。
-        // 划掉最近任务走 MediaPlaybackService.onTaskRemoved；后台播放（非 finishing）不受影响。
         if (isFinishing) {
             MusicBridge.release()
             stopService(serviceIntent)
+        } else {
+            MusicBridge.detach(webView)
         }
         super.onDestroy()
     }

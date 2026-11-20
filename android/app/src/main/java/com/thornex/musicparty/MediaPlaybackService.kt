@@ -21,8 +21,14 @@ class MediaPlaybackService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        MediaSessionManager.destroy()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        super.onDestroy()
+    }
 
     /**
      * 划掉最近任务：进程会被前台服务保活，WebView 里的音频也不会自己停，
@@ -30,6 +36,7 @@ class MediaPlaybackService : Service() {
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
         MusicBridge.release()
+        MediaSessionManager.destroy()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
         super.onTaskRemoved(rootIntent)
