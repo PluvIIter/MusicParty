@@ -356,6 +356,30 @@ class QqMusicApiServiceTest {
         return body;
     }
 
+    @Test void refreshCredentialReplacesCookieFromUpstreamCredential() {
+        var properties = properties();
+        properties.getQqmusic().setCookie("musicid=1; musickey=old; refresh_token=rt; refresh_key=rk");
+        var credentials = new QqMusicCredentialService(properties);
+        var api = api(properties, client((request, ignored) -> {
+            assertEquals("/login/refresh_credential", request.url().getPath());
+            assertTrue(request.headers().getFirst("Cookie").contains("refresh_token=rt"));
+            return Mono.just(data(json("{\"musicid\":1,\"musickey\":\"new\",\"refresh_token\":\"new-rt\",\"refresh_key\":\"new-rk\",\"login_type\":2}")));
+        }), credentials);
+        api.refreshCredential();
+        assertTrue(credentials.cookie().contains("musickey=new"));
+        assertTrue(credentials.cookie().contains("refresh_token=new-rt"));
+        assertFalse(credentials.cookie().contains("login_type"));
+    }
+
+    @Test void refreshCredentialKeepsOldCookieWhenResponseIsInvalid() {
+        var properties = properties();
+        properties.getQqmusic().setCookie("musicid=1; musickey=old; refresh_token=rt");
+        var credentials = new QqMusicCredentialService(properties);
+        var api = api(properties, client((request, ignored) -> Mono.just(data(json("{\"musicid\":1}")))), credentials);
+        assertThrows(ApiRequestException.class, api::refreshCredential);
+        assertTrue(credentials.cookie().contains("musickey=old"));
+    }
+
     @Test void rateLimitedSearchBacksOffAndRetriesOnce() {
         var properties = properties();
         java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();

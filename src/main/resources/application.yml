@@ -14,6 +14,9 @@ app:
   music-api:
     admin-password: ${ADMIN_PASSWORD:admin123}
     base-url: ${BASE_URL:http://localhost:8080}
+    credential-file: ${SOURCE_CREDENTIAL_FILE:data/source-credentials.json}
+    credential-refresh-interval-ms: ${SOURCE_CREDENTIAL_REFRESH_INTERVAL_MS:1800000}
+    credential-refresh-initial-delay-ms: ${SOURCE_CREDENTIAL_REFRESH_INITIAL_DELAY_MS:300000}
     author-name: ${APP_AUTHOR_NAME:ThorNex}
     back-words: ${APP_BACK_WORDS:THORNEX}
     sources:
