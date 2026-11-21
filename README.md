@@ -310,6 +310,18 @@ DELIVERY_MODE决定由服务器分发音源链接还是通过服务器下载音�
 * **QQ音乐**
 浏览器打开QQ音乐网页版并登录，按F12开启控制台，选择网络，随便点开一个 `musicu.fcg` 请求，复制请求头中完整的 Cookie（含 `musicid`、`musickey`）。
 
+### Cookie 自动续期
+
+网易云与QQ音乐支持在 Cookie 失效后尝试调用上游刷新登录态：
+
+- 网易云调用上游 `/login/status` 判断登录态，失效后调用 `/login/refresh`，读取响应中的 `cookie` 字段。
+- QQ音乐调用上游 `/login/check_expired` 判断是否过期，过期后调用 `/login/refresh_credential`，用返回的 Credential 重建 Cookie。
+- 刷新成功后新 Cookie 立即用于后续请求，并写入 `data/source-credentials.json`；启动时该文件优先于环境变量，重启后不会退回旧 Cookie。
+- 刷新失败时保留旧 Cookie，只在日志与接口中报告失败，不会清空配置。refresh token 也失效、账号被风控或 Cookie 来源不可续期时，仍需管理员重新登录并粘贴 Cookie。
+- 默认每 30 分钟检查一次（`SOURCE_CREDENTIAL_REFRESH_INTERVAL_MS`），首次检查延迟 5 分钟（`SOURCE_CREDENTIAL_REFRESH_INITIAL_DELAY_MS`）；只有判定失效才会请求刷新接口。
+- 管理员可手动触发：`POST /api/admin/config/cookie/refresh`，请求体 `{"platform":"netease"}` 或 `{"platform":"qqmusic"}`。
+- 凭据文件路径可用 `SOURCE_CREDENTIAL_FILE` 修改，该文件包含明文登录凭据，应限制访问权限并排除在备份分享之外。
+
 ---
 
 ## 本地开发指南

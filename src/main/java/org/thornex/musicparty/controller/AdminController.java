@@ -142,6 +142,20 @@ public class AdminController {
         return ResponseEntity.ok(credentials.catalog());
     }
 
+    @PostMapping("/config/cookie/refresh")
+    public ResponseEntity<?> refreshCookie(@RequestHeader("X-Admin-Password") String password,
+                                           @RequestBody AdminCookieRequest request) {
+        if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        try {
+            credentials.refresh(request.platform());
+        } catch (IllegalArgumentException | org.thornex.musicparty.exception.ApiRequestException error) {
+            return ResponseEntity.badRequest().body(Map.of("message", "凭据刷新失败，请检查上游登录态"));
+        }
+        privateDjService.invalidate();
+        musicPlayerService.broadcastFullPlayerState();
+        return ResponseEntity.ok(Map.of("message", "音源凭据已刷新"));
+    }
+
     @PostMapping("/config/cookie")
     public ResponseEntity<?> setCookie(@RequestHeader("X-Admin-Password") String password, @RequestBody AdminCookieRequest request) {
         if (!isValid(password)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();

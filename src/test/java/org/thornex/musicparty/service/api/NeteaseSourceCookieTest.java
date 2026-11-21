@@ -44,6 +44,41 @@ class NeteaseSourceCookieTest {
         assertNull(cookies.get(1));
     }
 
+    @Test void refreshCookieRequiresSuccessfulBodyAndReplacesCookie() {
+        var properties = new AppProperties();
+        properties.getNetease().setBaseUrl("https://netease.test");
+        properties.getNetease().setCookie("MUSIC_U=old");
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            assertEquals("/login/refresh", request.url().getPath());
+            assertTrue(request.url().getQuery().startsWith("timestamp="));
+            assertEquals("MUSIC_U=old", request.headers().getFirst("Cookie"));
+            return Mono.just(json("{\"code\":200,\"cookie\":\"MUSIC_U=new; __csrf=csrf\"}"));
+        }).build();
+        var api = new NeteaseMusicApiService(client, properties);
+        api.refreshCookie();
+        assertEquals("MUSIC_U=new; __csrf=csrf", requestCookie(api, properties));
+    }
+
+    private String requestCookie(NeteaseMusicApiService api, AppProperties properties) {
+        var captured = new String[1];
+        var client = WebClient.builder().exchangeFunction(request -> {
+            captured[0] = request.headers().getFirst("Cookie");
+            return Mono.just(json("{\"code\":200,\"playlist\":[]}"));
+        }).build();
+        new NeteaseMusicApiService(client, properties).publicCollections("1", "playlists", 0, 1).block();
+        return captured[0];
+    }
+
+    @Test void refreshCookieKeepsOldCookieWhenUpstreamRejectsIt() {
+        var properties = new AppProperties();
+        properties.getNetease().setBaseUrl("https://netease.test");
+        properties.getNetease().setCookie("MUSIC_U=old");
+        WebClient client = WebClient.builder().exchangeFunction(request -> Mono.just(json("{\"code\":301}"))).build();
+        var api = new NeteaseMusicApiService(client, properties);
+        assertThrows(ApiRequestException.class, api::refreshCookie);
+        assertEquals("MUSIC_U=old", requestCookie(api, properties));
+    }
+
     @Test void permissionFailureKeepsTargetAndNeverFallsBackToAnonymous() {
         var properties = new AppProperties();
         properties.getNetease().setBaseUrl("https://netease.test");
