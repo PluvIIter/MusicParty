@@ -83,6 +83,7 @@ class MusicPlayerServiceFmCircuitBreakerTest {
     void playbackFromTheBlockedSourceClearsThatSourceOnly() {
         when(dj.nextSegment()).thenReturn(Mono.error(new ApiRequestException("MEDIA_FORBIDDEN: 网易云返回无可用播放地址")));
         player.playerLoop();
+        PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());
         verify(dj, timeout(2000)).nextSegment();
 
         // 队列里有一首同源歌曲：仍能正常播放（熔断只影响推荐），并在起播时解除该音源的熔断
@@ -104,6 +105,7 @@ class MusicPlayerServiceFmCircuitBreakerTest {
     void playbackFromAnotherSourceKeepsTheBlock() {
         when(dj.nextSegment()).thenReturn(Mono.error(new ApiRequestException("MEDIA_FORBIDDEN: 网易云返回无可用播放地址")));
         player.playerLoop();
+        PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());
         verify(dj, timeout(2000)).nextSegment();
 
         PlayableMusic otherSource = new PlayableMusic("other", "Other", List.of("Artist"), 180_000,
