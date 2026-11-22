@@ -97,23 +97,6 @@ public class NeteaseMusicApiService implements IMusicApiService {
         return StringUtils.hasText(neteaseConfig.getCookie());
     }
 
-    public synchronized void refreshCredentialIfNeeded() {
-        if (!isCookieConfigured()) return;
-        JsonNode status;
-        try {
-            status = webClient.get().uri(baseUrl + "/login/status?timestamp=" + System.currentTimeMillis())
-                    .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
-        } catch (Exception error) {
-            throw new ApiRequestException("UPSTREAM_UNAVAILABLE: 网易云登录状态检查失败");
-        }
-        boolean loggedIn = status != null
-                && status.path("code").asInt(-1) == 200
-                && status.path("data").path("code").asInt(-1) == 200
-                && status.path("data").path("account").isObject();
-        if (loggedIn) return;
-        refreshCookie();
-    }
-
     public synchronized void refreshCookie() {
         if (!isCookieConfigured()) throw SourceAuth.invalid("网易云音乐");
         JsonNode body;

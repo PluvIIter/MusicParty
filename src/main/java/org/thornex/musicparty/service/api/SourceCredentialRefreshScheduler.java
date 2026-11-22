@@ -28,15 +28,15 @@ public class SourceCredentialRefreshScheduler {
         this.credentials = credentials;
     }
 
-    @Scheduled(fixedDelayString = "${app.music-api.credential-refresh-interval-ms:1800000}",
-            initialDelayString = "${app.music-api.credential-refresh-initial-delay-ms:300000}")
+    @Scheduled(fixedDelayString = "${app.music-api.credential-refresh-interval-ms:172800000}",
+            initialDelayString = "${app.music-api.credential-refresh-initial-delay-ms:60000}")
     public void refreshConfiguredCredentials() {
         if (!refreshing.compareAndSet(false, true)) return;
         executor.execute(() -> {
             try {
                 for (String source : new String[]{"netease", "qqmusic"}) {
                     try {
-                        credentials.refreshIfNeeded(source);
+                        credentials.refresh(source);
                     } catch (RuntimeException error) {
                         log.warn("Automatic {} credential refresh failed", source);
                     }

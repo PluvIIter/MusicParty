@@ -22,7 +22,7 @@ class SourceCredentialRefreshSchedulerTest {
             started.countDown();
             release.await(2, TimeUnit.SECONDS);
             return null;
-        }).when(registry).refreshIfNeeded(anyString());
+        }).when(registry).refresh(anyString());
 
         var scheduler = new SourceCredentialRefreshScheduler(registry);
         long begin = System.nanoTime();
@@ -34,7 +34,7 @@ class SourceCredentialRefreshSchedulerTest {
 
         scheduler.refreshConfiguredCredentials();
         release.countDown();
-        verify(registry, org.mockito.Mockito.timeout(2000).times(2)).refreshIfNeeded(anyString());
+        verify(registry, org.mockito.Mockito.timeout(2000).times(2)).refresh(anyString());
         scheduler.shutdown();
     }
 }

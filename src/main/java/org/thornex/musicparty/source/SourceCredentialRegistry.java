@@ -39,24 +39,12 @@ public class SourceCredentialRegistry {
     }
 
     public void refresh(String source) {
-        refresh(source, false);
-    }
-
-    public void refreshIfNeeded(String source) {
-        refresh(source, true);
-    }
-
-    private void refresh(String source, boolean onlyIfNeeded) {
         var manager = source == null ? null : managers.get(source);
         if (manager == null) throw new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持凭据刷新");
-        if (!manager.isCredentialConfigured()) {
-            if (onlyIfNeeded) return;
-            throw new ApiRequestException("SOURCE_AUTH_REQUIRED: 请先配置完整音源凭据");
-        }
+        if (!manager.isCredentialConfigured()) throw new ApiRequestException("SOURCE_AUTH_REQUIRED: 请先配置完整音源凭据");
         // Network refresh must not hold the registry-wide lock: an admin saving a cookie would wait for it.
         synchronized (refreshLocks.computeIfAbsent(source, ignored -> new Object())) {
-            if (onlyIfNeeded) manager.refreshCredentialIfNeeded();
-            else manager.refreshCredential();
+            manager.refreshCredential();
         }
     }
 

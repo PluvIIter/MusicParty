@@ -61,13 +61,6 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     @Override public boolean isCredentialConfigured() { return credentials.configured(); }
     @Override public void updateCredential(String value) { credentials.updateCookie(value); }
 
-    @Override public void refreshCredentialIfNeeded() {
-        if (!credentials.configured()) return;
-        JsonNode root = web.getRaw("/login/check_expired", Map.of()).block(Duration.ofSeconds(20));
-        if (root != null && root.path("code").asInt(-1) == 0 && !root.path("data").asBoolean(true)) return;
-        refreshCredential();
-    }
-
     @Override public void refreshCredential() {
         if (!credentials.configured()) throw SourceAuth.invalid("QQ音乐");
         JsonNode root = web.getRaw("/login/refresh_credential", Map.of()).block(Duration.ofSeconds(20));

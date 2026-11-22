@@ -13,5 +13,4 @@ public class NeteaseCredentialManager implements SourceCredentialManager {
     public boolean isCredentialConfigured() { return api.isCookieConfigured(); }
     public void updateCredential(String value) { api.updateCookie(value); }
     public void refreshCredential() { api.refreshCookie(); }
-    public void refreshCredentialIfNeeded() { api.refreshCredentialIfNeeded(); }
 }
