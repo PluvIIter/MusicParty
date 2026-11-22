@@ -319,7 +319,8 @@ DELIVERY_MODE决定由服务器分发音源链接还是通过服务器下载音�
 - 刷新成功后新 Cookie 立即用于后续请求，并写入 `data/source-credentials.json`；启动时该文件优先于环境变量，重启后不会退回旧 Cookie。
 - 刷新失败时保留旧 Cookie，只在日志与接口中报告失败，不会清空配置。refresh token 也失效、账号被风控或 Cookie 来源不可续期时，仍需管理员重新登录并粘贴 Cookie。
 - 默认每 30 分钟检查一次（`SOURCE_CREDENTIAL_REFRESH_INTERVAL_MS`），首次检查延迟 5 分钟（`SOURCE_CREDENTIAL_REFRESH_INITIAL_DELAY_MS`）；只有判定失效才会请求刷新接口。
-- 管理员可手动触发：`POST /api/admin/config/cookie/refresh`，请求体 `{"platform":"netease"}` 或 `{"platform":"qqmusic"}`。
+- 刷新在独立线程执行，不会占用播放推进、状态广播等定时任务所用的调度线程。
+- 管理员可手动触发：`POST /api/admin/config/cookie/refresh`，请求体 `{"platform":"netease"}` 或 `{"platform":"qqmusic"}`；该请求会同步等待上游，最长约 40 秒，客户端超时应不小于 60 秒。
 - 凭据文件路径可用 `SOURCE_CREDENTIAL_FILE` 修改，该文件包含明文登录凭据，应限制访问权限并排除在备份分享之外。
 
 ---

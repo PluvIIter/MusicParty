@@ -11,6 +11,7 @@ import java.util.Map;
 public class SourceCredentialRegistry {
     private final SourceRegistry sources;
     private final Map<String, SourceCredentialManager> managers;
+    private final Map<String, Object> refreshLocks = new java.util.concurrent.ConcurrentHashMap<>();
 
     public SourceCredentialRegistry(SourceRegistry sources, List<SourceCredentialManager> managers) {
         this.sources = sources;
@@ -52,7 +53,8 @@ public class SourceCredentialRegistry {
             if (onlyIfNeeded) return;
             throw new ApiRequestException("SOURCE_AUTH_REQUIRED: 请先配置完整音源凭据");
         }
-        synchronized (sources) {
+        // Network refresh must not hold the registry-wide lock: an admin saving a cookie would wait for it.
+        synchronized (refreshLocks.computeIfAbsent(source, ignored -> new Object())) {
             if (onlyIfNeeded) manager.refreshCredentialIfNeeded();
             else manager.refreshCredential();
         }
