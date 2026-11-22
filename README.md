@@ -316,7 +316,7 @@ DELIVERY_MODE决定由服务器分发音源链接还是通过服务器下载音�
 
 - 网易云调用上游 `/login/status` 判断登录态，失效后调用 `/login/refresh`，读取响应中的 `cookie` 字段。
 - QQ音乐调用上游 `/login/check_expired` 判断是否过期，过期后调用 `/login/refresh_credential`，用返回的 Credential 重建 Cookie。
-- 刷新成功后新 Cookie 立即用于后续请求，并写入 `data/source-credentials.json`；启动时该文件优先于环境变量，重启后不会退回旧 Cookie。
+- 刷新成功后新 Cookie 立即用于后续请求，并写入 `data/source-credentials.json`；启动时环境变量优先，只有对应的 `NETEASE_COOKIE` / `QQMUSIC_COOKIE` 为空或不可登录时才回退到该文件。因此想用刷新结果长期运行时，应清空对应的环境变量。
 - 刷新失败时保留旧 Cookie，只在日志与接口中报告失败，不会清空配置。refresh token 也失效、账号被风控或 Cookie 来源不可续期时，仍需管理员重新登录并粘贴 Cookie。
 - 默认每 30 分钟检查一次（`SOURCE_CREDENTIAL_REFRESH_INTERVAL_MS`），首次检查延迟 5 分钟（`SOURCE_CREDENTIAL_REFRESH_INITIAL_DELAY_MS`）；只有判定失效才会请求刷新接口。
 - 刷新在独立线程执行，不会占用播放推进、状态广播等定时任务所用的调度线程。

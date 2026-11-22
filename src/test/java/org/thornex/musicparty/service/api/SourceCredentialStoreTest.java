@@ -46,4 +46,28 @@ class SourceCredentialStoreTest {
         assertTrue(netease.isCookieConfigured());
         assertEquals("musicid=1; musickey=persisted", new QqMusicCredentialService(properties, store).cookie());
     }
+
+    @Test void deployedCookieWinsOverThePersistedValue() {
+        var properties = properties();
+        var store = new SourceCredentialStore(MAPPER, properties);
+        store.put("netease", "MUSIC_U=persisted");
+        store.put("qqmusic", "musicid=1; musickey=persisted");
+        properties.getNetease().setCookie("MUSIC_U=deployed");
+        properties.getQqmusic().setCookie("musicid=2; musickey=deployed");
+
+        var netease = new NeteaseMusicApiService(
+                org.springframework.web.reactive.function.client.WebClient.builder().build(), properties, store);
+        assertTrue(netease.isCookieConfigured());
+        assertEquals("MUSIC_U=deployed", properties.getNetease().getCookie());
+        assertEquals("musicid=2; musickey=deployed", new QqMusicCredentialService(properties, store).cookie());
+    }
+
+    @Test void unusableDeployedQqCookieFallsBackToThePersistedValue() {
+        var properties = properties();
+        var store = new SourceCredentialStore(MAPPER, properties);
+        store.put("qqmusic", "musicid=1; musickey=persisted");
+        properties.getQqmusic().setCookie("uin=1");
+
+        assertEquals("musicid=1; musickey=persisted", new QqMusicCredentialService(properties, store).cookie());
+    }
 }

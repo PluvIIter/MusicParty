@@ -64,8 +64,10 @@ public class NeteaseMusicApiService implements IMusicApiService {
         this.neteaseConfig = appProperties.getNetease();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
         this.quality = appProperties.getNetease().getQuality();
+        // 部署配置是权威来源；只有它缺失或不可用时才回退到刷新结果。
+        String deployed = StringUtils.hasText(initialCookieFromConfig) ? initialCookieFromConfig.strip() : "";
         String persisted = credentialStore == null ? "" : credentialStore.get("netease");
-        this.currentCookie = StringUtils.hasText(persisted) ? persisted : initialCookieFromConfig;
+        this.currentCookie = StringUtils.hasText(deployed) ? deployed : persisted;
         this.neteaseConfig.setCookie(this.currentCookie);
     }
 
