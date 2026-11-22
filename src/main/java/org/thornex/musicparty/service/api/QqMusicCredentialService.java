@@ -41,14 +41,10 @@ public class QqMusicCredentialService {
             log.warn("QQ Music credential uses the removed JSON format and is ignored; configure a Cookie header instead");
             configured = "";
         }
-        // 部署配置里的非法值只按未配置处理，不阻断其他音源启动；浏览器格式先转换再判断是否可用。
-        String initial = configured == null || !isValid(configured.strip()) ? "" : normalize(configured);
-        if (!hasLogin(initial)) initial = "";
-        String stored = credentialStore == null ? "" : credentialStore.get("qqmusic");
-        String persisted = isValid(stored.strip()) ? normalize(stored) : "";
-        if (!hasLogin(persisted)) persisted = "";
-        // 部署配置是权威来源；只有它缺失或不可登录时才回退到刷新结果。
-        this.cookie = initial.isBlank() ? persisted : initial;
+        // 只按有无内容决定是否回退：部署配置非空即使用，不再校验能否登录。
+        String deployed = configured == null ? "" : normalize(configured.strip());
+        String persisted = credentialStore == null ? "" : normalize(credentialStore.get("qqmusic").strip());
+        this.cookie = deployed.isBlank() ? persisted : deployed;
     }
 
     public String cookie() {
@@ -124,13 +120,6 @@ public class QqMusicCredentialService {
 
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
-    }
-
-    /** 上游只接受同时带 {@code musicid} 与 {@code musickey} 的 Cookie，缺任一项都按匿名处理。 */
-    static boolean hasLogin(String canonical) {
-        if (canonical == null || canonical.isBlank()) return false;
-        Map<String, String> pairs = parse(canonical);
-        return hasText(pairs.get("musicid")) && hasText(pairs.get("musickey"));
     }
 
     private static String firstText(String... values) {

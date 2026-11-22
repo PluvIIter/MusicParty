@@ -62,11 +62,20 @@ class SourceCredentialStoreTest {
         assertEquals("musicid=2; musickey=deployed", new QqMusicCredentialService(properties, store).cookie());
     }
 
-    @Test void unusableDeployedQqCookieFallsBackToThePersistedValue() {
+    @Test void nonEmptyDeployedQqCookieWinsWithoutUsabilityCheck() {
         var properties = properties();
         var store = new SourceCredentialStore(MAPPER, properties);
         store.put("qqmusic", "musicid=1; musickey=persisted");
         properties.getQqmusic().setCookie("uin=1");
+
+        assertEquals("uin=1", new QqMusicCredentialService(properties, store).cookie());
+    }
+
+    @Test void emptyDeployedQqCookieFallsBackToThePersistedValue() {
+        var properties = properties();
+        var store = new SourceCredentialStore(MAPPER, properties);
+        store.put("qqmusic", "musicid=1; musickey=persisted");
+        properties.getQqmusic().setCookie("   ");
 
         assertEquals("musicid=1; musickey=persisted", new QqMusicCredentialService(properties, store).cookie());
     }
