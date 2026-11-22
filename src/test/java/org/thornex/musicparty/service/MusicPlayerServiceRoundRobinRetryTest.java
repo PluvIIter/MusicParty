@@ -173,6 +173,30 @@ class MusicPlayerServiceRoundRobinRetryTest {
         verify(media, never()).getPlayableMusic("netease", "a2");
     }
 
+    @Test
+    void stopsRetryingAfterThreeFailuresAndMovesToNextMember() {
+        add("a1", alice);
+        add("a2", alice);
+        add("a3", alice);
+        add("a4", alice);
+        add("a5", alice);
+        add("b1", bob);
+        for (String id : List.of("a1", "a2", "a3", "a4")) {
+            when(media.getPlayableMusic("netease", id)).thenReturn(Mono.error(new IllegalStateException("unavailable")));
+        }
+        canPlay("b1");
+
+        player.playerLoop();
+        awaitPlaying("b1");
+
+        var order = inOrder(media);
+        order.verify(media).getPlayableMusic("netease", "a1");
+        order.verify(media).getPlayableMusic("netease", "a2");
+        order.verify(media).getPlayableMusic("netease", "a3");
+        order.verify(media).getPlayableMusic("netease", "a4");
+        order.verify(media).getPlayableMusic("netease", "b1");
+        verify(media, never()).getPlayableMusic("netease", "a5");
+    }
     private MusicQueueItem add(String id, UserSummary owner) {
         return queue.add(new Music(id, id, List.of("Artist"), 180_000L, "netease", null, null), owner, QueueItemStatus.READY);
     }

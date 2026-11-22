@@ -95,6 +95,8 @@ public class MusicPlayerService {
     private final AtomicLong fmDjRetryAt = new AtomicLong(0);
     private final AtomicInteger fmDjFailCount = new AtomicInteger(0);
     private static final long FM_DJ_MAX_BACKOFF_MS = 80_000L;
+    /** 轮替模式下同一成员最多连续重试 3 首失败曲目，超过后轮到下一位。 */
+    private static final int MAX_ROUND_ROBIN_MEMBER_RETRIES = 3;
 
     // 当前播放段是否为 DJ 语音（语音段播完不进历史记录）
     private final AtomicBoolean currentIsVoice = new AtomicBoolean(false);
@@ -261,10 +263,11 @@ public class MusicPlayerService {
     }
 
     private void playNextInQueue() {
-        playNextInQueue(null, new HashSet<>());
+        playNextInQueue(null, new HashSet<>(), 0);
     }
 
-    private synchronized void playNextInQueue(String retryMember, Set<String> failedTracks) {
+    private synchronized void playNextInQueue(String retryMember, Set<String> failedTracks, int retryCount) {
+        int retries = retryCount;
         if (currentMusic.get() != null || isLoading.get()) {
             return;
         }
@@ -281,11 +284,12 @@ public class MusicPlayerService {
             Map<String, QueueItemStatus> statusMap = buildStatusMap();
             PlayMode mode = playMode.get();
             MusicQueueItem nextItem = null;
-            if (mode == PlayMode.ROUND_ROBIN && retryMember != null) {
+            if (mode == PlayMode.ROUND_ROBIN && retryMember != null && retries < MAX_ROUND_ROBIN_MEMBER_RETRIES) {
                 Set<String> enabledSources = queueManager.getQueueSnapshot().stream()
                         .map(item -> item.music().platform()).distinct().filter(sourceRegistry::isEnabled)
                         .collect(Collectors.toSet());
                 nextItem = queueManager.pollRoundRobinRetry(retryMember, failedTracks, statusMap, enabledSources);
+                if (nextItem != null) retries++;
             }
             if (nextItem == null) {
                 if (shouldPlayPrivateFmDj()) {
@@ -309,11 +313,18 @@ public class MusicPlayerService {
 
             Music music = nextItem.music();
             if (statusMap.get(ResourceKey.encode(music.platform(), music.id())) != QueueItemStatus.FAILED) {
-                prepareQueuedSong(nextItem, failedTracks);
+                prepareQueuedSong(nextItem, failedTracks, retryMember, retries);
                 return;
             }
 
-            retryMember = markQueuedSongFailed(nextItem, failedTracks);
+            String failedMember = markQueuedSongFailed(nextItem, failedTracks);
+            if (failedMember == null) {
+                retryMember = null;
+                retries = 0;
+            } else if (!failedMember.equals(retryMember)) {
+                retryMember = failedMember;
+                retries = 0;
+            }
             if (sourceRegistry.isEnabled(music.platform())) {
                 Mono.fromRunnable(() -> mediaDeliveryService.prefetch(music))
                         .subscribeOn(Schedulers.boundedElastic())
@@ -326,7 +337,7 @@ public class MusicPlayerService {
 
     private record PreparedSong(String authorization, PlayableMusic music) {}
 
-    private void prepareQueuedSong(MusicQueueItem item, Set<String> failedTracks) {
+    private void prepareQueuedSong(MusicQueueItem item, Set<String> failedTracks, String retryMember, int retries) {
         long version = playHeadVersion.incrementAndGet();
         isLoading.set(true);
         broadcastFullPlayerState();
@@ -350,18 +361,27 @@ public class MusicPlayerService {
                         }
                         PlayableMusic playable = result.music();
                         if (!hasAuthorization(playable.platform(), result.authorization())) {
-                            handleQueuedSongFailure(version, item, failedTracks, new ApiRequestException("媒体授权已变更"));
+                            handleQueuedSongFailure(version, item, failedTracks, retryMember, retries, new ApiRequestException("媒体授权已变更"));
                             return;
                         }
                         queueManager.clearPlaybackFailure(item);
                         applyNewSong(playable, item);
                     }
-                }, error -> handleQueuedSongFailure(version, item, failedTracks, error));
+                }, error -> handleQueuedSongFailure(version, item, failedTracks, retryMember, retries, error));
     }
 
-    private synchronized void handleQueuedSongFailure(long version, MusicQueueItem item, Set<String> failedTracks, Throwable error) {
+    private synchronized void handleQueuedSongFailure(long version, MusicQueueItem item, Set<String> failedTracks,
+            String retryMember, int retries, Throwable error) {
         if (playHeadVersion.get() != version) return;
-        String retryMember = markQueuedSongFailed(item, failedTracks);
+        String failedMember = markQueuedSongFailed(item, failedTracks);
+        String nextRetryMember = failedMember;
+        int nextRetries = retries;
+        if (failedMember == null) {
+            nextRetryMember = null;
+            nextRetries = 0;
+        } else if (!failedMember.equals(retryMember)) {
+            nextRetries = 0;
+        }
         Music music = item.music();
         log.error("Play failed for {}: {}", music.name(), error.getMessage());
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
@@ -369,7 +389,7 @@ public class MusicPlayerService {
         publishCredentialHint(music.platform(), error);
         isLoading.set(false);
         broadcastFullPlayerState();
-        playNextInQueue(retryMember, failedTracks);
+        playNextInQueue(nextRetryMember, failedTracks, nextRetries);
     }
 
     private String markQueuedSongFailed(MusicQueueItem item, Set<String> failedTracks) {
