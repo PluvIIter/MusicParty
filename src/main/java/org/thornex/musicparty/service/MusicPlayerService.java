@@ -91,10 +91,9 @@ public class MusicPlayerService {
 
     private final AtomicLong playHeadVersion = new AtomicLong(0);
 
-    // 私人FM/DJ 播放失败指数退避（5s→10s→20s→40s→80s，封顶 80s）
+    // 私人FM/DJ 失败熔断：置位后不再自动重试，直到用户手动点击播放
     private final AtomicLong fmDjRetryAt = new AtomicLong(0);
-    private final AtomicInteger fmDjFailCount = new AtomicInteger(0);
-    private static final long FM_DJ_MAX_BACKOFF_MS = 80_000L;
+    private final AtomicBoolean fmDjBlocked = new AtomicBoolean(false);
     /** 轮替模式下同一成员最多连续重试 3 首失败曲目，超过后轮到下一位。 */
     private static final int MAX_ROUND_ROBIN_MEMBER_RETRIES = 3;
 
@@ -196,8 +195,9 @@ public class MusicPlayerService {
             if (userService.getOnlineUserSummaries().isEmpty() && !isStreamActive.get()) {
                 return;
             }
+            boolean fmBlocked = fmDjBlocked.get();
             if (System.currentTimeMillis() >= fmDjRetryAt.get()
-                    && (shouldPlayPrivateFmDj() || !queueManager.getQueueSnapshot().isEmpty())) {
+                    && ((!fmBlocked && shouldPlayPrivateFmDj()) || !queueManager.getQueueSnapshot().isEmpty())) {
                 playNextInQueue();
             }
         }
@@ -276,7 +276,7 @@ public class MusicPlayerService {
         syncFmMarker();
 
         while (true) {
-            if (appProperties.getPrivateDj().isCustodyEnabled() && shouldPlayPrivateFmDj()) {
+            if (!fmDjBlocked.get() && appProperties.getPrivateDj().isCustodyEnabled() && shouldPlayPrivateFmDj()) {
                 playFmDjNext();
                 return;
             }
@@ -292,7 +292,7 @@ public class MusicPlayerService {
                 if (nextItem != null) retries++;
             }
             if (nextItem == null) {
-                if (shouldPlayPrivateFmDj()) {
+                if (!fmDjBlocked.get() && shouldPlayPrivateFmDj()) {
                     playFmDjNext();
                     return;
                 }
@@ -543,7 +543,7 @@ public class MusicPlayerService {
         timestampAnchor.set(System.currentTimeMillis());
         isPaused.set(false);
         isLoading.set(false);
-        fmDjFailCount.set(0);
+        fmDjBlocked.set(false);
         fmDjRetryAt.set(0);
 
         if (segment instanceof PrivateDjSegment.Song s) {
@@ -560,15 +560,18 @@ public class MusicPlayerService {
 
     private void handleFmDjError(long version, Throwable error) {
         if (playHeadVersion.get() != version) return;
-        log.warn("Private FM/DJ segment failed: {}", error instanceof ApiRequestException ? error.getMessage() : "upstream unavailable");
-        int fails = fmDjFailCount.incrementAndGet();
-        long backoff = Math.min(5_000L << Math.min(fails - 1, 4), FM_DJ_MAX_BACKOFF_MS);
-        fmDjRetryAt.set(System.currentTimeMillis() + backoff);
+        log.warn("Private FM/DJ segment failed, paused automatic playback: {}",
+                error instanceof ApiRequestException ? error.getMessage() : "upstream unavailable");
+        // 熔断：停止自动重试，把播放交给用户手动触发。
+        fmDjBlocked.set(true);
+        fmDjRetryAt.set(Long.MAX_VALUE);
         isLoading.set(false);
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this,
                 SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
-                error instanceof ApiRequestException ? "私人FM/DJ: " + error.getMessage() : "私人FM/DJ 获取失败，稍后自动重试"));
+                error instanceof ApiRequestException
+                        ? "私人FM/DJ 已停止：" + error.getMessage() + "；点击播放可重试"
+                        : "私人FM/DJ 获取失败，已停止自动播放；点击播放可重试"));
     }
 
     private long calculateCurrentPosition() {
@@ -1139,7 +1142,10 @@ public class MusicPlayerService {
 
     public synchronized void togglePause(String sessionId) {
         if (currentMusic.get() == null) {
-            if (!queueManager.getQueueSnapshot().isEmpty()) {
+            // 没有正在播放的歌曲时，点击播放视为手动重试：解除私人FM熔断。
+            boolean wasBlocked = fmDjBlocked.getAndSet(false);
+            if (wasBlocked) fmDjRetryAt.set(0);
+            if (!queueManager.getQueueSnapshot().isEmpty() || shouldPlayPrivateFmDj()) {
                 playNextInQueue();
             }
             return;
