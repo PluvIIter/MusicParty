@@ -19,16 +19,18 @@ object MusicBridge {
         webView = view
     }
 
+    fun detach(view: WebView) {
+        if (webView === view) webView = null
+    }
+
     /** 停掉页面里的媒体并销毁 WebView；重复调用安全。 */
     fun release() {
         val view = webView ?: return
         webView = null
         Handler(Looper.getMainLooper()).post {
-            // 先把页面卸载掉：媒体解碼随之结束，比单纯 destroy 更稳。
             runCatching { view.loadUrl("about:blank") }
-            Handler(Looper.getMainLooper()).postDelayed({
-                runCatching { view.destroy() }
-            }, 300)
+            runCatching { view.stopLoading() }
+            runCatching { view.destroy() }
         }
     }
 }
