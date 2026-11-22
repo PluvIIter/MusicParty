@@ -91,9 +91,9 @@ public class MusicPlayerService {
 
     private final AtomicLong playHeadVersion = new AtomicLong(0);
 
-    // 私人FM/DJ 失败熔断：置位后不再自动重试，直到用户手动点击播放
+    // 私人FM/DJ 失败熔断：按音源记录，直到该音源再次播放成功或用户手动点击播放
     private final AtomicLong fmDjRetryAt = new AtomicLong(0);
-    private final AtomicBoolean fmDjBlocked = new AtomicBoolean(false);
+    private final java.util.Set<String> fmBlockedSources = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** 轮替模式下同一成员最多连续重试 3 首失败曲目，超过后轮到下一位。 */
     private static final int MAX_ROUND_ROBIN_MEMBER_RETRIES = 3;
 
@@ -195,7 +195,7 @@ public class MusicPlayerService {
             if (userService.getOnlineUserSummaries().isEmpty() && !isStreamActive.get()) {
                 return;
             }
-            boolean fmBlocked = fmDjBlocked.get();
+            boolean fmBlocked = isFmSourceBlocked();
             if (System.currentTimeMillis() >= fmDjRetryAt.get()
                     && ((!fmBlocked && shouldPlayPrivateFmDj()) || !queueManager.getQueueSnapshot().isEmpty())) {
                 playNextInQueue();
@@ -276,7 +276,7 @@ public class MusicPlayerService {
         syncFmMarker();
 
         while (true) {
-            if (!fmDjBlocked.get() && appProperties.getPrivateDj().isCustodyEnabled() && shouldPlayPrivateFmDj()) {
+            if (!isFmSourceBlocked() && appProperties.getPrivateDj().isCustodyEnabled() && shouldPlayPrivateFmDj()) {
                 playFmDjNext();
                 return;
             }
@@ -292,7 +292,7 @@ public class MusicPlayerService {
                 if (nextItem != null) retries++;
             }
             if (nextItem == null) {
-                if (!fmDjBlocked.get() && shouldPlayPrivateFmDj()) {
+                if (!isFmSourceBlocked() && shouldPlayPrivateFmDj()) {
                     playFmDjNext();
                     return;
                 }
@@ -543,7 +543,7 @@ public class MusicPlayerService {
         timestampAnchor.set(System.currentTimeMillis());
         isPaused.set(false);
         isLoading.set(false);
-        fmDjBlocked.set(false);
+        clearFmBlockForSource(music.platform());
         fmDjRetryAt.set(0);
 
         if (segment instanceof PrivateDjSegment.Song s) {
@@ -562,9 +562,9 @@ public class MusicPlayerService {
         if (playHeadVersion.get() != version) return;
         log.warn("Private FM/DJ segment failed, paused automatic playback: {}",
                 error instanceof ApiRequestException ? error.getMessage() : "upstream unavailable");
-        // 熔断：停止自动重试，把播放交给用户手动触发。
-        fmDjBlocked.set(true);
-        fmDjRetryAt.set(Long.MAX_VALUE);
+        // 熔断：只停止该音源的推荐播放，直到同源歌曲播放成功或用户手动点击播放。
+        fmDjBlockedSource().ifPresent(fmBlockedSources::add);
+        fmDjRetryAt.set(0);
         isLoading.set(false);
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this,
@@ -574,6 +574,28 @@ public class MusicPlayerService {
                         : "私人FM/DJ 获取失败，已停止自动播放；点击播放可重试"));
     }
 
+    /** 当前私人FM/DJ使用的音源；配置异常时视为未知，用通配符阻塞。 */
+    private java.util.Optional<String> fmDjBlockedSource() {
+        try {
+            String source = privateDjService.sourceId();
+            if (source != null && !source.isBlank()) return java.util.Optional.of(source);
+        } catch (RuntimeException ignored) {
+            // fall through to wildcard
+        }
+        return java.util.Optional.of("*");
+    }
+
+    private boolean isFmSourceBlocked() {
+        if (fmBlockedSources.isEmpty()) return false;
+        if (fmBlockedSources.contains("*")) return true;
+        return fmDjBlockedSource().map(fmBlockedSources::contains).orElse(false);
+    }
+
+    private void clearFmBlockForSource(String source) {
+        if (source == null || source.isBlank()) return;
+        fmBlockedSources.remove(source);
+        fmBlockedSources.remove("*");
+    }
     private long calculateCurrentPosition() {
         if (currentMusic.get() == null) return 0;
         if (isPaused.get()) {
@@ -586,6 +608,7 @@ public class MusicPlayerService {
     }
 
     private synchronized void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
+        clearFmBlockForSource(music.platform());
         if (claimedPlaybackVersion == playHeadVersion.get()) {
             UserSummary claimed = claimedPlaybackOwners.get(queueItem.enqueuedBy().token());
             if (claimed != null) queueItem = new MusicQueueItem(queueItem.queueId(), queueItem.music(), claimed, queueItem.status(), queueItem.priority());
@@ -1142,8 +1165,9 @@ public class MusicPlayerService {
 
     public synchronized void togglePause(String sessionId) {
         if (currentMusic.get() == null) {
-            // 没有正在播放的歌曲时，点击播放视为手动重试：解除私人FM熔断。
-            boolean wasBlocked = fmDjBlocked.getAndSet(false);
+            // 没有正在播放的歌曲时，点击播放视为手动重试：解除所有音源的私人FM熔断。
+            boolean wasBlocked = !fmBlockedSources.isEmpty();
+            fmBlockedSources.clear();
             if (wasBlocked) fmDjRetryAt.set(0);
             if (!queueManager.getQueueSnapshot().isEmpty() || shouldPlayPrivateFmDj()) {
                 playNextInQueue();
