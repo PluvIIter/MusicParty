@@ -2,6 +2,7 @@ package org.thornex.musicparty.service.api;
 
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -34,6 +35,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private final WebClient webClient;
     private final String baseUrl;
     private final AppProperties.NeteaseApiConfig neteaseConfig;
+    private final SourceCredentialStore credentialStore;
     private final String initialCookieFromConfig;
     private final String quality;
     private volatile String currentCookie;
@@ -42,6 +44,12 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private static final int SEARCH_PAGE_SIZE = 30;
 
     public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties) {
+        this(webClient, appProperties, null);
+    }
+
+    @Autowired
+    public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties, SourceCredentialStore credentialStore) {
+        this.credentialStore = credentialStore;
         this.webClient = webClient.mutate().defaultHeaders(headers -> headers.remove("Cookie"))
                 .defaultCookies(cookies -> cookies.clear()).filter((request, next) -> {
             String cookie = getCookie();
@@ -56,8 +64,11 @@ public class NeteaseMusicApiService implements IMusicApiService {
         this.neteaseConfig = appProperties.getNetease();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
         this.quality = appProperties.getNetease().getQuality();
-        // 初始化时先使用配置文件的内容
-        this.currentCookie = initialCookieFromConfig;
+        // 部署配置是权威来源；只有它缺失或不可用时才回退到刷新结果。
+        String deployed = StringUtils.hasText(initialCookieFromConfig) ? initialCookieFromConfig.strip() : "";
+        String persisted = credentialStore == null ? "" : credentialStore.get("netease");
+        this.currentCookie = StringUtils.hasText(deployed) ? deployed : persisted;
+        this.neteaseConfig.setCookie(this.currentCookie);
     }
 
     @PostConstruct
@@ -70,9 +81,11 @@ public class NeteaseMusicApiService implements IMusicApiService {
         }
     }
 
-    public void updateCookie(String newCookie) {
-        this.currentCookie = newCookie;
-        this.neteaseConfig.setCookie(newCookie);
+    public synchronized void updateCookie(String newCookie) {
+        String normalized = newCookie == null ? "" : newCookie.strip();
+        this.currentCookie = normalized;
+        this.neteaseConfig.setCookie(normalized);
+        if (credentialStore != null) credentialStore.put("netease", normalized);
         credentialRevision.incrementAndGet();
     }
 
@@ -82,6 +95,41 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     public boolean isCookieConfigured() {
         return StringUtils.hasText(neteaseConfig.getCookie());
+    }
+
+    public synchronized void refreshCredentialIfNeeded() {
+        if (!isCookieConfigured()) return;
+        JsonNode status;
+        try {
+            status = webClient.get().uri(baseUrl + "/login/status?timestamp=" + System.currentTimeMillis())
+                    .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
+        } catch (Exception error) {
+            throw new ApiRequestException("UPSTREAM_UNAVAILABLE: 网易云登录状态检查失败");
+        }
+        boolean loggedIn = status != null
+                && status.path("code").asInt(-1) == 200
+                && status.path("data").path("code").asInt(-1) == 200
+                && status.path("data").path("account").isObject();
+        if (loggedIn) return;
+        refreshCookie();
+    }
+
+    public synchronized void refreshCookie() {
+        if (!isCookieConfigured()) throw SourceAuth.invalid("网易云音乐");
+        JsonNode body;
+        try {
+            body = webClient.get()
+                    .uri(baseUrl + "/login/refresh?timestamp=" + System.currentTimeMillis())
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block(Duration.ofSeconds(20));
+        } catch (Exception error) {
+            throw new ApiRequestException("SOURCE_AUTH_REQUIRED: 网易云音乐 Cookie 刷新失败，请重新登录");
+        }
+        if (body == null || body.path("code").asInt(-1) != 200 || !StringUtils.hasText(body.path("cookie").asText(""))) {
+            throw SourceAuth.invalid("网易云音乐");
+        }
+        updateCookie(body.path("cookie").asText());
     }
 
     public Mono<JsonNode> fetchPersonalFm() {

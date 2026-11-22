@@ -1,6 +1,7 @@
 package org.thornex.musicparty.service.api;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.exception.ApiRequestException;
@@ -22,19 +23,28 @@ import java.util.concurrent.atomic.AtomicLong;
 public class QqMusicCredentialService {
     private static final int MAXIMUM_LENGTH = 8192;
     private final AppProperties properties;
+    private final SourceCredentialStore credentialStore;
     private final AtomicLong revision = new AtomicLong();
     private volatile String cookie;
 
     public QqMusicCredentialService(AppProperties properties) {
+        this(properties, null);
+    }
+
+    @Autowired
+    public QqMusicCredentialService(AppProperties properties, SourceCredentialStore credentialStore) {
         this.properties = properties;
+        this.credentialStore = credentialStore;
         String configured = properties.getQqmusic().getCookie();
         // 旧版把凭据写成 JSON；现在只接受 Cookie 串，部署配置降级为匿名但明确记录原因。
         if (configured != null && configured.strip().startsWith("{")) {
             log.warn("QQ Music credential uses the removed JSON format and is ignored; configure a Cookie header instead");
             configured = "";
         }
-        // 部署配置里的非法值只按未配置处理，不阻断其他音源启动。
-        this.cookie = configured == null || !isValid(configured.strip()) ? "" : normalize(configured);
+        // 只按有无内容决定是否回退：部署配置非空即使用，不再校验能否登录。
+        String deployed = configured == null ? "" : normalize(configured.strip());
+        String persisted = credentialStore == null ? "" : normalize(credentialStore.get("qqmusic").strip());
+        this.cookie = deployed.isBlank() ? persisted : deployed;
     }
 
     public String cookie() {
@@ -60,6 +70,7 @@ public class QqMusicCredentialService {
         if (canonical.equals(cookie)) return;
         cookie = canonical;
         properties.getQqmusic().setCookie(canonical);
+        if (credentialStore != null) credentialStore.put("qqmusic", canonical);
         revision.incrementAndGet();
     }
 
