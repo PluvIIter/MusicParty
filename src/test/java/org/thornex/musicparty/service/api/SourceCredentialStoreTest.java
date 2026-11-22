@@ -70,4 +70,27 @@ class SourceCredentialStoreTest {
 
         assertEquals("musicid=1; musickey=persisted", new QqMusicCredentialService(properties, store).cookie());
     }
+
+    @Test void browserShapedQqCookieIsConvertedBeforeTheFallbackDecision() {
+        var properties = properties();
+        var store = new SourceCredentialStore(MAPPER, properties);
+        store.put("qqmusic", "musicid=1; musickey=persisted");
+        properties.getQqmusic().setCookie("uin=42; qm_keyst=deployed-key; psrf_qqrefresh_token=rt");
+
+        var cookie = new QqMusicCredentialService(properties, store).cookie();
+        assertTrue(cookie.contains("musicid=42"));
+        assertTrue(cookie.contains("musickey=deployed-key"));
+        assertTrue(cookie.contains("refresh_token=rt"));
+        assertFalse(cookie.contains("persisted"));
+    }
+
+    @Test void browserShapedPersistedQqCookieIsConvertedOnStartup() {
+        var properties = properties();
+        var store = new SourceCredentialStore(MAPPER, properties);
+        store.put("qqmusic", "uin=42; qm_keyst=persisted-key");
+
+        var cookie = new QqMusicCredentialService(properties, store).cookie();
+        assertTrue(cookie.contains("musicid=42"));
+        assertTrue(cookie.contains("musickey=persisted-key"));
+    }
 }

@@ -41,11 +41,12 @@ public class QqMusicCredentialService {
             log.warn("QQ Music credential uses the removed JSON format and is ignored; configure a Cookie header instead");
             configured = "";
         }
-        // 部署配置里的非法值只按未配置处理，不阻断其他音源启动。
+        // 部署配置里的非法值只按未配置处理，不阻断其他音源启动；浏览器格式先转换再判断是否可用。
         String initial = configured == null || !isValid(configured.strip()) ? "" : normalize(configured);
         if (!hasLogin(initial)) initial = "";
-        String persisted = credentialStore == null ? "" : credentialStore.get("qqmusic");
-        if (!isValid(persisted.strip()) || !hasLogin(persisted)) persisted = "";
+        String stored = credentialStore == null ? "" : credentialStore.get("qqmusic");
+        String persisted = isValid(stored.strip()) ? normalize(stored) : "";
+        if (!hasLogin(persisted)) persisted = "";
         // 部署配置是权威来源；只有它缺失或不可登录时才回退到刷新结果。
         this.cookie = initial.isBlank() ? persisted : initial;
     }
