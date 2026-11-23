@@ -319,7 +319,8 @@ DELIVERY_MODE决定由服务器分发音源链接还是通过服务器下载音�
 - 定时刷新不判断是否过期，到点直接请求刷新接口；上游拒绝（refresh token 失效、风控）时保留旧 Cookie 并记录日志。
 - 刷新成功后新 Cookie 立即用于后续请求，并写入 `data/source-credentials.json`；启动时环境变量优先，只有对应的 `NETEASE_COOKIE` / `QQMUSIC_COOKIE` 未设置或为空时才回退到该文件，不校验 Cookie 内容能否登录。因此想用刷新结果长期运行时，应清空对应的环境变量。
 - 刷新失败时保留旧 Cookie，只在日志与接口中报告失败，不会清空配置。refresh token 也失效、账号被风控或 Cookie 来源不可续期时，仍需管理员重新登录并粘贴 Cookie。
-- 默认每 48 小时刷新一次（`SOURCE_CREDENTIAL_REFRESH_INTERVAL_MS=172800000`），首次刷新在启动后 60 秒（`SOURCE_CREDENTIAL_REFRESH_INITIAL_DELAY_MS=60000`）。
+- 默认每 48 小时刷新一次（`SOURCE_CREDENTIAL_REFRESH_INTERVAL_MS=172800000`），首次刷新在启动后 60 秒（`SOURCE_CREDENTIAL_REFRESH_INITIAL_DELAY_MS=60000`）；只刷新已启用且已配置凭据的音源，关闭的源不会被动轮换登录态。
+- 管理员保存 Cookie 与后台刷新共用同一把音源锁，保存会等待正在进行的刷新结束，避免刷新结果覆盖刚粘贴的值。
 - 刷新在独立线程执行，不会占用播放推进、状态广播等定时任务所用的调度线程。
 - 管理员可手动触发：`POST /api/admin/config/cookie/refresh`，请求体 `{"platform":"netease"}` 或 `{"platform":"qqmusic"}`；该请求会同步等待上游，最长约 40 秒，客户端超时应不小于 60 秒。
 - 凭据文件路径可用 `SOURCE_CREDENTIAL_FILE` 修改，该文件包含明文登录凭据，应限制访问权限并排除在备份分享之外。

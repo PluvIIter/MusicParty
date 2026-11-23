@@ -36,9 +36,9 @@ public class SourceCredentialRefreshScheduler {
             try {
                 for (String source : new String[]{"netease", "qqmusic"}) {
                     try {
-                        credentials.refresh(source);
+                        credentials.refreshEnabled(source);
                     } catch (RuntimeException error) {
-                        log.warn("Automatic {} credential refresh failed", source);
+                        log.warn("Automatic {} credential refresh failed", source, error);
                     }
                 }
             } finally {

@@ -10,7 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class SourceCredentialRefreshSchedulerTest {
@@ -22,7 +21,7 @@ class SourceCredentialRefreshSchedulerTest {
             started.countDown();
             release.await(2, TimeUnit.SECONDS);
             return null;
-        }).when(registry).refresh(anyString());
+        }).when(registry).refreshEnabled(anyString());
 
         var scheduler = new SourceCredentialRefreshScheduler(registry);
         long begin = System.nanoTime();
@@ -34,7 +33,7 @@ class SourceCredentialRefreshSchedulerTest {
 
         scheduler.refreshConfiguredCredentials();
         release.countDown();
-        verify(registry, org.mockito.Mockito.timeout(2000).times(2)).refresh(anyString());
+        verify(registry, org.mockito.Mockito.timeout(2000).times(2)).refreshEnabled(anyString());
         scheduler.shutdown();
     }
 }
