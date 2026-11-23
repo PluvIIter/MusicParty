@@ -8,6 +8,7 @@ import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.PrivateDjSegment;
 import org.thornex.musicparty.dto.UserSummary;
+import org.thornex.musicparty.enums.PlayMode;
 import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.stream.LiveStreamService;
@@ -17,6 +18,8 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -77,6 +80,32 @@ class MusicPlayerServiceFmCircuitBreakerTest {
         PlayerTestFactory.await(() -> player.getCurrentPlayerState().nowPlaying() != null);
         assertEquals("fm-song", player.getCurrentPlayerState().nowPlaying().music().id());
         verify(dj, times(2)).nextSegment();
+    }
+
+    @Test
+    void fmMarkerIsRemovedWhileTheSourceIsBlockedAndStopsSpinning() {
+        properties.getPrivateDj().setFillBlankEnabled(false);
+        properties.getPrivateDj().setJoinQueueEnabled(true);
+        properties.getPrivateDj().setCustodyEnabled(false);
+        player.setPlayModeForTest(PlayMode.SHUFFLE);
+        when(dj.nextFmSegment()).thenReturn(Mono.error(new ApiRequestException("MEDIA_FORBIDDEN: 网易云返回无可用播放地址")));
+
+        player.syncFmMarkerForTest();
+        assertTrue(hasFmMarker(), "加入队列模式下应先放入 FM 标记");
+
+        player.playerLoop();
+        PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());
+        verify(dj, timeout(2000)).nextFmSegment();
+
+        // 熔断后标记不应被反复补回，也不应每秒重试上游
+        for (int i = 0; i < 5; i++) player.playerLoop();
+        verify(dj, times(1)).nextFmSegment();
+        assertFalse(hasFmMarker(), "熔断期间不应保留 FM 标记");
+    }
+
+    private boolean hasFmMarker() {
+        return queue.getQueueSnapshot().stream()
+                .anyMatch(item -> MusicQueueManager.FM_MARKER_ID.equals(item.music().platform()));
     }
 
     @Test
