@@ -33,6 +33,8 @@ import java.util.stream.StreamSupport;
 public class NeteaseMusicApiService implements IMusicApiService {
 
     private final WebClient webClient;
+    /** 不带登录态过滤的客户端：用于校验刷新返回的候选 Cookie。 */
+    private final WebClient rawClient;
     private final String baseUrl;
     private final AppProperties.NeteaseApiConfig neteaseConfig;
     private final SourceCredentialStore credentialStore;
@@ -42,6 +44,8 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private final AtomicLong credentialRevision = new AtomicLong();
     private static final String PLATFORM = "netease";
     private static final int SEARCH_PAGE_SIZE = 30;
+    private static final java.util.Set<String> COOKIE_ATTRIBUTES = java.util.Set.of(
+            "max-age", "expires", "path", "domain", "httponly", "secure", "samesite", "priority", "partitioned");
 
     public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties) {
         this(webClient, appProperties, null);
@@ -60,6 +64,10 @@ public class NeteaseMusicApiService implements IMusicApiService {
                     }).build();
             return next.exchange(authenticated);
         }).build();
+        this.rawClient = webClient.mutate()
+                .defaultHeaders(headers -> headers.remove("Cookie"))
+                .defaultCookies(cookies -> cookies.clear())
+                .build();
         this.baseUrl = appProperties.getNetease().getBaseUrl();
         this.neteaseConfig = appProperties.getNetease();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
@@ -112,7 +120,49 @@ public class NeteaseMusicApiService implements IMusicApiService {
         if (body == null || body.path("code").asInt(-1) != 200 || !StringUtils.hasText(body.path("cookie").asText(""))) {
             throw SourceAuth.invalid("网易云音乐");
         }
-        updateCookie(body.path("cookie").asText());
+        String candidate = sanitizeCookie(body.path("cookie").asText(""));
+        if (!StringUtils.hasText(candidate)) throw SourceAuth.invalid("网易云音乐");
+        // 上游可能返回 code=200 但并未登录的 Cookie：替换前先确认登录态，失败则保留旧值。
+        if (!isLoggedIn(candidate)) {
+            log.warn("NetEase refresh returned a cookie without a logged-in account; keeping the previous cookie");
+            throw new ApiRequestException("SOURCE_AUTH_REQUIRED: 网易云刷新返回的 Cookie 未登录，已保留原 Cookie");
+        }
+        updateCookie(candidate);
+    }
+
+    /** 只保留 {@code name=value}，丢弃 Set-Cookie 附加属性（Max-Age/Expires/Path 等）。 */
+    static String sanitizeCookie(String raw) {
+        if (raw == null) return "";
+        java.util.LinkedHashMap<String, String> pairs = new java.util.LinkedHashMap<>();
+        for (String part : raw.split(";")) {
+            String token = part.strip();
+            int separator = token.indexOf('=');
+            if (separator <= 0) continue;
+            String name = token.substring(0, separator).strip();
+            if (name.isEmpty() || COOKIE_ATTRIBUTES.contains(name.toLowerCase(java.util.Locale.ROOT))) continue;
+            pairs.put(name, token.substring(separator + 1).strip());
+        }
+        return pairs.entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining("; "));
+    }
+
+    private boolean isLoggedIn(String cookie) {
+        try {
+            JsonNode status = rawClient.get()
+                    .uri(baseUrl + "/login/status?timestamp=" + System.currentTimeMillis())
+                    .headers(headers -> headers.set("Cookie", cookie))
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block(Duration.ofSeconds(15));
+            if (status == null || status.path("code").asInt(-1) != 200) return false;
+            JsonNode data = status.path("data");
+            return data.path("code").asInt(-1) == 200
+                    && data.path("account").isObject()
+                    && StringUtils.hasText(data.path("account").path("id").asText(""));
+        } catch (Exception error) {
+            return false;
+        }
     }
 
     public Mono<JsonNode> fetchPersonalFm() {

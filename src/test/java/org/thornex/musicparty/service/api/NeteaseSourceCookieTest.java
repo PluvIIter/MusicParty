@@ -44,11 +44,19 @@ class NeteaseSourceCookieTest {
         assertNull(cookies.get(1));
     }
 
+    private ClientResponse statusJson() {
+        return json("{\"code\":200,\"data\":{\"code\":200,\"account\":{\"id\":123,\"nickname\":\"listener\"}}}");
+    }
+
     @Test void refreshCookieRequiresSuccessfulBodyAndReplacesCookie() {
         var properties = new AppProperties();
         properties.getNetease().setBaseUrl("https://netease.test");
         properties.getNetease().setCookie("MUSIC_U=old");
         WebClient client = WebClient.builder().exchangeFunction(request -> {
+            if ("/login/status".equals(request.url().getPath())) {
+                assertEquals("MUSIC_U=new; __csrf=csrf", request.headers().getFirst("Cookie"));
+                return Mono.just(statusJson());
+            }
             assertEquals("/login/refresh", request.url().getPath());
             assertTrue(request.url().getQuery().startsWith("timestamp="));
             assertEquals("MUSIC_U=old", request.headers().getFirst("Cookie"));
@@ -57,6 +65,34 @@ class NeteaseSourceCookieTest {
         var api = new NeteaseMusicApiService(client, properties);
         api.refreshCookie();
         assertEquals("MUSIC_U=new; __csrf=csrf", requestCookie(api, properties));
+    }
+
+    @Test void refreshCookieStripsSetCookieAttributes() {
+        var properties = new AppProperties();
+        properties.getNetease().setBaseUrl("https://netease.test");
+        properties.getNetease().setCookie("MUSIC_U=old");
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            if ("/login/status".equals(request.url().getPath())) return Mono.just(statusJson());
+            return Mono.just(json("{\"code\":200,\"cookie\":\"MUSIC_U=new; Max-Age=1296000; Expires=Wed, 09 Dec 2026 08:00:00 GMT; Path=/; __csrf=csrf\"}"));
+        }).build();
+        var api = new NeteaseMusicApiService(client, properties);
+        api.refreshCookie();
+        assertEquals("MUSIC_U=new; __csrf=csrf", requestCookie(api, properties));
+    }
+
+    @Test void refreshCookieKeepsOldCookieWhenTheReturnedCookieIsNotLoggedIn() {
+        var properties = new AppProperties();
+        properties.getNetease().setBaseUrl("https://netease.test");
+        properties.getNetease().setCookie("MUSIC_U=old");
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            if ("/login/status".equals(request.url().getPath())) {
+                return Mono.just(json("{\"code\":200,\"data\":{\"code\":200}}"));
+            }
+            return Mono.just(json("{\"code\":200,\"cookie\":\"MUSIC_U=anonymous\"}"));
+        }).build();
+        var api = new NeteaseMusicApiService(client, properties);
+        assertThrows(ApiRequestException.class, api::refreshCookie);
+        assertEquals("MUSIC_U=old", requestCookie(api, properties));
     }
 
     private String requestCookie(NeteaseMusicApiService api, AppProperties properties) {

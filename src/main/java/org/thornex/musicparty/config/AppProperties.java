@@ -12,8 +12,6 @@ public class AppProperties {
     private QqMusicApiConfig qqmusic = new QqMusicApiConfig();
     private java.util.Map<String, SourceConfig> sources = new java.util.concurrent.ConcurrentHashMap<>();
     private String credentialFile = "data/source-credentials.json";
-    private long credentialRefreshIntervalMs = 172800000L;
-    private long credentialRefreshInitialDelayMs = 60000L;
 
     @Data
     public static class SourceConfig {
