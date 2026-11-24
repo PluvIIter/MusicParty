@@ -46,7 +46,8 @@ class SourceIndependentRoomTest {
         when(users.getOnlineUserSummaries()).thenReturn(List.of(owner));
         when(users.getRecentlyActiveUserTokens()).thenReturn(Set.of("member"));
         player = new MusicPlayerService(sources, users, media, mock(LiveStreamService.class), queue,
-                mock(ApplicationEventPublisher.class), properties, new PrivateDjService(List.of(), sources, properties));
+                mock(ApplicationEventPublisher.class), properties, new PrivateDjService(List.of(), sources, properties),
+                mock(org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.class));
     }
 
     private Music track(String source) {

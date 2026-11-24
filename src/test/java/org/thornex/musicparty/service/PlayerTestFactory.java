@@ -22,6 +22,14 @@ final class PlayerTestFactory {
     static MusicPlayerService create(List<IMusicApiService> adapters, UserService users,
                                     LiveStreamService streams, MusicQueueManager queue, ApplicationEventPublisher events,
                                     AppProperties properties, PrivateDjService dj) {
+        return create(adapters, users, streams, queue, events, properties, dj,
+                mock(org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.class));
+    }
+
+    static MusicPlayerService create(List<IMusicApiService> adapters, UserService users,
+                                    LiveStreamService streams, MusicQueueManager queue, ApplicationEventPublisher events,
+                                    AppProperties properties, PrivateDjService dj,
+                                    org.thornex.musicparty.service.api.SourceCredentialAutoRefresh autoRefresh) {
         SourceRegistry sources = mock(SourceRegistry.class);
         when(sources.descriptors()).thenReturn(List.of());
         when(sources.isEnabled(anyString())).thenAnswer(invocation -> {
@@ -39,7 +47,8 @@ final class PlayerTestFactory {
         when(dj.isAvailable()).thenReturn(true);
         when(dj.supportsMode("FM")).thenReturn(true);
         when(dj.supportsMode("DJ")).thenReturn(true);
-        return new MusicPlayerService(sources, users, media, streams, queue, events, properties, dj);
+        return new MusicPlayerService(sources, users, media, streams, queue, events, properties, dj,
+                autoRefresh);
     }
 
     static MediaDeliveryService media(MusicPlayerService player) {

@@ -48,6 +48,7 @@ public class MusicPlayerService {
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
     private final PrivateDjService privateDjService;
+    private final org.thornex.musicparty.service.api.SourceCredentialAutoRefresh credentialAutoRefresh;
 
     // --- Player State ---
     private final AtomicReference<PlayableMusic> currentMusic = new AtomicReference<>(null);
@@ -110,7 +111,8 @@ public class MusicPlayerService {
                               MusicQueueManager queueManager,
                               ApplicationEventPublisher eventPublisher,
                               AppProperties appProperties,
-                              PrivateDjService privateDjService) {
+                              PrivateDjService privateDjService,
+   org.thornex.musicparty.service.api.SourceCredentialAutoRefresh credentialAutoRefresh) {
         this.sourceRegistry = sourceRegistry;
         this.userService = userService;
         this.mediaDeliveryService = mediaDeliveryService;
@@ -119,6 +121,7 @@ public class MusicPlayerService {
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
         this.privateDjService = privateDjService;
+        this.credentialAutoRefresh = credentialAutoRefresh;
         this.allowOfflineShuffle = new AtomicBoolean(false);
         this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
         this.currentLikeMarkers = new CopyOnWriteArrayList<>();
@@ -373,6 +376,16 @@ public class MusicPlayerService {
     private synchronized void handleQueuedSongFailure(long version, MusicQueueItem item, Set<String> failedTracks,
             String retryMember, int retries, Throwable error) {
         if (playHeadVersion.get() != version) return;
+        String failedPlatform = item.music().platform();
+        // 凭据类失败：按需刷新一次后重试同一首（单飞 + 冷却由 SourceCredentialAutoRefresh 控制）。
+        if (org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.isAuthFailure(error)
+                && credentialAutoRefresh.refresh(failedPlatform)) {
+            log.info("Retrying {} after refreshing {} credential", item.music().name(), failedPlatform);
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
+                    PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "已自动刷新 " + failedPlatform + " 凭据，正在重试"));
+            prepareQueuedSong(item, failedTracks, retryMember, retries);
+            return;
+        }
         String failedMember = markQueuedSongFailed(item, failedTracks);
         String nextRetryMember = failedMember;
         int nextRetries = retries;
@@ -562,8 +575,16 @@ public class MusicPlayerService {
         if (playHeadVersion.get() != version) return;
         log.warn("Private FM/DJ segment failed, paused automatic playback: {}",
                 error instanceof ApiRequestException ? error.getMessage() : "upstream unavailable");
+        String failedSource = fmDjBlockedSource().orElse("");
+        // 凭据类失败：刷新一次后立即重试，而不是熔断。
+        if (org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.isAuthFailure(error)
+                && credentialAutoRefresh.refresh(failedSource)) {
+            log.info("Retrying private FM/DJ after refreshing {} credential", failedSource);
+            playFmDjNext();
+            return;
+        }
         // 熔断：只停止该音源的推荐播放，直到同源歌曲播放成功或用户手动点击播放。
-        fmDjBlockedSource().ifPresent(fmBlockedSources::add);
+        fmBlockedSources.add(failedSource);
         fmDjRetryAt.set(0);
         isLoading.set(false);
         broadcastFullPlayerState();

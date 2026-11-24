@@ -310,9 +310,9 @@ DELIVERY_MODE决定由服务器分发音源链接还是通过服务器下载音�
 * **QQ音乐**
 浏览器打开QQ音乐网页版并登录，按F12开启控制台，选择网络，随便点开一个 `musicu.fcg` 请求，复制请求头中完整的 Cookie（含 `musicid`、`musickey`）。
 
-### Cookie 手动续期
+### Cookie 续期
 
-网易云与QQ音乐支持由管理员手动调用上游刷新登录态，不设定时刷新：
+不设定时刷新。播放遇到凭据类错误（`SOURCE_AUTH_REQUIRED` / `RECOMMENDATION_AUTH_REQUIRED`）时，会在后台按需刷新该音源凭据一次并重试当前歌曲；同一音源 2 分钟内最多刷新一次，刷新失败则按正常失败处理。管理员也可以手动触发：
 
 - 网易云调用上游 `/login/refresh`，读取响应中的 `cookie` 字段；校验返回的 Cookie 确实处于登录态后才替换运行时凭据。
 - QQ音乐调用上游 `/login/refresh_credential`，用返回的 Credential 重建 Cookie。
