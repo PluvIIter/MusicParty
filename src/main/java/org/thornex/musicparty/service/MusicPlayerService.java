@@ -373,19 +373,37 @@ public class MusicPlayerService {
                 }, error -> handleQueuedSongFailure(version, item, failedTracks, retryMember, retries, error));
     }
 
-    private synchronized void handleQueuedSongFailure(long version, MusicQueueItem item, Set<String> failedTracks,
+    private void handleQueuedSongFailure(long version, MusicQueueItem item, Set<String> failedTracks,
             String retryMember, int retries, Throwable error) {
         if (playHeadVersion.get() != version) return;
         String failedPlatform = item.music().platform();
-        // 凭据类失败：按需刷新一次后重试同一首（单飞 + 冷却由 SourceCredentialAutoRefresh 控制）。
-        if (org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.isAuthFailure(error)
-                && credentialAutoRefresh.refresh(failedPlatform)) {
-            log.info("Retrying {} after refreshing {} credential", item.music().name(), failedPlatform);
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
-                    PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "已自动刷新 " + failedPlatform + " 凭据，正在重试"));
-            prepareQueuedSong(item, failedTracks, retryMember, retries);
+        // 凭据类失败：在阻塞安全的线程里按需刷新一次，再重试同一首。
+        // 错误回调可能落在 reactor-http-epoll 线程上，那里不允许 block()。
+        if (!org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.isAuthFailure(error)) {
+            failQueuedSong(version, item, failedTracks, retryMember, retries, error, failedPlatform);
             return;
         }
+        Mono.fromRunnable(() -> {
+                    boolean refreshed = credentialAutoRefresh.refresh(failedPlatform);
+                    synchronized (this) {
+                        if (playHeadVersion.get() != version) return;
+                        if (refreshed) {
+                            log.info("Retrying {} after refreshing {} credential", item.music().name(), failedPlatform);
+                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
+                                    PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "已自动刷新 " + failedPlatform + " 凭据，正在重试"));
+                            prepareQueuedSong(item, failedTracks, retryMember, retries);
+                        } else {
+                            failQueuedSong(version, item, failedTracks, retryMember, retries, error, failedPlatform);
+                        }
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(unused -> { }, retryError -> log.warn("Credential refresh retry failed: {}", retryError.getMessage()));
+    }
+
+    private synchronized void failQueuedSong(long version, MusicQueueItem item, Set<String> failedTracks,
+            String retryMember, int retries, Throwable error, String failedPlatform) {
+        if (playHeadVersion.get() != version) return;
         String failedMember = markQueuedSongFailed(item, failedTracks);
         String nextRetryMember = failedMember;
         int nextRetries = retries;
@@ -576,13 +594,24 @@ public class MusicPlayerService {
         log.warn("Private FM/DJ segment failed, paused automatic playback: {}",
                 error instanceof ApiRequestException ? error.getMessage() : "upstream unavailable");
         String failedSource = fmDjBlockedSource().orElse("");
-        // 凭据类失败：刷新一次后立即重试，而不是熔断。
-        if (org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.isAuthFailure(error)
-                && credentialAutoRefresh.refresh(failedSource)) {
-            log.info("Retrying private FM/DJ after refreshing {} credential", failedSource);
-            playFmDjNext();
+        // 凭据类失败：在阻塞安全的线程里刷新一次后重试；刷新失败才熔断。
+        if (!org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.isAuthFailure(error)) {
+            tripFmBreaker(error, failedSource);
             return;
         }
+        Mono.fromRunnable(() -> {
+                    if (credentialAutoRefresh.refresh(failedSource)) {
+                        log.info("Retrying private FM/DJ after refreshing {} credential", failedSource);
+                        playFmDjNext();
+                    } else {
+                        tripFmBreaker(error, failedSource);
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(unused -> { }, retryError -> log.warn("Credential refresh retry failed: {}", retryError.getMessage()));
+    }
+
+    private synchronized void tripFmBreaker(Throwable error, String failedSource) {
         // 熔断：只停止该音源的推荐播放，直到同源歌曲播放成功或用户手动点击播放。
         fmBlockedSources.add(failedSource);
         fmDjRetryAt.set(0);
