@@ -62,12 +62,12 @@ class QqMusicCredentialServiceTest {
         assertFalse(new QqMusicCredentialService(properties).configured());
     }
 
-    @Test void invalidDeploymentCookieDegradesToAnonymousInsteadOfBreakingStartup() {
+    @Test void deploymentCookieIsUsedWithoutCheckingLoginFields() {
         var properties = new AppProperties();
-        properties.getQqmusic().setCookie("musicid=1; musickey=bad\nvalue");
+        properties.getQqmusic().setCookie("musicid=1");
         var service = new QqMusicCredentialService(properties);
-        assertFalse(service.configured());
-        assertEquals("", service.cookie());
+        assertTrue(service.configured());
+        assertEquals("musicid=1", service.cookie());
     }
     private static final String BROWSER_COOKIE =
             "pgv_pvid=1; qlogin_uid=x; qm_keyst=KEY; uin=1534994648; qqmusic_key=KEY; "

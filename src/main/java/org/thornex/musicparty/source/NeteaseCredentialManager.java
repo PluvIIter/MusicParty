@@ -12,4 +12,5 @@ public class NeteaseCredentialManager implements SourceCredentialManager {
     public String credentialLabel() { return "网易云音乐 Cookie"; }
     public boolean isCredentialConfigured() { return api.isCookieConfigured(); }
     public void updateCredential(String value) { api.updateCookie(value); }
+    public void refreshCredential() { api.refreshCookie(); }
 }

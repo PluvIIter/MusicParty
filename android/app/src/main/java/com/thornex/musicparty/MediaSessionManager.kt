@@ -9,11 +9,10 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-// androidx.media:media 兼容库是「混合包名」：
-//   MediaMetadataCompat / MediaSessionCompat / PlaybackStateCompat → android.support.v4.media.*
-//   MediaStyle / MediaButtonReceiver                             → androidx.media.*
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -22,136 +21,174 @@ import androidx.media.session.MediaButtonReceiver
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
-/**
- * 通知栏/锁屏媒体控制器。
- * Web 端通过 JS 桥把 {title,artist,position,duration,paused,coverUrl} 推到这里，
- * 原生建立 MediaSession + MediaStyle 通知；通知按钮经 MediaButtonReceiver
- * 触发 session 回调 → onControl 桥回 Web 端执行播放/暂停/下一首。
- */
+/** Owns the process-level MediaSession used by the foreground playback service. */
 object MediaSessionManager {
 
-    const val NOTIF_ID = 1   // 与前台服务共用同一通知 ID，避免双通知
+    const val NOTIF_ID = 1
 
     private const val CHANNEL_ID = "media_session"
+    private const val MAX_DURATION_SECONDS = 24 * 60 * 60L
 
-    private lateinit var appContext: Context
+    private val lock = Any()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val artworkGeneration = AtomicLong(0)
+    private var artworkExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    @Volatile
+    private var appContext: Context? = null
+    @Volatile
     private var session: MediaSessionCompat? = null
+    @Volatile
     private var notification: Notification? = null
 
-    /** Web 端控制回调：通知按钮 → 执行 Web 端动作（由 MainActivity 注入） */
+    /** Notification controls are forwarded to the currently visible Activity, when present. */
+    @Volatile
     var onControl: ((String) -> Unit)? = null
 
-    /** 初始化（幂等）：建 session + 频道 + 初始通知。由 Service 与 MainActivity 都可调用。 */
     fun init(context: Context) {
-        appContext = context.applicationContext
-        if (session != null) return
+        synchronized(lock) {
+            appContext = context.applicationContext
+            if (session != null) return
+            if (artworkExecutor.isShutdown) artworkExecutor = Executors.newSingleThreadExecutor()
 
-        if (Build.VERSION.SDK_INT >= 26) {
-            val nm = appContext.getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Media Session", NotificationManager.IMPORTANCE_LOW)
-            )
-        }
+            if (Build.VERSION.SDK_INT >= 26) {
+                val nm = appContext!!.getSystemService(NotificationManager::class.java)
+                nm.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID, "Media Session", NotificationManager.IMPORTANCE_LOW)
+                )
+            }
 
-        session = MediaSessionCompat(appContext, "MusicPartySession").apply {
-            setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() { onControl?.invoke("play") }
-                override fun onPause() { onControl?.invoke("pause") }
-                override fun onSkipToNext() { onControl?.invoke("next") }
-            })
-            isActive = true
+            val context = appContext ?: return
+            session = MediaSessionCompat(context, "MusicPartySession").apply {
+                setCallback(object : MediaSessionCompat.Callback() {
+                    override fun onPlay() { onControl?.invoke("play") }
+                    override fun onPause() { onControl?.invoke("pause") }
+                    override fun onSkipToNext() { onControl?.invoke("next") }
+                })
+                isActive = true
+            }
+            notification = buildNotificationLocked("Music Party", "", false, null)
         }
-        notification = buildNotification("Music Party", "", false, null)
     }
 
-    /** 前台服务启动时需要的当前通知 */
-    fun currentNotification(): Notification = notification
-        ?: NotificationCompat.Builder(appContext, CHANNEL_ID).setSmallIcon(android.R.drawable.ic_media_play).build()
+    fun currentNotification(): Notification {
+        synchronized(lock) {
+            return notification ?: buildNotificationLocked("Music Party", "", false, null)
+        }
+    }
 
-    /** 由 JS 桥调用：Web 端推送播放状态 */
+    /** Updates the native session only; it never changes playback in the room. */
     fun update(json: String) {
-        val s = session ?: return
-        val o = try { JSONObject(json) } catch (e: Exception) { JSONObject() }
-        val title = o.optString("title", "Music Party")
-        val artist = o.optString("artist", "")
-        val positionSec = o.optLong("position", 0L)
-        val durationSec = o.optLong("duration", 0L)
-        val paused = o.optBoolean("paused", false)
-        val coverUrl = o.optString("coverUrl", "")
+        val values = runCatching { JSONObject(json) }.getOrNull() ?: return
+        val title = values.optString("title").takeIf { it.isNotBlank() } ?: return
+        val artist = values.optString("artist")
+        val durationSec = values.optLong("duration", 0L).coerceIn(0L, MAX_DURATION_SECONDS)
+        val positionSec = values.optLong("position", 0L).coerceIn(0L, durationSec)
+        val paused = values.optBoolean("paused", false)
+        val coverUrl = values.optString("coverUrl")
+        val generation = artworkGeneration.incrementAndGet()
 
-        s.setMetadata(MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
-            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationSec * 1000L)
-            .build())
+        synchronized(lock) {
+            val active = session ?: return
+            active.setMetadata(MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationSec * 1000L)
+                .build())
+            active.setPlaybackState(PlaybackStateCompat.Builder()
+                .setActions(
+                    PlaybackStateCompat.ACTION_PLAY
+                        or PlaybackStateCompat.ACTION_PAUSE
+                        or PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+                )
+                .setState(
+                    if (paused) PlaybackStateCompat.STATE_PAUSED else PlaybackStateCompat.STATE_PLAYING,
+                    positionSec * 1000L,
+                    1f
+                )
+                .build())
+            notification = buildNotificationLocked(title, artist, paused, null)
+            appContext?.let { NotificationManagerCompat.from(it).notify(NOTIF_ID, notification!!) }
+        }
 
-        s.setPlaybackState(PlaybackStateCompat.Builder()
-            .setActions(
-                PlaybackStateCompat.ACTION_PLAY
-                    or PlaybackStateCompat.ACTION_PAUSE
-                    or PlaybackStateCompat.ACTION_SKIP_TO_NEXT
-            )
-            .setState(
-                if (paused) PlaybackStateCompat.STATE_PAUSED else PlaybackStateCompat.STATE_PLAYING,
-                positionSec * 1000L, 1f
-            )
-            .build())
-
-        notification = buildNotification(title, artist, paused, null)
-        NotificationManagerCompat.from(appContext).notify(NOTIF_ID, notification!!)
-
-        // 异步加载封面作大图（失败不影响控制）
-        if (coverUrl.isNotEmpty()) loadArtworkAsync(coverUrl, title, artist, paused)
+        if (coverUrl.isNotBlank()) loadArtworkAsync(coverUrl, title, artist, paused, generation)
     }
 
     fun destroy() {
-        onControl = null
-        session?.isActive = false
-        session?.release()
-        session = null
+        artworkGeneration.incrementAndGet()
+        synchronized(lock) {
+            onControl = null
+            session?.isActive = false
+            session?.release()
+            session = null
+            notification = null
+            appContext = null
+            artworkExecutor.shutdownNow()
+        }
     }
 
-    private fun loadArtworkAsync(coverUrl: String, title: String, artist: String, paused: Boolean) {
-        Thread {
-            var stream: java.io.InputStream? = null
+    private fun loadArtworkAsync(
+        coverUrl: String,
+        title: String,
+        artist: String,
+        paused: Boolean,
+        generation: Long,
+    ) {
+        artworkExecutor.execute {
+            var connection: HttpURLConnection? = null
             try {
-                val conn = URL(coverUrl).openConnection() as HttpURLConnection
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0")
-                conn.setRequestProperty("Referer", "https://music.163.com/")
-                stream = conn.inputStream
-                val bmp = BitmapFactory.decodeStream(stream)
-                if (bmp != null) {
-                    val s = session ?: return@Thread
-                    // MediaMetadataCompat 没有 buildUpon()：用拷贝构造 Builder(旧元数据)
-                    val cur = s.controller.metadata
-                    val meta = (if (cur != null) MediaMetadataCompat.Builder(cur)
-                                else MediaMetadataCompat.Builder())
-                        .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bmp)
-                        .build()
-                    s.setMetadata(meta)
-                    notification = buildNotification(title, artist, paused, bmp)
-                    NotificationManagerCompat.from(appContext).notify(NOTIF_ID, notification!!)
+                connection = URL(coverUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+                connection.setRequestProperty("Referer", "https://music.163.com/")
+                val bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) } ?: return@execute
+                if (artworkGeneration.get() != generation) return@execute
+                mainHandler.post {
+                    synchronized(lock) {
+                        val active = session ?: return@synchronized
+                        if (artworkGeneration.get() != generation) return@synchronized
+                        val current = active.controller.metadata
+                        active.setMetadata((if (current != null) MediaMetadataCompat.Builder(current)
+                        else MediaMetadataCompat.Builder())
+                            .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
+                            .build())
+                        notification = buildNotificationLocked(title, artist, paused, bitmap)
+                        appContext?.let { NotificationManagerCompat.from(it).notify(NOTIF_ID, notification!!) }
+                    }
                 }
-            } catch (e: Exception) {
-                // 封面加载失败不影响控制
+            } catch (_: Exception) {
+                // Artwork failure must not affect playback controls.
             } finally {
-                try { stream?.close() } catch (_: Exception) {}
+                connection?.disconnect()
             }
-        }.start()
+        }
     }
 
-    private fun buildNotification(title: String, artist: String, paused: Boolean, art: Bitmap?): Notification {
-        val contentIntent = PendingIntent.getActivity(appContext, 0,
-            Intent(appContext, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-
+    private fun buildNotificationLocked(
+        title: String,
+        artist: String,
+        paused: Boolean,
+        art: Bitmap?,
+    ): Notification {
+        val context = appContext ?: error("MediaSessionManager is not initialized")
+        val active = session ?: error("MediaSessionManager has no active session")
+        val contentIntent = PendingIntent.getActivity(
+            context,
+            0,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         val style = MediaStyle()
-            .setMediaSession(session!!.sessionToken)
+            .setMediaSession(active.sessionToken)
             .setShowActionsInCompactView(0, 1)
-
-        val b = NotificationCompat.Builder(appContext, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(title)
             .setContentText(artist)
@@ -160,20 +197,17 @@ object MediaSessionManager {
             .setOngoing(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setStyle(style)
-
-        if (art != null) b.setLargeIcon(art)
-
-        b.addAction(mediaAction(
+        if (art != null) builder.setLargeIcon(art)
+        builder.addAction(mediaAction(
+            context,
             if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
             if (paused) "播放" else "暂停",
-            if (paused) PlaybackStateCompat.ACTION_PLAY else PlaybackStateCompat.ACTION_PAUSE))
-        b.addAction(mediaAction(android.R.drawable.ic_media_next, "下一首", PlaybackStateCompat.ACTION_SKIP_TO_NEXT))
-
-        return b.build()
+            if (paused) PlaybackStateCompat.ACTION_PLAY else PlaybackStateCompat.ACTION_PAUSE,
+        ))
+        builder.addAction(mediaAction(context, android.R.drawable.ic_media_next, "下一首", PlaybackStateCompat.ACTION_SKIP_TO_NEXT))
+        return builder.build()
     }
 
-    private fun mediaAction(icon: Int, title: String, action: Long): NotificationCompat.Action {
-        val pi = MediaButtonReceiver.buildMediaButtonPendingIntent(appContext, action)
-        return NotificationCompat.Action(icon, title, pi)
-    }
+    private fun mediaAction(context: Context, icon: Int, title: String, action: Long): NotificationCompat.Action =
+        NotificationCompat.Action(icon, title, MediaButtonReceiver.buildMediaButtonPendingIntent(context, action))
 }

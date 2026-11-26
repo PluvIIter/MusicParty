@@ -48,6 +48,7 @@ public class MusicPlayerService {
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
     private final PrivateDjService privateDjService;
+    private final org.thornex.musicparty.service.api.SourceCredentialAutoRefresh credentialAutoRefresh;
 
     // --- Player State ---
     private final AtomicReference<PlayableMusic> currentMusic = new AtomicReference<>(null);
@@ -91,10 +92,11 @@ public class MusicPlayerService {
 
     private final AtomicLong playHeadVersion = new AtomicLong(0);
 
-    // 私人FM/DJ 播放失败指数退避（5s→10s→20s→40s→80s，封顶 80s）
+    // 私人FM/DJ 失败熔断：按音源记录，直到该音源再次播放成功或用户手动点击播放
     private final AtomicLong fmDjRetryAt = new AtomicLong(0);
-    private final AtomicInteger fmDjFailCount = new AtomicInteger(0);
-    private static final long FM_DJ_MAX_BACKOFF_MS = 80_000L;
+    private final java.util.Set<String> fmBlockedSources = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** 轮替模式下同一成员最多连续重试 3 首失败曲目，超过后轮到下一位。 */
+    private static final int MAX_ROUND_ROBIN_MEMBER_RETRIES = 3;
 
     // 当前播放段是否为 DJ 语音（语音段播完不进历史记录）
     private final AtomicBoolean currentIsVoice = new AtomicBoolean(false);
@@ -109,7 +111,8 @@ public class MusicPlayerService {
                               MusicQueueManager queueManager,
                               ApplicationEventPublisher eventPublisher,
                               AppProperties appProperties,
-                              PrivateDjService privateDjService) {
+                              PrivateDjService privateDjService,
+   org.thornex.musicparty.service.api.SourceCredentialAutoRefresh credentialAutoRefresh) {
         this.sourceRegistry = sourceRegistry;
         this.userService = userService;
         this.mediaDeliveryService = mediaDeliveryService;
@@ -118,6 +121,7 @@ public class MusicPlayerService {
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
         this.privateDjService = privateDjService;
+        this.credentialAutoRefresh = credentialAutoRefresh;
         this.allowOfflineShuffle = new AtomicBoolean(false);
         this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
         this.currentLikeMarkers = new CopyOnWriteArrayList<>();
@@ -194,8 +198,9 @@ public class MusicPlayerService {
             if (userService.getOnlineUserSummaries().isEmpty() && !isStreamActive.get()) {
                 return;
             }
+            boolean fmBlocked = isFmSourceBlocked();
             if (System.currentTimeMillis() >= fmDjRetryAt.get()
-                    && (shouldPlayPrivateFmDj() || !queueManager.getQueueSnapshot().isEmpty())) {
+                    && ((!fmBlocked && shouldPlayPrivateFmDj()) || !queueManager.getQueueSnapshot().isEmpty())) {
                 playNextInQueue();
             }
         }
@@ -260,7 +265,12 @@ public class MusicPlayerService {
                 });
     }
 
-    private synchronized void playNextInQueue() {
+    private void playNextInQueue() {
+        playNextInQueue(null, new HashSet<>(), 0);
+    }
+
+    private synchronized void playNextInQueue(String retryMember, Set<String> failedTracks, int retryCount) {
+        int retries = retryCount;
         if (currentMusic.get() != null || isLoading.get()) {
             return;
         }
@@ -268,95 +278,159 @@ public class MusicPlayerService {
         // 加入队列功能：按条件同步 FM 标记（SHUFFLE + 模式非关闭 + 加入队列且非托管 → 在队，否则移除）
         syncFmMarker();
 
-        // 播放源决策：托管 > (队列有有效歌曲则队列) > 填充空白
-        if (shouldPlayPrivateFmDj()) {
-            playFmDjNext();
-            return;
-        }
-
-        Map<String, QueueItemStatus> statusMap = buildStatusMap();
-
-        Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
-
-        MusicQueueItem nextItem = queueManager.pollNext(playMode.get(), allowOfflineShuffle.get(), statusMap, onlineUserTokens);
-
-        if (isFmMarker(nextItem)) {
-            playFmMarkerNext(nextItem);
-            return;
-        }
-        if (nextItem == null) {
-            if (isLoading.get()) {
-                isLoading.set(false);
+        while (true) {
+            if (!isFmSourceBlocked() && appProperties.getPrivateDj().isCustodyEnabled() && shouldPlayPrivateFmDj()) {
+                playFmDjNext();
+                return;
             }
-            broadcastFullPlayerState();
-            return;
-        }
 
-        if (statusMap.get(ResourceKey.encode(nextItem.music().platform(), nextItem.music().id())) == QueueItemStatus.FAILED) {
-            queueManager.markPlaybackFailed(nextItem);
-            if (sourceRegistry.isEnabled(nextItem.music().platform())) {
-                Mono.fromRunnable(() -> mediaDeliveryService.prefetch(nextItem.music()))
+            Map<String, QueueItemStatus> statusMap = buildStatusMap();
+            PlayMode mode = playMode.get();
+            MusicQueueItem nextItem = null;
+            if (mode == PlayMode.ROUND_ROBIN && retryMember != null && retries < MAX_ROUND_ROBIN_MEMBER_RETRIES) {
+                Set<String> enabledSources = queueManager.getQueueSnapshot().stream()
+                        .map(item -> item.music().platform()).distinct().filter(sourceRegistry::isEnabled)
+                        .collect(Collectors.toSet());
+                nextItem = queueManager.pollRoundRobinRetry(retryMember, failedTracks, statusMap, enabledSources);
+                if (nextItem != null) retries++;
+            }
+            if (nextItem == null) {
+                if (!isFmSourceBlocked() && shouldPlayPrivateFmDj()) {
+                    playFmDjNext();
+                    return;
+                }
+                Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
+                nextItem = mode == PlayMode.ROUND_ROBIN && !failedTracks.isEmpty()
+                        ? queueManager.pollNext(mode, allowOfflineShuffle.get(), statusMap, onlineUserTokens, failedTracks)
+                        : queueManager.pollNext(mode, allowOfflineShuffle.get(), statusMap, onlineUserTokens);
+            }
+
+            if (isFmMarker(nextItem)) {
+                playFmMarkerNext(nextItem);
+                return;
+            }
+            if (nextItem == null) {
+                broadcastFullPlayerState();
+                return;
+            }
+
+            Music music = nextItem.music();
+            if (statusMap.get(ResourceKey.encode(music.platform(), music.id())) != QueueItemStatus.FAILED) {
+                prepareQueuedSong(nextItem, failedTracks, retryMember, retries);
+                return;
+            }
+
+            String failedMember = markQueuedSongFailed(nextItem, failedTracks);
+            if (failedMember == null) {
+                retryMember = null;
+                retries = 0;
+            } else if (!failedMember.equals(retryMember)) {
+                retryMember = failedMember;
+                retries = 0;
+            }
+            if (sourceRegistry.isEnabled(music.platform())) {
+                Mono.fromRunnable(() -> mediaDeliveryService.prefetch(music))
                         .subscribeOn(Schedulers.boundedElastic())
                         .subscribe(null, error -> log.warn("Media preparation retry failed: {}", error.getMessage()));
             }
-            log.warn("Skipping failed song: {}", nextItem.music().name());
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
-            playNextInQueue();
-            return;
+            log.warn("Skipping failed song: {}", music.name());
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", music.name()));
         }
+    }
 
-        // 增加版本号，这表示"开始一次新的播放尝试"
-        long currentVersion = playHeadVersion.incrementAndGet();
+    private record PreparedSong(String authorization, PlayableMusic music) {}
+
+    private void prepareQueuedSong(MusicQueueItem item, Set<String> failedTracks, String retryMember, int retries) {
+        long version = playHeadVersion.incrementAndGet();
         isLoading.set(true);
         broadcastFullPlayerState();
         isPaused.set(false);
 
-        log.info("Playing next: {}", nextItem.music().name());
-
-        try {
-            String authorization = mediaDeliveryService.authorizationScope(nextItem.music().platform());
-            Mono.defer(() -> mediaDeliveryService.getPlayableMusic(nextItem.music().platform(), nextItem.music().id()))
-                    .subscribeOn(Schedulers.boundedElastic())
-                    .timeout(Duration.ofSeconds(10))
-                    .subscribe(
-                            playableMusic -> {
-                                // 检查版本号是否匹配
-                                // 如果在请求期间执行了 skip/stop，版本号会变，这里就应该丢弃结果
-                                synchronized (this) {
-                                    if (playHeadVersion.get() == currentVersion) {
-                                        if (!hasAuthorization(playableMusic.platform(), authorization)) {
-                                            queueManager.markPlaybackFailed(nextItem);
-                                            isLoading.set(false);
-                                            playNextInQueue();
-                                            return;
-                                        }
-                                        queueManager.clearPlaybackFailure(nextItem);
-                                        applyNewSong(playableMusic, nextItem);
-                                    } else {
-                                        log.info("Discarded stale play result for {}", nextItem.music().name());
-                                    }
-                                }
-                            },
-                            error -> {
-                        synchronized (this) {
-                            if (playHeadVersion.get() != currentVersion) return;
-                            queueManager.markPlaybackFailed(nextItem);
-                            log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
-                            // 失败原因写进那条「加载失败」消息里：它会进聊天历史，便于事后排查。
-                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
-                                    PlayerAction.ERROR_LOAD, "SYSTEM", describePlaybackFailure(nextItem.music(), error)));
-                            publishCredentialHint(nextItem.music().platform(), error);
-                            isLoading.set(false);
-                            broadcastFullPlayerState();
-                            playNextInQueue();
+        Music music = item.music();
+        log.info("Playing next: {}", music.name());
+        Mono.defer(() -> {
+                    String authorization = mediaDeliveryService.authorizationScope(music.platform());
+                    return mediaDeliveryService.getPlayableMusic(music.platform(), music.id())
+                            .map(playable -> new PreparedSong(authorization, playable));
+                })
+                .switchIfEmpty(Mono.error(new ApiRequestException("MEDIA_UNAVAILABLE")))
+                .subscribeOn(Schedulers.boundedElastic())
+                .timeout(Duration.ofSeconds(10))
+                .subscribe(result -> {
+                    synchronized (this) {
+                        if (playHeadVersion.get() != version) {
+                            log.info("Discarded stale play result for {}", music.name());
+                            return;
                         }
-                    });
-        } catch (Exception e) {
-            queueManager.markPlaybackFailed(nextItem);
-            log.error("Unexpected error in playNextInQueue", e);
-            isLoading.set(false);
-            broadcastFullPlayerState();
+                        PlayableMusic playable = result.music();
+                        if (!hasAuthorization(playable.platform(), result.authorization())) {
+                            handleQueuedSongFailure(version, item, failedTracks, retryMember, retries, new ApiRequestException("媒体授权已变更"));
+                            return;
+                        }
+                        queueManager.clearPlaybackFailure(item);
+                        applyNewSong(playable, item);
+                    }
+                }, error -> handleQueuedSongFailure(version, item, failedTracks, retryMember, retries, error));
+    }
+
+    private void handleQueuedSongFailure(long version, MusicQueueItem item, Set<String> failedTracks,
+            String retryMember, int retries, Throwable error) {
+        if (playHeadVersion.get() != version) return;
+        String failedPlatform = item.music().platform();
+        // 凭据类失败：在阻塞安全的线程里按需刷新一次，再重试同一首。
+        // 错误回调可能落在 reactor-http-epoll 线程上，那里不允许 block()。
+        if (!org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.isAuthFailure(error)) {
+            failQueuedSong(version, item, failedTracks, retryMember, retries, error, failedPlatform);
+            return;
         }
+        Mono.fromRunnable(() -> {
+                    boolean refreshed = credentialAutoRefresh.refresh(failedPlatform);
+                    synchronized (this) {
+                        if (playHeadVersion.get() != version) return;
+                        if (refreshed) {
+                            log.info("Retrying {} after refreshing {} credential", item.music().name(), failedPlatform);
+                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
+                                    PlayerAction.SYSTEM_MESSAGE, "SYSTEM", "已自动刷新 " + failedPlatform + " 凭据，正在重试"));
+                            prepareQueuedSong(item, failedTracks, retryMember, retries);
+                        } else {
+                            failQueuedSong(version, item, failedTracks, retryMember, retries, error, failedPlatform);
+                        }
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(unused -> { }, retryError -> log.warn("Credential refresh retry failed: {}", retryError.getMessage()));
+    }
+
+    private synchronized void failQueuedSong(long version, MusicQueueItem item, Set<String> failedTracks,
+            String retryMember, int retries, Throwable error, String failedPlatform) {
+        if (playHeadVersion.get() != version) return;
+        String failedMember = markQueuedSongFailed(item, failedTracks);
+        String nextRetryMember = failedMember;
+        int nextRetries = retries;
+        if (failedMember == null) {
+            nextRetryMember = null;
+            nextRetries = 0;
+        } else if (!failedMember.equals(retryMember)) {
+            nextRetries = 0;
+        }
+        Music music = item.music();
+        log.error("Play failed for {}: {}", music.name(), error.getMessage());
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR,
+                PlayerAction.ERROR_LOAD, "SYSTEM", describePlaybackFailure(music, error)));
+        publishCredentialHint(music.platform(), error);
+        isLoading.set(false);
+        broadcastFullPlayerState();
+        playNextInQueue(nextRetryMember, failedTracks, nextRetries);
+    }
+
+    private String markQueuedSongFailed(MusicQueueItem item, Set<String> failedTracks) {
+        queueManager.markPlaybackFailed(item);
+        if (playMode.get() != PlayMode.ROUND_ROBIN) return null;
+        failedTracks.add(ResourceKey.encode(item.music().platform(), item.music().id()));
+        return queueManager.getItem(item.queueId()).map(MusicQueueItem::enqueuedBy)
+                .orElseGet(() -> claimedPlaybackVersion == playHeadVersion.get()
+                        ? claimedPlaybackOwners.getOrDefault(item.enqueuedBy().token(), item.enqueuedBy())
+                        : item.enqueuedBy()).token();
     }
 
     /** 播放失败的持久化描述：歌名 + 音源 + 原因，写进聊天历史便于排查。 */
@@ -500,7 +574,7 @@ public class MusicPlayerService {
         timestampAnchor.set(System.currentTimeMillis());
         isPaused.set(false);
         isLoading.set(false);
-        fmDjFailCount.set(0);
+        clearFmBlockForSource(music.platform());
         fmDjRetryAt.set(0);
 
         if (segment instanceof PrivateDjSegment.Song s) {
@@ -517,17 +591,61 @@ public class MusicPlayerService {
 
     private void handleFmDjError(long version, Throwable error) {
         if (playHeadVersion.get() != version) return;
-        log.warn("Private FM/DJ segment failed: {}", error instanceof ApiRequestException ? error.getMessage() : "upstream unavailable");
-        int fails = fmDjFailCount.incrementAndGet();
-        long backoff = Math.min(5_000L << Math.min(fails - 1, 4), FM_DJ_MAX_BACKOFF_MS);
-        fmDjRetryAt.set(System.currentTimeMillis() + backoff);
+        log.warn("Private FM/DJ segment failed, paused automatic playback: {}",
+                error instanceof ApiRequestException ? error.getMessage() : "upstream unavailable");
+        String failedSource = fmDjBlockedSource().orElse("");
+        // 凭据类失败：在阻塞安全的线程里刷新一次后重试；刷新失败才熔断。
+        if (!org.thornex.musicparty.service.api.SourceCredentialAutoRefresh.isAuthFailure(error)) {
+            tripFmBreaker(error, failedSource);
+            return;
+        }
+        Mono.fromRunnable(() -> {
+                    if (credentialAutoRefresh.refresh(failedSource)) {
+                        log.info("Retrying private FM/DJ after refreshing {} credential", failedSource);
+                        playFmDjNext();
+                    } else {
+                        tripFmBreaker(error, failedSource);
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(unused -> { }, retryError -> log.warn("Credential refresh retry failed: {}", retryError.getMessage()));
+    }
+
+    private synchronized void tripFmBreaker(Throwable error, String failedSource) {
+        // 熔断：只停止该音源的推荐播放，直到同源歌曲播放成功或用户手动点击播放。
+        fmBlockedSources.add(failedSource);
+        fmDjRetryAt.set(0);
         isLoading.set(false);
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this,
                 SystemMessageEvent.Level.ERROR, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
-                error instanceof ApiRequestException ? "私人FM/DJ: " + error.getMessage() : "私人FM/DJ 获取失败，稍后自动重试"));
+                error instanceof ApiRequestException
+                        ? "私人FM/DJ 已停止：" + error.getMessage() + "；点击播放可重试"
+                        : "私人FM/DJ 获取失败，已停止自动播放；点击播放可重试"));
     }
 
+    /** 当前私人FM/DJ使用的音源；配置异常时视为未知，用通配符阻塞。 */
+    private java.util.Optional<String> fmDjBlockedSource() {
+        try {
+            String source = privateDjService.sourceId();
+            if (source != null && !source.isBlank()) return java.util.Optional.of(source);
+        } catch (RuntimeException ignored) {
+            // fall through to wildcard
+        }
+        return java.util.Optional.of("*");
+    }
+
+    private boolean isFmSourceBlocked() {
+        if (fmBlockedSources.isEmpty()) return false;
+        if (fmBlockedSources.contains("*")) return true;
+        return fmDjBlockedSource().map(fmBlockedSources::contains).orElse(false);
+    }
+
+    private void clearFmBlockForSource(String source) {
+        if (source == null || source.isBlank()) return;
+        fmBlockedSources.remove(source);
+        fmBlockedSources.remove("*");
+    }
     private long calculateCurrentPosition() {
         if (currentMusic.get() == null) return 0;
         if (isPaused.get()) {
@@ -540,6 +658,7 @@ public class MusicPlayerService {
     }
 
     private synchronized void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
+        clearFmBlockForSource(music.platform());
         if (claimedPlaybackVersion == playHeadVersion.get()) {
             UserSummary claimed = claimedPlaybackOwners.get(queueItem.enqueuedBy().token());
             if (claimed != null) queueItem = new MusicQueueItem(queueItem.queueId(), queueItem.music(), claimed, queueItem.status(), queueItem.priority());
@@ -1096,7 +1215,11 @@ public class MusicPlayerService {
 
     public synchronized void togglePause(String sessionId) {
         if (currentMusic.get() == null) {
-            if (!queueManager.getQueueSnapshot().isEmpty()) {
+            // 没有正在播放的歌曲时，点击播放视为手动重试：解除所有音源的私人FM熔断。
+            boolean wasBlocked = !fmBlockedSources.isEmpty();
+            fmBlockedSources.clear();
+            if (wasBlocked) fmDjRetryAt.set(0);
+            if (!queueManager.getQueueSnapshot().isEmpty() || shouldPlayPrivateFmDj()) {
                 playNextInQueue();
             }
             return;

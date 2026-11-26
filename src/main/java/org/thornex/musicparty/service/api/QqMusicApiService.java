@@ -60,6 +60,35 @@ public class QqMusicApiService implements IMusicApiService, SourceCredentialMana
     @Override public String credentialLabel() { return "QQ音乐 Cookie"; }
     @Override public boolean isCredentialConfigured() { return credentials.configured(); }
     @Override public void updateCredential(String value) { credentials.updateCookie(value); }
+
+    @Override public void refreshCredential() {
+        if (!credentials.configured()) throw SourceAuth.invalid("QQ音乐");
+        JsonNode root = web.getRaw("/login/refresh_credential", Map.of()).block(Duration.ofSeconds(20));
+        if (root == null || root.path("code").asInt(-1) != 0) throw SourceAuth.invalid("QQ音乐");
+        JsonNode data = root.path("data");
+        if (data.path("musicid").asLong(0) <= 0 || data.path("musickey").asText("").isBlank()) {
+            throw SourceAuth.invalid("QQ音乐");
+        }
+        credentials.updateCookie(cookieFromCredential(data));
+    }
+
+    private String cookieFromCredential(JsonNode data) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        put(fields, "musicid", data.path("musicid").asText());
+        put(fields, "musickey", data.path("musickey").asText());
+        put(fields, "openid", data.path("openid").asText());
+        put(fields, "refresh_token", data.path("refresh_token").asText());
+        put(fields, "access_token", data.path("access_token").asText());
+        put(fields, "expired_at", data.path("expired_at").asText());
+        put(fields, "unionid", data.path("unionid").asText());
+        put(fields, "str_musicid", data.path("str_musicid").asText());
+        put(fields, "refresh_key", data.path("refresh_key").asText());
+        return fields.entrySet().stream().map(entry -> entry.getKey() + "=" + entry.getValue()).collect(java.util.stream.Collectors.joining("; "));
+    }
+
+    private void put(Map<String, String> fields, String name, String value) {
+        if (value != null && !value.isBlank()) fields.put(name, value);
+    }
     public void updateCookie(String value) { updateCredential(value); }
     public boolean isCookieConfigured() { return isCredentialConfigured(); }
     @Override public String externalUrl(String id) { return "https://y.qq.com/n/ryqq/songDetail/" + segment(id); }

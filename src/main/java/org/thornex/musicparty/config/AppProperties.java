@@ -11,6 +11,7 @@ public class AppProperties {
     private BilibiliApiConfig bilibili = new BilibiliApiConfig();
     private QqMusicApiConfig qqmusic = new QqMusicApiConfig();
     private java.util.Map<String, SourceConfig> sources = new java.util.concurrent.ConcurrentHashMap<>();
+    private String credentialFile = "data/source-credentials.json";
 
     @Data
     public static class SourceConfig {
