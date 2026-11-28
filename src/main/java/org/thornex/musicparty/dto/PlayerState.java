@@ -24,7 +24,8 @@ public record PlayerState(
         long seekNonce,
         String playbackId,
         AppConfigSummary config,
-        java.util.Map<String, Boolean> memberShufflePreferences
+        java.util.Map<String, Boolean> memberShufflePreferences,
+        java.util.Map<String, Boolean> memberRetainPreferences
 ) {
     public record AppConfigSummary(
             int maxQueueSize,
@@ -40,7 +41,6 @@ public record PlayerState(
             int voteSkipWaitTime,
             PrivateDjConfigSummary privateDj,
             boolean allowPlaylistClaim,
-            boolean retainPlaylist,
             /** 是否允许拖动进度条（管理面板开关，默认关闭）。 */
             boolean allowSeek,
             java.util.Map<String, SourceSettings> sources,

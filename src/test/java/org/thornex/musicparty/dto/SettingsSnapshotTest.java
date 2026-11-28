@@ -20,7 +20,7 @@ class SettingsSnapshotTest {
                 "room123", true,
                 new SettingsSnapshot.PrivateDjSettings("DJ", true, true, true),
                 new SettingsSnapshot.SystemConfigSettings(
-                        500, 100, 50, 200, 5000, 500L, 15, 512, true, true, true), java.util.Map.of("netease", true, "bilibili", false));
+                        500, 100, 50, 200, 5000, 500L, 15, 512, true, true), java.util.Map.of("netease", true, "bilibili", false));
 
         String json = mapper.writeValueAsString(original);
         SettingsSnapshot restored = mapper.readValue(json, SettingsSnapshot.class);

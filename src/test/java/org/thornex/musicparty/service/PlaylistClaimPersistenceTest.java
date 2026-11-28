@@ -41,7 +41,6 @@ class PlaylistClaimPersistenceTest {
     }
     @Test void proposedSnapshotKeepsStableFirstPlayIdsWithoutInferringFromMusicHistory() throws Exception {
         var props = new AppProperties();
-        props.getQueue().setRetainPlaylist(true);
         Path file = directory.resolve("ledger.json");
         props.getQueue().setPersistenceFile(file.toString());
         var queue = new MusicQueueManager(props);
@@ -49,6 +48,8 @@ class PlaylistClaimPersistenceTest {
         var fresh = item("fresh-id", "fresh", "source");
         var removed = item("removed-id", "removed", "source");
         queue.restore(List.of(heard, fresh, removed), List.of(fresh.music()));
+        queue.setMemberRetain("source", true);
+        queue.setMemberRetain("target", true);
         queue.clearPlaybackFailure(heard);
         queue.clearPlaybackFailure(removed);
         var proposed = List.of(item("heard-id", "heard", "target"), item("fresh-id", "fresh", "target"),
@@ -68,11 +69,11 @@ class PlaylistClaimPersistenceTest {
     }
     @Test void proposedSnapshotWritesAuthoritativeEmptyLedger() throws Exception {
         var props = new AppProperties();
-        props.getQueue().setRetainPlaylist(true);
         props.getQueue().setPersistenceFile(directory.resolve("empty-ledger.json").toString());
         var queue = new MusicQueueManager(props);
         var fresh = item("fresh-id", "historic-music", "source");
         queue.restore(List.of(fresh), List.of(fresh.music()));
+        queue.setMemberRetain("source", true);
         persistence(props, queue, new ObjectMapper()).saveQueueSnapshot(List.of(fresh));
 
         var restored = new MusicQueueManager(props);
@@ -83,13 +84,13 @@ class PlaylistClaimPersistenceTest {
     }
     @Test void failedProposedSnapshotDoesNotPruneLiveLedger() throws Exception {
         var props = new AppProperties();
-        props.getQueue().setRetainPlaylist(true);
         Path file = directory.resolve("failed-ledger.json");
         props.getQueue().setPersistenceFile(file.toString());
         Files.writeString(file, "previous snapshot");
         var queue = new MusicQueueManager(props);
         var heard = item("heard-id", "heard", "source");
         queue.restore(List.of(heard), List.of());
+        queue.setMemberRetain("source", true);
         queue.clearPlaybackFailure(heard);
         var mapper = mock(ObjectMapper.class);
         doThrow(new IOException("fixture write failure")).when(mapper).writeValue(any(File.class), any());

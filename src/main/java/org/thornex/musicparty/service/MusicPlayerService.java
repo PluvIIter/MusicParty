@@ -762,12 +762,12 @@ public class MusicPlayerService {
                                 privateDjService.supportsMode("DJ")
                         ),
                         appProperties.getQueue().isAllowPlaylistClaim(),
-                        appProperties.getQueue().isRetainPlaylist(),
                         appProperties.getPlayer().isAllowSeek(),
                         getSourceSettings(),
                         privateDjService.isAvailable()
                 ),
-                queueManager.getMemberShufflePreferences()
+                queueManager.getMemberShufflePreferences(),
+                queueManager.getMemberRetainPreferences()
         );
     }
 
@@ -1098,11 +1098,6 @@ public class MusicPlayerService {
                 }
             });
             request.sources().forEach((id, settings) -> sourceRegistry.update(id, settings.enabled(), settings.deliveryMode()));
-        }
-        if (request.retainPlaylist() != null) {
-            synchronized (queueManager) {
-                appProperties.getQueue().setRetainPlaylist(request.retainPlaylist());
-            }
         }
         if (request.allowSeek() != null) {
             appProperties.getPlayer().setAllowSeek(request.allowSeek());

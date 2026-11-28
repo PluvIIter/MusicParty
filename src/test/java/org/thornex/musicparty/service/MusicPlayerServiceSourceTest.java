@@ -19,8 +19,8 @@ class MusicPlayerServiceSourceTest {
     @Test
     void allRetainedUrlsFailOnceThenCoolDownWithoutRecursiveLoop() {
         AppProperties config = new AppProperties();
-        config.getQueue().setRetainPlaylist(true);
         MusicQueueManager queue = new MusicQueueManager(config);
+        queue.setMemberRetain("A", true);
         var member = new org.thornex.musicparty.dto.UserSummary("A", "s", "Alice", false);
         for (String id : List.of("1", "2")) queue.add(new org.thornex.musicparty.dto.Music(
                 id, id, List.of(), 1000, "netease", "", null), member, org.thornex.musicparty.enums.QueueItemStatus.READY);

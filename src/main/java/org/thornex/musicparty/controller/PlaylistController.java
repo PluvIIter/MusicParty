@@ -76,6 +76,28 @@ public class PlaylistController {
         player.broadcastFullPlayerState();
     }
 
+    public record MemberRetainRequest(Boolean retain) {}
+
+    @MessageMapping("/queue/member-retain")
+    public void memberRetain(@Payload MemberRetainRequest request, @Header("simpSessionId") String sessionId) {
+        if (request == null || request.retain() == null) return;
+        synchronized (persistence) {
+            synchronized (queue) {
+                var member = users.getUser(sessionId);
+                if (member.isEmpty() || member.get().isGuest()) return;
+                var previous = queue.getMemberRetainPreferences();
+                queue.setMemberRetain(member.get().getToken(), request.retain());
+                try { persistence.saveQueueSnapshot(queue.getQueueSnapshot()); }
+                catch (IOException error) {
+                    queue.restoreMemberRetainPreferences(previous);
+                    error(sessionId, "我的歌单保留偏好保存失败，请重试");
+                    return;
+                }
+            }
+        }
+        player.broadcastFullPlayerState();
+    }
+
     @MessageMapping("/queue/reorder")
     public void reorder(@Payload ReorderRequest request, @Header("simpSessionId") String sessionId) {
         if (request == null || request.queueId() == null || request.queueId().length() > 80

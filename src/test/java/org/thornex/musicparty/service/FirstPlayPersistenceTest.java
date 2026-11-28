@@ -29,9 +29,9 @@ class FirstPlayPersistenceTest {
     }
     @Test void roundTripRetainsFirstPlayLedgerInExistingSnapshot() throws Exception {
         AppProperties props = new AppProperties();
-        props.getQueue().setRetainPlaylist(true);
         props.getQueue().setPersistenceFile(temp.resolve("queue.json").toString());
         MusicQueueManager q = new MusicQueueManager(props);
+        q.setMemberRetain("A", true);
         MusicQueueItem old = add(q, "old"), fresh = add(q, "new");
         q.clearPlaybackFailure(old);
         // Song history can contain the same music from an earlier deleted queue entry.
@@ -46,9 +46,9 @@ class FirstPlayPersistenceTest {
     }
     @Test void currentEmptyLedgerNeverInfersPlayedEntriesFromHistory() throws Exception {
         AppProperties props = new AppProperties();
-        props.getQueue().setRetainPlaylist(true);
         Path file = temp.resolve("old.json"); props.getQueue().setPersistenceFile(file.toString());
         MusicQueueManager q = new MusicQueueManager(props);
+        q.setMemberRetain("A", true);
         MusicQueueItem old = add(q, "old"); add(q, "new");
         mapper.writeValue(file.toFile(), Map.of("schemaVersion", 1, "queue", q.getQueueSnapshot(), "history", List.of(old.music())));
         MusicQueueManager restored = new MusicQueueManager(props);

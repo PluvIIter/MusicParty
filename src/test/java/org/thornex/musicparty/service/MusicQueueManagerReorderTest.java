@@ -131,7 +131,8 @@ class MusicQueueManagerReorderTest {
 
     @Test
     void reorderKeepsHeardLedgerLastUserRetryCooldownAndPreferences() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
+        queue.setMemberRetain("B", true);
         queue.setMemberShuffle("A", false);
         MusicQueueItem a1 = add("a1", "A");
         MusicQueueItem a2 = add("a2", "A");
@@ -190,7 +191,8 @@ class MusicQueueManagerReorderTest {
 
     @Test
     void failedReorderDoesNotResetPlaybackLedgerOrConsumePins() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
+        queue.setMemberRetain("B", true);
         MusicQueueItem heard = add("heard", "A");
         MusicQueueItem pinned = add("pin", "B");
         queue.clearPlaybackFailure(heard);

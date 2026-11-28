@@ -249,34 +249,6 @@
                                         </div>
                                         <div class="flex items-center justify-between gap-3 pt-3 border-t border-line">
                                             <div class="flex flex-col">
-                                                <span class="text-[10px] font-bold text-ink">播完保留歌单</span>
-                                                <span class="text-[8px] text-ink-subtle"
-                                                    >循环保留已播歌曲；轮替时每位成员轮完再重复</span
-                                                >
-                                            </div>
-                                            <button
-                                                type="button"
-                                                role="switch"
-                                                aria-label="播完保留歌单"
-                                                :aria-checked="!!playerStore.config.retainPlaylist"
-                                                @click="
-                                                    updateInstantConfig({
-                                                        retainPlaylist: !playerStore.config.retainPlaylist,
-                                                    })
-                                                "
-                                                class="w-8 h-4 shrink-0 rounded-full relative transition-colors"
-                                                :class="
-                                                    playerStore.config.retainPlaylist ? 'bg-accent' : 'bg-line-strong'
-                                                "
-                                            >
-                                                <div
-                                                    class="w-3 h-3 bg-surface-raised rounded-full absolute top-0.5 transition-all"
-                                                    :class="playerStore.config.retainPlaylist ? 'left-4' : 'left-0.5'"
-                                                ></div>
-                                            </button>
-                                        </div>
-                                        <div class="flex items-center justify-between gap-3 pt-3 border-t border-line">
-                                            <div class="flex flex-col">
                                                 <span class="text-[10px] font-bold text-ink">允许拖动进度条</span>
                                                 <span class="text-[8px] text-ink-subtle"
                                                     >成员可拖动进度跳转，房间内所有人同步跟随（默认关闭）</span

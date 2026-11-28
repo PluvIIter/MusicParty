@@ -43,7 +43,6 @@ class PlaylistClaimLockOrderTest {
         properties = new AppProperties();
         properties.setAdminPassword("fixture-admin");
         properties.getQueue().setAllowPlaylistClaim(true);
-        properties.getQueue().setRetainPlaylist(true);
         properties.getQueue().setPersistenceFile(directory.resolve("queue.json").toString());
         var events = mock(ApplicationEventPublisher.class);
         users = new UserService(events);
@@ -55,6 +54,8 @@ class PlaylistClaimLockOrderTest {
         queue.restore(List.of(new MusicQueueItem("stable-id",
                 new Music("track", "Track", List.of("Fixture"), 180000, "netease", "", null),
                 new UserSummary("source", "source-session", "Original", false), QueueItemStatus.READY, org.thornex.musicparty.enums.Priority.REGULAR)), List.of());
+        queue.setMemberRetain("source", true);
+        queue.setMemberRetain("target", true);
         var cache = mock(LocalCacheService.class);
         var stream = mock(LiveStreamService.class);
         var netease = mock(NeteaseMusicApiService.class);
@@ -96,7 +97,7 @@ class PlaylistClaimLockOrderTest {
                 assertFalse(owns(blocked, player), "claim must acquire persistence before player");
                 assertFalse(owns(blocked, queue), "claim must acquire persistence before queue");
                 var request = new AdminConfigUpdateRequest(null, null, null, null, null, null,
-                        null, null, true, 0.0, null, null, null, null);
+                        null, null, true, 0.0, null, null, null);
                 assertEquals(200, admin.updateConfig("fixture-admin", request).getStatusCode().value());
                 assertTrue(((AtomicLong) ReflectionTestUtils.getField(player, "playHeadVersion")).get() > 0,
                         "config must exercise the synchronized player skip path");
