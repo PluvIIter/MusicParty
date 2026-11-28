@@ -485,6 +485,12 @@ public class MusicPlayerService {
 
     /** FM 标记被选中 → 强制取私人FM 段播放 */
     private void playFmMarkerNext(MusicQueueItem marker) {
+        // 音源已熔断：不要补回标记，否则每个播放循环都会重新选中它，形成 1 Hz 的上游重试。
+        if (isFmSourceBlocked()) {
+            queueManager.removeFmMarker();
+            broadcastFullPlayerState();
+            return;
+        }
         // 选中即移除（pollNext），这里立刻补回，保证"私人FM"在播放期间也常驻队列可见
         syncFmMarker();
         long version = playHeadVersion.incrementAndGet();
@@ -512,7 +518,8 @@ public class MusicPlayerService {
     void syncFmMarker() {
         AppProperties.PrivateDjConfig c = appProperties.getPrivateDj();
         boolean shouldPresent = privateDjService.supportsMode(c.getMode()) && !"OFF".equals(c.getMode()) && c.isJoinQueueEnabled()
-                && !c.isCustodyEnabled() && (playMode.get() == PlayMode.SHUFFLE || playMode.get() == PlayMode.ROUND_ROBIN);
+                && !c.isCustodyEnabled() && (playMode.get() == PlayMode.SHUFFLE || playMode.get() == PlayMode.ROUND_ROBIN)
+                && !isFmSourceBlocked();
         if (shouldPresent) {
             queueManager.ensureFmMarker();
         } else {

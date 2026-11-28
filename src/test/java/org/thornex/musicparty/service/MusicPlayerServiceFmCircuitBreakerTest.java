@@ -8,6 +8,7 @@ import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.PrivateDjSegment;
 import org.thornex.musicparty.dto.UserSummary;
+import org.thornex.musicparty.enums.PlayMode;
 import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.stream.LiveStreamService;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -55,6 +57,26 @@ class MusicPlayerServiceFmCircuitBreakerTest {
         when(users.getRecentlyActiveUserTokens()).thenReturn(Set.of(MEMBER.token()));
     }
 
+    @Test
+    void blockedSourceStopsReplenishingTheFmMarker() {
+        // 先让托管 FM 失败并熔断网易云
+        properties.getPrivateDj().setCustodyEnabled(true);
+        when(dj.nextSegment()).thenReturn(Mono.error(new ApiRequestException("SOURCE_AUTH_REQUIRED: 网易云 Cookie 无效")));
+        player.playerLoop();
+        PlayerTestFactory.await(() -> !player.getCurrentPlayerState().isLoading());
+        verify(dj, timeout(2000)).nextSegment();
+
+        // 模拟熔断后遗留的 FM 标记：不应再被补回，也不应触发上游请求
+        properties.getPrivateDj().setCustodyEnabled(false);
+        properties.getPrivateDj().setJoinQueueEnabled(true);
+        player.setPlayModeForTest(PlayMode.ROUND_ROBIN);
+        queue.ensureFmMarker();
+        for (int i = 0; i < 5; i++) player.playerLoop();
+        verify(dj, never()).nextFmSegment();
+        assertTrue(queue.getQueueSnapshot().stream()
+                        .noneMatch(item -> MusicQueueManager.FM_MARKER_ID.equals(item.music().platform())),
+                "熔断期间不应保留 FM 标记");
+    }
     @Test
     void fmFailureStopsAutomaticRetriesUntilManualPlay() {
         when(dj.nextSegment()).thenReturn(Mono.error(new ApiRequestException("MEDIA_FORBIDDEN: 网易云返回无可用播放地址")));

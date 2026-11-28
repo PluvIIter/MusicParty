@@ -208,10 +208,11 @@ class RetainedPlaylistTest {
     }
 
     @Test void restoredLedgerWinsOverOldSongHistoryAndPrunesDeletedIds() {
-        retain("A");
         MusicQueueItem old = add("old", "A");
         MusicQueueItem fresh = add("new", "A");
         queue.restore(queue.getQueueSnapshot(), List.of(old.music(), fresh.music()));
+        // restore() 会清空运行时偏好，必须按启动顺序在 restore 之后恢复；否则下一次 poll 会清空轮次账本。
+        retain("A");
         queue.restorePlayedQueueIds(Set.of(old.queueId(), "deleted-id"));
         assertEquals(Set.of(old.queueId()), queue.getPlayedQueueIds());
         assertEquals(fresh.queueId(), pick(true, Set.of("A")).queueId());

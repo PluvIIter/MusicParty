@@ -52,7 +52,8 @@ public class SourceCredentialRegistry {
         var manager = source == null ? null : managers.get(source);
         if (manager == null) throw new ApiRequestException("CAPABILITY_UNAVAILABLE: 此音源不支持凭据管理");
         if (value != null && value.length() > 32768) throw new ApiRequestException("INVALID_CREDENTIAL: 凭据过长");
-        synchronized (sources) {
+        // 与 refresh 共用同一把音源级锁：保存会等待正在进行的刷新结束，避免刷新结果覆盖管理员刚粘贴的值。
+        synchronized (refreshLocks.computeIfAbsent(source, ignored -> new Object())) {
             manager.updateCredential(value == null ? "" : value);
         }
     }
