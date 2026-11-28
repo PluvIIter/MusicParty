@@ -13,8 +13,8 @@ describe('current admin config schema', () => {
     });
     it('sends generic source settings and preserves false and zero values', () => {
         expect(
-            toAdminConfigPayload({ sources: { future: { enabled: false } }, maxUserSongs: 0, retainPlaylist: false })
-        ).toEqual({ sources: { future: { enabled: false } }, maxUserSongs: 0, retainPlaylist: false });
+            toAdminConfigPayload({ sources: { future: { enabled: false } }, maxUserSongs: 0, voteSkipEnabled: false })
+        ).toEqual({ sources: { future: { enabled: false } }, maxUserSongs: 0, voteSkipEnabled: false });
     });
     it('drops unrelated state and undefined fields without mapping aliases', () => {
         expect(

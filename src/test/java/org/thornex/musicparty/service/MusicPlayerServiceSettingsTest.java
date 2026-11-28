@@ -3,6 +3,7 @@ package org.thornex.musicparty.service;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.dto.AdminConfigUpdateRequest;
 import org.thornex.musicparty.dto.PlayerState;
 import org.thornex.musicparty.dto.SettingsSnapshot;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
@@ -15,25 +16,29 @@ import static org.mockito.Mockito.*;
 class MusicPlayerServiceSettingsTest {
 
     @Test
-    void retentionAdminUpdatesArePartialAndAppearInSharedState() throws Exception {
-        MusicPlayerService service = build();
+    void adminUpdatesArePartialAndMemberPreferencesAppearInSharedState() throws Exception {
+        MusicQueueManager queue = mock(MusicQueueManager.class);
+        when(queue.getMemberShufflePreferences()).thenReturn(java.util.Map.of("A", true));
+        when(queue.getMemberRetainPreferences()).thenReturn(java.util.Map.of("B", true));
+        MusicPlayerService service = build(queue);
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        assertFalse(service.getCurrentPlayerState().config().retainPlaylist());
-        service.updateConfig(mapper.readValue("{\"retainPlaylist\":true}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
-        assertTrue(service.getCurrentPlayerState().config().retainPlaylist());
-        service.updateConfig(mapper.readValue("{\"maxUserSongs\":55}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
-        assertTrue(service.getCurrentPlayerState().config().retainPlaylist());
+        service.updateConfig(mapper.readValue("{\"maxUserSongs\":55}", AdminConfigUpdateRequest.class));
         assertEquals(55, service.getCurrentPlayerState().config().maxUserSongs());
-        service.updateConfig(mapper.readValue("{\"retainPlaylist\":false}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class));
-        assertFalse(service.getCurrentPlayerState().config().retainPlaylist());
+        PlayerState state = service.getCurrentPlayerState();
+        assertEquals(java.util.Map.of("A", true), state.memberShufflePreferences());
+        assertEquals(java.util.Map.of("B", true), state.memberRetainPreferences());
     }
 
     private MusicPlayerService build() {
+        return build(mock(MusicQueueManager.class));
+    }
+
+    private MusicPlayerService build(MusicQueueManager queue) {
         return PlayerTestFactory.create(
                 List.of(),
                 mock(org.thornex.musicparty.service.UserService.class),
                 mock(org.thornex.musicparty.service.stream.LiveStreamService.class),
-                mock(MusicQueueManager.class),
+                queue,
                 mock(ApplicationEventPublisher.class),
                 new AppProperties(),
                 mock(PrivateDjService.class)

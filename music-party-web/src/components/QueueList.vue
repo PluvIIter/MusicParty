@@ -22,6 +22,18 @@
                 </button>
                 <button
                     type="button"
+                    :disabled="!player.connected || userStore.isGuest"
+                    :aria-label="memberRetain ? '我的歌：播完保留' : '我的歌：播完移除'"
+                    :title="
+                        memberRetain ? '我的歌：播完保留（点击改为播完移除）' : '我的歌：播完移除（点击改为播完保留）'
+                    "
+                    class="p-1.5 border border-line text-ink-muted hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    @click="toggleMemberRetain"
+                >
+                    <Repeat class="w-4 h-4" aria-hidden="true" />
+                </button>
+                <button
+                    type="button"
                     @click="askClear"
                     :disabled="clearing || !player.connected || userStore.isGuest || mineCount === 0"
                     aria-label="清空我的歌单"
@@ -277,6 +289,7 @@ const player = usePlayerStore();
 const queue = computed(() => player.queue);
 const userStore = useUserStore();
 const memberShuffle = computed(() => player.memberShufflePreferences[userStore.userToken] ?? true);
+const memberRetain = computed(() => player.memberRetainPreferences[userStore.userToken] ?? false);
 const reorder = useQueueReorder(player, userStore);
 provide('queueReorder', reorder);
 const claiming = ref('');
@@ -288,6 +301,11 @@ const toggleMemberShuffle = () => {
     const next = !memberShuffle.value;
     player.setMemberShuffle(next);
     toast.success(next ? '个人选曲：随机' : '个人选曲：顺序');
+};
+const toggleMemberRetain = () => {
+    const next = !memberRetain.value;
+    player.setMemberRetain(next);
+    toast.success(next ? '我的歌：播完保留' : '我的歌：播完移除');
 };
 const canClaim = (group) =>
     player.config.allowPlaylistClaim === true &&

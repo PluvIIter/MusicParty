@@ -34,6 +34,7 @@ public class MusicQueueManager {
     private final ShuffleCycle shuffleCycle = new ShuffleCycle();
     private final Map<String, Long> playbackRetryAt = new HashMap<>();
     private final Map<String, Boolean> memberShuffle = new HashMap<>();
+    private final Map<String, Boolean> memberRetain = new HashMap<>();
     private static final long PLAYBACK_RETRY_DELAY_MS = 30_000;
 
     /** 私人FM 合成标记项常量 */
@@ -168,7 +169,7 @@ public class MusicQueueManager {
     synchronized MusicQueueItem pollNext(PlayMode playMode, boolean allowOfflineShuffle, Map<String, QueueItemStatus> statusMap,
                                          Set<String> onlineUserTokens, Set<String> failedTracks) {
         playbackRetryAt.entrySet().removeIf(entry -> entry.getValue() <= System.currentTimeMillis());
-        if (!appProperties.getQueue().isRetainPlaylist()) shuffleCycle.clear();
+        if (!anyMemberRetains()) shuffleCycle.clear();
         if (queue.isEmpty()) {
             return pollFromHistory(failedTracks); // 队列为空时，尝试从历史记录播放
         }
@@ -215,11 +216,11 @@ public class MusicQueueManager {
     synchronized MusicQueueItem pollRoundRobinRetry(String memberToken, Set<String> failedTracks,
                                                     Map<String, QueueItemStatus> statusMap, Set<String> enabledSources) {
         if (!isMemberToken(memberToken)) return null;
-        if (!appProperties.getQueue().isRetainPlaylist()) shuffleCycle.clear();
+        if (!anyMemberRetains()) shuffleCycle.clear();
         List<MusicQueueItem> songs = queue.stream()
                 .filter(item -> memberToken.equals(item.enqueuedBy().token()))
                 .filter(item -> !failedTracks.contains(musicKey(item.music())))
-                .filter(item -> enabledSources.contains(item.music().platform()) && retryAllowed(item.music()))
+                .filter(item -> enabledSources.contains(item.music().platform()) && retryAllowed(item))
                 .toList();
         if (songs.isEmpty()) return null;
 
@@ -231,8 +232,11 @@ public class MusicQueueManager {
 
     private MusicQueueItem select(MusicQueueItem item) {
         queue.remove(item);
-        if (appProperties.getQueue().isRetainPlaylist()) shuffleCycle.selected(item);
-        if (appProperties.getQueue().isRetainPlaylist() && !FM_MARKER_ID.equals(item.music().platform())) {
+        boolean retained = isMemberRetain(item.enqueuedBy().token());
+        boolean fmMarker = FM_MARKER_ID.equals(item.music().platform());
+        // FM is a synthetic candidate: keep its one-per-round accounting even though no member owns it.
+        if (retained || fmMarker) shuffleCycle.selected(item);
+        if (retained && !fmMarker) {
             // Retain ownership and queue ID, but consume each explicit pin once.
             queue.addLast(item.withPriority(Priority.REGULAR));
         }
@@ -240,8 +244,12 @@ public class MusicQueueManager {
         return item;
     }
 
+    private boolean anyMemberRetains() {
+        return queue.stream().anyMatch(item -> isMemberRetain(item.enqueuedBy().token()));
+    }
+
     public synchronized void markPlaybackFailed(MusicQueueItem item) {
-        if (appProperties.getQueue().isRetainPlaylist()) {
+        if (isMemberRetain(item.enqueuedBy().token())) {
             playbackRetryAt.put(musicKey(item.music()), System.currentTimeMillis() + PLAYBACK_RETRY_DELAY_MS);
         }
     }
@@ -249,16 +257,20 @@ public class MusicQueueManager {
     public synchronized void clearPlaybackFailure(MusicQueueItem item) {
         playbackRetryAt.remove(musicKey(item.music()));
         // A failed attempt must not consume first-play priority.
-        if (appProperties.getQueue().isRetainPlaylist()) shuffleCycle.heard(item);
+        if (isMemberRetain(item.enqueuedBy().token())) shuffleCycle.heard(item);
     }
 
     private static String musicKey(Music music) {
         return ResourceKey.encode(music.platform(), music.id());
     }
 
-    private boolean retryAllowed(Music music) {
-        return !appProperties.getQueue().isRetainPlaylist()
-                || playbackRetryAt.getOrDefault(musicKey(music), 0L) <= System.currentTimeMillis();
+    private boolean retryAllowed(MusicQueueItem item) {
+        return !isMemberRetain(item.enqueuedBy().token())
+                || playbackRetryAt.getOrDefault(musicKey(item.music()), 0L) <= System.currentTimeMillis();
+    }
+
+    private boolean historyRetryAllowed(Music music) {
+        return playbackRetryAt.getOrDefault(musicKey(music), 0L) <= System.currentTimeMillis();
     }
 
     /**
@@ -391,6 +403,29 @@ public class MusicQueueManager {
         memberShuffle.putAll(restored);
     }
 
+    public synchronized void setMemberRetain(String token, boolean retain) {
+        if (isMemberToken(token)) memberRetain.put(token, retain);
+    }
+
+    public synchronized boolean isMemberRetain(String token) {
+        return memberRetain.getOrDefault(token, false);
+    }
+
+    public synchronized Map<String, Boolean> getMemberRetainPreferences() {
+        return Map.copyOf(memberRetain);
+    }
+
+    public synchronized void restoreMemberRetainPreferences(Map<String, Boolean> preferences) {
+        Map<String, Boolean> restored = new HashMap<>();
+        if (preferences != null) {
+            preferences.forEach((token, retain) -> {
+                if (isMemberToken(token) && retain != null) restored.put(token, retain);
+            });
+        }
+        memberRetain.clear();
+        memberRetain.putAll(restored);
+    }
+
     public synchronized boolean reorder(String queueId, String beforeQueueId, String actorToken, PlayMode mode) {
         if (!isMemberToken(actorToken) || mode == null) return false;
         List<MusicQueueItem> reordered = new ArrayList<>(queue);
@@ -467,6 +502,7 @@ public class MusicQueueManager {
      */
     public synchronized void clearAll() {
         memberShuffle.clear();
+        memberRetain.clear();
         shuffleCycle.clear();
         playbackRetryAt.clear();
         queue.clear();
@@ -503,7 +539,7 @@ public class MusicQueueManager {
         return queue.stream()
                 .anyMatch(item -> {
                     QueueItemStatus st = statusMap.getOrDefault(musicKey(item.music()), QueueItemStatus.PENDING);
-                    return retryAllowed(item.music()) && (st == QueueItemStatus.READY || st == QueueItemStatus.FAILED);
+                    return retryAllowed(item) && (st == QueueItemStatus.READY || st == QueueItemStatus.FAILED);
                 });
     }
 
@@ -512,7 +548,10 @@ public class MusicQueueManager {
         queue.clear();
         queue.addAll(entries);
         lastPlayedUserToken.compareAndSet(sourceToken, targetToken);
-        if (!Objects.equals(sourceToken, targetToken)) memberShuffle.remove(sourceToken);
+        if (!Objects.equals(sourceToken, targetToken)) {
+            memberShuffle.remove(sourceToken);
+            memberRetain.remove(sourceToken);
+        }
     }
 
     public synchronized List<MusicQueueItem> getQueueSnapshot() {
@@ -530,6 +569,7 @@ public class MusicQueueManager {
      */
     public synchronized void restore(List<MusicQueueItem> loadedQueue, List<Music> loadedHistory) {
         memberShuffle.clear();
+        memberRetain.clear();
         shuffleCycle.clear();
         playbackRetryAt.clear();
         // Clear current
@@ -554,7 +594,7 @@ public class MusicQueueManager {
 
     private boolean isReadyOrFailed(Map<String, QueueItemStatus> statusMap, MusicQueueItem item) {
         QueueItemStatus status = statusMap.getOrDefault(musicKey(item.music()), QueueItemStatus.PENDING);
-        return retryAllowed(item.music()) && (status == QueueItemStatus.READY || status == QueueItemStatus.FAILED);
+        return retryAllowed(item) && (status == QueueItemStatus.READY || status == QueueItemStatus.FAILED);
     }
 
     /**
@@ -566,7 +606,7 @@ public class MusicQueueManager {
         }
         List<Music> available;
         synchronized (playHistory) {
-            available = playHistory.stream().filter(this::retryAllowed)
+            available = playHistory.stream().filter(this::historyRetryAllowed)
                     .filter(music -> !failedTracks.contains(musicKey(music))).toList();
         }
         if (available.isEmpty()) return null;

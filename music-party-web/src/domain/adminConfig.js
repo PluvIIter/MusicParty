@@ -11,7 +11,6 @@ export const ADMIN_CONFIG_PAYLOAD_FIELDS = new Set([
     'voteSkipEnabled',
     'voteSkipThreshold',
     'voteSkipWaitTime',
-    'retainPlaylist',
     'allowSeek',
 ]);
 

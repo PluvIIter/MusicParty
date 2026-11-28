@@ -20,8 +20,8 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
     }));
     const sent = [];
     const updates = [];
+    const preferences = {};
     const config = {
-        retainPlaylist: false,
         maxQueueSize: 1000,
         maxUserSongs: 100,
         privateDj: { mode: 'OFF' },
@@ -102,6 +102,7 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
                 queue,
                 playMode: 'ROUND_ROBIN',
                 memberShufflePreferences: {},
+                memberRetainPreferences: preferences,
                 isPaused: false,
                 onlineUsers: [owner, other],
                 config,
@@ -132,6 +133,10 @@ async function room(page, { admin = false, guest = false, rejectClear = false } 
                     broadcast();
                     if (admin)
                         send('/topic/player/events', { action: 'ADMIN_TRIGGER', userId: 'member-A', level: 'INFO' });
+                }
+                if (headers.destination === '/app/queue/member-retain') {
+                    preferences[owner.token] = body.retain;
+                    broadcast();
                 }
                 if (headers.destination === '/app/queue/clear-mine') {
                     const removed = queue.filter((item) => item.enqueuedBy.token === owner.token).length;
@@ -167,21 +172,23 @@ test('admin can discover and enable a disabled unknown source without credential
     await expect(page.getByPlaceholder(/输入新 COOKIE/)).toHaveCount(0);
 });
 
-test('admin retention switch sends partial updates and follows shared state after reload', async ({ page }) => {
-    const fixture = await room(page, { admin: true });
-    await page.getByPlaceholder('ENTER ADMIN PASSWORD').fill('test-admin');
-    await page.getByRole('button', { name: 'ACCESS SYSTEM' }).click();
-    const control = page.getByRole('switch', { name: '播完保留歌单' });
-    await expect(control).toHaveAttribute('aria-checked', 'false');
+test('member toggles personal retain from the queue header and sends its own payload', async ({ page }) => {
+    const fixture = await room(page);
+    const control = page.getByRole('button', { name: '我的歌：播完移除' });
+    await expect(control).toBeEnabled();
     await control.click();
-    await expect(control).toHaveAttribute('aria-checked', 'true');
-    expect(fixture.updates).toEqual([{ retainPlaylist: true }]);
-    await page.reload({ waitUntil: 'commit' });
-    await page.getByRole('button', { name: 'CONNECT', exact: true }).click();
-    await expect(control).toHaveAttribute('aria-checked', 'true');
-    await control.click();
-    await expect(control).toHaveAttribute('aria-checked', 'false');
-    expect(fixture.updates).toEqual([{ retainPlaylist: true }, { retainPlaylist: false }]);
+    await expect(page.getByRole('button', { name: '我的歌：播完保留' })).toHaveAttribute(
+        'title',
+        '我的歌：播完保留（点击改为播完移除）'
+    );
+    expect(fixture.sent.filter((item) => item.destination === '/app/queue/member-retain')).toEqual([
+        { destination: '/app/queue/member-retain', body: { retain: true } },
+    ]);
+    await page.getByRole('button', { name: '我的歌：播完保留' }).click();
+    await expect(page.getByRole('button', { name: '我的歌：播完移除' })).toBeVisible();
+    expect(
+        fixture.sent.filter((item) => item.destination === '/app/queue/member-retain').map((item) => item.body)
+    ).toEqual([{ retain: true }, { retain: false }]);
 });
 
 for (const mobile of [false, true])
@@ -215,5 +222,7 @@ test('server rejection keeps playlist and enables retry', async ({ page }) => {
 test('guest cannot clear playlist', async ({ page }) => {
     const fixture = await room(page, { guest: true });
     await expect(page.getByRole('button', { name: '清空我的歌单', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '我的歌：播完移除', exact: true })).toBeDisabled();
     expect(fixture.sent.filter((item) => item.destination === '/app/queue/clear-mine')).toHaveLength(0);
+    expect(fixture.sent.filter((item) => item.destination === '/app/queue/member-retain')).toHaveLength(0);
 });

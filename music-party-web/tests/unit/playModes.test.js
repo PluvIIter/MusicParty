@@ -69,9 +69,11 @@ describe('explicit playback controls', () => {
             queue: queue(),
             playMode: 'ROUND_ROBIN',
             memberShufflePreferences: { mine: false, other: true },
+            memberRetainPreferences: { mine: true, other: false },
         });
         expect(player.isRoundRobin).toBe(true);
         expect(player.memberShufflePreferences).toEqual({ mine: false, other: true });
+        expect(player.memberRetainPreferences).toEqual({ mine: true, other: false });
         player.setMemberShuffle(true);
         player.setMemberShuffle(false);
         player.setMemberShuffle('false');
@@ -80,10 +82,28 @@ describe('explicit playback controls', () => {
             [WS_DEST.MEMBER_SHUFFLE, { shuffle: false }],
         ]);
         expect(player.memberShufflePreferences.mine).toBe(false);
-        player.syncState({ nowPlaying: null, queue: [], playMode: 'SHUFFLE' });
+        player.syncState({ nowPlaying: null, queue: [], playMode: 'SHUFFLE', memberRetainPreferences: { mine: true } });
         expect(player.memberShufflePreferences).toEqual({});
         player.setMemberShuffle(false);
         expect(socketService.send).toHaveBeenCalledTimes(2);
+    });
+    it('sends personal retain changes in every play mode with exact boolean values', () => {
+        for (const mode of PLAY_MODES.map(({ value }) => value)) {
+            player.playMode = mode;
+            player.setMemberRetain(true);
+            player.setMemberRetain(false);
+            player.setMemberRetain('true');
+        }
+        expect(socketService.send.mock.calls.filter(([dest]) => dest === WS_DEST.MEMBER_RETAIN)).toEqual([
+            [WS_DEST.MEMBER_RETAIN, { retain: true }],
+            [WS_DEST.MEMBER_RETAIN, { retain: false }],
+            [WS_DEST.MEMBER_RETAIN, { retain: true }],
+            [WS_DEST.MEMBER_RETAIN, { retain: false }],
+            [WS_DEST.MEMBER_RETAIN, { retain: true }],
+            [WS_DEST.MEMBER_RETAIN, { retain: false }],
+            [WS_DEST.MEMBER_RETAIN, { retain: true }],
+            [WS_DEST.MEMBER_RETAIN, { retain: false }],
+        ]);
     });
     it.each(PLAY_MODES)('sends $value with reorder targets without changing the queue', ({ value }) => {
         player.playMode = value;

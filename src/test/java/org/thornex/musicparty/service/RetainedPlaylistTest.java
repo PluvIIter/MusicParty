@@ -26,6 +26,10 @@ class RetainedPlaylistTest {
                 new UserSummary(owner, owner, owner, false), QueueItemStatus.READY);
     }
 
+    private void retain(String... tokens) {
+        for (String token : tokens) queue.setMemberRetain(token, true);
+    }
+
     private Map<String, QueueItemStatus> ready() {
         Map<String, QueueItemStatus> result = new HashMap<>();
         queue.getQueueSnapshot().forEach(item -> result.put(ResourceKey.encode(item.music().platform(), item.music().id()), QueueItemStatus.READY));
@@ -38,22 +42,35 @@ class RetainedPlaylistTest {
         return item;
     }
 
-    @Test void defaultConsumesAndTogglingDoesNotRebuildQueue() {
-        assertFalse(props.getQueue().isRetainPlaylist());
+    @Test void defaultConsumesAndPerMemberToggleDoesNotRebuildQueue() {
+        assertFalse(queue.isMemberRetain("A"));
         MusicQueueItem a = add("a", "A");
         MusicQueueItem b = add("b", "A");
         assertEquals(a, queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()));
         assertEquals(List.of(b), queue.getQueueSnapshot());
-        props.getQueue().setRetainPlaylist(true);
+        retain("A");
         assertEquals(b, pick(true, Set.of("A")));
         assertEquals(List.of(b), queue.getQueueSnapshot());
-        props.getQueue().setRetainPlaylist(false);
+        queue.setMemberRetain("A", false);
         assertEquals(b, pick(true, Set.of("A")));
         assertTrue(queue.getQueueSnapshot().isEmpty());
     }
 
+    @Test void onlyRetainingMembersKeepPlaying() {
+        retain("A");
+        MusicQueueItem a = add("a", "A");
+        MusicQueueItem b = add("b", "B");
+        assertEquals(a, queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()));
+        assertEquals(List.of(b, a), queue.getQueueSnapshot());
+        assertEquals(b, queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()));
+        assertEquals(List.of(a), queue.getQueueSnapshot());
+        assertEquals(a, queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()));
+        assertEquals(List.of(a), queue.getQueueSnapshot());
+        assertEquals(a.queueId(), queue.pollNext(PlayMode.SEQUENTIAL, true, ready(), Set.of()).queueId());
+    }
+
     @Test void sequentialRotatesSameIdsAndConsumesPinOnce() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A", "B");
         MusicQueueItem a = add("a", "A");
         MusicQueueItem b = add("b", "B");
         queue.top(b.queueId(), PlayMode.SEQUENTIAL);
@@ -63,7 +80,7 @@ class RetainedPlaylistTest {
     }
 
     @Test void unequalMemberPlaylistsHaveIndependentRoundsAndStrictTurns() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A", "B", "C");
         Map<String, Integer> sizes = Map.of("A", 3, "B", 5, "C", 1);
         for (String owner : List.of("A", "B", "C"))
             for (int i = 0; i < sizes.get(owner); i++) add(owner + i, owner);
@@ -83,7 +100,7 @@ class RetainedPlaylistTest {
     }
 
     @Test void totalShuffleCompletesRoundsEvenWhenFmMarkerIsRegenerated() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A");
         for (int i = 0; i < 4; i++) add("a" + i, "A");
         String last = "";
         for (int round = 0; round < 100; round++) {
@@ -100,7 +117,7 @@ class RetainedPlaylistTest {
     }
 
     @Test void additionsAndOwnerClearPreserveOtherMembersUnfinishedRound() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A", "B");
         add("a", "A");
         for (int i = 0; i < 3; i++) add("b" + i, "B");
         pick(true, Set.of("A", "B"));
@@ -113,7 +130,7 @@ class RetainedPlaylistTest {
     }
 
     @Test void offlineReturnAndExplicitPinRespectRemainingRound() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A", "B");
         for (int i = 0; i < 3; i++) add("a" + i, "A");
         add("b", "B");
         MusicQueueItem heard = pick(true, Set.of("A", "B"));
@@ -126,7 +143,7 @@ class RetainedPlaylistTest {
     }
 
     @Test void failedRetainedTracksCoolDownWithoutDiscardingPlaylist() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A");
         MusicQueueItem a = add("a", "A");
         queue.markPlaybackFailed(a);
         assertNull(pick(true, Set.of("A")));
@@ -135,15 +152,23 @@ class RetainedPlaylistTest {
         queue.clearPlaybackFailure(a);
         assertEquals(a, pick(true, Set.of("A")));
         queue.markPlaybackFailed(a);
-        props.getQueue().setRetainPlaylist(false);
+        queue.setMemberRetain("A", false);
         assertEquals(a, pick(true, Set.of("A")), "Disabling retention restores normal consumption");
         assertTrue(queue.getQueueSnapshot().isEmpty());
     }
 
+    @Test void failedTrackOfNonRetainingMemberIsConsumedWithoutCooldown() {
+        MusicQueueItem b = add("b", "B");
+        queue.markPlaybackFailed(b);
+        assertEquals(b, pick(true, Set.of("B")));
+        assertTrue(queue.getQueueSnapshot().isEmpty());
+    }
+
     @Test void neverPlayedAdditionsWinEvenAfterOlderSongsStartAnotherRound() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A");
         for (boolean fair : List.of(true, false)) for (int trial = 0; trial < 500; trial++) {
             queue.clearAll();
+            retain("A");
             for (int i = 0; i < 4; i++) add("old" + i, "A");
             for (int i = 0; i < 5; i++) pick(fair, Set.of("A"));
             add("new-a", "A"); add("new-b", "A");
@@ -157,7 +182,7 @@ class RetainedPlaylistTest {
     }
 
     @Test void firstPlayPriorityDoesNotStealAnotherMembersTurn() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A", "B");
         add("old-a", "A"); add("old-b", "B");
         pick(true, Set.of("A", "B")); pick(true, Set.of("A", "B"));
         add("new-a", "A"); add("new-a2", "A");
@@ -167,7 +192,7 @@ class RetainedPlaylistTest {
     }
 
     @Test void failedAttemptRemainsUnheardAndDeletedEntriesDoNotMarkReadditions() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A");
         MusicQueueItem old = add("old", "A"); pick(true, Set.of("A"));
         MusicQueueItem fresh = add("new", "A");
         MusicQueueItem attempted = queue.pollNext(PlayMode.ROUND_ROBIN, false, ready(), Set.of("A"));
@@ -183,7 +208,7 @@ class RetainedPlaylistTest {
     }
 
     @Test void restoredLedgerWinsOverOldSongHistoryAndPrunesDeletedIds() {
-        props.getQueue().setRetainPlaylist(true);
+        retain("A");
         MusicQueueItem old = add("old", "A");
         MusicQueueItem fresh = add("new", "A");
         queue.restore(queue.getQueueSnapshot(), List.of(old.music(), fresh.music()));
@@ -193,5 +218,22 @@ class RetainedPlaylistTest {
         queue.restore(queue.getQueueSnapshot(), List.of(old.music()));
         queue.restorePlayedQueueIds(null);
         assertTrue(queue.getPlayedQueueIds().isEmpty());
+    }
+
+    @Test void retainPreferencesAreValidatedAndCleared() {
+        queue.restoreMemberRetainPreferences(Map.of("A", true, "SYSTEM", true, "ADMIN", false, "__FM__", true, " ", true));
+        assertEquals(Map.of("A", true), queue.getMemberRetainPreferences());
+        queue.setMemberRetain("A", false);
+        assertEquals(Map.of("A", false), queue.getMemberRetainPreferences());
+        queue.clearAll();
+        assertTrue(queue.getMemberRetainPreferences().isEmpty());
+    }
+
+    @Test void claimedPlaylistDropsSourceRetainPreference() {
+        retain("source");
+        queue.setMemberRetain("target", true);
+        queue.commitPlaylistClaim(List.of(), "source", "target");
+        assertFalse(queue.isMemberRetain("source"));
+        assertTrue(queue.isMemberRetain("target"));
     }
 }

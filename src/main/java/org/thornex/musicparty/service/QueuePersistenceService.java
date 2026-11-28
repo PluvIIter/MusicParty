@@ -63,6 +63,7 @@ public class QueuePersistenceService {
             data.setQueue(musicQueueManager.getQueueSnapshot());
             data.setPlayedQueueIds(musicQueueManager.getPlayedQueueIds());
             data.setMemberShufflePreferences(musicQueueManager.getMemberShufflePreferences());
+            data.setMemberRetainPreferences(musicQueueManager.getMemberRetainPreferences());
         }
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
@@ -96,6 +97,7 @@ public class QueuePersistenceService {
                     .map(item -> item.enqueuedBy().token()).filter(token -> !proposedOwners.contains(token)).collect(Collectors.toSet());
             preferences.keySet().removeAll(removedOwners);
             data.setMemberShufflePreferences(preferences);
+            data.setMemberRetainPreferences(musicQueueManager.getMemberRetainPreferences());
         }
         data.setHistory(musicQueueManager.getHistorySnapshot());
         data.setChatHistory(chatService.getHistoryFull());
@@ -134,6 +136,7 @@ public class QueuePersistenceService {
 
             musicQueueManager.restorePlayedQueueIds(data.getPlayedQueueIds());
             musicQueueManager.restoreMemberShufflePreferences(data.getMemberShufflePreferences());
+            musicQueueManager.restoreMemberRetainPreferences(data.getMemberRetainPreferences());
             chatService.restore(data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
 
             applySettings(data.getSettings());
@@ -194,7 +197,6 @@ public class QueuePersistenceService {
 
         if (s.systemConfig() != null) {
             SettingsSnapshot.SystemConfigSettings cfg = s.systemConfig();
-            if (cfg.retainPlaylist() != null) appProperties.getQueue().setRetainPlaylist(cfg.retainPlaylist());
             if (cfg.maxQueueSize() != null) appProperties.getQueue().setMaxSize(cfg.maxQueueSize());
             if (cfg.maxHistorySize() != null) appProperties.getQueue().setHistorySize(cfg.maxHistorySize());
             if (cfg.maxUserSongs() != null) appProperties.getQueue().setMaxUserSongs(cfg.maxUserSongs());
@@ -238,7 +240,6 @@ public class QueuePersistenceService {
                         appProperties.getChat().getMinIntervalMs(),
                         appProperties.getBilibili().getMaxDurationMinutes(),
                         appProperties.getChat().getMaxMessageLength(),
-                        appProperties.getQueue().isRetainPlaylist(),
                         appProperties.getQueue().isAllowPlaylistClaim(),
                         appProperties.getPlayer().isAllowSeek()),
                 appProperties.getSources().entrySet().stream()
@@ -264,5 +265,6 @@ public class QueuePersistenceService {
         private SettingsSnapshot settings;
         private Integer schemaVersion;
         private Map<String, Boolean> memberShufflePreferences;
+        private Map<String, Boolean> memberRetainPreferences;
     }
 }

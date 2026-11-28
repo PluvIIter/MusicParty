@@ -88,7 +88,8 @@ class MusicPlayerServiceRoundRobinRetryTest {
 
     @Test
     void exhaustedMemberYieldsWithoutRepeatingRetainedFailures() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain(alice.token(), true);
+        queue.setMemberRetain(bob.token(), true);
         MusicQueueItem a1 = add("a1", alice);
         MusicQueueItem a2 = add("a2", alice);
         add("b1", bob);

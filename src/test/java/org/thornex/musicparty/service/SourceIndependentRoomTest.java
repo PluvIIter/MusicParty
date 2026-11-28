@@ -73,7 +73,7 @@ class SourceIndependentRoomTest {
 
     @Test
     void transientDownloadFailureRetriesOnlyAfterCooldownAndPreservesFirstPlayLedger() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("member", true);
         var entry = queue.add(track("third-source"), owner, QueueItemStatus.PENDING);
         when(media.status(any())).thenReturn(QueueItemStatus.FAILED);
         doAnswer(invocation -> {
@@ -150,7 +150,7 @@ class SourceIndependentRoomTest {
 
     @Test
     void disabledSourceResultCannotCommitAfterResolvingBeforeRoomMonitor() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("member", true);
         queue.add(track("third-source"), owner, QueueItemStatus.READY);
         when(media.status(any())).thenReturn(QueueItemStatus.READY);
         var response = reactor.core.publisher.Sinks.<PlayableMusic>one();
@@ -167,7 +167,7 @@ class SourceIndependentRoomTest {
 
     @Test
     void changedCredentialScopeCannotCommitLatePlayableOrConsumeFirstPlay() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("member", true);
         queue.add(track("third-source"), owner, QueueItemStatus.READY);
         when(media.status(any())).thenReturn(QueueItemStatus.READY);
         when(media.authorizationScope("third-source")).thenReturn("old-scope");

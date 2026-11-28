@@ -9,6 +9,7 @@ export const WS_DEST = {
     PLAYER_PAUSE: '/app/control/toggle-pause',
     PLAYER_MODE: '/app/control/play-mode',
     MEMBER_SHUFFLE: '/app/queue/member-shuffle',
+    MEMBER_RETAIN: '/app/queue/member-retain',
     QUEUE_REORDER: '/app/queue/reorder',
     PLAYER_LIKE: '/app/control/like',
     /** 拖动进度条（房间级 seek，受管理面板 allowSeek 开关约束）。 */

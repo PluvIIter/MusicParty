@@ -19,25 +19,29 @@ import static org.mockito.Mockito.*;
 class QueuePersistenceServiceTest {
 
     @Test
-    void retentionRoundTripsAndPartialCurrentSettingsKeepConfiguredValue() throws Exception {
+    void memberRetainPreferencesRoundTripAndPartialSettingsKeepConfiguredValues() throws Exception {
         File tmp = File.createTempFile("retention", ".json");
         tmp.deleteOnExit();
         AppProperties props = new AppProperties();
         props.getQueue().setPersistenceFile(tmp.getAbsolutePath());
-        QueuePersistenceService persistence = build(mock(MusicQueueManager.class), mock(ChatService.class),
+        MusicQueueManager queue = new MusicQueueManager(props);
+        queue.setMemberRetain("A", true);
+        queue.setMemberRetain("B", false);
+        QueuePersistenceService persistence = build(queue, mock(ChatService.class),
                 props, mock(MusicPlayerService.class), mock(AuthController.class), mock(LiveStreamService.class));
-        for (boolean enabled : new boolean[]{true, false}) {
-            props.getQueue().setRetainPlaylist(enabled);
-            persistence.saveNow();
-            props.getQueue().setRetainPlaylist(!enabled);
-            persistence.loadData();
-            assertEquals(enabled, props.getQueue().isRetainPlaylist());
-        }
-        props.getQueue().setRetainPlaylist(true);
-        Files.writeString(tmp.toPath(), "{\"schemaVersion\":1,\"queue\":[],\"settings\":{\"systemConfig\":{\"maxQueueSize\":77}}}");
+        persistence.saveNow();
+
+        MusicQueueManager restored = new MusicQueueManager(props);
+        build(restored, mock(ChatService.class), props, mock(MusicPlayerService.class),
+                mock(AuthController.class), mock(LiveStreamService.class)).loadData();
+        assertTrue(restored.isMemberRetain("A"));
+        assertFalse(restored.isMemberRetain("B"));
+
+        props.getQueue().setMaxSize(77);
+        Files.writeString(tmp.toPath(), "{\"schemaVersion\":1,\"queue\":[],\"settings\":{\"systemConfig\":{\"maxQueueSize\":66}}}");
         persistence.loadData();
-        assertTrue(props.getQueue().isRetainPlaylist());
-        assertEquals(77, props.getQueue().getMaxSize());
+        assertEquals(66, props.getQueue().getMaxSize());
+        assertFalse(queue.isMemberRetain("A"));
     }
 
     // 生产 ObjectMapper 关闭 FAIL_ON_UNKNOWN_PROPERTIES，测试显式对齐

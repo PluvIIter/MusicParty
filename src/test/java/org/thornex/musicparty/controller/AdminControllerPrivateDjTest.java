@@ -42,9 +42,9 @@ class AdminControllerPrivateDjTest {
     }
 
     @Test
-    void retentionUpdateRequiresAdminAndSavesImmediately() throws Exception {
+    void configUpdateRequiresAdminAndSavesImmediately() throws Exception {
         var request = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
-                "{\"retainPlaylist\":true}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class);
+                "{\"maxUserSongs\":55}", org.thornex.musicparty.dto.AdminConfigUpdateRequest.class);
         assertEquals(HttpStatus.FORBIDDEN, controller.updateConfig("wrong", request).getStatusCode());
         verifyNoInteractions(player, persistence);
         assertEquals(HttpStatus.OK, controller.updateConfig("pw", request).getStatusCode());

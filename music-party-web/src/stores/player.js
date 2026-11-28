@@ -25,6 +25,7 @@ export const usePlayerStore = defineStore('player', () => {
     const isRepeatOne = computed(() => playMode.value === 'REPEAT_ONE');
     const isRoundRobin = computed(() => playMode.value === 'ROUND_ROBIN');
     const memberShufflePreferences = ref({});
+    const memberRetainPreferences = ref({});
     const allowOfflineShuffle = ref(false);
     const isPauseLocked = ref(false);
     const isSkipLocked = ref(false);
@@ -54,7 +55,6 @@ export const usePlayerStore = defineStore('player', () => {
     const eligibleUsers = ref(0);
 
     const config = ref({
-        retainPlaylist: false,
         maxQueueSize: 1000,
         maxHistorySize: 50,
         maxUserSongs: 100,
@@ -147,6 +147,7 @@ export const usePlayerStore = defineStore('player', () => {
         isPaused.value = state.isPaused;
         playMode.value = state.playMode;
         memberShufflePreferences.value = { ...(state.memberShufflePreferences || {}) };
+        memberRetainPreferences.value = { ...(state.memberRetainPreferences || {}) };
         allowOfflineShuffle.value = state.allowOfflineShuffle || false;
         isPauseLocked.value = state.isPauseLocked || false;
         isSkipLocked.value = state.isSkipLocked || false;
@@ -276,6 +277,10 @@ export const usePlayerStore = defineStore('player', () => {
     const setMemberShuffle = (shuffle) => {
         if (typeof shuffle !== 'boolean' || !isRoundRobin.value || !canSendQueueControl()) return;
         socketService.send(WS_DEST.MEMBER_SHUFFLE, { shuffle });
+    };
+    const setMemberRetain = (retain) => {
+        if (typeof retain !== 'boolean' || !canSendQueueControl()) return;
+        socketService.send(WS_DEST.MEMBER_RETAIN, { retain });
     };
     const reorderSong = (queueId, beforeQueueId) => {
         if (!canSendQueueControl()) return;
@@ -436,6 +441,7 @@ export const usePlayerStore = defineStore('player', () => {
         isRepeatOne,
         isRoundRobin,
         memberShufflePreferences,
+        memberRetainPreferences,
         allowOfflineShuffle,
         config,
         isPauseLocked,
@@ -466,6 +472,7 @@ export const usePlayerStore = defineStore('player', () => {
         togglePause,
         setPlayMode,
         setMemberShuffle,
+        setMemberRetain,
         reorderSong,
         seekTo,
         enqueue,

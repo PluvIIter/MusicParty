@@ -67,7 +67,8 @@ class MusicQueueManagerPlaybackModesTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void shuffleIgnoresLegacyFairFlagAndDoesNotRotateMembers(boolean fair) {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
+        queue.setMemberRetain("B", true);
         add("heard-a", "A");
         add("fresh-b", "B");
         add("fresh-b2", "B");
@@ -80,7 +81,7 @@ class MusicQueueManagerPlaybackModesTest {
 
     @Test
     void memberOrderedPreferenceDoesNotChangeTotalShuffleFirstPlayProtection() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
         MusicQueueItem heard = add("heard", "A");
         MusicQueueItem fresh = add("fresh", "A");
         queue.clearPlaybackFailure(heard);
@@ -91,7 +92,9 @@ class MusicQueueManagerPlaybackModesTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void roundRobinAlwaysRotatesMembersAndDefaultsToIndependentShuffleRounds(boolean fair) {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
+        queue.setMemberRetain("B", true);
+        queue.setMemberRetain("C", true);
         Map<String, Integer> sizes = Map.of("A", 2, "B", 3, "C", 1);
         for (String owner : List.of("A", "B", "C")) {
             assertTrue(queue.isMemberShuffle(owner));
@@ -113,7 +116,8 @@ class MusicQueueManagerPlaybackModesTest {
 
     @Test
     void roundRobinCanMixPhysicalMemberOrderWithRandomMemberRounds() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
+        queue.setMemberRetain("B", true);
         queue.setMemberShuffle("A", false);
         queue.setMemberShuffle("B", true);
         for (int i = 0; i < 3; i++) {
@@ -133,7 +137,7 @@ class MusicQueueManagerPlaybackModesTest {
 
     @Test
     void memberOrderUsesCurrentPhysicalFirstAndDoesNotOverrideExplicitPin() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
         queue.setMemberShuffle("A", false);
         MusicQueueItem first = add("a1", "A");
         MusicQueueItem pinned = add("a2", "A");
@@ -148,7 +152,7 @@ class MusicQueueManagerPlaybackModesTest {
 
     @Test
     void switchingMemberPreferenceKeepsLedgerAndOnlyChangesThatMembersSelection() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
         MusicQueueItem heard = add("heard", "A");
         MusicQueueItem fresh = add("fresh", "A");
         queue.clearPlaybackFailure(heard);
@@ -190,7 +194,7 @@ class MusicQueueManagerPlaybackModesTest {
     @ParameterizedTest
     @EnumSource(value = PlayMode.class, names = {"SHUFFLE", "ROUND_ROBIN"})
     void randomModesKeepFirstPlayProtectionAndExistingRoundAfterReorder(PlayMode mode) {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
         for (int i = 0; i < 4; i++) add("old" + i, "A");
         for (int i = 0; i < 4; i++) pick(mode, true);
         MusicQueueItem roundFirst = pick(mode, false);
@@ -222,7 +226,7 @@ class MusicQueueManagerPlaybackModesTest {
     @ParameterizedTest
     @EnumSource(value = PlayMode.class, names = {"SHUFFLE", "ROUND_ROBIN"})
     void failedFirstAttemptKeepsFreshLedgerAndPlaylistWhileCoolingDown(PlayMode mode) {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
         MusicQueueItem heard = add("heard", "A");
         MusicQueueItem fresh = add("fresh", "A");
         queue.clearPlaybackFailure(heard);
@@ -238,7 +242,7 @@ class MusicQueueManagerPlaybackModesTest {
 
     @Test
     void retainedTotalShuffleCompletesRoundsWithRegeneratedFmMarker() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
         for (int i = 0; i < 3; i++) add("a" + i, "A");
         for (int round = 0; round < 12; round++) {
             Set<String> songs = new HashSet<>();
@@ -254,7 +258,7 @@ class MusicQueueManagerPlaybackModesTest {
 
     @Test
     void retainedRoundRobinRegeneratesFmWithoutInterruptingMemberTurns() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
         add("a", "A");
         for (int turn = 0; turn < 12; turn++) {
             queue.ensureFmMarker();
@@ -268,7 +272,6 @@ class MusicQueueManagerPlaybackModesTest {
     @Test
     void totalShufflePicksFmWhileRealSongsAreStillUnheard() {
         // 保留关闭时每轮都清空账本，FM 不能因为“首播优先”被永久饿死
-        properties.getQueue().setRetainPlaylist(false);
         int fmPicked = 0;
         for (int run = 0; run < 60; run++) {
             MusicQueueManager manager = new MusicQueueManager(properties);
@@ -285,7 +288,7 @@ class MusicQueueManagerPlaybackModesTest {
 
     @Test
     void retainedTotalShufflePicksFmOncePerRoundEvenBeforeAllSongsHeard() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
         for (int i = 0; i < 3; i++) add("a" + i, "A");
         int fmPicked = 0;
         for (int i = 0; i < 8; i++) {
@@ -298,7 +301,7 @@ class MusicQueueManagerPlaybackModesTest {
     @ParameterizedTest
     @EnumSource(PlayMode.class)
     void retainedSelectionRotatesStableIdsAndConsumesPinOnce(PlayMode mode) {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("A", true);
         MusicQueueItem first = add("a", "A");
         MusicQueueItem pinned = add("b", "A");
         queue.top(pinned.queueId(), mode);
@@ -348,7 +351,8 @@ class MusicQueueManagerPlaybackModesTest {
 
     @Test
     void claimKeepsTargetPreferenceAndDoesNotTransferSourcePreference() {
-        properties.getQueue().setRetainPlaylist(true);
+        queue.setMemberRetain("source", true);
+        queue.setMemberRetain("target", true);
         MusicQueueItem source = add("source-song", "source");
         MusicQueueItem target = add("target-song", "target");
         queue.clearPlaybackFailure(source);
